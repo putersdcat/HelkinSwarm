@@ -1,6 +1,6 @@
 **Here is the exact next prompt** you should copy-paste to the Azure Agent right now.
 
-It continues directly from where the agent left off (Phase 1 complete) and moves to **Phase 0 completion** — the Bicep infrastructure + CI/CD pipelines — so the bot becomes live in your personal tenant and the Teams Test Harness can actually run against a real endpoint.
+This executes **Phase 1: Core Runtime, Infrastructure & First Stamped Deployment** from scratch. Multi-instance stamping is built in from day one. Before pasting, confirm the Phase 0.75 GitHub issues (Router Architecture Decision + Stamping Parameterization Design) have been created and approved.
 
 ---
 
@@ -8,39 +8,54 @@ It continues directly from where the agent left off (Phase 1 complete) and moves
 
 Please see the attached master plan: `docs/delivery/00-Development-&-Delivery-Master-Plan.md`
 
-Phase 1 (Core Runtime & Teams Interface) is complete (commit 28d55dc). All bot files compile and lint clean.
+Phase 0 (Agent & Instruction System) and Phase 0.5 (Backlog Initialization) are complete. Phase 0.75 architecture decisions (Router + Stamping) are documented in GitHub issues and approved.
 
-Your **next task** is to complete **Phase 0: Bootstrap** by creating the missing infrastructure foundation and CI/CD pipelines.
+Your **next task** is to execute **Phase 1: Core Runtime, Infrastructure & First Stamped Deployment**.
+
+**Critical constraint:** Multi-instance stamping is built in from day one. There is no plain deployment. Read `docs/0q-Multi-Instance-Architecture.md` and the Phase 0.75 GitHub issues before writing any infrastructure code.
 
 **Requirements:**
 
 1. Read the relevant specification sections:
+   - 0q-Multi-Instance-Architecture.md (REQUIRED FIRST — stamping architecture)
    - 03-Tech-Stack-Infrastructure.md
    - 12-Deployment-CICD.md
    - 15-Project-Structure.md
 
 2. Create the following files:
-   - `infra/main.bicep` (full desired-state deployment with UAMI, Container Apps, Cosmos DB, AI Foundry, Key Vault, Bot Service, App Insights, and `euResidencyMode` toggle)
+   - `config/user-map.json` at repo root:
+     ```json
+     {
+       "eric@putersdcat.com": {
+         "guid": "123e4567-e89b-12d3-a456-426614174000",
+         "alias": "a7f2",
+         "rg": "rg-HelkinSwarm-a7f2",
+         "status": "active"
+       }
+     }
+     ```
+   - `infra/main.bicep` — accepts `userAlias` parameter (required, no default); every resource name suffixed `-${userAlias}`. Full stack: UAMI, Container Apps, Cosmos DB, AI Foundry, Key Vault, Bot Service, App Insights. `euResidencyMode` flag defaults false; FreedomMode (`eastus2`) is the default.
    - `infra/main.parameters.json`
-   - `.github/workflows/ci.yml`
-   - `.github/workflows/cd.yml`
+   - `.github/workflows/deploy-stamp.yml` — accepts `USER_ALIAS` as a required `workflow_dispatch` input; passes it through to Bicep. This is the ONLY deployment workflow.
+   - `.github/workflows/ci.yml` — build + lint + test only (no deployment)
    - `.github/workflows/teams-package.yml`
-   - `Dockerfile` (if not already perfect)
+   - `Dockerfile` (if not already present)
    - Update `.gitignore` to exclude local settings and node_modules properly
 
 3. Ensure:
-   - All resources use your personal tenant naming convention
+   - All resources follow naming: `helkinswarm-{resourceType}-{userAlias}` (e.g. `helkinswarm-func-a7f2`, `helkinswarm-cosmos-a7f2`)
+   - `userAlias` flows end-to-end: `deploy-stamp.yml` dispatch input → Bicep parameter → every resource name suffix
    - OIDC is used (no secrets in GitHub)
-   - The pipeline automatically builds, pushes to ACR, and updates the Container App
-   - Health check runs after every deployment
-   - Teams app package is generated via script
+   - The pipeline builds, pushes to ACR, and updates the Container App for the specified alias
+   - Health check runs after every stamped deployment against the alias-specific endpoint
+   - Teams app package is generated via script (manifest points to a placeholder — router endpoint set in Phase 2)
 
 4. After creating and committing the files:
-   - Run the one-time bootstrap command (az deployment group create) if needed
-   - Push to main so the full CD pipeline executes
-   - Verify the health endpoint returns green
-   - Update the relevant GitHub issues (including the master plan issue) with evidence and correlation IDs
-   - Add a dated comment confirming Phase 0 is now complete and the bot is live in the tenant
+   - Trigger `deploy-stamp.yml` with `USER_ALIAS=a7f2` — this is the first and only deployment method
+   - Confirm `rg-HelkinSwarm-a7f2` is created with all resources suffixed `-a7f2`
+   - Verify the stamped health endpoint returns green
+   - Update the relevant GitHub issues with evidence: stamped RG name, health endpoint URL, deployment correlation ID
+   - Add a dated comment confirming Phase 1 is complete: stamped instance `a7f2` is live in `eastus2`
 
 Work systematically and produce production-ready infrastructure aligned with the global-first architecture.
 
@@ -48,8 +63,8 @@ Begin now.
 
 ---
 
-Paste this directly into the Azure Agent. It will build the missing infrastructure and CI/CD pieces, deploy them, and tie everything back to the master plan.
+Paste this directly into the Azure Agent. It will build the stamped infrastructure, deploy the first stamped instance (`a7f2`), and wire the full CI/CD pipeline.
 
-Once it finishes and pushes (you’ll see the health endpoint go green), say **“Phase 0 complete”** and we’ll move to Phase 2 (Eternal Overseer).
+Once it finishes and the stamped health endpoint is green, say **"Phase 1 complete"** and we'll move to Phase 2 (Eternal Brain & Global Router).
 
-You’re in a great spot — Phase 1 is done, infrastructure is next. Let me know when the agent reports back!
+You're in a great spot — agent system and backlog are done, stamped infrastructure is next. Let me know when the agent reports back!

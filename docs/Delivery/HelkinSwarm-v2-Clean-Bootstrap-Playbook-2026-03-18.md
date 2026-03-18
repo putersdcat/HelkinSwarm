@@ -33,28 +33,89 @@ Commit message for this state (once we are ready): "Nuclear purge — v2 clean b
    - All 12 instruction files in `.github/instructions/`
 4. Commit and push (this is now the first commit on main).
 
-### Phase 0.5 — Backlog Initialization
+### Phase 0.5 — Backlog Initialization - Use OPUS NOW !
 1. In the same Copilot Chat session, paste the **exact prompt** from the attached archive file `00-Development-&-Delivery-Master-Plan.md` (the Phase 0.5 section).
 2. The agent will read the full living specification (all docs/*.md in this folder) and create the complete GitHub issue backlog + the two Never-Close issues from `01-Recurring-Maintenance-and-Introspection-Issues.md`.
 3. Confirm all issues are created and labelled.
 
-### Phase 1 — Core Runtime & Infrastructure
-1. Paste the **exact prompt** from the attached archive file `01-doing-work.md`.
-2. The agent will create:
-   - `infra/main.bicep` (with euResidencyMode toggle, FreedomMode default eastus2)
-   - CI/CD workflows
-   - Dockerfile
-   - All other Phase 0 foundation files
-3. Run the one-time bootstrap deployment.
-4. Verify health endpoint.
-5. Commit and push → full CD runs.
+### Phase 0.75 — Architecture Research: Global Router & Stamping Design
 
-### Phase 2 — Eternal Brain & Orchestration
-1. Paste the **exact prompt** from the attached archive file `02-doing-work.md`.
-2. The agent creates the overseer, sessionOrchestrator, tokenBudget, durable hooks, etc.
-3. Wire to the bot handler.
-4. Verify with teams_test_full_probe.
-5. Commit and push.
+This is a mandatory research-and-design gate. Zero code is written here. Every decision made here directly shapes what Phase 1 builds. Complete before touching any infrastructure.
+
+1. Use the **Microsoft Docs MCP tool** (`microsoft_docs_search`) to research the current best-practice and most cost-efficient HTTP routing approach on Azure for a personal-scale Bot Framework proxy. Evaluate:
+   - Azure Functions HTTP trigger (consumption plan — near-zero idle cost)
+   - Azure API Management (Consumption tier)
+   - Azure Front Door
+   - Container Apps job
+   - Factor in: latency at near-zero request volume, ease of UPN extraction from Bot Framework activity payload, operational simplicity for a single-developer project
+2. Research the multi-instance stamping parameterization pattern in Azure Bicep + Container Apps.
+3. Document both decisions in two GitHub issues **before any code is written**:
+   - **Issue: Router Architecture Decision** — chosen approach, cost model, UPN extraction method, and rejected alternatives with rationale
+   - **Issue: Stamping Parameterization Design** — `userAlias` convention, `config/user-map.json` schema, resource naming suffix pattern (`helkinswarm-{resourceType}-{alias}`), how `deploy-stamp.yml` will be triggered
+4. Both issues must be reviewed and approved (by you) before proceeding to Phase 1.
+
+**Output gate:** Two GitHub issues created and reviewed. Zero infrastructure code written.
+
+**Spec ref:** `docs/0q-Multi-Instance-Architecture.md`
+
+---
+
+### Phase 1 — Core Runtime, Infrastructure & First Stamped Deployment
+
+Multi-instance stamping is built in from day one. There is no "plain" deployment. The **first live deployment IS a stamped user instance** (`a7f2`).
+
+1. Paste the **exact prompt** from `docs/Proomptz/01-doing-work.md`.
+2. The agent will create:
+   - `config/user-map.json` at repo root (source-controlled, no secrets):
+     ```json
+     {
+       "eric@putersdcat.com": {
+         "guid": "123e4567-e89b-12d3-a456-426614174000",
+         "alias": "a7f2",
+         "rg": "rg-HelkinSwarm-a7f2",
+         "status": "active"
+       }
+     }
+     ```
+   - `infra/main.bicep` — accepts `userAlias` parameter (required, no default); every resource name suffixed `-${userAlias}`. Full stack: UAMI, Container Apps, Cosmos DB, AI Foundry, Key Vault, Bot Service, App Insights. `euResidencyMode` flag defaults false; FreedomMode (`eastus2`) is the default.
+   - `infra/main.parameters.json`
+   - `.github/workflows/deploy-stamp.yml` — accepts `USER_ALIAS` as a required `workflow_dispatch` input; passes through to Bicep. This is the ONLY deployment workflow.
+   - `.github/workflows/ci.yml` — build + lint + test only (no deployment)
+   - `.github/workflows/teams-package.yml`
+   - `Dockerfile`, `.gitignore`, and all other Phase 1 foundation files
+3. Run the first stamped deployment: trigger `deploy-stamp.yml` with `USER_ALIAS=a7f2`.
+   - Creates `rg-HelkinSwarm-a7f2` with all resources suffixed `-a7f2` (e.g. `helkinswarm-func-a7f2`, `helkinswarm-cosmos-a7f2`)
+4. Verify health endpoint for the stamped instance: `https://helkinswarm-func-a7f2.azurewebsites.net/api/health` (or equivalent Container Apps URL).
+5. Commit and push → CI runs clean.
+
+**Spec ref:** `docs/0q-Multi-Instance-Architecture.md`, `docs/03-Tech-Stack-Infrastructure.md`, `docs/12-Deployment-CICD.md`
+
+### Phase 2 — Eternal Brain, Orchestration & Global Router
+
+Two equal deliverables that MUST both be complete before Phase 2 is done: the durable orchestration layer AND the Global Router. Teams is fully wired end-to-end by the end of this phase.
+
+1. Paste the **exact prompt** from `docs/Proomptz/02-doing-work.md`.
+2. The agent creates the core orchestration files:
+   - `src/orchestrator/overseer.ts` (eternal overseer with ContinueAsNew at 80% context)
+   - `src/orchestrator/sessionOrchestrator.ts`
+   - `src/orchestrator/buildPromptActivity.ts`
+   - `src/orchestrator/llmActivity.ts`
+   - `src/orchestrator/tokenBudget.ts`
+   - `src/orchestrator/stateManager.ts`
+   - `src/orchestrator/durableHookActivity.ts` (stub for Phase 3)
+3. Wire the `NewMessage` external event from the bot handler to the overseer.
+4. The agent also builds the **Global Teams Router** (using the decision from Phase 0.75 GitHub issues):
+   - `src/router/routerFunction.ts` — HTTP trigger, receives Teams Bot Framework activity (POST)
+   - Extracts UPN from `activity.from.id` (or OBO token claim)
+   - Reads `config/user-map.json` to look up alias
+   - Proxies / redirects to `https://helkinswarm-func-{alias}.azurewebsites.net`
+   - `infra/main-router.bicep` + `.github/workflows/deploy-router.yml` created
+   - Deploys to `rg-HelkinSwarm-router` (separate RG from user stamps)
+5. Update `appPackage/manifest.json` with the router's permanent HTTPS endpoint.
+6. Verify end-to-end: Teams → Router → Stamped instance `a7f2` → Durable overseer → Response.
+7. Commit and push.
+
+**Spec ref:** `docs/08-Orchestrator-Patterns.md`, `docs/0q-Multi-Instance-Architecture.md`, `docs/10-Teams-Interface.md`
 
 ### Phase 3 — LLM Layer, Tool Dispatch & Safety Pipeline
 1. Paste the **exact prompt** from the attached archive file `03-phase3.md`.
@@ -67,51 +128,6 @@ Commit message for this state (once we are ready): "Nuclear purge — v2 clean b
 2. The agent creates memoryManager, skillVaults, capabilityLoader, SkillForge, durable hooks final implementation.
 3. Run full test harness.
 4. Commit and push → v1.0 MVP live.
-
-### Phase 5 — Multi-Instance Stamping (First Stamped Deployment)
-
-This phase makes the system multi-tenant ready by parameterising every resource with a user alias. All resources for a user live in a single stamped resource group.
-
-1. Create `config/user-map.json` at repo root (source-controlled, no secrets):
-   ```json
-   {
-     "eric@putersdcat.com": {
-       "guid": "123e4567-e89b-12d3-a456-426614174000",
-       "alias": "a7f2",
-       "rg": "rg-HelkinSwarm-a7f2",
-       "status": "active"
-     }
-   }
-   ```
-2. Update `infra/main.bicep` to accept a `userAlias` parameter — suffix every resource name with `-${userAlias}`.
-3. Update `.github/workflows/deploy-stamp.yml` (create this workflow if it doesn't exist) to accept `USER_ALIAS` as a workflow dispatch input and pass it through to the Bicep deployment.
-4. Run the first stamped deployment: trigger `deploy-stamp.yml` with `USER_ALIAS=a7f2`.
-5. This creates `rg-HelkinSwarm-a7f2` with all resources suffixed `-a7f2` (e.g. `helkinswarm-func-a7f2`, `helkinswarm-cosmos-a7f2`).
-6. Verify health endpoint for the stamped instance.
-7. Commit and push.
-
-**Spec ref:** `docs/0q-Multi-Instance-Architecture.md`
-
----
-
-### Phase 6 — Global Teams Router
-
-This phase adds a single central entry point for Teams so the app manifest only ever needs to point to one endpoint, regardless of how many user instances exist.
-
-**Before building:** Use the Microsoft Docs MCP tool (`microsoft_docs_search`) to research the current best-practice and most cost-efficient approach for a lightweight HTTP proxy/router on Azure (options: Azure API Management, Azure Functions HTTP trigger, Azure Front Door, Container Apps job). Factor in: latency, cost at low request volume, ease of UPN extraction from Bot Framework activity payload.
-
-1. Research routing approach via Microsoft Docs MCP — document the decision in a GitHub issue before coding.
-2. Build a standalone `HelkinSwarm-router` Azure Function (or equivalent per research outcome) in its own resource group `rg-HelkinSwarm-router`:
-   - Receives Teams Bot Framework activity (HTTP POST)
-   - Extracts the user's UPN from the activity payload (`activity.from.id` or OBO token)
-   - Looks up the alias in `config/user-map.json` (or a Cosmos DB routing table for production scale)
-   - Proxies / redirects the request to the correct stamped Functions URI (`https://helkinswarm-func-{alias}.azurewebsites.net`)
-3. Deploy the router and record its public HTTPS endpoint.
-4. Update `appPackage/manifest.json` once with the router endpoint — this is the only manifest change ever needed for new users.
-5. Verify end-to-end: Teams → Router → Stamped instance → Response.
-6. Commit and push.
-
-**Spec ref:** `docs/0q-Multi-Instance-Architecture.md`
 
 ---
 
