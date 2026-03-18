@@ -12,19 +12,19 @@
 name: SkillForge Image
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'infra/Dockerfile.skillforge'
-      - '.github/workflows/skillforge-image.yml'
   workflow_dispatch:
+    inputs:
+      USER_ALIAS:
+        description: '4-char hex user alias (e.g. a7f2)'
+        required: true
+        type: string
 
 permissions:
   id-token: write
   contents: read
 
 env:
-  ACR_NAME: helkinswarmacr
+  ACR_NAME: "helkinswarmacr${{ github.event.inputs.USER_ALIAS }}"
   IMAGE_NAME: helkinswarm-skillforge
   IMAGE_TAG: ${{ github.sha }}
 
