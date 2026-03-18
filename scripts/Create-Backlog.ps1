@@ -5,12 +5,13 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Continue'
 
 # Milestone title constants
-$M_BOOT  = 'v0.0 - Bootstrap'
-$M_CORE  = 'v0.1 - Core Runtime & Teams Interface'
-$M_ORCH  = 'v0.2 - Eternal Brain & Orchestration'
-$M_LLM   = 'v0.3 - LLM Layer, Tool Dispatch & Safety Pipeline'
-$M_MVP   = 'v1.0 - MVP Complete'
-$M_POST  = 'v1.1+ - Self-Improvement & Post-MVP'
+$M_BOOT     = 'v0.0 - Bootstrap'
+$M_RESEARCH = 'v0.1 - Phase 0.75: Architecture Research Gate'
+$M_CORE     = 'v0.2 - Stamped Infra & Core'
+$M_ORCH     = 'v0.3 - Eternal Brain & Router'
+$M_LLM      = 'v0.4 - LLM & Safety'
+$M_MVP      = 'v1.0 - MVP Complete'
+$M_POST     = 'v1.1+ - Self-Improvement & Post-MVP'
 
 function New-GhIssue {
     param(
@@ -215,22 +216,50 @@ $n['scaffold'] = New-GhIssue -Title "Scaffold repository structure per 15-Projec
 $body = @'
 ## Create Bicep Infrastructure (main.bicep)
 
-**Spec Reference:** 03-Tech-Stack-Infrastructure.md, 12-Deployment-CICD.md
+**Spec Reference:** 03-Tech-Stack-Infrastructure.md, 12-Deployment-CICD.md, 0q-Multi-Instance-Architecture.md
+
+### Architectural Context
+The Bicep template is the infrastructure blueprint for each stamped user instance. Every resource is parameterized by `userAlias` — there is no default deployment. The first deployment IS a stamped instance.
+
+### Parameters
+- `param userAlias string` — **required, no default**. All resources suffixed `-${userAlias}`.
+- `param euResidencyMode bool = false` — controls global vs EU stack.
+- Resource group name: `rg-HelkinSwarm-{alias}` (created externally by deploy-stamp.yml).
 
 ### Resources to Define
-- Resource Group (`helkinswarm-prod-eus2`)
-- User-Assigned Managed Identity (`helkinswarm-uami`)
-- Container Apps Environment + Azure Functions App
-- Azure Container Registry
-- Key Vault
-- Cosmos DB Serverless (with DiskANN containers)
-- Azure AI Services (Foundry) with global/EU model deployments
-- Bot Service + Teams channel
-- Application Insights + Log Analytics
+- User-Assigned Managed Identity (`helkinswarm-uami-{alias}`)
+- Container Apps Environment + Azure Functions App (`helkinswarm-func-{alias}`)
+- Azure Container Registry (`helkinswarmacr` — shared, not per-stamp)
+- Key Vault (`helkinswarm-kv-{alias}`)
+- Cosmos DB Serverless (`helkinswarm-cosmos-{alias}`) with DiskANN containers
+- Azure AI Services (Foundry) (`helkinswarm-ai-{alias}`) with global/EU model deployments
+- Bot Service (`helkinswarm-bot-{alias}`) + Teams channel
+- Application Insights (`helkinswarm-appi-{alias}`) + Log Analytics
+
+### Invariants
+- Multi-instance stamping is table stakes — `userAlias` is required, no default (0q)
+- EU residency is a single Bicep parameter — propagates to every resource (0q, 03)
+- UAMI only — no client secrets, no PATs (doc 11)
 
 ### Acceptance Criteria
+- [ ] `param userAlias string` required with no default value
+- [ ] All resources suffixed with `-${userAlias}` (except shared ACR)
 - [ ] `param euResidencyMode bool = false` controls global vs EU stack
-- [ ] All resources follow naming convention from spec
+- [ ] All resources follow naming convention: `helkinswarm-{resourceType}-{alias}`with DiskANN containers
+- Azure AI Services (Foundry) (`helkinswarm-ai-{alias}`) with global/EU model deployments
+- Bot Service (`helkinswarm-bot-{alias}`) + Teams channel
+- Application Insights (`helkinswarm-appi-{alias}`) + Log Analytics
+
+### Invariants
+- Multi-instance stamping is table stakes — `userAlias` is required, no default (0q)
+- EU residency is a single Bicep parameter — propagates to every resource (0q, 03)
+- UAMI only — no client secrets, no PATs (doc 11)
+
+### Acceptance Criteria
+- [ ] `param userAlias string` required with no default value
+- [ ] All resources suffixed with `-${userAlias}` (except shared ACR)
+- [ ] `param euResidencyMode bool = false` controls global vs EU stack
+- [ ] All resources follow naming convention: `helkinswarm-{resourceType}-{alias}`
 - [ ] UAMI gets minimal RBAC roles only
 - [ ] Cosmos DB containers: `userProfiles`, `sessions` (72h TTL), `multimodalMemory`, `skillMemory-*`, `durableHooks`, `longRunningCatalog`, `ide-messages`
 - [ ] AI Services SKU switches between GlobalStandard and DataZoneStandard
@@ -258,30 +287,43 @@ $body = @'
 $n['ci'] = New-GhIssue -Title "CI pipeline - lint, compile, type-check, Bicep validate" -Body $body -Labels @('infra','mvp') -Milestone $M_BOOT
 
 $body = @'
-## CD Pipeline - Bicep Deploy, Docker Build, ACR Push, Container Apps Update
+## Stamped Deployment Pipeline (deploy-stamp.yml)
 
-**Spec Reference:** 12-Deployment-CICD.md
+**Spec Reference:** 12-Deployment-CICD.md, 0q-Multi-Instance-Architecture.md
 
-### Steps
-1. OIDC login to personal tenant
-2. Bicep deploy `infra/main.bicep`
-3. Docker build (multi-stage, Node 22)
-4. Push to ACR
-5. Container Apps zero-downtime revision update
-6. SkillForge base image sync (when dev tooling changes)
-7. Health check verification
+### Architectural Context
+This is the ONLY deployment workflow. There is no `cd.yml`. Every deployment is a stamped user instance. The workflow accepts a `USER_ALIAS` input and passes it through to Bicep as the `userAlias` parameter. All resources are created in `rg-HelkinSwarm-{alias}`.
+
+### Workflow
+- Trigger: `workflow_dispatch` only
+- Required input: `USER_ALIAS` (string, required)
+- Steps:
+  1. OIDC login to personal tenant
+  2. Bicep deploy `infra/main.bicep` with `userAlias=$USER_ALIAS`
+  3. Docker build (multi-stage, Node 22)
+  4. Push to shared ACR (`helkinswarmacr`)
+  5. Container Apps zero-downtime revision update in `rg-HelkinSwarm-{alias}`
+  6. SkillForge base image sync (when dev tooling changes)
+  7. Post-deploy health gate: `GET /api/health` on `https://helkinswarm-func-{alias}.azurewebsites.net/api/health`
+
+### Invariants
+- Multi-instance stamping is table stakes — `deploy-stamp.yml` is the ONLY deployment path (0q)
+- UAMI only — no client secrets, no PATs (doc 11)
+- EU residency is a single Bicep parameter — propagates to every resource (0q, 03)
 
 ### Acceptance Criteria
-- [ ] Triggers only on push to `main`
+- [ ] `workflow_dispatch` with `USER_ALIAS` as required string input
 - [ ] OIDC federation (zero secrets)
+- [ ] Passes `userAlias` through to Bicep
+- [ ] All resources created in `rg-HelkinSwarm-{alias}` with `-{alias}` suffix
 - [ ] Bicep deployment respects `euResidencyMode` parameter
 - [ ] Docker image built and pushed to `helkinswarmacr`
 - [ ] Container Apps revision updated with zero downtime
-- [ ] Health check runs post-deployment; pipeline fails if unhealthy
-- [ ] SkillForge base image synced when Dockerfile changes
+- [ ] Post-deploy health gate hits `/api/health` — pipeline fails if unhealthy
+- [ ] No `cd.yml` exists in the repository — this is the only deploy workflow
 '@
 
-$n['cd'] = New-GhIssue -Title "CD pipeline - Bicep deploy, Docker build, ACR push, Container Apps update" -Body $body -Labels @('infra','mvp') -Milestone $M_BOOT
+$n['cd'] = New-GhIssue -Title "Stamped deployment pipeline (deploy-stamp.yml) with USER_ALIAS input" -Body $body -Labels @('infra','mvp') -Milestone $M_BOOT
 
 $body = @'
 ## Teams App Manifest & Package Script
@@ -356,16 +398,179 @@ $body = @'
 
 $n['localdev'] = New-GhIssue -Title "Local development setup & bootstrap guide" -Body $body -Labels @('infra','documentation','mvp') -Milestone $M_BOOT
 
+$body = @'
+## config/user-map.json — User-to-Stamp Mapping File
+
+**Spec Reference:** 0q-Multi-Instance-Architecture.md
+
+### Architectural Context
+This file is the lookup table that connects user identity to stamped infrastructure. The Global Router reads it to determine which stamp handles a given user. The deploy-stamp.yml workflow references it to know which alias to deploy. It is source-controlled, never contains secrets, and is the single source of truth for user-to-stamp mapping.
+
+### Schema
+```json
+{
+  "eric@putersdcat.com": {
+    "guid": "123e4567-e89b-12d3-a456-426614174000",
+    "alias": "a7f2",
+    "rg": "rg-HelkinSwarm-a7f2",
+    "status": "active"
+  }
+}
+```
+Map: email UPN → `{ guid, alias, rg, status }`
+
+### Invariants
+- Never contains secrets — UPN, alias, and resource group names only
+- Source-controlled in Git at `config/user-map.json`
+- Used by both the Global Router and deploy-stamp.yml
+
+### Acceptance Criteria
+- [ ] File exists at `config/user-map.json` in the repo root
+- [ ] Contains at least one seed entry (the owner)
+- [ ] Schema: email UPN key → `{ guid: string, alias: string, rg: string, status: "active" | "suspended" }`
+- [ ] Zod schema validates the file at startup
+- [ ] No secrets, tokens, or passwords in the file
+- [ ] Referenced by Global Router for UPN-to-stamp lookup
+- [ ] Referenced by deploy-stamp.yml documentation
+'@
+
+$n['usermap'] = New-GhIssue -Title "config/user-map.json - user-to-stamp mapping file" -Body $body -Labels @('infra','mvp') -Milestone $M_BOOT
+
+# --- Agent System Epic (completed in Phase 0, commit be9e4e5) ---
+
+$body = @'
+## Epic: Agent Definitions & Instruction System
+
+**Phase:** 0 - Bootstrap | **Milestone:** v0.0
+**Spec References:** docs/Delivery/02-Agent-Definitions-and-Instruction-System.md
+
+### Note
+This epic was completed during Phase 0 in commit `be9e4e5`. The agent files (.github/agents/) and instruction system (.github/instructions/) are live. This issue is created closed for backlog traceability.
+
+### Success Criteria
+- [x] 3 agent files created (AzureAgent, BasicBitch, DevLoop)
+- [x] 12 instruction files created per spec
+- [x] Root copilot-instructions.md updated
+- [x] All cross-reference living specification
+- [x] Referenced in DevLoop ignition prompt
+'@
+
+$n['epic_agent'] = New-GhIssue -Title "[EPIC] Agent Definitions & Instruction System" -Body $body -Labels @('epic','agent-system') -Milestone $M_BOOT
+
+# Immediately close the agent system epic since it was completed in Phase 0
+if ($n['epic_agent']) {
+    & gh issue close $n['epic_agent'] --comment "Completed in Phase 0. Commit: be9e4e5. Agent files and instruction system are live."
+    Write-Host "  CLOSED #$($n['epic_agent']) (completed in Phase 0)" -ForegroundColor Yellow
+}
+
 Start-Sleep -Seconds 2
 
 # ================================================================
-Write-Host "`n=== PHASE 1 (v0.1) CORE RUNTIME & TEAMS ===" -ForegroundColor Cyan
+Write-Host "`n=== PHASE 0.75 (v0.1) ARCHITECTURE RESEARCH GATE ===" -ForegroundColor Cyan
+# ================================================================
+
+$body = @'
+## [ARCH DECISION] Global Router Architecture
+
+**Phase:** 0.75 - Architecture Research Gate | **Milestone:** v0.1
+**Spec References:** 0q-Multi-Instance-Architecture.md, 03-Tech-Stack-Infrastructure.md, 10-Teams-Interface.md
+
+### Architectural Context
+The Global Router is the front door of the digital body — the single permanent HTTPS endpoint that Teams talks to. It receives every inbound Bot Framework activity and routes it to the correct stamped user instance. This decision shapes the cost model, latency profile, and operational complexity of the entire system.
+
+### Research Required
+1. **Routing approach** — evaluate and choose ONE:
+   - Azure Functions HTTP trigger (Consumption plan — near-zero idle cost)
+   - Azure API Management (Consumption tier)
+   - Azure Front Door
+   - Container Apps job
+2. **UPN extraction method** — how to extract the user's email/UPN from the Bot Framework activity payload (`activity.from.id`, `activity.from.aadObjectId`, OBO token claims)
+3. **Cost model** — document expected monthly cost at personal scale (< 100 requests/day)
+4. **Rejected alternatives** — document what was NOT chosen and why
+
+### Invariants
+- Multi-instance stamping is table stakes (0q) — the router looks up `config/user-map.json` and proxies to the correct stamp
+- UAMI only — no client secrets, no PATs (doc 11)
+- Global frontier models default — model names never hardcoded (06)
+
+### Acceptance Criteria
+- [ ] Decision document written as a comment on this issue
+- [ ] Chosen approach, cost model, and UPN extraction method documented
+- [ ] Rejected alternatives with rationale documented
+- [ ] This issue is approved (closed) before ANY Phase 1 infrastructure code is written
+
+> **GATE:** Zero code is written until this issue is approved and closed.
+'@
+
+$n['arch_router'] = New-GhIssue -Title "[ARCH DECISION] Global Router Architecture" -Body $body -Labels @('infrastructure','architecture') -Milestone $M_RESEARCH
+
+$body = @'
+## [ARCH DECISION] Multi-Instance Stamping Parameterization Design
+
+**Phase:** 0.75 - Architecture Research Gate | **Milestone:** v0.1
+**Spec References:** 0q-Multi-Instance-Architecture.md, 03-Tech-Stack-Infrastructure.md, 12-Deployment-CICD.md
+
+### Architectural Context
+Multi-instance stamping is how the digital body scales to serve multiple users without shared state. Each user gets their own isolated resource group, their own Cosmos DB, their own Function App. The stamping parameterization design determines the naming conventions, the deployment workflow inputs, and the router-to-stamp lookup flow. Getting this wrong means painful renames and broken deployments later.
+
+### Decisions Required
+1. **`userAlias` convention** — short alphanumeric string (e.g. `a7f2`), max length, character set, how assigned
+2. **Resource naming table** — document the exact name for every Azure resource:
+   | Resource Type | Naming Pattern |
+   |---------------|----------------|
+   | Resource Group | `rg-HelkinSwarm-{alias}` |
+   | Function App | `helkinswarm-func-{alias}` |
+   | Cosmos DB | `helkinswarm-cosmos-{alias}` |
+   | Key Vault | `helkinswarm-kv-{alias}` |
+   | UAMI | `helkinswarm-uami-{alias}` |
+   | ACR | `helkinswarmacr` (shared) |
+   | Container Apps Env | `helkinswarm-cae-{alias}` |
+   | AI Services | `helkinswarm-ai-{alias}` |
+   | Bot Service | `helkinswarm-bot-{alias}` |
+   | App Insights | `helkinswarm-appi-{alias}` |
+3. **`config/user-map.json` schema** — source-controlled file, never contains secrets:
+   ```json
+   {
+     "eric@putersdcat.com": {
+       "guid": "123e4567-e89b-12d3-a456-426614174000",
+       "alias": "a7f2",
+       "rg": "rg-HelkinSwarm-a7f2",
+       "status": "active"
+     }
+   }
+   ```
+   Map: email UPN → `{ guid, alias, rg, status }`
+4. **`deploy-stamp.yml` workflow inputs** — `workflow_dispatch` with `USER_ALIAS` as required string input, passes through to Bicep as `userAlias`
+5. **Router-to-stamp lookup flow** — router reads `user-map.json`, extracts alias from UPN, proxies to `https://helkinswarm-func-{alias}.azurewebsites.net/api/messages`
+
+### Invariants
+- Multi-instance stamping is table stakes from day one (0q)
+- `deploy-stamp.yml` is the ONLY deployment path — there is no `cd.yml`
+- EU residency is a single Bicep parameter — must propagate to every resource with zero code changes (0q, 03)
+- UAMI only — no client secrets, no PATs (doc 11)
+
+### Acceptance Criteria
+- [ ] Resource naming table documented and approved
+- [ ] `config/user-map.json` schema documented and approved
+- [ ] `deploy-stamp.yml` inputs documented and approved
+- [ ] Router-to-stamp lookup flow documented and approved
+- [ ] This issue is approved (closed) before ANY Phase 1 infrastructure code is written
+
+> **GATE:** Zero code is written until this issue is approved and closed.
+'@
+
+$n['arch_stamp'] = New-GhIssue -Title "[ARCH DECISION] Multi-Instance Stamping Parameterization Design" -Body $body -Labels @('infrastructure','architecture') -Milestone $M_RESEARCH
+
+Start-Sleep -Seconds 2
+
+# ================================================================
+Write-Host "`n=== PHASE 1 (v0.2) STAMPED INFRA & CORE ===" -ForegroundColor Cyan
 # ================================================================
 
 $body = @'
 ## Epic: Teams Bot Interface
 
-**Phase:** 1 - Core Runtime & Teams Interface | **Milestone:** v0.1
+**Phase:** 1 - Stamped Infra & Core | **Milestone:** v0.2
 **Spec References:** 10-Teams-Interface.md, 0e (safety gates), 0h (durable hooks)
 
 ### Success Criteria
@@ -488,7 +693,7 @@ $n['maint'] = New-GhIssue -Title "Maintenance mode & emergency stop/resume endpo
 $body = @'
 ## Epic: Authentication & Identity
 
-**Phase:** 1 - Core Runtime | **Milestone:** v0.1
+**Phase:** 1 - Stamped Infra & Core | **Milestone:** v0.2
 **Spec References:** 11-Authentication-Identity.md, 0d, 0e
 
 ### Success Criteria
@@ -587,7 +792,7 @@ $n['onboard'] = New-GhIssue -Title "User onboarding flow - Entra consent & deleg
 $body = @'
 ## Epic: E2E Testing Foundation
 
-**Phase:** 1 - Core Runtime | **Milestone:** v0.1
+**Phase:** 1 - Stamped Infra & Core | **Milestone:** v0.2
 **Spec References:** 14-Testing-E2E.md
 
 ### Success Criteria
@@ -626,13 +831,112 @@ $n['harness'] = New-GhIssue -Title "Teams Test Harness MCP server implementation
 Start-Sleep -Seconds 2
 
 # ================================================================
-Write-Host "`n=== PHASE 2 (v0.2) ORCHESTRATION ===" -ForegroundColor Cyan
+Write-Host "`n=== PHASE 2 (v0.3) ORCHESTRATION & GLOBAL ROUTER ===" -ForegroundColor Cyan
 # ================================================================
+
+# --- Global Router ---
+
+$body = @'
+## Epic: Global Teams Router
+
+**Phase:** 2 - Eternal Brain & Router | **Milestone:** v0.3
+**Spec References:** 0q-Multi-Instance-Architecture.md, 10-Teams-Interface.md
+
+### Architectural Context
+The Global Router is the single permanent HTTPS endpoint registered in the Bot Service. It receives all inbound Bot Framework activities from Teams and routes them to the correct stamped user instance. The routing decision chosen in the [ARCH DECISION] Global Router Architecture issue is implemented here.
+
+### Success Criteria
+- [ ] Single permanent endpoint registered in Bot Service
+- [ ] Reads `config/user-map.json` for UPN-to-stamp lookup
+- [ ] Extracts user identity from Bot Framework activity payload
+- [ ] Proxies request to correct stamped Function App endpoint
+- [ ] Returns 404/503 for unknown or suspended users
+- [ ] Health endpoint for router itself
+- [ ] UAMI authentication — no secrets
+'@
+
+$n['epic_router'] = New-GhIssue -Title "[EPIC] Global Teams Router" -Body $body -Labels @('epic','infrastructure','mvp') -Milestone $M_ORCH
+
+$body = @'
+## src/router/routerFunction.ts — Router HTTP Trigger
+
+**Spec Reference:** 0q-Multi-Instance-Architecture.md, 10-Teams-Interface.md
+
+### Implementation
+- Azure Functions HTTP trigger (or chosen approach from ARCH DECISION)
+- Reads `config/user-map.json` on startup (cached, refreshed on timer)
+- Extracts UPN from Bot Framework activity (`activity.from.aadObjectId` → Graph lookup, or `activity.from.id`)
+- Looks up stamp alias from user-map
+- Proxies full request body to `https://helkinswarm-func-{alias}.azurewebsites.net/api/messages`
+- Returns proxied response to Teams
+
+### Acceptance Criteria
+- [ ] HTTP trigger at `/api/messages` on the router Function App
+- [ ] UPN extraction works for Teams personal-scope messages
+- [ ] Lookup in user-map returns correct stamp alias
+- [ ] Proxy forwards full request body and headers
+- [ ] Returns 404 for unknown users with descriptive error
+- [ ] Returns 503 for suspended stamps
+- [ ] Cached user-map with configurable refresh interval
+- [ ] UAMI only — no connection strings or secrets
+'@
+
+$n['router_func'] = New-GhIssue -Title "src/router/routerFunction.ts - HTTP trigger routing to stamps" -Body $body -Labels @('infrastructure','teams','mvp') -Milestone $M_ORCH
+
+$body = @'
+## infra/main-router.bicep & deploy-router.yml — Router Infrastructure
+
+**Spec Reference:** 0q-Multi-Instance-Architecture.md, 12-Deployment-CICD.md
+
+### Resources
+- Separate resource group: `rg-HelkinSwarm-router`
+- Function App (Consumption): `helkinswarm-router`
+- Bot Service: `helkinswarm-bot-router` (the ONLY Bot Service registered in Teams manifest)
+- UAMI: `helkinswarm-uami-router`
+- App Insights: `helkinswarm-appi-router`
+
+### Workflow
+- `deploy-router.yml`: push-to-main trigger (router updates are global)
+- Deploys `infra/main-router.bicep`
+- Builds and deploys router Function App
+- Post-deploy health gate
+
+### Acceptance Criteria
+- [ ] Separate Bicep template for router (`infra/main-router.bicep`)
+- [ ] Separate workflow (`deploy-router.yml`) triggered on push to main
+- [ ] Bot Service messaging endpoint points to router Function App
+- [ ] UAMI with minimal RBAC roles
+- [ ] Health check on `/api/health`
+- [ ] Consumption tier for near-zero idle cost
+'@
+
+$n['router_infra'] = New-GhIssue -Title "infra/main-router.bicep & deploy-router.yml - router infrastructure" -Body $body -Labels @('infrastructure','mvp') -Milestone $M_ORCH
+
+$body = @'
+## Update manifest.json — Single Messaging Endpoint to Router
+
+**Spec Reference:** 0q-Multi-Instance-Architecture.md, 10-Teams-Interface.md
+
+### Context
+The Teams app manifest must point to the Global Router's Bot Service, NOT to individual stamps. There is exactly ONE bot registration in Teams — the router.
+
+### Acceptance Criteria
+- [ ] `manifest.json` bot ID points to router Bot Service
+- [ ] Messaging endpoint is the router Function App FQDN
+- [ ] No individual stamp endpoints in the manifest
+- [ ] Teams app package validates in Developer Portal
+'@
+
+$n['manifest_router'] = New-GhIssue -Title "Update manifest.json - single messaging endpoint to Global Router" -Body $body -Labels @('teams','infrastructure','mvp') -Milestone $M_ORCH
+
+Start-Sleep -Seconds 2
+
+# --- Orchestration ---
 
 $body = @'
 ## Epic: Eternal Overseer & Session Orchestration
 
-**Phase:** 2 - Eternal Brain | **Milestone:** v0.2
+**Phase:** 2 - Eternal Brain & Router | **Milestone:** v0.3
 **Spec References:** 08-Orchestrator-Patterns.md, 0h (durable hooks)
 
 ### Success Criteria
@@ -738,13 +1042,13 @@ $n['prompt'] = New-GhIssue -Title "Prompt builder - persona + history + tools as
 Start-Sleep -Seconds 2
 
 # ================================================================
-Write-Host "`n=== PHASE 3 (v0.3) LLM, TOOLS & SAFETY ===" -ForegroundColor Cyan
+Write-Host "`n=== PHASE 3 (v0.4) LLM, TOOLS & SAFETY ===" -ForegroundColor Cyan
 # ================================================================
 
 $body = @'
 ## Epic: LLM Layer & Model Routing
 
-**Phase:** 3 | **Milestone:** v0.3
+**Phase:** 3 - LLM & Safety | **Milestone:** v0.4
 **Spec References:** 06-Tool-Dispatch-LLM-Layer.md, 0b, 0c
 
 ### Success Criteria
@@ -822,7 +1126,7 @@ $n['subagent'] = New-GhIssue -Title "Sub-agent isolation - fresh LLM sessions pe
 $body = @'
 ## Epic: Capabilities Framework & Tool Dispatch
 
-**Phase:** 3 | **Milestone:** v0.3
+**Phase:** 3 - LLM & Safety | **Milestone:** v0.4
 **Spec References:** 05-Capabilities-Framework.md, 0a-Modularity-and-Config.md
 
 ### Success Criteria
@@ -920,7 +1224,7 @@ $n['schema'] = New-GhIssue -Title "Capability manifest Zod schema & TypeScript t
 $body = @'
 ## Epic: Safety & Four-Eyes Verification Pipeline
 
-**Phase:** 3 | **Milestone:** v0.3
+**Phase:** 3 - LLM & Safety | **Milestone:** v0.4
 **Spec References:** 04-Safety-Architecture.md, 0e-Safety-and-Four-Eyes-Verification-Pipeline.md, 0d
 
 ### Pipeline Steps (sequential, all mandatory)
@@ -1585,72 +1889,6 @@ $body = @'
 
 $n['alerts'] = New-GhIssue -Title "P0 alerting rules in Bicep (EU violation, emergency stop, rate limits)" -Body $body -Labels @('observability','infra','mvp') -Milestone $M_MVP
 
-# --- Agent System Epic ---
-
-$body = @'
-## Epic: Agent Definitions & Instruction System
-
-**Phase:** 4 | **Milestone:** v1.0
-**Spec References:** docs/Delivery/02-Agent-Definitions-and-Instruction-System.md
-
-### Success Criteria
-- [ ] 3 agent files created (AzureAgent, BasicBitch, DevLoop)
-- [ ] 12 instruction files created per spec
-- [ ] Root copilot-instructions.md updated
-- [ ] All cross-reference living specification
-- [ ] Referenced in DevLoop ignition prompt
-'@
-
-$n['epic_agent'] = New-GhIssue -Title "[EPIC] Agent Definitions & Instruction System" -Body $body -Labels @('epic','agent-system','mvp') -Milestone $M_MVP
-
-$body = @'
-## Create .github/agents/ - Agent Personas
-
-**Spec Reference:** 02-Agent-Definitions-and-Instruction-System.md Section 2
-
-### Agents
-- **AzureAgent.agent.md** - Execution engine for infrastructure/resource management
-- **BasicBitch.agent.md** - General-purpose iterative task executor
-- **DevLoop.agent.md** - IDE-side self-improvement partner (TIK-TOK cycle, radio protocol)
-
-### Acceptance Criteria
-- [ ] Each agent is self-contained with clear persona
-- [ ] References living specification (01-16 + 0a-0m)
-- [ ] References the two Never-Close issues
-- [ ] Loadable by DevLoop, SkillForge, or external MCP server
-'@
-
-$n['agents'] = New-GhIssue -Title "Create .github/agents/ - AzureAgent, BasicBitch, DevLoop personas" -Body $body -Labels @('agent-system','mvp') -Milestone $M_MVP
-
-$body = @'
-## Create .github/instructions/ - Domain-Specific Rules
-
-**Spec Reference:** 02-Agent-Definitions-and-Instruction-System.md Section 3
-
-### Files
-1. `bot-framework.instructions.md`
-2. `cicd.instructions.md`
-3. `codebase-structure.instructions.md`
-4. `devloop-harness.instructions.md`
-5. `identity-auth.instructions.md`
-6. `integration-manifests.instructions.md`
-7. `llm-models.instructions.md`
-8. `mcp-skills.instructions.md`
-9. `memory-cosmos.instructions.md`
-10. `orchestrator-patterns.instructions.md`
-11. `safety-architecture.instructions.md`
-12. `teams-testing.instructions.md`
-
-### Acceptance Criteria
-- [ ] Each file starts with clear Critical Rule or Fundamental Constraint
-- [ ] Includes Always and Never sections
-- [ ] Cross-references relevant spec section
-- [ ] Referenced in DevLoop ignition prompt
-- [ ] Reviewed in recurring maintenance passes
-'@
-
-$n['instr'] = New-GhIssue -Title "Create .github/instructions/ - 12 domain-specific rule files" -Body $body -Labels @('agent-system','mvp') -Milestone $M_MVP
-
 # --- Ethos Epic ---
 
 $body = @'
@@ -1967,9 +2205,10 @@ $masterBody = @"
 ### Phase Tracking
 - [ ] **Phase 0 (v0.0)** - Bootstrap: Repo scaffold, Bicep, CI/CD, health endpoint
 - [ ] **Phase 0.5** - Backlog Initialization: Full GitHub issue backlog created
-- [ ] **Phase 1 (v0.1)** - Core Runtime: Teams bot, auth, E2E testing foundation
-- [ ] **Phase 2 (v0.2)** - Orchestration: Eternal overseer, session orchestrator
-- [ ] **Phase 3 (v0.3)** - LLM & Safety: Model routing, tool dispatch, four-eyes pipeline
+- [ ] **Phase 0.75 (v0.1)** - Architecture Research Gate: Router & stamping decisions
+- [ ] **Phase 1 (v0.2)** - Stamped Infra & Core: Teams bot, auth, E2E testing
+- [ ] **Phase 2 (v0.3)** - Orchestration & Router: Eternal overseer, Global Router, session orchestrator
+- [ ] **Phase 3 (v0.4)** - LLM & Safety: Model routing, tool dispatch, four-eyes pipeline
 - [ ] **Phase 4 (v1.0)** - MVP Complete: Memory, SkillForge, Hydra-Net, observability
 - [ ] **Phase 5 (v1.1+)** - Self-Improvement: DevLoop relay, self-tuning, VEs, BYOK
 
@@ -1978,10 +2217,18 @@ $masterBody = @"
 - #$($n['nc2']) - Architecture & Design Introspection Pass
 
 ### Living Specification
-All issues trace directly back to the living specification (docs/01-16 + 0a-0m) and the delivery documents (docs/Delivery/).
+All issues trace directly back to the living specification (docs/01-16 + 0a-0q) and the delivery documents (docs/Delivery/).
 "@
 
-$n['master'] = New-GhIssue -Title "[MASTER] Development & Delivery Plan Tracker" -Body $masterBody -Labels @('epic','documentation') -Milestone $M_BOOT
+# Guard: if Issue #1 already exists, comment on it instead of creating a new master tracker
+$existingIssue1 = & gh issue view 1 --json number --jq '.number' 2>$null
+if ($existingIssue1 -eq '1') {
+    Write-Host "  Issue #1 already exists — adding backlog summary as comment" -ForegroundColor Yellow
+    & gh issue comment 1 --body $masterBody
+    $n['master'] = 1
+} else {
+    $n['master'] = New-GhIssue -Title "[MASTER] Development & Delivery Plan Tracker" -Body $masterBody -Labels @('epic','documentation') -Milestone $M_BOOT
+}
 
 Write-Host "`n=== COMPLETE ===" -ForegroundColor Cyan
 Write-Host "Total issues created: $($n.Count)" -ForegroundColor Green
