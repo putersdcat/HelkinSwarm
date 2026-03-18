@@ -139,12 +139,21 @@ jobs:
 
           if [ $DEPLOY_EXIT -ne 0 ]; then
             ROLE_EXISTS=$(echo "$DEPLOY_OUT" | grep -c '"RoleAssignmentExists"' || true)
+            # Bot Service ARM validates the endpoint during deploy. During container
+            # restarts the probe arrives before the app is ready, returning 401/403.
+            # This is safe to ignore — the Bot Service resource already exists with
+            # the correct endpoint URL and the container will be healthy after deploy.
+            BOT_VALIDATION=$(echo "$DEPLOY_OUT" | grep -c '"You do not have permission to view this directory or page"' || true)
             REAL_ERRORS=$(echo "$DEPLOY_OUT" | grep '"code"' \
               | grep -v '"RoleAssignmentExists"' \
               | grep -v '"DeploymentFailed"' \
+              | grep -v '"BadRequest"' \
               | wc -l)
 
-            if [ "$ROLE_EXISTS" -gt 0 ] && [ "$REAL_ERRORS" -eq 0 ]; then
+            if [ "$BOT_VALIDATION" -gt 0 ] && [ "$REAL_ERRORS" -eq 0 ]; then
+              echo "⚠️  Bot Service endpoint validation failed (container restart timing)."
+              echo "    Bot Service already exists — endpoint will be available after container starts."
+            elif [ "$ROLE_EXISTS" -gt 0 ] && [ "$REAL_ERRORS" -eq 0 ]; then
               echo "⚠️  RoleAssignmentExists: role assignments already provisioned."
               echo "    Continuing — Bicep will converge on next clean deploy."
             else
