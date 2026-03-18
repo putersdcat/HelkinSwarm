@@ -86,13 +86,16 @@ Multi-instance stamping is built in from day one. There is no "plain" deployment
    - `config/user-map.json` at repo root (source-controlled, no secrets):
      ```json
      {
-       "eric@putersdcat.com": {
-         "guid": "123e4567-e89b-12d3-a456-426614174000",
-         "alias": "a7f2",
-         "rg": "rg-HelkinSwarm-a7f2",
-         "status": "active"
-       }
-     }
+      "version": 1,
+      "users": {
+         "123e4567-e89b-12d3-a456-426614174000": {
+            "alias": "a7f2",
+            "upn": "eric@putersdcat.com",
+            "endpoint": "https://helkinswarm-func-a7f2.placeholder.eastus2.azurecontainerapps.io/api/messages",
+            "enabled": true
+         }
+      }
+      }
      ```
    - `infra/main.bicep` — accepts `userAlias` parameter (required, no default); every resource name suffixed `-${userAlias}`. Full stack: UAMI, Container Apps, Cosmos DB, AI Foundry, Key Vault, Bot Service, App Insights. `euResidencyMode` flag defaults false; FreedomMode (`eastus2`) is the default.
    - `infra/main.parameters.json`

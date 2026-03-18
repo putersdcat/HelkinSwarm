@@ -31,10 +31,13 @@ let sharedAdapter: HelkinSwarmAdapter | undefined;
 export function createAdapter(): HelkinSwarmAdapter {
   if (sharedAdapter) return sharedAdapter;
 
+  const appId = process.env['MicrosoftAppId'] ?? process.env['MICROSOFT_APP_ID'] ?? '';
+  const tenantId = process.env['MicrosoftAppTenantId'] ?? process.env['MICROSOFT_APP_TENANT_ID'] ?? '';
+
   const auth = new ConfigurationBotFrameworkAuthentication({
-    MicrosoftAppId: process.env['MicrosoftAppId'] ?? '',
+    MicrosoftAppId: appId,
     MicrosoftAppType: 'UserAssignedMSI',
-    MicrosoftAppTenantId: process.env['MicrosoftAppTenantId'] ?? '',
+    MicrosoftAppTenantId: tenantId,
   });
 
   sharedAdapter = new HelkinSwarmAdapter(auth);

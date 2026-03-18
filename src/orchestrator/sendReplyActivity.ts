@@ -24,10 +24,13 @@ let adapterInstance: CloudAdapter | undefined;
 
 function getAdapter(): CloudAdapter {
   if (!adapterInstance) {
+    const appId = process.env['MicrosoftAppId'] ?? process.env['MICROSOFT_APP_ID'] ?? '';
+    const tenantId = process.env['MicrosoftAppTenantId'] ?? process.env['MICROSOFT_APP_TENANT_ID'] ?? '';
+
     const auth = new ConfigurationBotFrameworkAuthentication({
-      MicrosoftAppId: process.env['MicrosoftAppId'] ?? '',
+      MicrosoftAppId: appId,
       MicrosoftAppType: 'UserAssignedMSI',
-      MicrosoftAppTenantId: process.env['MicrosoftAppTenantId'] ?? '',
+      MicrosoftAppTenantId: tenantId,
     });
     adapterInstance = new CloudAdapter(auth);
   }
@@ -37,8 +40,9 @@ function getAdapter(): CloudAdapter {
 async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
   try {
     const adapter = getAdapter();
+    const appId = process.env['MicrosoftAppId'] ?? process.env['MICROSOFT_APP_ID'] ?? '';
     await adapter.continueConversationAsync(
-      process.env['MicrosoftAppId'] ?? '',
+      appId,
       input.conversationReference as ConversationReference,
       async (turnContext) => {
         await turnContext.sendActivity(input.message);

@@ -12,9 +12,6 @@ import type { Activity } from 'botbuilder';
 import { createAdapter } from '../bot/adapter.js';
 import { HelkinSwarmBot } from '../bot/HelkinSwarmBot.js';
 
-const adapter = createAdapter();
-const bot = new HelkinSwarmBot();
-
 app.http('messages', {
   methods: ['POST'],
   authLevel: 'anonymous',
@@ -25,6 +22,9 @@ app.http('messages', {
     context: InvocationContext,
   ): Promise<HttpResponseInit> => {
     context.log('Received bot message webhook');
+
+    const adapter = createAdapter();
+    const bot = new HelkinSwarmBot();
 
     // Inject the Durable client into the bot handler
     const durableClient = df.getClient(context);
