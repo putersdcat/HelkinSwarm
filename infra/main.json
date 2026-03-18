@@ -1,0 +1,973 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.41.2.15936",
+      "templateHash": "9834754539190802882"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "eastus2",
+      "metadata": {
+        "description": "Primary deployment location — FreedomMode: US-centric, global frontier models"
+      }
+    },
+    "euResidencyMode": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "EU Data Residency toggle. false = GlobalStandard (frontier), true = DataZoneStandard (EU)"
+      }
+    },
+    "llmProvider": {
+      "type": "string",
+      "defaultValue": "azure",
+      "allowedValues": [
+        "azure",
+        "openrouter"
+      ],
+      "metadata": {
+        "description": "LLM provider. azure = AI Foundry, openrouter = BYOK proxy"
+      }
+    },
+    "userPrincipalId": {
+      "type": "string",
+      "metadata": {
+        "description": "Object ID of the owner/operator (for Key Vault admin role)"
+      }
+    },
+    "alertEmail": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Owner email for P0 alert notifications"
+      }
+    }
+  },
+  "variables": {
+    "suffix": "prod-eus2",
+    "uamiName": "[format('helkinswarm-id-{0}', variables('suffix'))]",
+    "lawName": "[format('helkinswarm-law-{0}', variables('suffix'))]",
+    "appInsName": "[format('helkinswarm-appins-{0}', variables('suffix'))]",
+    "kvName": "[format('helkinswarm-kv-{0}', variables('suffix'))]",
+    "acrName": "helkinswarmacr",
+    "stName": "helkinswarmst",
+    "cosmosName": "helkinswarm-cosmos",
+    "aisName": "[format('helkinswarm-ais-{0}', variables('suffix'))]",
+    "caeName": "[format('helkinswarm-cae-{0}', variables('suffix'))]",
+    "funcName": "[format('helkinswarm-func-{0}', variables('suffix'))]",
+    "botName": "[format('helkinswarm-bot-{0}', variables('suffix'))]",
+    "roleKvSecretsUser": "4633458b-17de-408a-b874-0445c86b69e6",
+    "roleKvAdmin": "00482a5a-887f-4fb3-b363-3b7fe8e74483",
+    "roleAcrPull": "7f951dda-4ed3-4680-a7ca-43fe172d538d",
+    "roleCognitiveServicesUser": "a97b65f3-24c7-4388-baec-2e87135dc908",
+    "roleStorageBlobDataOwner": "b7e6dc6d-f1e8-4753-8033-0f276bb0955b",
+    "roleStorageQueueContributor": "974c5e8b-45b9-4653-ba55-5f855dd0fb88",
+    "roleStorageTableContributor": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3",
+    "cosmosDataContributorRoleId": "00000000-0000-0000-0000-000000000002",
+    "llmPrimary": "[if(parameters('euResidencyMode'), 'gpt-5', 'grok-4-1-fast-reasoning')]",
+    "llmSecondary": "[if(parameters('euResidencyMode'), 'gpt-5-mini', 'grok-4-1-fast')]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2023-09-01",
+      "name": "[variables('lawName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "sku": {
+          "name": "PerGB2018"
+        },
+        "retentionInDays": 30
+      }
+    },
+    {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "[variables('appInsName')]",
+      "location": "[parameters('location')]",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web",
+        "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('lawName'))]",
+        "DisableIpMasking": false,
+        "RetentionInDays": 30
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', variables('lawName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2023-01-31",
+      "name": "[variables('uamiName')]",
+      "location": "[parameters('location')]"
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2023-05-01",
+      "name": "[variables('stName')]",
+      "location": "[parameters('location')]",
+      "kind": "StorageV2",
+      "sku": {
+        "name": "Standard_LRS"
+      },
+      "properties": {
+        "minimumTlsVersion": "TLS1_2",
+        "supportsHttpsTrafficOnly": true,
+        "allowBlobPublicAccess": false
+      }
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2023-07-01",
+      "name": "[variables('kvName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "tenantId": "[subscription().tenantId]",
+        "enableRbacAuthorization": true,
+        "enableSoftDelete": true,
+        "softDeleteRetentionInDays": 90,
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.ContainerRegistry/registries",
+      "apiVersion": "2023-07-01",
+      "name": "[variables('acrName')]",
+      "location": "[parameters('location')]",
+      "sku": {
+        "name": "Basic"
+      },
+      "properties": {
+        "adminUserEnabled": false
+      }
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts",
+      "apiVersion": "2024-05-15",
+      "name": "[variables('cosmosName')]",
+      "location": "[parameters('location')]",
+      "kind": "GlobalDocumentDB",
+      "properties": {
+        "databaseAccountOfferType": "Standard",
+        "locations": [
+          {
+            "locationName": "[parameters('location')]",
+            "failoverPriority": 0
+          }
+        ],
+        "capabilities": [
+          {
+            "name": "EnableServerless"
+          }
+        ],
+        "consistencyPolicy": {
+          "defaultConsistencyLevel": "Session"
+        }
+      }
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}/{1}', variables('cosmosName'), 'helkinswarm')]",
+      "properties": {
+        "resource": {
+          "id": "helkinswarm"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}/{1}/{2}', variables('cosmosName'), 'helkinswarm', 'userProfiles')]",
+      "properties": {
+        "resource": {
+          "id": "userProfiles",
+          "partitionKey": {
+            "paths": [
+              "/userId"
+            ],
+            "kind": "Hash"
+          },
+          "defaultTtl": -1
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', variables('cosmosName'), 'helkinswarm')]"
+      ]
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}/{1}/{2}', variables('cosmosName'), 'helkinswarm', 'sessions')]",
+      "properties": {
+        "resource": {
+          "id": "sessions",
+          "partitionKey": {
+            "paths": [
+              "/sessionId"
+            ],
+            "kind": "Hash"
+          },
+          "defaultTtl": 259200
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', variables('cosmosName'), 'helkinswarm')]"
+      ]
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}/{1}/{2}', variables('cosmosName'), 'helkinswarm', 'multimodalMemory')]",
+      "properties": {
+        "resource": {
+          "id": "multimodalMemory",
+          "partitionKey": {
+            "paths": [
+              "/userId"
+            ],
+            "kind": "Hash"
+          },
+          "defaultTtl": 31536000
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', variables('cosmosName'), 'helkinswarm')]"
+      ]
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}/{1}/{2}', variables('cosmosName'), 'helkinswarm', 'durableHooks')]",
+      "properties": {
+        "resource": {
+          "id": "durableHooks",
+          "partitionKey": {
+            "paths": [
+              "/userId"
+            ],
+            "kind": "Hash"
+          },
+          "defaultTtl": 31536000
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', variables('cosmosName'), 'helkinswarm')]"
+      ]
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}/{1}/{2}', variables('cosmosName'), 'helkinswarm', 'ide-messages')]",
+      "properties": {
+        "resource": {
+          "id": "ide-messages",
+          "partitionKey": {
+            "paths": [
+              "/correlationTag"
+            ],
+            "kind": "Hash"
+          },
+          "defaultTtl": 86400
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', variables('cosmosName'), 'helkinswarm')]"
+      ]
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}/{1}/{2}', variables('cosmosName'), 'helkinswarm', 'conversationReferences')]",
+      "properties": {
+        "resource": {
+          "id": "conversationReferences",
+          "partitionKey": {
+            "paths": [
+              "/conversationId"
+            ],
+            "kind": "Hash"
+          },
+          "defaultTtl": -1
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', variables('cosmosName'), 'helkinswarm')]"
+      ]
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}/{1}/{2}', variables('cosmosName'), 'helkinswarm', 'virtualEmployees')]",
+      "properties": {
+        "resource": {
+          "id": "virtualEmployees",
+          "partitionKey": {
+            "paths": [
+              "/userId"
+            ],
+            "kind": "Hash"
+          },
+          "defaultTtl": -1
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', variables('cosmosName'), 'helkinswarm')]"
+      ]
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}/{1}/{2}', variables('cosmosName'), 'helkinswarm', 'runtimeConfig')]",
+      "properties": {
+        "resource": {
+          "id": "runtimeConfig",
+          "partitionKey": {
+            "paths": [
+              "/scope"
+            ],
+            "kind": "Hash"
+          },
+          "defaultTtl": -1
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts/sqlDatabases', variables('cosmosName'), 'helkinswarm')]"
+      ]
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts",
+      "apiVersion": "2024-10-01",
+      "name": "[variables('aisName')]",
+      "location": "[parameters('location')]",
+      "kind": "AIServices",
+      "sku": {
+        "name": "S0"
+      },
+      "properties": {
+        "customSubDomainName": "[toLower(variables('aisName'))]",
+        "publicNetworkAccess": "Enabled"
+      }
+    },
+    {
+      "type": "Microsoft.App/managedEnvironments",
+      "apiVersion": "2024-03-01",
+      "name": "[variables('caeName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "appLogsConfiguration": {
+          "destination": "log-analytics",
+          "logAnalyticsConfiguration": {
+            "customerId": "[reference(resourceId('Microsoft.OperationalInsights/workspaces', variables('lawName')), '2023-09-01').customerId]",
+            "sharedKey": "[listKeys(resourceId('Microsoft.OperationalInsights/workspaces', variables('lawName')), '2023-09-01').primarySharedKey]"
+          }
+        },
+        "workloadProfiles": [
+          {
+            "name": "Consumption",
+            "workloadProfileType": "Consumption"
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', variables('lawName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Web/sites",
+      "apiVersion": "2023-12-01",
+      "name": "[variables('funcName')]",
+      "location": "[parameters('location')]",
+      "kind": "functionapp,linux,container",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')))]": {}
+        }
+      },
+      "properties": {
+        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', variables('caeName'))]",
+        "keyVaultReferenceIdentity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName'))]",
+        "siteConfig": {
+          "linuxFxVersion": "DOCKER|mcr.microsoft.com/azure-functions/node:4-node22",
+          "appSettings": [
+            {
+              "name": "FUNCTIONS_WORKER_RUNTIME",
+              "value": "node"
+            },
+            {
+              "name": "FUNCTIONS_EXTENSION_VERSION",
+              "value": "~4"
+            },
+            {
+              "name": "AzureWebJobsFeatureFlags",
+              "value": "EnableWorkerIndexing"
+            },
+            {
+              "name": "AzureWebJobsStorage__accountName",
+              "value": "[variables('stName')]"
+            },
+            {
+              "name": "AzureWebJobsStorage__credential",
+              "value": "managedidentity"
+            },
+            {
+              "name": "AzureWebJobsStorage__clientId",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), '2023-01-31').clientId]"
+            },
+            {
+              "name": "AZURE_CLIENT_ID",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), '2023-01-31').clientId]"
+            },
+            {
+              "name": "MICROSOFT_APP_ID",
+              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), '2023-01-31').clientId]"
+            },
+            {
+              "name": "MICROSOFT_APP_TYPE",
+              "value": "UserAssignedMsi"
+            },
+            {
+              "name": "MICROSOFT_APP_TENANT_ID",
+              "value": "[subscription().tenantId]"
+            },
+            {
+              "name": "COSMOS_ENDPOINT",
+              "value": "[reference(resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosName')), '2024-05-15').documentEndpoint]"
+            },
+            {
+              "name": "AZURE_AI_FOUNDRY_ENDPOINT",
+              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('aisName')), '2024-10-01').endpoint]"
+            },
+            {
+              "name": "AZURE_CONTENT_SAFETY_ENDPOINT",
+              "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('aisName')), '2024-10-01').endpoint]"
+            },
+            {
+              "name": "LLM_PRIMARY_MODEL",
+              "value": "[if(parameters('euResidencyMode'), variables('llmPrimary'), 'grok-4-1-fast')]"
+            },
+            {
+              "name": "LLM_SECONDARY_MODEL",
+              "value": "[variables('llmSecondary')]"
+            },
+            {
+              "name": "EU_RESIDENCY_MODE",
+              "value": "[string(parameters('euResidencyMode'))]"
+            },
+            {
+              "name": "LLM_PROVIDER",
+              "value": "[parameters('llmProvider')]"
+            },
+            {
+              "name": "OPENROUTER_API_KEY",
+              "value": "[if(equals(parameters('llmProvider'), 'openrouter'), format('@Microsoft.KeyVault(VaultName={0};SecretName=openrouter-api-key)', variables('kvName')), '')]"
+            },
+            {
+              "name": "BOT_OAUTH_CONNECTION_NAME",
+              "value": "GraphOAuth"
+            },
+            {
+              "name": "ENTRA_OBO_CLIENT_SECRET",
+              "value": ""
+            },
+            {
+              "name": "GITHUB_TOKEN",
+              "value": "[format('@Microsoft.KeyVault(VaultName={0};SecretName=github-token)', variables('kvName'))]"
+            },
+            {
+              "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+              "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsName')), '2020-02-02').ConnectionString]"
+            },
+            {
+              "name": "SKILLFORGE_ENABLED",
+              "value": "false"
+            },
+            {
+              "name": "SKILLFORGE_ACR_IMAGE",
+              "value": ""
+            },
+            {
+              "name": "SKILLFORGE_RESOURCE_GROUP",
+              "value": "[resourceGroup().name]"
+            },
+            {
+              "name": "AZURE_SUBSCRIPTION_ID",
+              "value": "[subscription().subscriptionId]"
+            },
+            {
+              "name": "AZURE_RESOURCE_GROUP",
+              "value": "[resourceGroup().name]"
+            },
+            {
+              "name": "MAINTENANCE_MODE",
+              "value": "false"
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('aisName'))]",
+        "[resourceId('Microsoft.Insights/components', variables('appInsName'))]",
+        "[resourceId('Microsoft.App/managedEnvironments', variables('caeName'))]",
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('stName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.BotService/botServices",
+      "apiVersion": "2022-09-15",
+      "name": "[variables('botName')]",
+      "location": "global",
+      "kind": "azurebot",
+      "sku": {
+        "name": "F0"
+      },
+      "properties": {
+        "displayName": "HelkinSwarm",
+        "endpoint": "[format('https://{0}/api/messages', reference(resourceId('Microsoft.Web/sites', variables('funcName')), '2023-12-01').defaultHostName)]",
+        "msaAppId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), '2023-01-31').clientId]",
+        "msaAppType": "UserAssignedMSI",
+        "msaAppMSIResourceId": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName'))]",
+        "msaAppTenantId": "[subscription().tenantId]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', variables('funcName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.BotService/botServices/channels",
+      "apiVersion": "2022-09-15",
+      "name": "[format('{0}/{1}', variables('botName'), 'MsTeamsChannel')]",
+      "location": "global",
+      "properties": {
+        "channelName": "MsTeamsChannel",
+        "properties": {
+          "isEnabled": true
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.BotService/botServices', variables('botName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.BotService/botServices/connections",
+      "apiVersion": "2022-09-15",
+      "name": "[format('{0}/{1}', variables('botName'), 'GraphOAuth')]",
+      "location": "global",
+      "properties": {
+        "serviceProviderDisplayName": "Azure Active Directory v2",
+        "serviceProviderId": "30dd229c-58e3-4a48-bdfd-91ec48eb906c",
+        "clientId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), '2023-01-31').clientId]",
+        "clientSecret": "configure-via-portal",
+        "scopes": "User.Read Mail.ReadWrite Calendars.ReadWrite Files.ReadWrite offline_access",
+        "parameters": [
+          {
+            "key": "tenantID",
+            "value": "[subscription().tenantId]"
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.BotService/botServices', variables('botName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.KeyVault/vaults', variables('kvName'))]",
+      "name": "[guid(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), resourceId('Microsoft.KeyVault/vaults', variables('kvName')), variables('roleKvSecretsUser'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('roleKvSecretsUser'))]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.KeyVault/vaults', variables('kvName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.KeyVault/vaults', variables('kvName'))]",
+      "name": "[guid(parameters('userPrincipalId'), resourceId('Microsoft.KeyVault/vaults', variables('kvName')), variables('roleKvAdmin'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('roleKvAdmin'))]",
+        "principalId": "[parameters('userPrincipalId')]",
+        "principalType": "User"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.KeyVault/vaults', variables('kvName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrName'))]",
+      "name": "[guid(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), resourceId('Microsoft.ContainerRegistry/registries', variables('acrName')), variables('roleAcrPull'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('roleAcrPull'))]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ContainerRegistry/registries', variables('acrName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.CognitiveServices/accounts', variables('aisName'))]",
+      "name": "[guid(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), resourceId('Microsoft.CognitiveServices/accounts', variables('aisName')), variables('roleCognitiveServicesUser'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('roleCognitiveServicesUser'))]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('aisName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('stName'))]",
+      "name": "[guid(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), resourceId('Microsoft.Storage/storageAccounts', variables('stName')), variables('roleStorageBlobDataOwner'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('roleStorageBlobDataOwner'))]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('stName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('stName'))]",
+      "name": "[guid(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), resourceId('Microsoft.Storage/storageAccounts', variables('stName')), variables('roleStorageQueueContributor'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('roleStorageQueueContributor'))]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('stName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[resourceId('Microsoft.Storage/storageAccounts', variables('stName'))]",
+      "name": "[guid(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), resourceId('Microsoft.Storage/storageAccounts', variables('stName')), variables('roleStorageTableContributor'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('roleStorageTableContributor'))]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('stName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignments",
+      "apiVersion": "2024-05-15",
+      "name": "[format('{0}/{1}', variables('cosmosName'), guid(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosName')), variables('cosmosDataContributorRoleId')))]",
+      "properties": {
+        "roleDefinitionId": "[format('{0}/sqlRoleDefinitions/{1}', resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosName')), variables('cosmosDataContributorRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), '2023-01-31').principalId]",
+        "scope": "[resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosName'))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName'))]"
+      ]
+    },
+    {
+      "condition": "[not(equals(parameters('alertEmail'), ''))]",
+      "type": "Microsoft.Insights/actionGroups",
+      "apiVersion": "2023-01-01",
+      "name": "[format('helkinswarm-ag-{0}', variables('suffix'))]",
+      "location": "global",
+      "properties": {
+        "groupShortName": "HelkinP0",
+        "enabled": true,
+        "emailReceivers": [
+          {
+            "name": "OwnerEmail",
+            "emailAddress": "[parameters('alertEmail')]",
+            "useCommonAlertSchema": true
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "helkinswarm-alert-emergency-stop",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "HelkinSwarm — Emergency Stop Triggered",
+        "description": "Fires when /emergency-stop is activated or deactivated.",
+        "severity": 1,
+        "enabled": true,
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT5M",
+        "scopes": [
+          "[resourceId('Microsoft.Insights/components', variables('appInsName'))]"
+        ],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "customEvents | where name == \"EmergencyStop\"",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": "[if(not(equals(parameters('alertEmail'), '')), createArray(resourceId('Microsoft.Insights/actionGroups', format('helkinswarm-ag-{0}', variables('suffix')))), createArray())]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('helkinswarm-ag-{0}', variables('suffix')))]",
+        "[resourceId('Microsoft.Insights/components', variables('appInsName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "helkinswarm-alert-rate-limit",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "HelkinSwarm — LLM Rate Limit Exhaustion",
+        "description": "Fires when the Foundry API returns HTTP 429 (rate limited). Threshold: 3+ in 5 minutes.",
+        "severity": 2,
+        "enabled": true,
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT5M",
+        "scopes": [
+          "[resourceId('Microsoft.Insights/components', variables('appInsName'))]"
+        ],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "customEvents | where name == \"LlmCall\" and tostring(customDimensions[\"finishReason\"]) == \"error\" | where tostring(customDimensions[\"error\"]) contains \"429\"",
+              "timeAggregation": "Count",
+              "operator": "GreaterThanOrEqual",
+              "threshold": 3
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": "[if(not(equals(parameters('alertEmail'), '')), createArray(resourceId('Microsoft.Insights/actionGroups', format('helkinswarm-ag-{0}', variables('suffix')))), createArray())]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('helkinswarm-ag-{0}', variables('suffix')))]",
+        "[resourceId('Microsoft.Insights/components', variables('appInsName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "helkinswarm-alert-verification-failure",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "HelkinSwarm — High-Risk Action Verification Failure",
+        "description": "Fires when a high-risk tool dispatch fails verification. Indicates potential safety pipeline issues.",
+        "severity": 1,
+        "enabled": true,
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT15M",
+        "scopes": [
+          "[resourceId('Microsoft.Insights/components', variables('appInsName'))]"
+        ],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "customEvents | where name == \"ToolDispatch\" and tostring(customDimensions[\"riskLevel\"]) in (\"high\", \"critical\") and tostring(customDimensions[\"approved\"]) == \"false\"",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": "[if(not(equals(parameters('alertEmail'), '')), createArray(resourceId('Microsoft.Insights/actionGroups', format('helkinswarm-ag-{0}', variables('suffix')))), createArray())]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('helkinswarm-ag-{0}', variables('suffix')))]",
+        "[resourceId('Microsoft.Insights/components', variables('appInsName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "helkinswarm-alert-prompt-shield",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "HelkinSwarm — Prompt Shield Block",
+        "description": "Fires when Prompt Shields blocks a user message (injection/jailbreak attempt).",
+        "severity": 2,
+        "enabled": true,
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT5M",
+        "scopes": [
+          "[resourceId('Microsoft.Insights/components', variables('appInsName'))]"
+        ],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "customEvents | where name == \"PromptShieldResult\" and tostring(customDimensions[\"blocked\"]) == \"true\"",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": "[if(not(equals(parameters('alertEmail'), '')), createArray(resourceId('Microsoft.Insights/actionGroups', format('helkinswarm-ag-{0}', variables('suffix')))), createArray())]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('helkinswarm-ag-{0}', variables('suffix')))]",
+        "[resourceId('Microsoft.Insights/components', variables('appInsName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "helkinswarm-alert-orchestrator-failure",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "HelkinSwarm — Orchestrator Failure",
+        "description": "Fires when session orchestrator or overseer fails. 3+ failures in 15 minutes indicates systemic issue.",
+        "severity": 1,
+        "enabled": true,
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT15M",
+        "scopes": [
+          "[resourceId('Microsoft.Insights/components', variables('appInsName'))]"
+        ],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "exceptions | where outerMessage contains \"orchestrator\" or outerMessage contains \"Durable\" or outerMessage contains \"overseer\"",
+              "timeAggregation": "Count",
+              "operator": "GreaterThanOrEqual",
+              "threshold": 3
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": "[if(not(equals(parameters('alertEmail'), '')), createArray(resourceId('Microsoft.Insights/actionGroups', format('helkinswarm-ag-{0}', variables('suffix')))), createArray())]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('helkinswarm-ag-{0}', variables('suffix')))]",
+        "[resourceId('Microsoft.Insights/components', variables('appInsName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Insights/scheduledQueryRules",
+      "apiVersion": "2023-03-15-preview",
+      "name": "helkinswarm-alert-eu-violation",
+      "location": "[parameters('location')]",
+      "properties": {
+        "displayName": "HelkinSwarm — EU Residency Violation",
+        "description": "Fires when EU-mode is enabled but a request routes to a non-EU model or endpoint.",
+        "severity": 0,
+        "enabled": true,
+        "evaluationFrequency": "PT5M",
+        "windowSize": "PT5M",
+        "scopes": [
+          "[resourceId('Microsoft.Insights/components', variables('appInsName'))]"
+        ],
+        "criteria": {
+          "allOf": [
+            {
+              "query": "customEvents | where name == \"EuResidencyViolation\" or (name == \"LlmCall\" and tostring(customDimensions[\"euMode\"]) == \"true\" and tostring(customDimensions[\"provider\"]) != \"azure-eu\")",
+              "timeAggregation": "Count",
+              "operator": "GreaterThan",
+              "threshold": 0
+            }
+          ]
+        },
+        "actions": {
+          "actionGroups": "[if(not(equals(parameters('alertEmail'), '')), createArray(resourceId('Microsoft.Insights/actionGroups', format('helkinswarm-ag-{0}', variables('suffix')))), createArray())]"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Insights/actionGroups', format('helkinswarm-ag-{0}', variables('suffix')))]",
+        "[resourceId('Microsoft.Insights/components', variables('appInsName'))]"
+      ]
+    }
+  ],
+  "outputs": {
+    "acrLoginServer": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ContainerRegistry/registries', variables('acrName')), '2023-07-01').loginServer]"
+    },
+    "acrName": {
+      "type": "string",
+      "value": "[variables('acrName')]"
+    },
+    "functionAppName": {
+      "type": "string",
+      "value": "[variables('funcName')]"
+    },
+    "managedIdentityClientId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName')), '2023-01-31').clientId]"
+    },
+    "managedIdentityResourceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('uamiName'))]"
+    },
+    "cosmosEndpoint": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.DocumentDB/databaseAccounts', variables('cosmosName')), '2024-05-15').documentEndpoint]"
+    },
+    "aiEndpoint": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.CognitiveServices/accounts', variables('aisName')), '2024-10-01').endpoint]"
+    },
+    "appInsightsConnectionString": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Insights/components', variables('appInsName')), '2020-02-02').ConnectionString]"
+    },
+    "botEndpoint": {
+      "type": "string",
+      "value": "[format('https://{0}/api/messages', reference(resourceId('Microsoft.Web/sites', variables('funcName')), '2023-12-01').defaultHostName)]"
+    },
+    "healthEndpoint": {
+      "type": "string",
+      "value": "[format('https://{0}/api/health', reference(resourceId('Microsoft.Web/sites', variables('funcName')), '2023-12-01').defaultHostName)]"
+    }
+  }
+}

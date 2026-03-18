@@ -1,0 +1,10 @@
+source_file,row,col,original_cell,cropped_content,output_size,output_file
+grok-image-ThisUniverse01.png,1,1,320x320,200x157,192x192,grok-image-ThisUniverse01__r1c1__192x192.png
+grok-image-ThisUniverse01.png,1,2,320x320,178x158,192x192,grok-image-ThisUniverse01__r1c2__192x192.png
+grok-image-ThisUniverse01.png,1,3,320x320,221x93,256x256,grok-image-ThisUniverse01__r1c3__256x256.png
+grok-image-ThisUniverse01.png,2,1,320x320,166x170,192x192,grok-image-ThisUniverse01__r2c1__192x192.png
+grok-image-ThisUniverse01.png,2,2,320x320,29x162,192x192,grok-image-ThisUniverse01__r2c2__192x192.png
+grok-image-ThisUniverse01.png,2,3,320x320,201x144,192x192,grok-image-ThisUniverse01__r2c3__192x192.png
+grok-image-ThisUniverse01.png,3,1,320x320,198x199,192x192,grok-image-ThisUniverse01__r3c1__192x192.png
+grok-image-ThisUniverse01.png,3,2,320x320,169x166,192x192,grok-image-ThisUniverse01__r3c2__192x192.png
+grok-image-ThisUniverse01.png,3,3,320x320,218x98,256x256,grok-image-ThisUniverse01__r3c3__256x256.png

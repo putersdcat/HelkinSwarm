@@ -1,0 +1,79 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "version": "1.1.3",
+  "id": "b3cd420b-23f5-43d6-9824-df74a742a9df",
+  "developer": {
+    "name": "Eric Anderson",
+    "websiteUrl": "https://github.com/putersdcat/HelkinSwarm",
+    "privacyUrl": "https://github.com/putersdcat/HelkinSwarm",
+    "termsOfUseUrl": "https://github.com/putersdcat/HelkinSwarm"
+  },
+  "name": {
+    "short": "HelkinSwarm",
+    "full": "HelkinSwarm — Personal Sovereign AI Copilot"
+  },
+  "description": {
+    "short": "Personal AI copilot in Teams",
+    "full": "HelkinSwarm is a forward-deployed Special Circumstances unit — a living extension of human curiosity, built in the spirit of Iain M. Banks' Culture series. We are the bridge."
+  },
+  "icons": {
+    "color": "color.png",
+    "outline": "outline.png"
+  },
+  "accentColor": "#6C00FF",
+  "bots": [
+    {
+      "botId": "b3cd420b-23f5-43d6-9824-df74a742a9df",
+      "scopes": [
+        "personal",
+        "team",
+        "groupChat"
+      ],
+      "supportsFiles": false,
+      "isNotificationOnly": false,
+      "commandLists": [
+        {
+          "scopes": [
+            "personal"
+          ],
+          "commands": [
+            {
+              "title": "help",
+              "description": "Show all available commands and usage"
+            },
+            {
+              "title": "health",
+              "description": "Check system health status"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "staticTabs": [
+    {
+      "entityId": "getting-started",
+      "name": "Getting Started",
+      "contentUrl": "https://helkinswarm-func-prod-eus2.ambitiousocean-4fe743f3.eastus2.azurecontainerapps.io/api/tab/getting-started",
+      "scopes": [
+        "personal"
+      ]
+    },
+    {
+      "entityId": "control-center",
+      "name": "Control Center",
+      "contentUrl": "https://helkinswarm-func-prod-eus2.ambitiousocean-4fe743f3.eastus2.azurecontainerapps.io/api/tab/control-center",
+      "scopes": [
+        "personal"
+      ]
+    }
+  ],
+  "permissions": [
+    "identity",
+    "messageTeamMembers"
+  ],
+  "validDomains": [
+    "helkinswarm-func-prod-eus2.ambitiousocean-4fe743f3.eastus2.azurecontainerapps.io"
+  ]
+}

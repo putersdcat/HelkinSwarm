@@ -1,0 +1,317 @@
+# ============================================================================
+# HelkinSwarm — Teams App Package: Build & Publish to Admin Center
+# Builds the Teams app .zip and publishes via Graph API when appPackage/ changes.
+# ⚠️ MARK FOR IMMEDIATE REFACTOR before first run in v2.
+# Reference implementation only — alpha issue refs stripped.
+# ============================================================================
+
+name: Teams App Package
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "appPackage/manifest.json"
+      - "appPackage/*.png"
+  workflow_dispatch:
+    inputs:
+      requires_review:
+        description: "Require admin review before publish"
+        type: boolean
+        default: false
+      skip_publish:
+        description: "Build only — skip Graph API publish"
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write  # OIDC token for Azure login → Graph API
+  contents: write  # Push version bump commit back to main
+
+jobs:
+  package-and-publish:
+    name: Build & Publish Teams App
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Auto-increment patch version ───────────────────────────────────
+      - name: Bump patch version
+        id: bump
+        run: |
+          MANIFEST="appPackage/manifest.json"
+          CURRENT=$(jq -r '.version' "$MANIFEST")
+          MAJOR=$(echo "$CURRENT" | cut -d. -f1)
+          MINOR=$(echo "$CURRENT" | cut -d. -f2)
+          PATCH=$(echo "$CURRENT" | cut -d. -f3)
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+
+          echo "📦 Version bump: $CURRENT → $NEW_VERSION"
+          jq --arg v "$NEW_VERSION" '.version = $v' "$MANIFEST" > /tmp/manifest.json
+          mv /tmp/manifest.json "$MANIFEST"
+
+          echo "bumped-version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          echo "previous-version=$CURRENT"   >> "$GITHUB_OUTPUT"
+
+      # ── Validate manifest ──────────────────────────────────────────────
+      - name: Validate manifest
+        id: manifest
+        run: |
+          MANIFEST="appPackage/manifest.json"
+
+          if [ ! -f "$MANIFEST" ]; then
+            echo "❌ manifest.json not found"
+            exit 1
+          fi
+
+          VERSION=$(jq -r '.version' "$MANIFEST")
+          APP_ID=$(jq -r '.id' "$MANIFEST")
+          BOT_ID=$(jq -r '.bots[0].botId' "$MANIFEST")
+          COLOR_ICON=$(jq -r '.icons.color' "$MANIFEST")
+          OUTLINE_ICON=$(jq -r '.icons.outline' "$MANIFEST")
+          APP_NAME=$(jq -r '.name.short' "$MANIFEST")
+
+          echo "🤖 Teams App Package"
+          echo "  App:     $APP_NAME"
+          echo "  Version: $VERSION"
+          echo "  App ID:  $APP_ID"
+          echo "  Bot ID:  $BOT_ID"
+          echo "  Color:   $COLOR_ICON"
+          echo "  Outline: $OUTLINE_ICON"
+
+          # Validate version format
+          if ! echo "$VERSION" | grep -qE '^[1-9][0-9]*\.[0-9]+\.[0-9]+$'; then
+            echo "❌ Version '$VERSION' is not valid Teams format (#.#.# starting with non-zero)"
+            exit 1
+          fi
+
+          # Validate icon files exist
+          if [ ! -f "appPackage/$COLOR_ICON" ]; then
+            echo "❌ Color icon not found: appPackage/$COLOR_ICON"
+            exit 1
+          fi
+          if [ ! -f "appPackage/$OUTLINE_ICON" ]; then
+            echo "❌ Outline icon not found: appPackage/$OUTLINE_ICON"
+            exit 1
+          fi
+
+          # Icon size warnings (not blocking — first deploy uses placeholders)
+          COLOR_SIZE=$(stat -c%s "appPackage/$COLOR_ICON")
+          OUTLINE_SIZE=$(stat -c%s "appPackage/$OUTLINE_ICON")
+          if [ "$COLOR_SIZE" -lt 1000 ]; then
+            echo "⚠️  Color icon is only ${COLOR_SIZE} bytes — looks like a placeholder (will replace later)"
+          fi
+          if [ "$OUTLINE_SIZE" -lt 500 ]; then
+            echo "⚠️  Outline icon is only ${OUTLINE_SIZE} bytes — looks like a placeholder (will replace later)"
+          fi
+
+          echo "✅ Manifest validation passed"
+
+          echo "version=$VERSION"           >> "$GITHUB_OUTPUT"
+          echo "app-name=$APP_NAME"         >> "$GITHUB_OUTPUT"
+          echo "color-icon=$COLOR_ICON"     >> "$GITHUB_OUTPUT"
+          echo "outline-icon=$OUTLINE_ICON" >> "$GITHUB_OUTPUT"
+
+      # ── Build .zip ────────────────────────────────────────────────────
+      - name: Build Teams app package
+        id: build
+        run: |
+          VERSION="${{ steps.manifest.outputs.version }}"
+          COLOR_ICON="${{ steps.manifest.outputs.color-icon }}"
+          OUTLINE_ICON="${{ steps.manifest.outputs.outline-icon }}"
+          ZIP_NAME="HelkinSwarm-${VERSION}.zip"
+
+          cd appPackage
+          zip -j "../${ZIP_NAME}" manifest.json "${COLOR_ICON}" "${OUTLINE_ICON}"
+          cd ..
+
+          ZIP_SIZE=$(du -h "$ZIP_NAME" | cut -f1)
+          echo "📦 Built: $ZIP_NAME ($ZIP_SIZE)"
+          unzip -l "$ZIP_NAME"
+
+          echo "zip-name=$ZIP_NAME" >> "$GITHUB_OUTPUT"
+          echo "zip-path=$ZIP_NAME" >> "$GITHUB_OUTPUT"
+
+      # ── Upload artifact ────────────────────────────────────────────────
+      - name: Stage Teams app files for artifact
+        run: |
+          mkdir -p /tmp/teams-pkg
+          cp appPackage/manifest.json /tmp/teams-pkg/
+          cp "appPackage/${{ steps.manifest.outputs.color-icon }}" /tmp/teams-pkg/
+          cp "appPackage/${{ steps.manifest.outputs.outline-icon }}" /tmp/teams-pkg/
+          echo "  Staged files:"
+          ls -lh /tmp/teams-pkg/
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HelkinSwarm-${{ steps.manifest.outputs.version }}
+          path: /tmp/teams-pkg/
+          retention-days: 90
+
+      # ── Commit version bump back to main ──────────────────────────────
+      - name: Commit version bump
+        if: ${{ steps.bump.outputs.bumped-version != '' }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add appPackage/manifest.json
+          git diff --cached --quiet && echo "No version change to commit" && exit 0
+          git commit -m "chore: bump Teams app version to ${{ steps.bump.outputs.bumped-version }} [skip ci]"
+          git push
+
+      # ── Publish to Teams Admin Center via Graph API ────────────────────
+      - name: Azure Login (OIDC)
+        if: ${{ github.event.inputs.skip_publish != 'true' }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Publish to Teams Admin Center
+        if: ${{ github.event.inputs.skip_publish != 'true' }}
+        id: publish
+        run: |
+          ZIP_PATH="${{ steps.build.outputs.zip-path }}"
+          VERSION="${{ steps.manifest.outputs.version }}"
+
+          echo "📤 Publishing to Teams Admin Center..."
+
+          # Get Graph API token via the OIDC-authenticated identity
+          TOKEN=$(az account get-access-token \
+            --resource "https://graph.microsoft.com" \
+            --query accessToken -o tsv 2>&1)
+
+          if [ $? -ne 0 ]; then
+            echo "⚠️  Could not acquire Graph token: $TOKEN"
+            echo "    The service principal may not have Graph API permissions."
+            echo "    Falling back to artifact-only mode."
+            echo "publish-status=token-failed" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Discover Teams App ID from manifest
+          APP_ID=$(jq -r '.id' appPackage/manifest.json)
+          echo "  App ID from manifest: $APP_ID"
+
+          PUBLISHED=false
+
+          # Strategy 1: POST /appDefinitions (submit new version)
+          PUBLISH_URL="https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/${APP_ID}/appDefinitions"
+          REQUIRES_REVIEW="${{ github.event.inputs.requires_review }}"
+          if [ "$REQUIRES_REVIEW" = "true" ]; then
+            PUBLISH_URL="${PUBLISH_URL}?requiresReview=true"
+          fi
+
+          echo "  Trying POST /appDefinitions..."
+          HTTP_CODE=$(curl -s -o /tmp/graph-response.json -w "%{http_code}" \
+            -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/zip" \
+            --data-binary "@${ZIP_PATH}" \
+            "$PUBLISH_URL")
+          RESPONSE=$(cat /tmp/graph-response.json 2>/dev/null || echo "{}")
+          echo "  HTTP Status: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            PUBLISHED=true
+          else
+            echo "  POST failed ($HTTP_CODE) — trying PUT fallback..."
+          fi
+
+          # Strategy 2: PUT /teamsApps/{id} (update existing app)
+          if [ "$PUBLISHED" = "false" ]; then
+            PUT_URL="https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/${APP_ID}"
+            if [ "$REQUIRES_REVIEW" = "true" ]; then
+              PUT_URL="${PUT_URL}?requiresReview=true"
+            fi
+            HTTP_CODE=$(curl -s -o /tmp/graph-response.json -w "%{http_code}" \
+              -X PUT \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Content-Type: application/zip" \
+              --data-binary "@${ZIP_PATH}" \
+              "$PUT_URL")
+            RESPONSE=$(cat /tmp/graph-response.json 2>/dev/null || echo "{}")
+            echo "  PUT HTTP Status: $HTTP_CODE"
+
+            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+              PUBLISHED=true
+            fi
+          fi
+
+          # Evaluate result
+          if [ "$PUBLISHED" = "true" ]; then
+            APP_DEF_ID=$(echo "$RESPONSE" | jq -r '.id // "unknown"')
+            echo "✅ Published successfully! App Definition ID: $APP_DEF_ID"
+            echo "publish-status=success"       >> "$GITHUB_OUTPUT"
+            echo "app-definition-id=$APP_DEF_ID" >> "$GITHUB_OUTPUT"
+          elif [ "$HTTP_CODE" = "403" ]; then
+            echo "⚠️  Publish failed: 403 Forbidden (Graph permissions needed)"
+            echo "publish-status=forbidden" >> "$GITHUB_OUTPUT"
+          elif [ "$HTTP_CODE" = "404" ]; then
+            echo "⚠️  Publish failed: 404 (app must be initially uploaded manually)"
+            echo "publish-status=not-found" >> "$GITHUB_OUTPUT"
+          else
+            echo "⚠️  Publish failed: HTTP $HTTP_CODE"
+            echo "publish-status=failed" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── Job Summary ──────────────────────────────────────────────────
+      - name: Generate summary
+        if: always()
+        run: |
+          VERSION="${{ steps.manifest.outputs.version }}"
+          APP_NAME="${{ steps.manifest.outputs.app-name }}"
+          ZIP_NAME="${{ steps.build.outputs.zip-name }}"
+          PUBLISH_STATUS="${{ steps.publish.outputs.publish-status }}"
+          APP_DEF_ID="${{ steps.publish.outputs.app-definition-id }}"
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          TS=$(date -u '+%Y-%m-%d %H:%M UTC')
+
+          case "$PUBLISH_STATUS" in
+            success)       STATUS_EMOJI="✅ Published" ;;
+            forbidden)     STATUS_EMOJI="⚠️ Forbidden (artifact available)" ;;
+            not-found)     STATUS_EMOJI="⚠️ App not in catalog (artifact available)" ;;
+            token-failed)  STATUS_EMOJI="⚠️ Token failed (artifact available)" ;;
+            failed)        STATUS_EMOJI="❌ Failed (artifact available)" ;;
+            *)             STATUS_EMOJI="⏭️ Skipped (build only)" ;;
+          esac
+
+          {
+            echo "# 🤖 Teams App Package — ${APP_NAME} v${VERSION}"
+            echo ""
+            echo "> **Commit:** [\`${SHORT_SHA}\`](https://github.com/putersdcat/HelkinSwarm/commit/${GITHUB_SHA}) · **${TS}**"
+            echo ""
+            echo "## Package"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **Version** | \`${VERSION}\` |"
+            echo "| **Package** | \`${ZIP_NAME}\` |"
+            echo "| **Artifact** | Download from this workflow run |"
+            echo ""
+            echo "## Publish Status"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| **Status** | ${STATUS_EMOJI} |"
+            if [ -n "$APP_DEF_ID" ] && [ "$APP_DEF_ID" != "" ]; then
+              echo "| **App Definition** | \`${APP_DEF_ID}\` |"
+            fi
+            echo ""
+            if [ "$PUBLISH_STATUS" != "success" ] && [ "$PUBLISH_STATUS" != "" ]; then
+              echo "### Manual Publish Fallback"
+              echo ""
+              echo '```powershell'
+              echo "# Download the artifact from this workflow run, then:"
+              echo '.\scripts\New-TeamsAppPackage.ps1 -Publish'
+              echo '```'
+              echo ""
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

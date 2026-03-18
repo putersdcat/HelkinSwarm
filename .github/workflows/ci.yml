@@ -1,0 +1,314 @@
+# ============================================================================
+# HelkinSwarm — CI: Lint, Type-check, Build, Test, Validate Bicep
+# Runs on every push and pull request. No secrets required.
+# ⚠️ MARK FOR IMMEDIATE REFACTOR before first run in v2.
+# Reference implementation only — alpha issue refs stripped.
+# ============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel in-progress CI runs on the same branch (saves runner minutes)
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build & Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm run lint
+
+      - name: Type-check
+        run: pnpm run typecheck
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Test
+        run: pnpm run test
+
+  bicep-validate:
+    name: Validate Bicep
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate Bicep syntax
+        run: az bicep build --file infra/main.bicep --stdout > /dev/null
+
+  # ---------------------------------------------------------------------------
+  # SkillForge PR Gates — security + schema checks for generated skills
+  # Only runs on PRs from skillforge/* branches (Phase 5+)
+  # ---------------------------------------------------------------------------
+  skillforge-gates:
+    name: SkillForge Security & Schema Gates
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'skillforge/')
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Security scan — forbidden patterns in generated code
+        run: |
+          echo "🔒 Scanning SkillForge files for forbidden patterns..."
+          FAIL=0
+
+          FORBIDDEN=(
+            'process\.env\.\w+_SECRET'
+            'process\.env\.\w+_PASSWORD'
+            'process\.env\.\w+_KEY(?!_VAULT)'
+            'eval\s*\('
+            'Function\s*\('
+            'child_process'
+            'exec\s*\('
+            'execSync\s*\('
+            'spawn\s*\('
+            'require\s*\(\s*["\x27]child_process'
+            'require\s*\(\s*["\x27]fs'
+            'writeFileSync'
+            'unlinkSync'
+            'rmSync'
+            'rm\s*\(\s*["\x27]/'
+            'PRIVATE_KEY'
+            'BEGIN RSA'
+            'BEGIN PRIVATE'
+            'BEGIN CERTIFICATE'
+            'password\s*[:=]\s*["\x27]'
+            'api_key\s*[:=]\s*["\x27]'
+            'secret\s*[:=]\s*["\x27]'
+          )
+
+          for pattern in "${FORBIDDEN[@]}"; do
+            matches=$(grep -rniE "$pattern" skillforge/ 2>/dev/null || true)
+            if [ -n "$matches" ]; then
+              echo "❌ FORBIDDEN PATTERN: $pattern"
+              echo "$matches"
+              FAIL=1
+            fi
+          done
+
+          if [ "$FAIL" -eq 1 ]; then
+            echo ""
+            echo "❌ SkillForge security scan FAILED — review flagged patterns above"
+            exit 1
+          fi
+
+          echo "✅ No forbidden patterns detected"
+
+      - name: Schema validation — capability.json
+        run: |
+          echo "📋 Validating SkillForge capability.json files..."
+          FAIL=0
+
+          for cap_file in $(find skillforge/ -name "capability.json" 2>/dev/null); do
+            echo "  Checking $cap_file..."
+
+            if ! python3 -c "import json; json.load(open('$cap_file'))" 2>/dev/null; then
+              echo "  ❌ Invalid JSON: $cap_file"
+              FAIL=1
+              continue
+            fi
+
+            for field in domain tool description privilege risk inputSchema outputSchema enabled; do
+              if ! python3 -c "import json; d=json.load(open('$cap_file')); assert '$field' in d" 2>/dev/null; then
+                echo "  ❌ Missing required field '$field' in $cap_file"
+                FAIL=1
+              fi
+            done
+
+            enabled=$(python3 -c "import json; print(json.load(open('$cap_file')).get('enabled', True))" 2>/dev/null)
+            if [ "$enabled" != "False" ]; then
+              echo "  ❌ SAFETY: 'enabled' MUST be false in $cap_file (found: $enabled)"
+              FAIL=1
+            fi
+
+            privilege=$(python3 -c "import json; print(json.load(open('$cap_file')).get('privilege', ''))" 2>/dev/null)
+            case "$privilege" in
+              read-only|read-write|create|delete-only) ;;
+              *) echo "  ❌ Invalid privilege '$privilege' in $cap_file"; FAIL=1 ;;
+            esac
+
+            risk=$(python3 -c "import json; print(json.load(open('$cap_file')).get('risk', ''))" 2>/dev/null)
+            case "$risk" in
+              low|medium|high) ;;
+              *) echo "  ❌ Invalid risk '$risk' in $cap_file"; FAIL=1 ;;
+            esac
+
+            echo "  ✅ $cap_file passed validation"
+          done
+
+          if [ "$FAIL" -eq 1 ]; then
+            echo ""
+            echo "❌ Schema validation FAILED"
+            exit 1
+          fi
+
+          echo "✅ All capability.json files valid"
+
+      - name: Handler code structure check
+        run: |
+          echo "🔍 Checking SkillForge handler files..."
+          FAIL=0
+
+          for handler in $(find skillforge/ -name "handler.ts" 2>/dev/null); do
+            echo "  Checking $handler..."
+
+            if ! grep -q "AUTO-GENERATED" "$handler" 2>/dev/null; then
+              echo "  ⚠️ Missing AUTO-GENERATED header in $handler"
+            fi
+
+            if ! grep -qE "export\s+(async\s+)?function" "$handler" 2>/dev/null; then
+              echo "  ❌ No exported function found in $handler"
+              FAIL=1
+            fi
+
+            if ! grep -q "catch" "$handler" 2>/dev/null; then
+              echo "  ⚠️ No try/catch error handling found in $handler (recommended)"
+            fi
+
+            echo "  ✅ $handler structure OK"
+          done
+
+          if [ "$FAIL" -eq 1 ]; then
+            echo ""
+            echo "❌ Handler structure check FAILED"
+            exit 1
+          fi
+
+          echo "✅ All handler files structurally valid"
+
+      - name: Label PR as SkillForge
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.addLabels({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              labels: ['skillforge', 'framework']
+            });
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: '🔨 **SkillForge Gates** — All automated checks passed ✅\n\n' +
+                '| Check | Status |\n' +
+                '|-------|--------|\n' +
+                '| Security pattern scan | ✅ Passed |\n' +
+                '| Capability schema validation | ✅ Passed |\n' +
+                '| Handler structure check | ✅ Passed |\n\n' +
+                '⚠️ **Human review required** before merge.'
+            });
+
+  # ---------------------------------------------------------------------------
+  # EU Compliance Guardrails — validates EU model configuration
+  # Runs only when euResidencyMode is true in Bicep AND modelRouter.ts exists
+  # ---------------------------------------------------------------------------
+  eu-compliance:
+    name: EU Data Residency Compliance
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate EU model configuration
+        run: |
+          echo "🇪🇺 EU Data Residency Compliance Check"
+          echo "========================================"
+          FAIL=0
+
+          # 1. Check if euResidencyMode is true in Bicep parameters
+          EU_MODE=$(jq -r '.parameters.euResidencyMode.value // false' infra/main.parameters.json 2>/dev/null || echo "false")
+          echo "euResidencyMode = $EU_MODE"
+
+          if [ "$EU_MODE" != "true" ]; then
+            echo "ℹ️  euResidencyMode is false — EU compliance checks are informational only"
+            exit 0
+          fi
+
+          echo ""
+          echo "📋 Checking model configuration for EU compliance..."
+
+          # 2. Known GlobalStandard (non-EU) model names
+          NON_EU_MODELS=(
+            "gpt-5-global"
+            "o4-mini-global"
+            "grok-4-1-fast-reasoning"
+            "grok-4-1-fast-non-reasoning"
+          )
+
+          # 3. Extract primary and secondary model values from Bicep
+          PRIMARY=$(grep -oP "name:\s*'LLM_PRIMARY_MODEL'.*?value:\s*'\K[^']*" infra/main.bicep || echo "")
+          SECONDARY=$(grep -oP "name:\s*'LLM_SECONDARY_MODEL'.*?value:\s*'\K[^']*" infra/main.bicep || echo "")
+
+          echo "  Primary:   $PRIMARY"
+          echo "  Secondary: $SECONDARY"
+
+          # 4. Check that models are NOT GlobalStandard
+          for model in "${NON_EU_MODELS[@]}"; do
+            if [ "$PRIMARY" = "$model" ]; then
+              echo "❌ VIOLATION: LLM_PRIMARY_MODEL='$model' is a non-EU model!"
+              FAIL=1
+            fi
+            if [ "$SECONDARY" = "$model" ]; then
+              echo "❌ VIOLATION: LLM_SECONDARY_MODEL='$model' is a non-EU model!"
+              FAIL=1
+            fi
+          done
+
+          # 5. Check runtime guard exists (Phase 3+ — skip gracefully if missing)
+          if [ -f "src/llm/modelRouter.ts" ]; then
+            if ! grep -q "euResidencyMode\|EU_RESIDENCY_MODE" src/llm/modelRouter.ts; then
+              echo "❌ VIOLATION: modelRouter.ts missing EU_RESIDENCY_MODE guard!"
+              FAIL=1
+            fi
+          else
+            echo "ℹ️  src/llm/modelRouter.ts not yet created — runtime guard check deferred"
+          fi
+
+          if [ "$FAIL" -eq 1 ]; then
+            echo ""
+            echo "❌ EU Data Residency Compliance check FAILED"
+            exit 1
+          fi
+
+          echo "✅ EU Data Residency Compliance check PASSED"

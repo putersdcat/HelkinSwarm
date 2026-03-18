@@ -1,0 +1,73 @@
+# ============================================================================
+# HelkinSwarm — SkillForge Base Image Build
+# ⚠️ MARK FOR IMMEDIATE REFACTOR before first run in v2.
+# Reference implementation only — alpha issue refs stripped.
+#
+# Builds the SkillForge ephemeral container base image and pushes to ACR.
+# Triggered manually or when the Dockerfile changes.
+#
+# Refs: #67 (SkillForge container architecture)
+# ============================================================================
+
+name: SkillForge Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'infra/Dockerfile.skillforge'
+      - '.github/workflows/skillforge-image.yml'
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  ACR_NAME: helkinswarmacr
+  IMAGE_NAME: helkinswarm-skillforge
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  build-and-push:
+    name: Build SkillForge Image
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: ACR Login
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Build & Push Image
+        run: |
+          docker build \
+            -f infra/Dockerfile.skillforge \
+            -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} \
+            -t ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest \
+            .
+
+          docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
+          docker push ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest
+
+      - name: Summary
+        run: |
+          echo "### SkillForge Image Built ✅" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image:** \`${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Latest:** \`${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "To activate SkillForge, set:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "SKILLFORGE_ENABLED=true" >> $GITHUB_STEP_SUMMARY
+          echo "SKILLFORGE_ACR_IMAGE=${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,41 @@
+# Planning Document Snapshot Rollups
+docs/Archive/
+
+# Local Only Scratch Files
+LocalOnly/
+tmpJunk/
+
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Azure Functions
+local.settings.json
+.azure/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+
+# Coverage
+coverage/
+
+# Teams app packages (built locally)
+appPackage/*.zip
+
+# Temp/scratch files
+tmp-*
+appid.txt
+
+# python cache
+.mypy_cache
