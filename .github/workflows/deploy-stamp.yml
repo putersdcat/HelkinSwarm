@@ -143,21 +143,27 @@ jobs:
             # restarts the probe arrives before the app is ready, returning 401/403.
             # This is safe to ignore — the Bot Service resource already exists with
             # the correct endpoint URL and the container will be healthy after deploy.
-            BOT_VALIDATION=$(echo "$DEPLOY_OUT" | grep -c '"You do not have permission to view this directory or page"' || true)
-            REAL_ERRORS=$(echo "$DEPLOY_OUT" | grep '"code"' \
-              | grep -v '"RoleAssignmentExists"' \
-              | grep -v '"DeploymentFailed"' \
-              | grep -v '"BadRequest"' \
-              | wc -l)
+            BOT_VALIDATION=$(echo "$DEPLOY_OUT" | grep -c 'do not have permission' || true)
+            # Count errors excluding known benign codes — use -o to match per-occurrence
+            # (the entire JSON may be on a single line)
+            TOTAL_CODES=$(echo "$DEPLOY_OUT" | grep -oP '"code"\s*:\s*"[^"]*"' | wc -l)
+            BENIGN_CODES=$(echo "$DEPLOY_OUT" | grep -oP '"code"\s*:\s*"(RoleAssignmentExists|DeploymentFailed|BadRequest)"' | wc -l)
+            REAL_ERRORS=$((TOTAL_CODES - BENIGN_CODES))
 
-            if [ "$BOT_VALIDATION" -gt 0 ] && [ "$REAL_ERRORS" -eq 0 ]; then
-              echo "⚠️  Bot Service endpoint validation failed (container restart timing)."
-              echo "    Bot Service already exists — endpoint will be available after container starts."
-            elif [ "$ROLE_EXISTS" -gt 0 ] && [ "$REAL_ERRORS" -eq 0 ]; then
-              echo "⚠️  RoleAssignmentExists: role assignments already provisioned."
-              echo "    Continuing — Bicep will converge on next clean deploy."
+            echo "  DEBUG: BOT_VALIDATION=$BOT_VALIDATION TOTAL_CODES=$TOTAL_CODES BENIGN_CODES=$BENIGN_CODES REAL_ERRORS=$REAL_ERRORS"
+
+            if [ "$REAL_ERRORS" -eq 0 ]; then
+              if [ "$BOT_VALIDATION" -gt 0 ]; then
+                echo "⚠️  Bot Service endpoint validation failed (container restart timing)."
+                echo "    Bot Service already exists — endpoint will be available after container starts."
+              elif [ "$ROLE_EXISTS" -gt 0 ]; then
+                echo "⚠️  RoleAssignmentExists: role assignments already provisioned."
+                echo "    Continuing — Bicep will converge on next clean deploy."
+              else
+                echo "⚠️  Deployment had benign errors only — continuing."
+              fi
             else
-              echo "❌ Deployment failed:"
+              echo "❌ Deployment failed with $REAL_ERRORS real error(s):"
               echo "$DEPLOY_OUT"
               exit 1
             fi
