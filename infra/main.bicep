@@ -349,7 +349,9 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
     siteConfig: {
       minimumElasticInstanceCount: 1
       functionAppScaleLimit: 5
-      linuxFxVersion: 'DOCKER|mcr.microsoft.com/azure-functions/node:4-node22'
+      linuxFxVersion: 'DOCKER|${acrName}.azurecr.io/helkinswarm:latest'
+      acrUseManagedIdentityCreds: true
+      acrUserManagedIdentityID: uami.id
       appSettings: [
         // ── Functions runtime ──
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'node' }
