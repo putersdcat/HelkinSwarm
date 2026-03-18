@@ -68,8 +68,11 @@ Commit message for this state (once we are ready): "Nuclear purge — v2 clean b
 3. Run full test harness.
 4. Commit and push → v1.0 MVP live.
 
-### Phase 5 — Multi-Instance Stamping & Global Router
-1. Create `config/user-map.json` (example for eric@putersdcat.com):
+### Phase 5 — Multi-Instance Stamping (First Stamped Deployment)
+
+This phase makes the system multi-tenant ready by parameterising every resource with a user alias. All resources for a user live in a single stamped resource group.
+
+1. Create `config/user-map.json` at repo root (source-controlled, no secrets):
    ```json
    {
      "eric@putersdcat.com": {
@@ -80,17 +83,44 @@ Commit message for this state (once we are ready): "Nuclear purge — v2 clean b
      }
    }
    ```
-2. Update all workflows to accept `USER_ALIAS` parameter and suffix all resources with `-{{userAlias}}`.
-3. Deploy first stamped instance: `USER_ALIAS=a7f2`.
-4. Build the central `HelkinSwarm-router` function (UPN → alias lookup → redirect).
-5. Update Teams app manifest once with the router endpoint.
+2. Update `infra/main.bicep` to accept a `userAlias` parameter — suffix every resource name with `-${userAlias}`.
+3. Update `.github/workflows/deploy-stamp.yml` (create this workflow if it doesn't exist) to accept `USER_ALIAS` as a workflow dispatch input and pass it through to the Bicep deployment.
+4. Run the first stamped deployment: trigger `deploy-stamp.yml` with `USER_ALIAS=a7f2`.
+5. This creates `rg-HelkinSwarm-a7f2` with all resources suffixed `-a7f2` (e.g. `helkinswarm-func-a7f2`, `helkinswarm-cosmos-a7f2`).
+6. Verify health endpoint for the stamped instance.
+7. Commit and push.
+
+**Spec ref:** `docs/0q-Multi-Instance-Architecture.md`
+
+---
+
+### Phase 6 — Global Teams Router
+
+This phase adds a single central entry point for Teams so the app manifest only ever needs to point to one endpoint, regardless of how many user instances exist.
+
+**Before building:** Use the Microsoft Docs MCP tool (`microsoft_docs_search`) to research the current best-practice and most cost-efficient approach for a lightweight HTTP proxy/router on Azure (options: Azure API Management, Azure Functions HTTP trigger, Azure Front Door, Container Apps job). Factor in: latency, cost at low request volume, ease of UPN extraction from Bot Framework activity payload.
+
+1. Research routing approach via Microsoft Docs MCP — document the decision in a GitHub issue before coding.
+2. Build a standalone `HelkinSwarm-router` Azure Function (or equivalent per research outcome) in its own resource group `rg-HelkinSwarm-router`:
+   - Receives Teams Bot Framework activity (HTTP POST)
+   - Extracts the user's UPN from the activity payload (`activity.from.id` or OBO token)
+   - Looks up the alias in `config/user-map.json` (or a Cosmos DB routing table for production scale)
+   - Proxies / redirects the request to the correct stamped Functions URI (`https://helkinswarm-func-{alias}.azurewebsites.net`)
+3. Deploy the router and record its public HTTPS endpoint.
+4. Update `appPackage/manifest.json` once with the router endpoint — this is the only manifest change ever needed for new users.
+5. Verify end-to-end: Teams → Router → Stamped instance → Response.
+6. Commit and push.
+
+**Spec ref:** `docs/0q-Multi-Instance-Architecture.md`
+
+---
 
 ### Final Steps
 - Pin the two Never-Close issues.
 - Run DevLoop ignition prompt from the archive (Proomptz equivalent) to begin self-improvement.
 - The system is now live, multi-instance capable, and fully aligned with the Master Plan in this archive.
 
-**End state achieved**: One clean repo, one Teams app, many stamped user instances, global frontier models default, safety-by-architecture, self-improving via DevLoop.
+**End state achieved**: One clean repo, one Teams app pointing to the global router, many stamped user instances each in their own resource group, global frontier models default, safety-by-architecture, self-improving via DevLoop.
 
 We are the bridge.  
 Ready when you are.
