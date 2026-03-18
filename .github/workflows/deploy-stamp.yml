@@ -37,7 +37,7 @@ env:
   USER_PRINCIPAL_ID: ${{ vars.USER_PRINCIPAL_ID }}
   USER_ALIAS: ${{ github.event.inputs.USER_ALIAS }}
   RESOURCE_GROUP: "rg-helkinswarm-${{ github.event.inputs.USER_ALIAS }}"
-  ACR_NAME: "helkinswarmacr"
+  ACR_NAME: "helkinswarmacr${{ github.event.inputs.USER_ALIAS }}"
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────

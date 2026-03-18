@@ -43,7 +43,7 @@ var uamiName      = 'helkinswarm-id-${userAlias}'
 var lawName       = 'helkinswarm-law-${userAlias}'
 var appInsName    = 'helkinswarm-appi-${userAlias}'
 var kvName        = 'helkinswarm-kv-${userAlias}'       // 20 chars max for alias a7f2 ✓
-var acrName       = 'helkinswarmacr'                     // globally unique, shared across stamps
+var acrName       = 'helkinswarmacr${userAlias}'         // globally unique, stamped per user
 var stName        = 'helkinswarmst${userAlias}'          // globally unique, alphanumeric only
 var cosmosName    = 'helkinswarm-cosmos-${userAlias}'    // globally unique
 var aisName       = 'helkinswarm-ai-${userAlias}'
@@ -331,6 +331,12 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   name: funcName
   location: location
   kind: 'functionapp,linux,container'
+  dependsOn: [
+    roleKvUami
+    roleStorageBlobUami
+    roleStorageQueueUami
+    roleStorageTableUami
+  ]
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
@@ -374,8 +380,8 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'EU_RESIDENCY_MODE', value: string(euResidencyMode) }
         { name: 'LLM_PROVIDER', value: llmProvider }
 
-        // ── BYOK: OpenRouter (spec 0c) ──
-        { name: 'OPENROUTER_API_KEY', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=openrouter-api-key)' }
+        // ── BYOK: OpenRouter (spec 0c) — populated via KV after secrets are seeded ──
+        { name: 'OPENROUTER_API_KEY', value: '' }
         { name: 'OPENROUTER_FALLBACK_PRIMARY', value: 'moonshotai/kimi-k2.5' }
         { name: 'OPENROUTER_FALLBACK_SECONDARY', value: 'moonshotai/kimi-k2.5' }
 
@@ -383,8 +389,8 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'BOT_OAUTH_CONNECTION_NAME', value: 'GraphOAuth' }
         { name: 'ENTRA_OBO_CLIENT_SECRET', value: '' }
 
-        // ── GitHub API (from Key Vault) ──
-        { name: 'GITHUB_TOKEN', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=github-token)' }
+        // ── GitHub API — populated via KV after secrets are seeded ──
+        { name: 'GITHUB_TOKEN', value: '' }
 
         // ── Observability (spec 13) ──
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
