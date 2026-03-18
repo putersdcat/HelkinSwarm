@@ -1,8 +1,8 @@
 {
   "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
   "manifestVersion": "1.17",
-  "version": "1.1.3",
-  "id": "b3cd420b-23f5-43d6-9824-df74a742a9df",
+  "version": "2.0.0",
+  "id": "e2883966-f38e-40e8-a1c0-d1145bdb23c5",
   "developer": {
     "name": "Eric Anderson",
     "websiteUrl": "https://github.com/putersdcat/HelkinSwarm",
@@ -24,7 +24,7 @@
   "accentColor": "#6C00FF",
   "bots": [
     {
-      "botId": "b3cd420b-23f5-43d6-9824-df74a742a9df",
+      "botId": "e2883966-f38e-40e8-a1c0-d1145bdb23c5",
       "scopes": [
         "personal",
         "team",
@@ -55,7 +55,7 @@
     {
       "entityId": "getting-started",
       "name": "Getting Started",
-      "contentUrl": "https://helkinswarm-func-prod-eus2.ambitiousocean-4fe743f3.eastus2.azurecontainerapps.io/api/tab/getting-started",
+      "contentUrl": "https://helkinswarm-func-a7f2.purplepebble-508e1162.eastus2.azurecontainerapps.io/api/tab/getting-started",
       "scopes": [
         "personal"
       ]
@@ -63,7 +63,7 @@
     {
       "entityId": "control-center",
       "name": "Control Center",
-      "contentUrl": "https://helkinswarm-func-prod-eus2.ambitiousocean-4fe743f3.eastus2.azurecontainerapps.io/api/tab/control-center",
+      "contentUrl": "https://helkinswarm-func-a7f2.purplepebble-508e1162.eastus2.azurecontainerapps.io/api/tab/control-center",
       "scopes": [
         "personal"
       ]
@@ -74,6 +74,6 @@
     "messageTeamMembers"
   ],
   "validDomains": [
-    "helkinswarm-func-prod-eus2.ambitiousocean-4fe743f3.eastus2.azurecontainerapps.io"
+    "helkinswarm-func-a7f2.purplepebble-508e1162.eastus2.azurecontainerapps.io"
   ]
 }
