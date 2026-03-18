@@ -1,0 +1,124 @@
+// Eternal Overseer — the brain of HelkinSwarm.
+// Never ends: processes one message, then ContinueAsNew with carried-over summary.
+// Spec ref: 08-Orchestrator-Patterns.md
+
+import * as df from 'durable-functions';
+import type { ConversationReference } from 'botbuilder';
+import {
+  type OverseerState,
+  createInitialState,
+  stateForContinueAsNew,
+} from './stateManager.js';
+import {
+  createTokenBudget,
+  addTokens,
+  shouldSummarize,
+} from './tokenBudget.js';
+import type { SessionInput, SessionResult } from './sessionOrchestrator.js';
+import type { SummarizeInput, SummarizeResult } from './summarizeActivity.js';
+
+export interface NewMessageEvent {
+  userMessage: string;
+  conversationReference: Partial<ConversationReference>;
+  userId: string;
+  userAlias: string;
+}
+
+df.app.orchestration('overseer', function* (context) {
+  // Load or initialize state from input
+  const rawInput = context.df.getInput();
+  let state: OverseerState;
+
+  if (rawInput && typeof rawInput === 'object' && 'userId' in (rawInput as Record<string, unknown>)) {
+    state = rawInput as OverseerState;
+  } else {
+    // First launch — wait for first message to get user info
+    const firstMsg: NewMessageEvent = yield context.df.waitForExternalEvent(
+      'NewMessage',
+    );
+    state = createInitialState({
+      userId: firstMsg.userId,
+      userAlias: firstMsg.userAlias,
+      conversationId: firstMsg.conversationReference.conversation?.id ?? 'unknown',
+    });
+    // Process this first message immediately
+    yield* processTurn(context, state, firstMsg);
+    return;
+  }
+
+  // Initialize token budget from state
+  let tokenBudget = createTokenBudget(state.maxTokens);
+  tokenBudget = addTokens(tokenBudget, state.totalTokens);
+
+  // Main eternal loop: wait for events, process, decide whether to ContinueAsNew
+  // Each iteration handles one message, then the orchestrator checks budget.
+  const event: NewMessageEvent = yield context.df.waitForExternalEvent(
+    'NewMessage',
+  );
+
+  // Delegate turn to session sub-orchestrator
+  const sessionInput: SessionInput = {
+    state,
+    userMessage: event.userMessage,
+    conversationReference: event.conversationReference,
+  };
+
+  const sessionResult: SessionResult = yield context.df.callSubOrchestrator(
+    'sessionOrchestrator',
+    sessionInput,
+  );
+
+  // Update token budget
+  tokenBudget = addTokens(tokenBudget, sessionResult.tokensUsed);
+  state.totalTokens = tokenBudget.totalTokens;
+  state.turnCount++;
+  state.lastActivityTimestamp = new Date().toISOString();
+
+  // Check if we need to summarize + ContinueAsNew
+  if (shouldSummarize(tokenBudget)) {
+    const summarizeInput: SummarizeInput = {
+      currentSummary: state.summary,
+      recentMessages: sessionResult.response,
+      turnCount: state.turnCount,
+    };
+    const summarizeResult: SummarizeResult = yield context.df.callActivity(
+      'summarizeActivity',
+      summarizeInput,
+    );
+
+    // Note: Durable Functions JS SDK v3 does not support timeout on waitForExternalEvent.
+    // Pending events will be picked up in the next ContinueAsNew cycle.
+
+    // Build carry-over state for ContinueAsNew
+    const newState = stateForContinueAsNew(state, summarizeResult.summary);
+    context.df.continueAsNew(newState);
+    return;
+  }
+
+  // No summarization needed — ContinueAsNew with current state
+  context.df.continueAsNew(state);
+});
+
+// Helper generator to process a turn (used for first message path)
+function* processTurn(
+  context: df.OrchestrationContext,
+  state: OverseerState,
+  event: NewMessageEvent,
+): Generator<df.Task, void, SessionResult> {
+  const sessionInput: SessionInput = {
+    state,
+    userMessage: event.userMessage,
+    conversationReference: event.conversationReference,
+  };
+
+  const sessionResult: SessionResult = yield context.df.callSubOrchestrator(
+    'sessionOrchestrator',
+    sessionInput,
+  );
+
+  state.totalTokens += sessionResult.tokensUsed;
+  state.turnCount++;
+  state.lastActivityTimestamp = new Date().toISOString();
+
+  context.df.continueAsNew(state);
+}
