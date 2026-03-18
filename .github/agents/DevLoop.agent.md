@@ -128,7 +128,9 @@ The full specification lives in `docs/` (01–16 + 0a–0m). Key references:
 - **14** — Testing & E2E
 
 ### Never-Close Issues
-Issues #3 (Codebase Health) and #4 (Architecture Introspection) are permanent maintenance issues. Reference them when updating instruction files or refactoring architecture.
+Two permanent recurring issues will be created during Phase 0.5 (Backlog Initialization). Reference them by title until their issue numbers are known:
+- "[RECURRING] Codebase Health & Documentation Alignment" — permanent review
+- "[RECURRING] Architecture & Design Introspection Pass" — permanent alignment check
 
 ### Architecture Reference
 
