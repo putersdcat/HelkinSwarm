@@ -59,7 +59,7 @@ async function loadUserMap(): Promise<UserMap> {
 app.http('router', {
   methods: ['POST'],
   authLevel: 'anonymous',
-  route: 'api/messages',
+  route: 'messages',
   handler: async (
     req: HttpRequest,
     context: InvocationContext,

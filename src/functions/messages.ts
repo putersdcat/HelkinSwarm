@@ -13,14 +13,19 @@ import { createAdapter } from '../bot/adapter.js';
 import { HelkinSwarmBot } from '../bot/HelkinSwarmBot.js';
 
 app.http('messages', {
-  methods: ['POST'],
+  methods: ['GET', 'POST'],
   authLevel: 'anonymous',
-  route: 'api/messages',
+  route: 'messages',
   extraInputs: [df.input.durableClient()],
   handler: async (
     req: HttpRequest,
     context: InvocationContext,
   ): Promise<HttpResponseInit> => {
+    // GET = health probe / Bot Service ARM validation — return 200 immediately
+    if (req.method === 'GET') {
+      return { status: 200, body: 'Bot endpoint ready' };
+    }
+
     context.log('Received bot message webhook');
 
     const adapter = createAdapter();
