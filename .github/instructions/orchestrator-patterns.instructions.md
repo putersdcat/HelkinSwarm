@@ -62,10 +62,10 @@ Every tool call runs in a **fresh, isolated LLM session** (`subAgentActivity.ts`
 - ✅ Use isolated sub-agent sessions for every tool dispatch
 
 ## Never
-- ❌ Call the LLM, write to Cosmos, or send a Teams message from orchestrator code directly
-- ❌ Use `await` on non-Durable-aware async functions inside orchestrators
-- ❌ Share conversation history between the overseer and a sub-agent session
-- ❌ Allow recursive tool calls (sub-agents cannot call tools)
-- ❌ Block on user confirmation — raise the card, then `yield` an external event
+- ❌ Do NOT Call the LLM, write to Cosmos, or send a Teams message from orchestrator code directly
+- ❌ Do NOT Use `await` on non-Durable-aware async functions inside orchestrators
+- ❌ Do NOT Share conversation history between the overseer and a sub-agent session
+- ❌ Do NOT Allow recursive tool calls (sub-agents cannot call tools)
+- ❌ Do NOT Block on user confirmation — raise the card, then `yield` an external event
 
 *We are the bridge.*

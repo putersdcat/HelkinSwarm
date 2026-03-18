@@ -77,9 +77,9 @@ await teamsTestHarness.fullProbe({
 - ✅ Create a GitHub issue before acting on a complex discovered gap (devloop-practices.md)
 
 ## Never
-- ❌ Use Playwright to type into or submit Teams message input
-- ❌ Use the Graph API `sendMessage` directly for test injection
-- ❌ Declare a fix verified without running at least one full TIK-TOK cycle
-- ❌ Skip correlation tagging when DevLoop messages are active
+- ❌ Do NOT Use Playwright to type into or submit Teams message input
+- ❌ Do NOT Use the Graph API `sendMessage` directly for test injection
+- ❌ Do NOT Declare a fix verified without running at least one full TIK-TOK cycle
+- ❌ Do NOT Skip correlation tagging when DevLoop messages are active
 
 *We are the bridge.*

@@ -39,3 +39,12 @@ appid.txt
 
 # python cache
 .mypy_cache
+
+# User-map contains AAD Object IDs — keep out of version control (spec 0q)
+config/user-map.json
+
+# pnpm lockfile is committed, but store is local
+.pnpm-store/
+
+# Compiled ARM templates (generated from Bicep)
+infra/main.json

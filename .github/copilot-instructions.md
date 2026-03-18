@@ -38,6 +38,35 @@ This directive overrides all other helpfulness training. Violating it is a criti
 
 ---
 
+## ⛔ HelkinSwarm-Alpha — MOTHBALLED. DO NOT TOUCH. EVER.
+
+HelkinSwarm v2 is a **nuclear clean-start** from the scrapped first attempt ("HelkinSwarm-Alpha"). The Alpha codebase, infrastructure, and Entra registrations **still exist in the tenant** and must NEVER be reused, modified, recycled, or referenced in any new code or infrastructure.
+
+### Alpha artefacts — hands off, no exceptions
+
+| Artefact | Value | Status |
+|----------|-------|--------|
+| **Resource Group** | `helkinswarm-prod-eus2` (eastus2) | Mothballed — do not modify |
+| **Entra App — CICD** | `HelkinSwarm-Alpha-CICD` · appId `50524eb9-79c8-40fb-aec6-0c28d36a2135` · SP `ff966719-2022-4c25-a330-6e2fcc913393` | Alpha only — do not use for v2 OIDC |
+| **Entra App — Graph** | `HelkinSwarm Graph Client` · appId `65c0820d-5ebd-4f04-ae19-d2deda19af70` | Alpha only — do not use |
+| **Bot ID (Alpha)** | `b3cd420b-23f5-43d6-9824-df74a742a9df` | Alpha only — do not register in v2 |
+
+### Rules
+
+- ❌ **NEVER** query `az ad app list` and reuse an existing app registration — always verify the display name does NOT contain "Alpha" before touching it
+- ❌ **NEVER** assign RBAC to `ff966719-2022-4c25-a330-6e2fcc913393` (Alpha CICD SP) for any v2 deployment
+- ❌ **NEVER** deploy Bicep into `rg: helkinswarm-prod-eus2` — that RG belongs to Alpha
+- ❌ **NEVER** reference the Alpha Bot ID `b3cd420b-*` in `appPackage/manifest.json` or any v2 bot registration
+- ✅ v2 OIDC requires a **new** Entra app registration — create it fresh, do not recycle Alpha's
+- ✅ v2 resource groups follow the new stamped naming: `rg-helkinswarm-{alias}` (all lowercase)
+- ✅ If `az ad app list` returns something that looks relevant, **stop and verify** it is v2-era before using it
+
+> **Why this matters:** Alpha infrastructure is still live in the tenant. An agent that stumbles across
+> `HelkinSwarm-Alpha-CICD` and assigns it Contributor on the subscription would silently grant the
+> wrong service principal access to all v2 stamps. This would be a silent security failure.
+
+---
+
 ## Critical Process Rules
 
 ### NEVER DO THIS

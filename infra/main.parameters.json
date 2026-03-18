@@ -7,6 +7,9 @@
     },
     "llmProvider": {
       "value": "azure"
+    },
+    "alertEmail": {
+      "value": ""
     }
   }
 }

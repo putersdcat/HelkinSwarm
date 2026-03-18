@@ -66,9 +66,9 @@ await mm.upsertSkillMemory("movieBooking", { savedPaymentMethod: "••••12
 - ✅ Declare `longTermMemorySchema` in capability manifests for every skill that writes memory (0i)
 
 ## Never
-- ❌ Write to Cosmos containers directly — always through `memoryManager.ts`
-- ❌ Store secrets, tokens, or credentials in any Cosmos container
-- ❌ Inject skill memory without checking relevance score (no blind injection)
-- ❌ Bypass the `skillId` scoping for personal user data — always skill-scoped
+- ❌ Do NOT Write to Cosmos containers directly — always through `memoryManager.ts`
+- ❌ Do NOT Store secrets, tokens, or credentials in any Cosmos container
+- ❌ Do NOT Inject skill memory without checking relevance score (no blind injection)
+- ❌ Do NOT Bypass the `skillId` scoping for personal user data — always skill-scoped
 
 *We are the bridge.*

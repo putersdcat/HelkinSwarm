@@ -1,0 +1,746 @@
+# ============================================================================# ============================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+          EOF          | **Timestamp** | \`$(date -u +"%Y-%m-%dT%H:%M:%SZ")\` |          | **Triggered by** | \`${{ github.actor }}\` |          | **Commit** | \`${{ github.sha }}\` |          | **EU Residency** | \`${{ github.event.inputs.EU_RESIDENCY_MODE }}\` |          | **Image Tag** | \`${{ github.sha }}\` |          | **ACR** | \`${{ needs.deploy-infra.outputs.acr-login-server }}\` |          | **Bot Endpoint** | \`https://${{ needs.deploy-app.outputs.fqdn }}/api/messages\` |          | **Health Endpoint** | \`https://${{ needs.deploy-app.outputs.fqdn }}/api/health\` |          | **FQDN** | \`${{ needs.deploy-app.outputs.fqdn }}\` |          | **Function App** | \`${{ needs.deploy-infra.outputs.function-app-name }}\` |          | **Resource Group** | \`${{ env.RESOURCE_GROUP }}\` |          | **User Alias** | \`${{ env.USER_ALIAS }}\` |          |----------|-------|          | Property | Value |          ## 🚀 HelkinSwarm Stamp Deployment — \`${{ env.USER_ALIAS }}\`          cat >> "$GITHUB_STEP_SUMMARY" <<EOF        run: |      - name: Generate deployment summary    steps:    runs-on: ubuntu-latest    if: success()    needs: [deploy-infra, build-and-push, deploy-app]    name: "📊 Deployment Report"  deployment-report:  # ─────────────────────────────────────────────────────────────────────────  # 5. Deployment Report  # ─────────────────────────────────────────────────────────────────────────          fi            echo "✅ Bot Service endpoint is correct"          else            echo "✅ Bot Service endpoint updated"              --body "{\"properties\":{\"endpoint\":\"$EXPECTED_ENDPOINT\"}}"              --url "/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.BotService/botServices/$BOT_NAME?api-version=2022-09-15" \            az rest --method PATCH \            echo "⚠️ Endpoint mismatch — updating..."          if [ "$CURRENT_ENDPOINT" != "$EXPECTED_ENDPOINT" ]; then          echo "Current:  $CURRENT_ENDPOINT"          echo "Expected: $EXPECTED_ENDPOINT"            --query "properties.endpoint" -o tsv 2>/dev/null || echo "")            --subscription "$SUB" \            --resource-group "$RG" \            --name "$BOT_NAME" \          CURRENT_ENDPOINT=$(az bot show \          fi            exit 0            echo "⚠️ No Bot Service found in $RG — skipping endpoint verification"          if [ -z "$BOT_NAME" ]; then            --query "[0].name" -o tsv 2>/dev/null || echo "")            --resource-type "Microsoft.BotService/botServices" \            --resource-group "$RG" --subscription "$SUB" \          BOT_NAME=$(az resource list \          SUB="${{ env.AZURE_SUBSCRIPTION_ID }}"          RG="${{ env.RESOURCE_GROUP }}"          EXPECTED_ENDPOINT="https://${{ steps.verify.outputs.fqdn }}/api/messages"        run: |      - name: Verify Bot Service endpoint          fi            echo "   This may be expected on first deploy while the container starts."            echo "⚠️ Health check did not pass after $MAX_RETRIES attempts (HTTP $HTTP_CODE)"          if [ "$HTTP_CODE" != "200" ]; then          done            sleep 30            echo "⏳ Health check attempt $RETRY/$MAX_RETRIES returned HTTP $HTTP_CODE — retrying in 30s..."            RETRY=$((RETRY + 1))            fi              break              curl -s "https://$HOSTNAME/api/health" | jq .              echo "✅ Health check passed (HTTP $HTTP_CODE)"            if [ "$HTTP_CODE" = "200" ]; then            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$HOSTNAME/api/health" 2>/dev/null || echo "000")          while [ $RETRY -lt $MAX_RETRIES ]; do          RETRY=0          MAX_RETRIES=6          # Health check with retries          echo "fqdn=$HOSTNAME" >> "$GITHUB_OUTPUT"          echo "🏥 Function App hostname: $HOSTNAME"          fi            HOSTNAME="${{ needs.deploy-infra.outputs.function-app-name }}.${CAE_DOMAIN}"              --query "[0].properties.defaultDomain" -o tsv 2>/dev/null || echo "")              --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \              --resource-group "${{ env.RESOURCE_GROUP }}" \            CAE_DOMAIN=$(az containerapp env list \          if [ -z "$HOSTNAME" ]; then            --query defaultHostName -o tsv 2>/dev/null || echo "")            --resource-group "${{ env.RESOURCE_GROUP }}" \            --name ${{ needs.deploy-infra.outputs.function-app-name }} \          HOSTNAME=$(az functionapp show \          sleep 30          echo "⏳ Waiting for deployment to propagate..."        run: |        id: verify      - name: Verify deployment & health check            --body "{\"properties\":{\"siteConfig\":{\"linuxFxVersion\":\"DOCKER|${ACR_SERVER}/helkinswarm:${IMAGE_TAG}\",\"acrUseManagedIdentityCreds\":true,\"acrUserManagedIdentityID\":\"${MI_RESOURCE_ID}\"}}}"            --url "/subscriptions/${{ env.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ env.RESOURCE_GROUP }}/providers/Microsoft.Web/sites/${FUNC_NAME}?api-version=2023-12-01" \          az rest --method PATCH \          # Switch to ACR image with managed identity auth            --settings DOCKER_REGISTRY_SERVER_URL="${ACR_SERVER}"            --resource-group "${{ env.RESOURCE_GROUP }}" \            --name "${FUNC_NAME}" \          az functionapp config appsettings set \          # Set ACR URL          IMAGE_TAG=${{ github.sha }}          MI_RESOURCE_ID=${{ needs.deploy-infra.outputs.managed-identity-resource-id }}          ACR_SERVER=${{ needs.deploy-infra.outputs.acr-login-server }}          FUNC_NAME=${{ needs.deploy-infra.outputs.function-app-name }}        run: |      - name: Update Function App container image          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}          tenant-id: ${{ vars.AZURE_TENANT_ID }}          client-id: ${{ vars.AZURE_CLIENT_ID }}        with:        uses: azure/login@v2      - name: Azure Login (OIDC)    steps:      fqdn: ${{ steps.verify.outputs.fqdn }}    outputs:    runs-on: ubuntu-latest    needs: [deploy-infra, build-and-push]    name: Deploy to Container Apps  deploy-app:  # ─────────────────────────────────────────────────────────────────────────  # 4. Deploy to Container Apps  # ─────────────────────────────────────────────────────────────────────────          docker push $IMAGE_LATEST          docker push $IMAGE          docker build -t $IMAGE -t $IMAGE_LATEST .          IMAGE_LATEST=${{ needs.deploy-infra.outputs.acr-login-server }}/helkinswarm:latest          IMAGE=${{ needs.deploy-infra.outputs.acr-login-server }}/helkinswarm:${{ github.sha }}        run: |      - name: Build and push Docker image        run: az acr login --name ${{ needs.deploy-infra.outputs.acr-name }}      - name: Login to ACR          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}          tenant-id: ${{ vars.AZURE_TENANT_ID }}          client-id: ${{ vars.AZURE_CLIENT_ID }}        with:        uses: azure/login@v2      - name: Azure Login (OIDC)        uses: actions/checkout@v4      - name: Checkout    steps:    runs-on: ubuntu-latest    needs: deploy-infra    name: Build & Push Container  build-and-push:  # ─────────────────────────────────────────────────────────────────────────  # 3. Build & Push Container Image  # ─────────────────────────────────────────────────────────────────────────          echo "managedIdentityResourceId=$MI_RESOURCE_ID" >> "$GITHUB_OUTPUT"          echo "managedIdentityClientId=$MI_CLIENT_ID"   >> "$GITHUB_OUTPUT"          echo "functionAppName=$FUNC_NAME"      >> "$GITHUB_OUTPUT"          echo "acrName=$ACR_NAME"               >> "$GITHUB_OUTPUT"          echo "acrLoginServer=$ACR_LOGIN"       >> "$GITHUB_OUTPUT"          fi            exit 1            echo "❌ Function App not found in ${{ env.RESOURCE_GROUP }}"          if [ -z "$FUNC_NAME" ]; then          echo "  UAMI Client ID: $MI_CLIENT_ID"          echo "  Function App: $FUNC_NAME"          echo "  ACR: $ACR_NAME ($ACR_LOGIN)"          MI_RESOURCE_ID=$(echo "$UAMI_INFO" | jq -r '.id // ""')          MI_CLIENT_ID=$(echo "$UAMI_INFO" | jq -r '.clientId // ""')          FUNC_NAME=$(echo "$FUNC_INFO" | jq -r '.name // ""')          ACR_NAME=$(echo "$ACR_INFO" | jq -r '.name // ""')          ACR_LOGIN=$(echo "$ACR_INFO" | jq -r '.loginServer // ""')            --output json 2>/dev/null || echo '{}')            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \            --resource-group "${{ env.RESOURCE_GROUP }}" \            --name "helkinswarm-id-${{ env.USER_ALIAS }}" \          UAMI_INFO=$(az identity show \            --query "[0]" --output json 2>/dev/null || echo '{}')            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \            --resource-group "${{ env.RESOURCE_GROUP }}" \          FUNC_INFO=$(az functionapp list \            --query "[0]" --output json 2>/dev/null || echo '{}')            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \            --resource-group "${{ env.RESOURCE_GROUP }}" \          ACR_INFO=$(az acr list \          echo "📦 Querying deployed resources..."        run: |        id: query      - name: Query deployed resources          echo "✅ Bicep deployment complete for stamp '${{ env.USER_ALIAS }}'"          fi            fi              exit 1              echo "$DEPLOY_OUT"              echo "❌ Deployment failed:"            else              echo "    Continuing — Bicep will converge on next clean deploy."              echo "⚠️  RoleAssignmentExists: role assignments already provisioned."            if [ "$ROLE_EXISTS" -gt 0 ] && [ "$REAL_ERRORS" -eq 0 ]; then              | wc -l)              | grep -v '"DeploymentFailed"' \              | grep -v '"RoleAssignmentExists"' \            REAL_ERRORS=$(echo "$DEPLOY_OUT" | grep '"code"' \            ROLE_EXISTS=$(echo "$DEPLOY_OUT" | grep -c '"RoleAssignmentExists"' || true)          if [ $DEPLOY_EXIT -ne 0 ]; then          DEPLOY_EXIT=$?            --output json 2>&1)              euResidencyMode=${{ github.event.inputs.EU_RESIDENCY_MODE }} \              alertEmail="${{ vars.ALERT_EMAIL }}" \              userPrincipalId="${{ vars.USER_PRINCIPAL_ID }}" \              userAlias="${{ env.USER_ALIAS }}" \            --parameters "@infra/main.parameters.json" \            --template-file infra/main.bicep \            --resource-group "${{ env.RESOURCE_GROUP }}" \            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \          DEPLOY_OUT=$(az deployment group create \          echo "🚀 Deploying Bicep for stamp '${{ env.USER_ALIAS }}'..."          set +e        run: |        id: bicep      - name: Deploy Bicep          fi            echo "ℹ️  No ARM role assignments found for UAMI"          else            echo "✅ ARM role assignments cleared"            done                az role assignment delete --ids "$ASSIGNMENT_ID" 2>/dev/null || true              [ -n "$ASSIGNMENT_ID" ] && \            echo "$ASSIGNMENT_IDS" | tr '\t' '\n' | while read -r ASSIGNMENT_ID; do          if [ -n "$ASSIGNMENT_IDS" ]; then            --query "[].id" -o tsv 2>/dev/null || echo "")            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \            --assignee "$UAMI_PRINCIPAL_ID" \          ASSIGNMENT_IDS=$(az role assignment list \          echo "🧹 Removing ARM role assignments for UAMI $UAMI_PRINCIPAL_ID (Bicep will recreate)"          fi            exit 0            echo "ℹ️  UAMI not yet provisioned — skipping role assignment cleanup (first deploy)"          if [ -z "$UAMI_PRINCIPAL_ID" ]; then            --query principalId -o tsv 2>/dev/null || echo "")            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \            --resource-group "${{ env.RESOURCE_GROUP }}" \            --name "helkinswarm-id-${{ env.USER_ALIAS }}" \          UAMI_PRINCIPAL_ID=$(az identity show \          echo "🔍 Looking up UAMI principal ID..."          set +e        run: |      - name: Reset UAMI role assignments (idempotency pre-check)            --tags "project=HelkinSwarm" "userAlias=${{ env.USER_ALIAS }}" "managedBy=deploy-stamp.yml"            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \            --location eastus2 \            --name "${{ env.RESOURCE_GROUP }}" \          az group create \        run: |      - name: Create resource group if not exists          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}          tenant-id: ${{ vars.AZURE_TENANT_ID }}          client-id: ${{ vars.AZURE_CLIENT_ID }}        with:        uses: azure/login@v2      - name: Azure Login (OIDC)        uses: actions/checkout@v4      - name: Checkout    steps:      managed-identity-resource-id: ${{ steps.query.outputs.managedIdentityResourceId }}      managed-identity-client-id: ${{ steps.query.outputs.managedIdentityClientId }}      function-app-name: ${{ steps.query.outputs.functionAppName }}      acr-name: ${{ steps.query.outputs.acrName }}      acr-login-server: ${{ steps.query.outputs.acrLoginServer }}    outputs:    runs-on: ubuntu-latest    needs: validate    name: Deploy Infrastructure  deploy-infra:  # ─────────────────────────────────────────────────────────────────────────  # 2. Deploy Infrastructure (Bicep)  # ─────────────────────────────────────────────────────────────────────────          echo "✅ USER_ALIAS '$ALIAS' is valid"          fi            exit 1            echo "❌ USER_ALIAS must be exactly 4 lowercase alphanumeric characters. Got: '$ALIAS'"          if ! echo "$ALIAS" | grep -qE '^[a-z0-9]{4}$'; then          ALIAS="${{ github.event.inputs.USER_ALIAS }}"        run: |      - name: Validate USER_ALIAS format    steps:    runs-on: ubuntu-latest    name: Validate Inputs  validate:  # ─────────────────────────────────────────────────────────────────────────  # 1. Validate inputs  # ─────────────────────────────────────────────────────────────────────────jobs:  ACR_NAME: "helkinswarmacr"  RESOURCE_GROUP: "rg-helkinswarm-${{ github.event.inputs.USER_ALIAS }}"  USER_ALIAS: ${{ github.event.inputs.USER_ALIAS }}  USER_PRINCIPAL_ID: ${{ vars.USER_PRINCIPAL_ID }}  AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}  AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}  AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}env:  contents: read  id-token: write   # OIDC token for Azure loginpermissions:  cancel-in-progress: false  group: deploy-${{ github.event.inputs.USER_ALIAS }}concurrency:# Only one stamp deployment at a time per alias        default: false        type: boolean        required: false        description: "Enable EU Data Residency (DataZoneStandard models)"      EU_RESIDENCY_MODE:        type: string        required: true        description: "4-char alphanumeric user alias (e.g. a7f2)"      USER_ALIAS:    inputs:  workflow_dispatch:on:name: Deploy Stamp# ============================================================================# Spec refs: 0q-Multi-Instance-Architecture.md, 12-Deployment-CICD.md## user-isolated Azure footprint identified by USER_ALIAS.# THE ONLY deployment workflow. Each run provisions/updates a complete# HelkinSwarm — deploy-stamp.yml: Stamped User Instance Deployment# HelkinSwarm — deploy-stamp.yml: Stamped User Instance Deployment
+# THE ONLY deployment workflow. Each run provisions/updates a complete
+# user-isolated Azure footprint identified by USER_ALIAS.
+#
+# Spec refs: 0q-Multi-Instance-Architecture.md, 12-Deployment-CICD.md
+# ============================================================================
+
+name: Deploy Stamp
+
+on:
+  workflow_dispatch:
+    inputs:
+      USER_ALIAS:
+        description: "4-char alphanumeric user alias (e.g. a7f2)"
+        required: true
+        type: string
+      EU_RESIDENCY_MODE:
+        description: "Enable EU Data Residency (DataZoneStandard models)"
+        required: false
+        type: boolean
+        default: false
+
+# Only one stamp deployment at a time per alias
+concurrency:
+  group: deploy-${{ github.event.inputs.USER_ALIAS }}
+  cancel-in-progress: false
+
+permissions:
+  id-token: write   # OIDC token for Azure login
+  contents: read
+
+env:
+  AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  USER_PRINCIPAL_ID: ${{ vars.USER_PRINCIPAL_ID }}
+  USER_ALIAS: ${{ github.event.inputs.USER_ALIAS }}
+  RESOURCE_GROUP: "rg-helkinswarm-${{ github.event.inputs.USER_ALIAS }}"
+  ACR_NAME: "helkinswarmacr"
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # 1. Validate inputs
+  # ─────────────────────────────────────────────────────────────────────────
+  validate:
+    name: Validate Inputs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate USER_ALIAS format
+        run: |
+          ALIAS="${{ github.event.inputs.USER_ALIAS }}"
+          if ! echo "$ALIAS" | grep -qE '^[a-z0-9]{4}$'; then
+            echo "❌ USER_ALIAS must be exactly 4 lowercase alphanumeric characters. Got: '$ALIAS'"
+            exit 1
+          fi
+          echo "✅ USER_ALIAS '$ALIAS' is valid"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 2. Deploy Infrastructure (Bicep)
+  # ─────────────────────────────────────────────────────────────────────────
+  deploy-infra:
+    name: Deploy Infrastructure
+    needs: validate
+    runs-on: ubuntu-latest
+    outputs:
+      acr-login-server: ${{ steps.query.outputs.acrLoginServer }}
+      acr-name: ${{ steps.query.outputs.acrName }}
+      function-app-name: ${{ steps.query.outputs.functionAppName }}
+      managed-identity-client-id: ${{ steps.query.outputs.managedIdentityClientId }}
+      managed-identity-resource-id: ${{ steps.query.outputs.managedIdentityResourceId }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Create resource group if not exists
+        run: |
+          az group create \
+            --name "${{ env.RESOURCE_GROUP }}" \
+            --location eastus2 \
+            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
+            --tags "project=HelkinSwarm" "userAlias=${{ env.USER_ALIAS }}" "managedBy=deploy-stamp.yml"
+
+      - name: Reset UAMI role assignments (idempotency pre-check)
+        run: |
+          set +e
+          echo "🔍 Looking up UAMI principal ID..."
+          UAMI_PRINCIPAL_ID=$(az identity show \
+            --name "helkinswarm-id-${{ env.USER_ALIAS }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
+            --query principalId -o tsv 2>/dev/null || echo "")
+
+          if [ -z "$UAMI_PRINCIPAL_ID" ]; then
+            echo "ℹ️  UAMI not yet provisioned — skipping role assignment cleanup (first deploy)"
+            exit 0
+          fi
+
+          echo "🧹 Removing ARM role assignments for UAMI $UAMI_PRINCIPAL_ID (Bicep will recreate)"
+          ASSIGNMENT_IDS=$(az role assignment list \
+            --assignee "$UAMI_PRINCIPAL_ID" \
+            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
+            --query "[].id" -o tsv 2>/dev/null || echo "")
+
+          if [ -n "$ASSIGNMENT_IDS" ]; then
+            echo "$ASSIGNMENT_IDS" | tr '\t' '\n' | while read -r ASSIGNMENT_ID; do
+              [ -n "$ASSIGNMENT_ID" ] && \
+                az role assignment delete --ids "$ASSIGNMENT_ID" 2>/dev/null || true
+            done
+            echo "✅ ARM role assignments cleared"
+          else
+            echo "ℹ️  No ARM role assignments found for UAMI"
+          fi
+
+      - name: Deploy Bicep
+        id: bicep
+        run: |
+          set +e
+          echo "🚀 Deploying Bicep for stamp '${{ env.USER_ALIAS }}'..."
+          DEPLOY_OUT=$(az deployment group create \
+            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --template-file infra/main.bicep \
+            --parameters "@infra/main.parameters.json" \
+              userAlias="${{ env.USER_ALIAS }}" \
+              userPrincipalId="${{ vars.USER_PRINCIPAL_ID }}" \
+              alertEmail="${{ vars.ALERT_EMAIL }}" \
+              euResidencyMode=${{ github.event.inputs.EU_RESIDENCY_MODE }} \
+            --output json 2>&1)
+          DEPLOY_EXIT=$?
+
+          if [ $DEPLOY_EXIT -ne 0 ]; then
+            ROLE_EXISTS=$(echo "$DEPLOY_OUT" | grep -c '"RoleAssignmentExists"' || true)
+            REAL_ERRORS=$(echo "$DEPLOY_OUT" | grep '"code"' \
+              | grep -v '"RoleAssignmentExists"' \
+              | grep -v '"DeploymentFailed"' \
+              | wc -l)
+
+            if [ "$ROLE_EXISTS" -gt 0 ] && [ "$REAL_ERRORS" -eq 0 ]; then
+              echo "⚠️  RoleAssignmentExists: role assignments already provisioned."
+              echo "    Continuing — Bicep will converge on next clean deploy."
+            else
+              echo "❌ Deployment failed:"
+              echo "$DEPLOY_OUT"
+              exit 1
+            fi
+          fi
+
+          echo "✅ Bicep deployment complete for stamp '${{ env.USER_ALIAS }}'"
+
+      - name: Query deployed resources
+        id: query
+        run: |
+          echo "📦 Querying deployed resources..."
+
+          ACR_INFO=$(az acr list \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
+            --query "[0]" --output json 2>/dev/null || echo '{}')
+
+          FUNC_INFO=$(az functionapp list \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
+            --query "[0]" --output json 2>/dev/null || echo '{}')
+
+          UAMI_INFO=$(az identity show \
+            --name "helkinswarm-id-${{ env.USER_ALIAS }}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
+            --output json 2>/dev/null || echo '{}')
+
+          ACR_LOGIN=$(echo "$ACR_INFO" | jq -r '.loginServer // ""')
+          ACR_NAME=$(echo "$ACR_INFO" | jq -r '.name // ""')
+          FUNC_NAME=$(echo "$FUNC_INFO" | jq -r '.name // ""')
+          MI_CLIENT_ID=$(echo "$UAMI_INFO" | jq -r '.clientId // ""')
+          MI_RESOURCE_ID=$(echo "$UAMI_INFO" | jq -r '.id // ""')
+
+          echo "  ACR: $ACR_NAME ($ACR_LOGIN)"
+          echo "  Function App: $FUNC_NAME"
+          echo "  UAMI Client ID: $MI_CLIENT_ID"
+
+          if [ -z "$FUNC_NAME" ]; then
+            echo "❌ Function App not found in ${{ env.RESOURCE_GROUP }}"
+            exit 1
+          fi
+
+          echo "acrLoginServer=$ACR_LOGIN"       >> "$GITHUB_OUTPUT"
+          echo "acrName=$ACR_NAME"               >> "$GITHUB_OUTPUT"
+          echo "functionAppName=$FUNC_NAME"      >> "$GITHUB_OUTPUT"
+          echo "managedIdentityClientId=$MI_CLIENT_ID"   >> "$GITHUB_OUTPUT"
+          echo "managedIdentityResourceId=$MI_RESOURCE_ID" >> "$GITHUB_OUTPUT"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 3. Build & Push Container Image
+  # ─────────────────────────────────────────────────────────────────────────
+  build-and-push:
+    name: Build & Push Container
+    needs: deploy-infra
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        run: az acr login --name ${{ needs.deploy-infra.outputs.acr-name }}
+
+      - name: Build and push Docker image
+        run: |
+          IMAGE=${{ needs.deploy-infra.outputs.acr-login-server }}/helkinswarm:${{ github.sha }}
+          IMAGE_LATEST=${{ needs.deploy-infra.outputs.acr-login-server }}/helkinswarm:latest
+          docker build -t $IMAGE -t $IMAGE_LATEST .
+          docker push $IMAGE
+          docker push $IMAGE_LATEST
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 4. Deploy to Container Apps
+  # ─────────────────────────────────────────────────────────────────────────
+  deploy-app:
+    name: Deploy to Container Apps
+    needs: [deploy-infra, build-and-push]
+    runs-on: ubuntu-latest
+    outputs:
+      fqdn: ${{ steps.verify.outputs.fqdn }}
+
+    steps:
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Update Function App container image
+        run: |
+          FUNC_NAME=${{ needs.deploy-infra.outputs.function-app-name }}
+          ACR_SERVER=${{ needs.deploy-infra.outputs.acr-login-server }}
+          MI_RESOURCE_ID=${{ needs.deploy-infra.outputs.managed-identity-resource-id }}
+          IMAGE_TAG=${{ github.sha }}
+
+          # Set ACR URL
+          az functionapp config appsettings set \
+            --name "${FUNC_NAME}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --settings DOCKER_REGISTRY_SERVER_URL="${ACR_SERVER}"
+
+          # Switch to ACR image with managed identity auth
+          az rest --method PATCH \
+            --url "/subscriptions/${{ env.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ env.RESOURCE_GROUP }}/providers/Microsoft.Web/sites/${FUNC_NAME}?api-version=2023-12-01" \
+            --body "{\"properties\":{\"siteConfig\":{\"linuxFxVersion\":\"DOCKER|${ACR_SERVER}/helkinswarm:${IMAGE_TAG}\",\"acrUseManagedIdentityCreds\":true,\"acrUserManagedIdentityID\":\"${MI_RESOURCE_ID}\"}}}"
+
+      - name: Verify deployment & health check
+        id: verify
+        run: |
+          echo "⏳ Waiting for deployment to propagate..."
+          sleep 30
+
+          HOSTNAME=$(az functionapp show \
+            --name ${{ needs.deploy-infra.outputs.function-app-name }} \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --query defaultHostName -o tsv 2>/dev/null || echo "")
+
+          if [ -z "$HOSTNAME" ]; then
+            CAE_DOMAIN=$(az containerapp env list \
+              --resource-group "${{ env.RESOURCE_GROUP }}" \
+              --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
+              --query "[0].properties.defaultDomain" -o tsv 2>/dev/null || echo "")
+            HOSTNAME="${{ needs.deploy-infra.outputs.function-app-name }}.${CAE_DOMAIN}"
+          fi
+
+          echo "🏥 Function App hostname: $HOSTNAME"
+          echo "fqdn=$HOSTNAME" >> "$GITHUB_OUTPUT"
+
+          # Health check with retries
+          MAX_RETRIES=6
+          RETRY=0
+          while [ $RETRY -lt $MAX_RETRIES ]; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$HOSTNAME/api/health" 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Health check passed (HTTP $HTTP_CODE)"
+              curl -s "https://$HOSTNAME/api/health" | jq .
+              break
+            fi
+            RETRY=$((RETRY + 1))
+            echo "⏳ Health check attempt $RETRY/$MAX_RETRIES returned HTTP $HTTP_CODE — retrying in 30s..."
+            sleep 30
+          done
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "⚠️ Health check did not pass after $MAX_RETRIES attempts (HTTP $HTTP_CODE)"
+            echo "   This may be expected on first deploy while the container starts."
+          fi
+
+      - name: Verify Bot Service endpoint
+        run: |
+          EXPECTED_ENDPOINT="https://${{ steps.verify.outputs.fqdn }}/api/messages"
+          RG="${{ env.RESOURCE_GROUP }}"
+          SUB="${{ env.AZURE_SUBSCRIPTION_ID }}"
+
+          BOT_NAME=$(az resource list \
+            --resource-group "$RG" --subscription "$SUB" \
+            --resource-type "Microsoft.BotService/botServices" \
+            --query "[0].name" -o tsv 2>/dev/null || echo "")
+
+          if [ -z "$BOT_NAME" ]; then
+            echo "⚠️ No Bot Service found in $RG — skipping endpoint verification"
+            exit 0
+          fi
+
+          CURRENT_ENDPOINT=$(az bot show \
+            --name "$BOT_NAME" \
+            --resource-group "$RG" \
+            --subscription "$SUB" \
+            --query "properties.endpoint" -o tsv 2>/dev/null || echo "")
+
+          echo "Expected: $EXPECTED_ENDPOINT"
+          echo "Current:  $CURRENT_ENDPOINT"
+
+          if [ "$CURRENT_ENDPOINT" != "$EXPECTED_ENDPOINT" ]; then
+            echo "⚠️ Endpoint mismatch — updating..."
+            az rest --method PATCH \
+              --url "/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.BotService/botServices/$BOT_NAME?api-version=2022-09-15" \
+              --body "{\"properties\":{\"endpoint\":\"$EXPECTED_ENDPOINT\"}}"
+            echo "✅ Bot Service endpoint updated"
+          else
+            echo "✅ Bot Service endpoint is correct"
+          fi
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 5. Deployment Report
+  # ─────────────────────────────────────────────────────────────────────────
+  deployment-report:
+    name: "📊 Deployment Report"
+    needs: [deploy-infra, build-and-push, deploy-app]
+    if: success()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Generate deployment summary
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<EOF
+          ## 🚀 HelkinSwarm Stamp Deployment — \`${{ env.USER_ALIAS }}\`
+
+          | Property | Value |
+          |----------|-------|
+          | **User Alias** | \`${{ env.USER_ALIAS }}\` |
+          | **Resource Group** | \`${{ env.RESOURCE_GROUP }}\` |
+          | **Function App** | \`${{ needs.deploy-infra.outputs.function-app-name }}\` |
+          | **FQDN** | \`${{ needs.deploy-app.outputs.fqdn }}\` |
+          | **Health Endpoint** | \`https://${{ needs.deploy-app.outputs.fqdn }}/api/health\` |
+          | **Bot Endpoint** | \`https://${{ needs.deploy-app.outputs.fqdn }}/api/messages\` |
+          | **ACR** | \`${{ needs.deploy-infra.outputs.acr-login-server }}\` |
+          | **Image Tag** | \`${{ github.sha }}\` |
+          | **EU Residency** | \`${{ github.event.inputs.EU_RESIDENCY_MODE }}\` |
+          | **Commit** | \`${{ github.sha }}\` |
+          | **Triggered by** | \`${{ github.actor }}\` |
+          | **Timestamp** | \`$(date -u +"%Y-%m-%dT%H:%M:%SZ")\` |
+          EOF

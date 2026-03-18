@@ -80,10 +80,10 @@ Every new skill must answer:
 - ✅ Validate manifests with Zod schema, not just JSON parse
 
 ## Never
-- ❌ Ship a tool without a manifest — it will not be registered
-- ❌ Understate `risk` — when in doubt, go one level higher
-- ❌ Import between skill domains (no `skills/outlook/` importing from `skills/github/`)
-- ❌ Put tool implementation in `src/` — skill implementations belong in `skills/<domain>/tools/`
-- ❌ Allow SkillForge output to skip the 0e verification pipeline
+- ❌ Do NOT Ship a tool without a manifest — it will not be registered
+- ❌ Do NOT Understate `risk` — when in doubt, go one level higher
+- ❌ Do NOT Import between skill domains (no `skills/outlook/` importing from `skills/github/`)
+- ❌ Do NOT Put tool implementation in `src/` — skill implementations belong in `skills/<domain>/tools/`
+- ❌ Do NOT Allow SkillForge output to skip the 0e verification pipeline
 
 *We are the bridge.*

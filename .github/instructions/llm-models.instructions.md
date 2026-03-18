@@ -57,10 +57,10 @@ const routing = {
 - ✅ Respect `allowedModelLane` in capability manifests (`any | global | eu-only`)
 
 ## Never
-- ❌ Hard-code model deployment names or Foundry endpoint URLs in code
-- ❌ Pass the full tool list to the LLM unfiltered — always apply safety + model lane filters
-- ❌ Allow the LLM sub-agent to call tools recursively
-- ❌ Bypass the safety pipeline or model-profile masking
-- ❌ Edit model profiles manually — they are DevLoop-managed artifacts
+- ❌ Do NOT Hard-code model deployment names or Foundry endpoint URLs in code
+- ❌ Do NOT Pass the full tool list to the LLM unfiltered — always apply safety + model lane filters
+- ❌ Do NOT Allow the LLM sub-agent to call tools recursively
+- ❌ Do NOT Bypass the safety pipeline or model-profile masking
+- ❌ Do NOT Edit model profiles manually — they are DevLoop-managed artifacts
 
 *We are the bridge.*

@@ -77,9 +77,9 @@ test("outlook_draft_email — creates a draft for boss", async () => {
 - ✅ Clean up test data in `afterEach` — never leave Cosmos seeds across tests
 
 ## Never
-- ❌ Use Playwright to type into or send Teams messages
-- ❌ Call `teamsTestHarness.fullProbe` from unit or integration tests — e2e only
-- ❌ Write tests that assume specific model names — use model lane assertions only
-- ❌ Mark a feature "tested" without at least one passing full-probe result
+- ❌ Do NOT Use Playwright to type into or send Teams messages
+- ❌ Do NOT Call `teamsTestHarness.fullProbe` from unit or integration tests — e2e only
+- ❌ Do NOT Write tests that assume specific model names — use model lane assertions only
+- ❌ Do NOT Mark a feature "tested" without at least one passing full-probe result
 
 *We are the bridge.*

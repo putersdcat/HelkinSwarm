@@ -49,10 +49,10 @@ The bot handler is a **thin routing layer only**. It acks immediately, raises a 
 - ✅ For bot-response debugging, use the Teams Test Harness MCP (`teams_test_full_probe`)
 
 ## Never
-- ❌ Call the LLM or execute tools from within the bot handler
-- ❌ Block the handler waiting for LLM response or tool results
-- ❌ Use Playwright to send test messages to Teams
-- ❌ Store secrets or tokens in conversation state
-- ❌ Skip the ack on any non-trivial message
+- ❌ Do NOT Call the LLM or execute tools from within the bot handler
+- ❌ Do NOT Block the handler waiting for LLM response or tool results
+- ❌ Do NOT Use Playwright to send test messages to Teams
+- ❌ Do NOT Store secrets or tokens in conversation state
+- ❌ Do NOT Skip the ack on any non-trivial message
 
 *We are the bridge.*

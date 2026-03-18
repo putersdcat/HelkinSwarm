@@ -4,6 +4,59 @@
 ### Core Principle
 Every user gets a **dedicated, isolated Azure footprint**. No shared resources except global service principals and the single Teams app. (however during development, its just understood the only existing instance will also be linked up to the development machinery of the main developer, so it will be used for development and testing, but it is still a one-to-one deployment, just with one user for now).
 
+## Phase 0.75 Decisions (Locked)
+
+The Architecture Research Gate is complete and approved in GitHub:
+- `#17` **[ARCH DECISION] Global Router Architecture** (closed/approved)
+- `#18` **[ARCH DECISION] Multi-Instance Stamping Parameterization Design** (closed/approved)
+
+### Router Decision
+- **Chosen approach:** Azure Functions HTTP trigger on **Consumption** plan (`helkinswarm-router`)
+- **Why:** lowest cost at personal scale, simplest operations, native HTTP trigger model, direct access to Bot Framework activity JSON body
+- **Rejected:**
+	- API Management Consumption (no Entra integration on Consumption tier + unnecessary policy complexity)
+	- Front Door (base monthly cost floor + cannot route by request-body identity)
+	- Container Apps Job (not HTTP-triggered by design)
+
+### Routing Identity Decision
+- **Primary routing key:** `activity.from.aadObjectId`
+- **Do not use as primary key:** `activity.from.id` (channel-scoped and not stable across systems)
+- `upn` is informational and may change; `aadObjectId` is immutable
+
+### user-map Decision
+- Router lookup source is `config/user-map.json`
+- Canonical key is Entra object ID
+
+```json
+{
+	"version": 1,
+	"users": {
+		"<aadObjectId-guid>": {
+			"alias": "a7f2",
+			"upn": "eric@putersdcat.com",
+			"endpoint": "https://helkinswarm-func-a7f2.<domain>/api/messages",
+			"enabled": true
+		}
+	}
+}
+```
+
+### Stamp Naming Decision
+- `userAlias` is **required** and must be exactly 4 chars: `^[a-z0-9]{4}$`
+- Resource naming pattern: `helkinswarm-{resourceType}-{alias}`
+- Resource group naming pattern: `rg-helkinswarm-{alias}`
+
+Examples for default alias `a7f2`:
+- `rg-helkinswarm-a7f2`
+- `helkinswarm-func-a7f2`
+- `helkinswarm-cosmos-a7f2`
+- `helkinswarm-kv-a7f2`
+
+### Deployment Path Decision
+- `deploy-stamp.yml` is the **only** stamp deployment path
+- Required workflow input: `USER_ALIAS`
+- Required invariant: all stamp resources are derived from alias parameterization in Bicep
+
 ### Naming & Obfuscation Rules
 - Resource Group: `rg-HelkinSwarm-[4-digit-alphanum]` (e.g. `rg-HelkinSwarm-a7f2`)
 - All resources: suffix `-a7f2` (cosmos-HelkinSwarm-a7f2, func-HelkinSwarm-a7f2, etc.)
@@ -17,7 +70,7 @@ Every user gets a **dedicated, isolated Azure footprint**. No shared resources e
 ### Global Shared Components
 - Entra App Registration + Service Principal: `HelkinSwarm-Core` (OAuth, GitHub integration)
 - Teams app manifest: single global app
-- Central router function (`HelkinSwarm-router`): routes incoming Teams activity by UPN → user-specific endpoint - this will need research with Microsoft Docs MCP to figure out the best practice approach for this, also cost efficient etc. 
+- Central router function (`helkinswarm-router`): Azure Functions Consumption HTTP trigger that routes incoming Teams activity by `activity.from.aadObjectId` → user-specific endpoint
 
 ### Deployment Flow
 1. Commit to main

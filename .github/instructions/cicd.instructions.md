@@ -54,10 +54,10 @@ Every deployment targets a specific **user stamp** (`userAlias`). There is no un
 - ✅ Mark any new workflow with `# [REFACTOR-BEFORE-FIRST-RUN]` if not yet tested end-to-end
 
 ## Never
-- ❌ Deploy via Azure portal or ad-hoc `az` commands (one-time bootstrap excepted)
-- ❌ Store any secret (token, key, password) in GitHub secrets, `.env`, or Bicep
-- ❌ Run `az containerapp update` manually
-- ❌ Add a `cd.yml` general-purpose deploy workflow — all deploys are stamped
-- ❌ Upload Teams app package without running `teams-package.yml` first
+- ❌ Do NOT Deploy via Azure portal or ad-hoc `az` commands (one-time bootstrap excepted)
+- ❌ Do NOT Store any secret (token, key, password) in GitHub secrets, `.env`, or Bicep
+- ❌ Do NOT Run `az containerapp update` manually
+- ❌ Do NOT Add a `cd.yml` general-purpose deploy workflow — all deploys are stamped
+- ❌ Do NOT Upload Teams app package without running `teams-package.yml` first
 
 *We are the bridge.*

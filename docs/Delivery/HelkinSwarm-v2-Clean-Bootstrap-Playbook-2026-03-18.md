@@ -34,7 +34,9 @@ Commit message for this state (once we are ready): "Nuclear purge — v2 clean b
 4. Commit and push (this is now the first commit on main).
 
 ### Phase 0.5 — Backlog Initialization - Use OPUS NOW !
-1. In the same Copilot Chat session, paste the **exact prompt** from the attached archive file `00-Development-&-Delivery-Master-Plan.md` (the Phase 0.5 section).
+1. In the same Copilot Chat session, paste the **exact prompt** from `docs/Proomptz/FireStarter.md`.
+   - That file contains the complete, self-contained backlog creation prompt ready to paste as-is.
+   - Alternatively, run `scripts/Create-Backlog.ps1` directly (it creates all GitHub issues via `gh` CLI) — but read it first and confirm milestones are accurate.
 2. The agent will read the full living specification (all docs/*.md in this folder) and create the complete GitHub issue backlog + the two Never-Close issues from `01-Recurring-Maintenance-and-Introspection-Issues.md`.
 3. Confirm all issues are created and labelled.
 
@@ -57,6 +59,21 @@ This is a mandatory research-and-design gate. Zero code is written here. Every d
 **Output gate:** Two GitHub issues created and reviewed. Zero infrastructure code written.
 
 **Spec ref:** `docs/0q-Multi-Instance-Architecture.md`
+
+#### Phase 0.75 Decision Outcome (Approved)
+
+These decisions are now locked by approved issues:
+- `#17` Router Architecture Decision
+- `#18` Stamping Parameterization Decision
+
+Use them as authoritative implementation input in Phase 1+:
+
+1. **Router runtime:** Azure Functions HTTP trigger on Consumption plan (`helkinswarm-router`)
+2. **Routing identity key:** `activity.from.aadObjectId` (not `activity.from.id`)
+3. **Stamp alias format:** required `USER_ALIAS` matching `^[a-z0-9]{4}$`
+4. **Stamp naming rule:** `helkinswarm-{resourceType}-{alias}` and RG `rg-helkinswarm-{alias}`
+5. **deploy-stamp path:** only `deploy-stamp.yml` is allowed for stamp provisioning
+6. **user-map schema anchor:** keyed by Entra object ID with alias+endpoint+enabled fields
 
 ---
 
@@ -106,7 +123,7 @@ Two equal deliverables that MUST both be complete before Phase 2 is done: the du
 3. Wire the `NewMessage` external event from the bot handler to the overseer.
 4. The agent also builds the **Global Teams Router** (using the decision from Phase 0.75 GitHub issues):
    - `src/router/routerFunction.ts` — HTTP trigger, receives Teams Bot Framework activity (POST)
-   - Extracts UPN from `activity.from.id` (or OBO token claim)
+   - Extracts immutable Entra object ID from `activity.from.aadObjectId`
    - Reads `config/user-map.json` to look up alias
    - Proxies / redirects to `https://helkinswarm-func-{alias}.azurewebsites.net`
    - `infra/main-router.bicep` + `.github/workflows/deploy-router.yml` created

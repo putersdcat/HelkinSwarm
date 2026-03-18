@@ -53,9 +53,9 @@ For cross-manifest consistency:
 - ✅ Verify `botId` matches `UAMI_CLIENT_ID` for the target stamp after each Bicep deploy
 
 ## Never
-- ❌ Edit the `appPackage/*.zip` directly
-- ❌ Hard-code the botId GUID in manifest — use the substitution variable
-- ❌ Add team/channel/group scope — personal only until spec changes
-- ❌ Modify `manifest.json` without bumping the version field
+- ❌ Do NOT Edit the `appPackage/*.zip` directly
+- ❌ Do NOT Hard-code the botId GUID in manifest — use the substitution variable
+- ❌ Do NOT Add team/channel/group scope — personal only until spec changes
+- ❌ Do NOT Modify `manifest.json` without bumping the version field
 
 *We are the bridge.*

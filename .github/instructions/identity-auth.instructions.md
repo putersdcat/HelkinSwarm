@@ -50,11 +50,11 @@ HelkinSwarm **never holds standing privileges or long-lived secrets**. Every act
 - ✅ Use `DefaultAzureCredential` locally — same code path as production
 
 ## Never
-- ❌ Store any secret (token, key, password) in code, `.env`, `.json`, or Bicep
-- ❌ Use long-lived PATs or client secrets for any integration
-- ❌ Grant the UAMI broad roles — only the absolute minimum for each resource
-- ❌ Allow the LLM sub-agent to receive or reason about raw tokens
-- ❌ Bypass `scopedTokenMinter.ts` for any tool call
-- ❌ Use `MICROSOFT_APP_TYPE=SingleTenant` — must be `UserAssignedMsi`
+- ❌ Do NOT Store any secret (token, key, password) in code, `.env`, `.json`, or Bicep
+- ❌ Do NOT Use long-lived PATs or client secrets for any integration
+- ❌ Do NOT Grant the UAMI broad roles — only the absolute minimum for each resource
+- ❌ Do NOT Allow the LLM sub-agent to receive or reason about raw tokens
+- ❌ Do NOT Bypass `scopedTokenMinter.ts` for any tool call
+- ❌ Do NOT Use `MICROSOFT_APP_TYPE=SingleTenant` — must be `UserAssignedMsi`
 
 *We are the bridge.*

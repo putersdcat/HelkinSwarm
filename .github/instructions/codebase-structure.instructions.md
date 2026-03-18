@@ -61,10 +61,10 @@ skills/
 - ✅ Commit with issue reference: `feat(#NNN):`, `fix(#NNN):`
 
 ## Never
-- ❌ Import from `skills/` inside `src/` (core cannot depend on skills)
-- ❌ Import between skill domains (`skills/outlook/` must not import from `skills/github/`)
-- ❌ Use `any` type or bypass TypeScript strict mode
-- ❌ Add barrel/index files that re-export an entire directory
-- ❌ Hard-code environment-specific values in code — use env vars + config
+- ❌ Do NOT Import from `skills/` inside `src/` (core cannot depend on skills)
+- ❌ Do NOT Import between skill domains (`skills/outlook/` must not import from `skills/github/`)
+- ❌ Do NOT Use `any` type or bypass TypeScript strict mode
+- ❌ Do NOT Add barrel/index files that re-export an entire directory
+- ❌ Do NOT Hard-code environment-specific values in code — use env vars + config
 
 *We are the bridge.*
