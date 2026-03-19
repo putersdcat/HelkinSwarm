@@ -109,7 +109,7 @@ jobs:
         run: |
           IMAGE=${{ needs.deploy-infra.outputs.acr-login-server }}/helkinswarm-router:${{ github.sha }}
           IMAGE_LATEST=${{ needs.deploy-infra.outputs.acr-login-server }}/helkinswarm-router:latest
-          docker build -t $IMAGE -t $IMAGE_LATEST .
+          docker build -f Dockerfile.router -t $IMAGE -t $IMAGE_LATEST .
           docker push $IMAGE
           docker push $IMAGE_LATEST
 

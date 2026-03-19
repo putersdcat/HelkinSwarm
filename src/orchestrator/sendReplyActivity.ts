@@ -51,7 +51,11 @@ async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
     return { success: true };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    return { success: false, error: message };
+    // Log prominently so it surfaces in Function App logs / Application Insights
+    console.error('[sendReplyActivity] FATAL: Proactive reply to Teams failed:', message);
+    // Throw so the Durable activity is marked failed and the failure is visible
+    // in orchestration history. Let the overseer handle the failure cleanly.
+    throw new Error(`Proactive reply failed: ${message}`);
   }
 }
 

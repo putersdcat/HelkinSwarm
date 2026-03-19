@@ -31,6 +31,8 @@ var routerStName   = 'helkinswarmrouterst'
 var routerCaeName  = 'helkinswarm-cae-router'
 var routerAcrName  = 'helkinswarmrouteracr'
 var routerBotName  = 'helkinswarm-router-bot'
+var routerLawName  = 'helkinswarm-law-router'
+var routerAppiName = 'helkinswarm-appi-router'
 
 // Built-in ARM role definition IDs
 var roleStorageBlobDataOwner    = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
@@ -45,6 +47,29 @@ var roleAcrPull                 = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 resource routerUami 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: routerUamiName
   location: location
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  1b. OBSERVABILITY — Log Analytics + Application Insights
+// ═══════════════════════════════════════════════════════════════════════════
+
+resource routerLaw 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
+  name: routerLawName
+  location: location
+  properties: {
+    sku: { name: 'PerGB2018' }
+    retentionInDays: 30
+  }
+}
+
+resource routerAppi 'Microsoft.Insights/components@2020-02-02' = {
+  name: routerAppiName
+  location: location
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    WorkspaceResourceId: routerLaw.id
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -171,6 +196,8 @@ resource routerFunc 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'MicrosoftAppId', value: routerUami.properties.clientId }
         { name: 'MicrosoftAppType', value: 'UserAssignedMSI' }
         { name: 'MicrosoftAppTenantId', value: subscription().tenantId }
+        // Observability
+        { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: routerAppi.properties.ConnectionString }
       ]
     }
   }
