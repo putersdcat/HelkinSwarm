@@ -5,5 +5,3 @@
 
 import './routerFunction.js';
 import '../functions/health.js';
-
-import './routerFunction.js';
