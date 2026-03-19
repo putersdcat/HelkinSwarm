@@ -1,7 +1,7 @@
 # HelkinSwarm v2 — Identity & Registration Registry
 
 > **Single source of truth** for all Entra ID, Azure, and Teams identity artefacts.  
-> Updated: 2026-06-20
+> Updated: 2026-03-19
 
 ---
 
@@ -30,9 +30,46 @@ Per `docs/0q-Multi-Instance-Architecture.md`, these are deployed once and shared
 | Resource Group | `rg-helkinswarm-router` |
 | msaAppId | `42d3359f-8757-421d-a853-fb2960cf2dac` (= `BOT_APP_ID` = `helkinswarm-id-router` client ID) |
 | Auth Type | `UserAssignedMSI` |
-| Messaging Endpoint | `https://helkinswarm-router.azurewebsites.net/api/messages` |
+| Messaging Endpoint | `https://helkinswarm-router.salmonbeach-d4db91b5.eastus2.azurecontainerapps.io/api/messages` |
 | Teams Channel | Enabled |
 | Purpose | The **only** Bot Service with a Teams Channel. Stamps do NOT have Teams channels after router is live. |
+
+### Router Container Apps Environment — `helkinswarm-cae-router`
+
+| Property | Value |
+|----------|-------|
+| Resource Name | `helkinswarm-cae-router` |
+| Resource Group | `rg-helkinswarm-router` |
+| Type | Container Apps Environment (Linux consumption plan) |
+| Domain | `salmonbeach-d4db91b5.eastus2.azurecontainerapps.io` |
+| Purpose | Hosts the router Function App as a container workload |
+
+### Router Log Analytics Workspace — `helkinswarm-law-router`
+
+| Property | Value |
+|----------|-------|
+| Resource Name | `helkinswarm-law-router` |
+| Resource Group | `rg-helkinswarm-router` |
+| Purpose | Log Analytics backend for `helkinswarm-appi-router` Application Insights |
+
+### Router Application Insights — `helkinswarm-appi-router`
+
+| Property | Value |
+|----------|-------|
+| Resource Name | `helkinswarm-appi-router` |
+| Resource Group | `rg-helkinswarm-router` |
+| Linked Workspace | `helkinswarm-law-router` |
+| Purpose | Application Insights for the router function app — enables live logs, failures, and performance monitoring |
+| Connection String | Wired to router Function App via `APPLICATIONINSIGHTS_CONNECTION_STRING` app setting |
+
+### Router Container Registry — `helkinswarmrouteracr`
+
+| Property | Value |
+|----------|-------|
+| Resource Name | `helkinswarmrouteracr` |
+| Resource Group | `rg-helkinswarm-router` |
+| Login Server | `helkinswarmrouteracr.azurecr.io` |
+| Purpose | Stores router Docker images (`helkinswarm-router:latest`, `helkinswarm-router:<sha>`) |
 
 ### Teams App Manifest
 
