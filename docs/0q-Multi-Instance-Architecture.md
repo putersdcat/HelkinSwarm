@@ -60,7 +60,7 @@ Examples for default alias `a7f2`:
 ### Naming & Obfuscation Rules
 - Resource Group: `rg-HelkinSwarm-[4-digit-alphanum]` (e.g. `rg-HelkinSwarm-a7f2`)
 - All resources: suffix `-a7f2` (cosmos-HelkinSwarm-a7f2, func-HelkinSwarm-a7f2, etc.)
-- User map stored in `config/user-map.json` (repo-level, gitignored or encrypted)
+- User map stored in `config/user-map.json` (source-controlled; contains Entra Object IDs as routing identifiers, not secrets)
 
 ### Pipeline Integration
 - New parameter in all workflows: `USER_ALIAS`
