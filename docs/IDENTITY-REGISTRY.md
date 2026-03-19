@@ -15,8 +15,8 @@ Per `docs/0q-Multi-Instance-Architecture.md`, these are deployed once and shared
 |----------|-------|
 | Resource Name | `helkinswarm-id-router` |
 | Resource Group | `rg-helkinswarm-router` |
-| Client ID | ⏳ Populated after `deploy-router` workflow runs → stored as `BOT_APP_ID` GitHub variable |
-| Resource ID | ⏳ Populated after `deploy-router` workflow runs → stored as `ROUTER_UAMI_ID` GitHub variable |
+| Client ID | `42d3359f-8757-421d-a853-fb2960cf2dac` — stored as `BOT_APP_ID` GitHub variable |
+| Resource ID | `/subscriptions/65b1d40b-8962-46cd-b2d7-fa5d09b787a1/resourceGroups/rg-helkinswarm-router/providers/Microsoft.ManagedIdentity/userAssignedIdentities/helkinswarm-id-router` — stored as `ROUTER_UAMI_ID` GitHub variable |
 | Purpose | **The single global Teams bot identity.** All stamps and the router Bot Service register against this `msaAppId`. Teams sees one bot. |
 | Auth Type | `UserAssignedMSI` |
 
@@ -28,7 +28,7 @@ Per `docs/0q-Multi-Instance-Architecture.md`, these are deployed once and shared
 |----------|-------|
 | Bot Name | `helkinswarm-router-bot` |
 | Resource Group | `rg-helkinswarm-router` |
-| msaAppId | ⏳ = `helkinswarm-id-router` client ID (same as `BOT_APP_ID`) |
+| msaAppId | `42d3359f-8757-421d-a853-fb2960cf2dac` (= `BOT_APP_ID` = `helkinswarm-id-router` client ID) |
 | Auth Type | `UserAssignedMSI` |
 | Messaging Endpoint | `https://helkinswarm-router.azurewebsites.net/api/messages` |
 | Teams Channel | Enabled |
@@ -102,8 +102,8 @@ Per `docs/0q-Multi-Instance-Architecture.md`, these are deployed once and shared
 | AZURE_SUBSCRIPTION_ID | `65b1d40b-8962-46cd-b2d7-fa5d09b787a1` |
 | USER_PRINCIPAL_ID | `40f5c975-3aa2-47d8-b32d-a9d7a392f6dc` |
 | ALERT_EMAIL | (configured in GitHub) |
-| BOT_APP_ID | ⏳ Set by `deploy-router.yml` → `helkinswarm-id-router` client ID |
-| ROUTER_UAMI_ID | ⏳ Set by `deploy-router.yml` → `helkinswarm-id-router` resource ID |
+| BOT_APP_ID | `42d3359f-8757-421d-a853-fb2960cf2dac` — `helkinswarm-id-router` client ID ✅ |
+| ROUTER_UAMI_ID | `/subscriptions/65b1d40b-.../rg-helkinswarm-router/.../helkinswarm-id-router` ✅ |
 
 ---
 

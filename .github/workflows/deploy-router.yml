@@ -75,6 +75,7 @@ jobs:
           echo "routerUamiClientId=$(echo $RESULT | jq -r '.routerUamiClientId.value')" >> "$GITHUB_OUTPUT"
           echo "routerUamiResourceId=$(echo $RESULT | jq -r '.routerUamiResourceId.value')" >> "$GITHUB_OUTPUT"
       - name: Register global bot identity as GitHub variables
+        continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
