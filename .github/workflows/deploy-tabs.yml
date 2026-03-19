@@ -1,0 +1,210 @@
+# ============================================================================
+# HelkinSwarm — deploy-tabs.yml: Global Tab SPA Host Deployment
+#
+# Deploys the Azure Storage static website that hosts the global tab SPA.
+# Resource group: rg-helkinswarm-tabs
+# Storage account: helkinswarmtabsst
+#
+# After deployment:
+#   1. Enables static website hosting on the storage account
+#   2. Uploads the tab SPA assets from tabs/ directory
+#   3. Persists TAB_HOST_URL + TAB_HOST_DOMAIN as GitHub variables for use
+#      by teams-package.yml manifest substitution
+#
+# Spec ref: 0o-Microsoft-Teams-App-Expansion-with-Tabs.md
+# Architecture decision: issue #107
+# ============================================================================
+
+name: Deploy Tab Host
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tabs/**'
+      - 'infra/main-tabs.bicep'
+    branches:
+      - main
+
+concurrency:
+  group: deploy-tabs
+  cancel-in-progress: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  RESOURCE_GROUP: "rg-helkinswarm-tabs"
+  STORAGE_ACCOUNT: "helkinswarmtabsst"
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # 1. Deploy Infrastructure (Bicep)
+  # ─────────────────────────────────────────────────────────────────────────
+  deploy-infra:
+    name: Deploy Tab Host Infra
+    runs-on: ubuntu-latest
+    outputs:
+      storage-account: ${{ steps.deploy.outputs.storageAccountName }}
+      tab-host-url: ${{ steps.enable-static.outputs.tab-host-url }}
+      tab-host-domain: ${{ steps.enable-static.outputs.tab-host-domain }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Create Resource Group
+        run: |
+          az group create \
+            --name ${{ env.RESOURCE_GROUP }} \
+            --location eastus2 \
+            --tags "project=helkinswarm" "component=tabs" "env=global"
+
+      - name: Deploy Bicep
+        id: deploy
+        run: |
+          RESULT=$(az deployment group create \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --template-file infra/main-tabs.bicep \
+            --parameters \
+              routerUamiResourceId=${{ vars.ROUTER_UAMI_ID }} \
+            --query 'properties.outputs' -o json)
+          echo "storageAccountName=$(echo $RESULT | jq -r '.storageAccountName.value')" >> "$GITHUB_OUTPUT"
+
+      - name: Enable static website hosting
+        id: enable-static
+        run: |
+          az storage blob service-properties update \
+            --account-name ${{ env.STORAGE_ACCOUNT }} \
+            --static-website \
+            --index-document index.html \
+            --404-document 404.html \
+            --auth-mode login
+
+          # Get the static website primary endpoint
+          ENDPOINT=$(az storage account show \
+            --name ${{ env.STORAGE_ACCOUNT }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "primaryEndpoints.web" -o tsv | tr -d '/')
+
+          echo "tab-host-url=${ENDPOINT}" >> "$GITHUB_OUTPUT"
+          DOMAIN=$(echo "$ENDPOINT" | sed 's|https\?://||')
+          echo "tab-host-domain=${DOMAIN}" >> "$GITHUB_OUTPUT"
+          echo "✅ Static website endpoint: ${ENDPOINT}"
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 2. Upload Tab SPA Assets
+  # ─────────────────────────────────────────────────────────────────────────
+  deploy-spa:
+    name: Upload Tab SPA to Storage
+    needs: deploy-infra
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Upload SPA assets to $web container
+        run: |
+          if [ -d "tabs" ] && [ "$(ls -A tabs)" ]; then
+            echo "📦 Uploading SPA assets from tabs/ directory..."
+            az storage blob upload-batch \
+              --account-name ${{ env.STORAGE_ACCOUNT }} \
+              --destination '$web' \
+              --source tabs/ \
+              --auth-mode login \
+              --overwrite true \
+              --content-cache-control "public, max-age=3600"
+            echo "✅ SPA assets uploaded"
+          else
+            # No SPA yet — upload a placeholder index.html
+            echo "⚠️  tabs/ directory not found or empty — uploading placeholder index.html"
+            cat > /tmp/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>HelkinSwarm</title>
+            <style>
+              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
+                     display: flex; align-items: center; justify-content: center; 
+                     min-height: 100vh; margin: 0; background: #1a1a2e; color: #e8e8f0; }
+              .container { text-align: center; padding: 2rem; }
+              h1 { color: #9b59b6; font-size: 2rem; margin-bottom: 0.5rem; }
+              p { opacity: 0.7; max-width: 400px; line-height: 1.6; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <h1>HelkinSwarm</h1>
+              <p>Tab interface coming soon. The brain is online — the visual cortex is still awakening.</p>
+              <p style="font-size:0.8rem; margin-top:2rem; opacity:0.5">Phase 3 — SPA under construction</p>
+            </div>
+          </body>
+          </html>
+          EOF
+            az storage blob upload \
+              --account-name ${{ env.STORAGE_ACCOUNT }} \
+              --container-name '$web' \
+              --file /tmp/index.html \
+              --name index.html \
+              --auth-mode login \
+              --overwrite true \
+              --content-type "text/html" \
+              --content-cache-control "public, max-age=300"
+            # Also create a simple 404.html
+            cp /tmp/index.html /tmp/404.html
+            az storage blob upload \
+              --account-name ${{ env.STORAGE_ACCOUNT }} \
+              --container-name '$web' \
+              --file /tmp/404.html \
+              --name 404.html \
+              --auth-mode login \
+              --overwrite true \
+              --content-type "text/html"
+            echo "✅ Placeholder index.html uploaded"
+          fi
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 3. Persist TAB_HOST_URL + trigger manifest rebuild
+  # ─────────────────────────────────────────────────────────────────────────
+  register-tab-url:
+    name: Register Tab URL & Report
+    needs: [deploy-infra, deploy-spa]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set TAB_HOST_URL GitHub variable
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAB_HOST_URL: ${{ needs.deploy-infra.outputs.tab-host-url }}
+          TAB_HOST_DOMAIN: ${{ needs.deploy-infra.outputs.tab-host-domain }}
+        run: |
+          gh variable set TAB_HOST_URL  --body "$TAB_HOST_URL"  --repo ${{ github.repository }}
+          gh variable set TAB_HOST_DOMAIN --body "$TAB_HOST_DOMAIN" --repo ${{ github.repository }}
+          echo "✅ TAB_HOST_URL  = $TAB_HOST_URL"
+          echo "✅ TAB_HOST_DOMAIN = $TAB_HOST_DOMAIN"
+          echo ""
+          echo "📋 NEXT STEPS:"
+          echo "  1. Add staticTabs entries to appPackage/manifest.json using {{TAB_HOST_URL}}"
+          echo "  2. Run teams-package.yml to rebuild the Teams app package"
+          echo "  3. Re-upload the app package to Teams admin center"
