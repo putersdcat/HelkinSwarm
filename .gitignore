@@ -41,7 +41,7 @@ appid.txt
 .mypy_cache
 
 # User-map contains AAD Object IDs — keep out of version control (spec 0q)
-config/user-map.json
+# config/user-map.json
 
 # pnpm lockfile is committed, but store is local
 .pnpm-store/
