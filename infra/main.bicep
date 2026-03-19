@@ -79,9 +79,15 @@ var stampIdentityObj = { '${uami.id}': {} }
 var routerIdentityObj = hasRouter ? { '${routerUamiId}': {} } : {}
 var allIdentityObjs = union(stampIdentityObj, routerIdentityObj)
 
-// LLM model names — toggled by euResidencyMode (spec 03, 06)
-var llmPrimary   = euResidencyMode ? 'gpt-5' : 'gpt-5'
-var llmSecondary = euResidencyMode ? 'gpt-5-mini' : 'grok-4-1-fast-reasoning'
+// LLM model deployment names — global frontier only (euResidencyMode param kept for compat but unused here)
+// Deployment names must match the Bicep model deployment resources below.
+var llmPrimary          = 'grok-4-1-fast-reasoning'
+var llmSecondary        = 'grok-4-1-fast-non-reasoning'
+var llmFallbackPrimary  = 'gpt-5.4-mini'
+var llmFallbackSecond   = 'gpt-5.1-codex-mini'
+var llmCodingPrimary    = 'FW-MiniMax-M2.5'
+var llmCodingSecondary  = 'FW-Kimi-K2.5'
+var llmEmbedding        = 'text-embedding-3-large'
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  1. LOG ANALYTICS WORKSPACE
@@ -312,10 +318,93 @@ resource aiServices 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
   }
 }
 
-// ── AI Model Deployments — MANAGED IMPERATIVELY ─────────────────────────
-// Azure Cognitive Services returns opaque errors on model deployment
-// operations in some subscriptions. Model deployments are managed via CLI
-// after initial Bicep deploy. See docs/03-Tech-Stack-Infrastructure.md.
+// ── AI Model Deployments — DESIRED STATE via Bicep ────────────────────────
+// All deployments use GlobalStandard SKU (global routing, no EU residency).
+// Capacity is in thousands of tokens per minute.
+// Grok 4-1 models: 10k TPM default (subscription quota = 50k total).
+// gpt-5.4-mini, gpt-5.1-codex-mini: 10k TPM (1000k quota available).
+// FW-* models use DataZoneStandard (only tier available for Fireworks models).
+// text-embedding-3-large: 50k TPM.
+// deployments must be serial (dependsOn chain) to avoid ARM 429s.
+
+resource aiDeployEmbedding 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
+  parent: aiServices
+  name: 'text-embedding-3-large'
+  sku: { name: 'GlobalStandard', capacity: 50 }
+  properties: {
+    model: { format: 'OpenAI', name: 'text-embedding-3-large', version: '1' }
+  }
+}
+
+resource aiDeployGrokReasoning 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
+  parent: aiServices
+  name: 'grok-4-1-fast-reasoning'
+  dependsOn: [ aiDeployEmbedding ]
+  sku: { name: 'GlobalStandard', capacity: 10 }
+  properties: {
+    model: { format: 'xAI', name: 'grok-4-1-fast-reasoning', version: '1' }
+  }
+}
+
+resource aiDeployGrokFast 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
+  parent: aiServices
+  name: 'grok-4-1-fast-non-reasoning'
+  dependsOn: [ aiDeployGrokReasoning ]
+  sku: { name: 'GlobalStandard', capacity: 10 }
+  properties: {
+    model: { format: 'xAI', name: 'grok-4-1-fast-non-reasoning', version: '1' }
+  }
+}
+
+resource aiDeployGpt54Mini 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
+  parent: aiServices
+  name: 'gpt-5.4-mini'
+  dependsOn: [ aiDeployGrokFast ]
+  sku: { name: 'GlobalStandard', capacity: 10 }
+  properties: {
+    model: { format: 'OpenAI', name: 'gpt-5.4-mini', version: '2026-03-17' }
+  }
+}
+
+resource aiDeployCodexMini 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
+  parent: aiServices
+  name: 'gpt-5.1-codex-mini'
+  dependsOn: [ aiDeployGpt54Mini ]
+  sku: { name: 'GlobalStandard', capacity: 10 }
+  properties: {
+    model: { format: 'OpenAI', name: 'gpt-5.1-codex-mini', version: '2025-11-13' }
+  }
+}
+
+resource aiDeployFwMiniMax 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
+  parent: aiServices
+  name: 'FW-MiniMax-M2.5'
+  dependsOn: [ aiDeployCodexMini ]
+  sku: { name: 'DataZoneStandard', capacity: 10 }
+  properties: {
+    model: { format: 'Fireworks', name: 'FW-MiniMax-M2.5', version: '1' }
+  }
+}
+
+resource aiDeployFwKimi 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
+  parent: aiServices
+  name: 'FW-Kimi-K2.5'
+  dependsOn: [ aiDeployFwMiniMax ]
+  sku: { name: 'DataZoneStandard', capacity: 10 }
+  properties: {
+    model: { format: 'Fireworks', name: 'FW-Kimi-K2.5', version: '1' }
+  }
+}
+
+resource aiDeployDeepSeek 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
+  parent: aiServices
+  name: 'DeepSeek-V3.2'
+  dependsOn: [ aiDeployFwKimi ]
+  sku: { name: 'GlobalStandard', capacity: 10 }
+  properties: {
+    model: { format: 'DeepSeek', name: 'DeepSeek-V3.2', version: '1' }
+  }
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  9. CONTAINER APPS ENVIRONMENT (consumption plan)
@@ -392,11 +481,16 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'AZURE_AI_FOUNDRY_ENDPOINT', value: aiServices.properties.endpoint }
         { name: 'AZURE_CONTENT_SAFETY_ENDPOINT', value: aiServices.properties.endpoint }
 
-        // ── LLM Config (spec 06 — toggled by euResidencyMode) ──
-        { name: 'LLM_PRIMARY_MODEL', value: llmPrimary }
-        { name: 'LLM_SECONDARY_MODEL', value: llmSecondary }
-        { name: 'EU_RESIDENCY_MODE', value: string(euResidencyMode) }
-        { name: 'LLM_PROVIDER', value: llmProvider }
+        // ── LLM Config (spec 06) ──
+        { name: 'LLM_PRIMARY_MODEL',          value: llmPrimary }
+        { name: 'LLM_SECONDARY_MODEL',         value: llmSecondary }
+        { name: 'LLM_FALLBACK_PRIMARY',        value: llmFallbackPrimary }
+        { name: 'LLM_FALLBACK_SECONDARY',      value: llmFallbackSecond }
+        { name: 'LLM_CODING_PRIMARY',          value: llmCodingPrimary }
+        { name: 'LLM_CODING_SECONDARY',        value: llmCodingSecondary }
+        { name: 'LLM_EMBEDDING_MODEL',         value: llmEmbedding }
+        { name: 'EU_RESIDENCY_MODE',           value: string(euResidencyMode) }
+        { name: 'LLM_PROVIDER',                value: llmProvider }
 
         // ── BYOK: OpenRouter (spec 0c) — populated via KV after secrets are seeded ──
         { name: 'OPENROUTER_API_KEY', value: '' }

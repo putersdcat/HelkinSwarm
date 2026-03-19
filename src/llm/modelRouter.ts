@@ -1,8 +1,6 @@
 // Model router — selects the best model based on EU residency toggle.
 // Spec ref: 06-Tool-Dispatch-LLM-Layer.md, 0b-Model-Specific-Tool-Presentation.md
 
-import { isEuResidencyMode } from '../config/safetyConfig.js';
-
 // ---------------------------------------------------------------------------
 // Model lanes
 // ---------------------------------------------------------------------------
@@ -20,16 +18,9 @@ export interface ModelLane {
 
 const GLOBAL_LANE: ModelLane = {
   primary: 'grok-4-1-fast-reasoning',
-  secondary: 'grok-4-1-fast',
+  secondary: 'grok-4-1-fast-non-reasoning',
   embedding: 'text-embedding-3-large',
   reasoning: 'grok-4-1-fast-reasoning',
-};
-
-const EU_LANE: ModelLane = {
-  primary: 'gpt-5',
-  secondary: 'o4-mini',
-  embedding: 'text-embedding-3-large-eu',
-  reasoning: undefined,
 };
 
 const BYOK_LANE: ModelLane = {
@@ -47,7 +38,7 @@ export interface ModelRouting {
   /** The resolved model lane */
   lane: ModelLane;
   /** Which lane we are using (for telemetry) */
-  laneName: 'global' | 'eu' | 'byok';
+  laneName: 'global' | 'byok';
   /** Whether this is a reasoning model */
   isReasoning: boolean;
   /** Deployment name in Azure AI Foundry */
@@ -74,24 +65,12 @@ export function getModelRouting(llmProvider?: 'azure' | 'openrouter'): ModelRout
     };
   }
 
-  // Azure AI Foundry path
-  if (isEuResidencyMode()) {
-    return {
-      lane: EU_LANE,
-      laneName: 'eu',
-      isReasoning: false,
-      deploymentName: EU_LANE.primary,
-      apiBase: process.env.AZURE_AI_FOUNDRY_EU_ENDPOINT ?? '',
-      usesObo: true,
-    };
-  }
-
-  // Global frontier (default — Unchained)
+  // Azure AI Foundry global frontier (default — Unchained)
   return {
     lane: GLOBAL_LANE,
     laneName: 'global',
     isReasoning: true,
-    deploymentName: GLOBAL_LANE.primary,
+    deploymentName: process.env['LLM_PRIMARY_MODEL'] ?? GLOBAL_LANE.primary,
     apiBase: process.env.AZURE_AI_FOUNDRY_ENDPOINT ?? '',
     usesObo: true,
   };
