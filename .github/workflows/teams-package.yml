@@ -8,12 +8,7 @@
 name: Teams App Package
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "appPackage/manifest.json"
-      - "appPackage/*.png"
-  workflow_dispatch:
+  workflow_dispatch:  # manual only — auto-push disabled until packaging pipeline is validated on v2
     inputs:
       requires_review:
         description: "Require admin review before publish"

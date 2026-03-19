@@ -8,10 +8,7 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_dispatch:  # manual only — auto-push disabled until CI is green on v2 codebase
 
 # Cancel in-progress CI runs on the same branch (saves runner minutes)
 concurrency:
