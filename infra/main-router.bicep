@@ -152,11 +152,11 @@ resource routerFunc 'Microsoft.Web/sites@2023-12-01' = {
     siteConfig: {
       minimumElasticInstanceCount: 1
       functionAppScaleLimit: 3
-      // MCR placeholder removed — use router ACR URL from the start (matches stamp pattern).
-      // Container won't start until deploy-code pushes the first image; that is expected.
-      linuxFxVersion: 'DOCKER|${routerAcr.properties.loginServer}/helkinswarm-router:latest'
-      acrUseManagedIdentityCreds: true
-      acrUserManagedIdentityID: routerUami.id
+      // MCR placeholder + no ACR creds on initial Bicep create.
+      // Container Apps fail with image-not-found if you reference the router ACR before
+      // the first image has been pushed.  deploy-code PATCH flips to ACR + managed-identity
+      // once build-and-push has pushed the real image.
+      linuxFxVersion: 'DOCKER|mcr.microsoft.com/azure-functions/node:4-node20-appservice'
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
       appSettings: [
@@ -167,9 +167,6 @@ resource routerFunc 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'node' }
         { name: 'AzureWebJobsFeatureFlags', value: 'EnableWorkerIndexing' }
-        // ACR — required when acrUseManagedIdentityCreds:true for fresh-create on Container Apps.
-        // Must be hostname only (no https://) — CAE uses this as registries.server and rejects schemes.
-        { name: 'DOCKER_REGISTRY_SERVER_URL', value: routerAcr.properties.loginServer }
         // Bot Framework auth — router UAMI is the single global Teams bot identity
         { name: 'MicrosoftAppId', value: routerUami.properties.clientId }
         { name: 'MicrosoftAppType', value: 'UserAssignedMSI' }
