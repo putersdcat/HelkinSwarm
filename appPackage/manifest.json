@@ -1,7 +1,7 @@
 {
   "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
   "manifestVersion": "1.17",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "id": "0fe3ff72-40cc-43ab-85bf-a846e399be6d",
   "developer": {
     "name": "Eric Anderson",
@@ -24,7 +24,7 @@
   "accentColor": "#6C00FF",
   "bots": [
     {
-      "botId": "{{BOT_APP_ID}}",
+      "botId": "42d3359f-8757-421d-a853-fb2960cf2dac",
       "scopes": [
         "personal"
       ],
