@@ -5,8 +5,10 @@
 //
 // Deployed once, globally. Not per-stamp.
 // Resource group: rg-helkinswarm-router
+// Bot identity: helkinswarm-id-router — created fresh here, never recycled from Alpha.
 //
 // @see docs/0q-Multi-Instance-Architecture.md
+// @see docs/IDENTITY-REGISTRY.md
 // ──────────────────────────────────────────────────────────────────────────────
 
 targetScope = 'resourceGroup'
@@ -16,21 +18,38 @@ targetScope = 'resourceGroup'
 @description('Deployment location for the router')
 param location string = 'eastus2'
 
-@description('Client ID of the UAMI used as Bot msaAppId')
-param botAppId string
-
-@description('Tenant ID for the Bot registration')
-param tenantId string
+@description('Object ID of the owner/operator (reserved for future RBAC assignments)')
+#disable-next-line no-unused-params
+param userPrincipalId string
 
 // ─── Variables ──────────────────────────────────────────────────────────────
 
+var routerUamiName = 'helkinswarm-id-router'
 var routerFuncName = 'helkinswarm-router'
-var routerStName   = 'helkinswarmrouterst'  // Storage for Consumption plan
+var routerStName   = 'helkinswarmrouterst'
 var routerPlanName = 'helkinswarm-router-plan'
 var routerBotName  = 'helkinswarm-router-bot'
 
+// Built-in ARM role definition IDs
+var roleStorageBlobDataOwner    = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
+var roleStorageQueueContributor = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
+var roleStorageTableContributor = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  1. STORAGE ACCOUNT (required for Consumption plan)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  1. USER-ASSIGNED MANAGED IDENTITY (global bot identity — fresh, not Alpha)
+// ═══════════════════════════════════════════════════════════════════════════
+
+resource routerUami 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: routerUamiName
+  location: location
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  2. STORAGE (Consumption plan requires storage; UAMI auth, no key exposure)
 // ═══════════════════════════════════════════════════════════════════════════
 
 resource routerStorage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
@@ -45,8 +64,38 @@ resource routerStorage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
 }
 
+resource blobRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(routerStorage.id, routerUami.id, roleStorageBlobDataOwner)
+  scope: routerStorage
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleStorageBlobDataOwner)
+    principalId: routerUami.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource queueRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(routerStorage.id, routerUami.id, roleStorageQueueContributor)
+  scope: routerStorage
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleStorageQueueContributor)
+    principalId: routerUami.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+resource tableRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(routerStorage.id, routerUami.id, roleStorageTableContributor)
+  scope: routerStorage
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleStorageTableContributor)
+    principalId: routerUami.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
-//  2. APP SERVICE PLAN (Consumption / Y1)
+//  3. APP SERVICE PLAN (Consumption / Y1)
 // ═══════════════════════════════════════════════════════════════════════════
 
 resource routerPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
@@ -62,13 +111,19 @@ resource routerPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  3. FUNCTION APP (Node 22 LTS, Consumption)
+//  4. FUNCTION APP (Node 22 LTS, Consumption, router UAMI assigned)
 // ═══════════════════════════════════════════════════════════════════════════
 
 resource routerFunc 'Microsoft.Web/sites@2023-12-01' = {
   name: routerFuncName
   location: location
   kind: 'functionapp,linux'
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${routerUami.id}': {}
+    }
+  }
   properties: {
     serverFarmId: routerPlan.id
     httpsOnly: true
@@ -77,34 +132,52 @@ resource routerFunc 'Microsoft.Web/sites@2023-12-01' = {
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
       appSettings: [
-        { name: 'AzureWebJobsStorage', value: 'DefaultEndpointsProtocol=https;AccountName=${routerStorage.name};AccountKey=${routerStorage.listKeys().keys[0].value}' }
+        // Managed identity storage auth — no key exposure
+        { name: 'AzureWebJobsStorage__accountName', value: routerStorage.name }
+        { name: 'AzureWebJobsStorage__credential', value: 'managedidentity' }
+        { name: 'AzureWebJobsStorage__clientId', value: routerUami.properties.clientId }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'node' }
         { name: 'WEBSITE_NODE_DEFAULT_VERSION', value: '~22' }
-        { name: 'MicrosoftAppId', value: botAppId }
+        // Bot Framework auth — router UAMI is the single global Teams bot identity
+        { name: 'MicrosoftAppId', value: routerUami.properties.clientId }
         { name: 'MicrosoftAppType', value: 'UserAssignedMSI' }
-        { name: 'MicrosoftAppTenantId', value: tenantId }
+        { name: 'MicrosoftAppTenantId', value: subscription().tenantId }
       ]
     }
   }
+  dependsOn: [blobRole, queueRole, tableRole]
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  4. BOT SERVICE (points to router as the messaging endpoint)
+//  5. BOT SERVICE + TEAMS CHANNEL (global — this is the ONE Teams entry point)
+//     All stamps are reached by proxy through this router.
 // ═══════════════════════════════════════════════════════════════════════════
 
-resource routerBot 'Microsoft.BotService/botServices@2023-09-15-preview' = {
+resource routerBot 'Microsoft.BotService/botServices@2022-09-15' = {
   name: routerBotName
   location: 'global'
   sku: { name: 'F0' }
   kind: 'azurebot'
   properties: {
-    displayName: 'HelkinSwarm Router'
+    displayName: 'HelkinSwarm'
     endpoint: 'https://${routerFunc.properties.defaultHostName}/api/messages'
-    msaAppId: botAppId
+    msaAppId: routerUami.properties.clientId
     msaAppType: 'UserAssignedMSI'
-    msaAppTenantId: tenantId
-    msaAppMSIResourceId: '' // Router uses the same UAMI as stamps
+    msaAppMSIResourceId: routerUami.id
+    msaAppTenantId: subscription().tenantId
+  }
+}
+
+resource teamsChannel 'Microsoft.BotService/botServices/channels@2022-09-15' = {
+  parent: routerBot
+  name: 'MsTeamsChannel'
+  location: 'global'
+  properties: {
+    channelName: 'MsTeamsChannel'
+    properties: {
+      isEnabled: true
+    }
   }
 }
 
@@ -115,3 +188,6 @@ resource routerBot 'Microsoft.BotService/botServices@2023-09-15-preview' = {
 output routerEndpoint string = 'https://${routerFunc.properties.defaultHostName}/api/messages'
 output routerHostName string = routerFunc.properties.defaultHostName
 output routerFunctionAppName string = routerFunc.name
+// routerUamiClientId is the global bot identity — stamp Bicep deploy needs this as routerBotId param
+output routerUamiClientId string = routerUami.properties.clientId
+output routerUamiResourceId string = routerUami.id

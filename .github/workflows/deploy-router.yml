@@ -37,6 +37,8 @@ jobs:
       router-endpoint: ${{ steps.deploy.outputs.routerEndpoint }}
       router-hostname: ${{ steps.deploy.outputs.routerHostName }}
       function-app-name: ${{ steps.deploy.outputs.routerFunctionAppName }}
+      router-uami-client-id: ${{ steps.deploy.outputs.routerUamiClientId }}
+      router-uami-resource-id: ${{ steps.deploy.outputs.routerUamiResourceId }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,13 +63,21 @@ jobs:
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --template-file infra/main-router.bicep \
             --parameters \
-              botAppId=${{ vars.BOT_APP_ID }} \
-              tenantId=${{ vars.AZURE_TENANT_ID }} \
+              userPrincipalId=${{ vars.USER_PRINCIPAL_ID }} \
             --query 'properties.outputs' -o json)
           echo "routerEndpoint=$(echo $RESULT | jq -r '.routerEndpoint.value')" >> "$GITHUB_OUTPUT"
           echo "routerHostName=$(echo $RESULT | jq -r '.routerHostName.value')" >> "$GITHUB_OUTPUT"
           echo "routerFunctionAppName=$(echo $RESULT | jq -r '.routerFunctionAppName.value')" >> "$GITHUB_OUTPUT"
-
+          echo "routerUamiClientId=$(echo $RESULT | jq -r '.routerUamiClientId.value')" >> "$GITHUB_OUTPUT"
+          echo "routerUamiResourceId=$(echo $RESULT | jq -r '.routerUamiResourceId.value')" >> "$GITHUB_OUTPUT"
+      - name: Register global bot identity as GitHub variables
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh variable set BOT_APP_ID --body "${{ steps.deploy.outputs.routerUamiClientId }}"
+          gh variable set ROUTER_UAMI_ID --body "${{ steps.deploy.outputs.routerUamiResourceId }}"
+          echo "✅ BOT_APP_ID set to router UAMI client ID: ${{ steps.deploy.outputs.routerUamiClientId }}"
+          echo "✅ ROUTER_UAMI_ID set to router UAMI resource ID: ${{ steps.deploy.outputs.routerUamiResourceId }}"
   # ─────────────────────────────────────────────────────────────────────────
   # 2. Build & Deploy Router Code
   # ─────────────────────────────────────────────────────────────────────────
@@ -139,6 +149,7 @@ jobs:
           echo "Infra:  ${{ needs.deploy-infra.result }}"
           echo "Code:   ${{ needs.deploy-code.result }}"
           echo ""
-          echo "Router Endpoint: ${{ needs.deploy-infra.outputs.router-endpoint }}"
-          echo "Function App:    ${{ needs.deploy-infra.outputs.function-app-name }}"
+          echo "Router Endpoint:      ${{ needs.deploy-infra.outputs.router-endpoint }}"
+          echo "Function App:         ${{ needs.deploy-infra.outputs.function-app-name }}"
+          echo "Router UAMI ClientId: ${{ needs.deploy-infra.outputs.router-uami-client-id }}"
           echo "═══════════════════════════════════════════════"

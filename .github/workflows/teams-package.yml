@@ -53,6 +53,20 @@ jobs:
           echo "bumped-version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
           echo "previous-version=$CURRENT"   >> "$GITHUB_OUTPUT"
 
+      # ── Inject global bot identity ─────────────────────────────────────
+      # BOT_APP_ID is set by deploy-router.yml after the router UAMI is created.
+      # The manifest stores {{BOT_APP_ID}} as a placeholder; substitute at build time.
+      - name: Inject BOT_APP_ID into manifest
+        env:
+          BOT_APP_ID: ${{ vars.BOT_APP_ID }}
+        run: |
+          if [ -z "$BOT_APP_ID" ]; then
+            echo "❌ vars.BOT_APP_ID is not set — run deploy-router workflow first"
+            exit 1
+          fi
+          sed -i "s/{{BOT_APP_ID}}/${BOT_APP_ID}/g" appPackage/manifest.json
+          echo "✅ Injected BOT_APP_ID: $BOT_APP_ID"
+
       # ── Validate manifest ──────────────────────────────────────────────
       - name: Validate manifest
         id: manifest

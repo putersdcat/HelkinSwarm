@@ -36,6 +36,12 @@ param userPrincipalId string
 @description('Owner email for P0 alert notifications')
 param alertEmail string = ''
 
+@description('Client ID of the global router UAMI. When set, stamps use this for Bot Framework JWT validation instead of their own UAMI. Required after router is deployed.')
+param routerBotId string = ''
+
+@description('Resource ID of the global router UAMI. Required when routerBotId is provided.')
+param routerUamiId string = ''
+
 // ─── Variables ──────────────────────────────────────────────────────────────
 
 // Resource names — all follow helkinswarm-{type}-{alias} (lowercase)
@@ -62,6 +68,16 @@ var roleStorageTableContributor = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
 
 // Cosmos DB built-in data-plane role IDs
 var cosmosDataContributorRoleId = '00000000-0000-0000-0000-000000000002'
+
+// When the global router is deployed, stamps validate Bot Framework JWTs against the
+// router UAMI (the single global Teams identity). Otherwise fall back to stamp UAMI.
+var hasRouter = routerBotId != ''
+var botMsaAppId = hasRouter ? routerBotId : uami.properties.clientId
+var botMsaResourceId = hasRouter ? routerUamiId : uami.id
+// Function app identities: always include stamp UAMI; add router UAMI when router exists
+var stampIdentityObj = { '${uami.id}': {} }
+var routerIdentityObj = hasRouter ? { '${routerUamiId}': {} } : {}
+var allIdentityObjs = union(stampIdentityObj, routerIdentityObj)
 
 // LLM model names — toggled by euResidencyMode (spec 03, 06)
 var llmPrimary   = euResidencyMode ? 'gpt-5' : 'gpt-5'
@@ -339,9 +355,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   ]
   identity: {
     type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${uami.id}': {}
-    }
+    userAssignedIdentities: allIdentityObjs
   }
   properties: {
     managedEnvironmentId: containerAppsEnv.id
@@ -364,8 +378,10 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'AzureWebJobsStorage__clientId', value: uami.properties.clientId }
 
         // ── Bot Framework UAMI (spec 11) ──
+        // When router is deployed, MICROSOFT_APP_ID = router UAMI (global bot identity).
+        // Stamps must share the router's bot ID to validate Bot Framework JWTs correctly.
         { name: 'AZURE_CLIENT_ID', value: uami.properties.clientId }
-        { name: 'MICROSOFT_APP_ID', value: uami.properties.clientId }
+        { name: 'MICROSOFT_APP_ID', value: botMsaAppId }
         { name: 'MICROSOFT_APP_TYPE', value: 'UserAssignedMsi' }
         { name: 'MICROSOFT_APP_TENANT_ID', value: subscription().tenantId }
 
@@ -424,14 +440,16 @@ resource botService 'Microsoft.BotService/botServices@2022-09-15' = {
   properties: {
     displayName: 'HelkinSwarm (${userAlias})'
     endpoint: 'https://${functionApp.properties.defaultHostName}/api/messages'
-    msaAppId: uami.properties.clientId
+    msaAppId: botMsaAppId
     msaAppType: 'UserAssignedMSI'
-    msaAppMSIResourceId: uami.id
+    msaAppMSIResourceId: botMsaResourceId
     msaAppTenantId: subscription().tenantId
   }
 }
 
-resource teamsChannel 'Microsoft.BotService/botServices/channels@2022-09-15' = {
+// When the router is deployed, it owns the Teams Channel for this bot identity.
+// Stamp bot services omit the Teams Channel to avoid duplicate channel registrations.
+resource teamsChannel 'Microsoft.BotService/botServices/channels@2022-09-15' = if (!hasRouter) {
   parent: botService
   name: 'MsTeamsChannel'
   location: 'global'

@@ -134,6 +134,8 @@ jobs:
               userPrincipalId="${{ vars.USER_PRINCIPAL_ID }}" \
               alertEmail="${{ vars.ALERT_EMAIL }}" \
               euResidencyMode=${{ github.event.inputs.EU_RESIDENCY_MODE }} \
+              routerBotId="${{ vars.BOT_APP_ID }}" \
+              routerUamiId="${{ vars.ROUTER_UAMI_ID }}" \
             --output json 2>&1)
           DEPLOY_EXIT=$?
 

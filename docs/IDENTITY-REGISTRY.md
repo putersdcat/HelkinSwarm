@@ -1,7 +1,49 @@
 # HelkinSwarm v2 — Identity & Registration Registry
 
-> **Single source of truth** for all Entra ID, Azure, and Teams identity artefacts.
-> Updated: 2026-03-18
+> **Single source of truth** for all Entra ID, Azure, and Teams identity artefacts.  
+> Updated: 2026-06-20
+
+---
+
+## Global Shared Components
+
+Per `docs/0q-Multi-Instance-Architecture.md`, these are deployed once and shared across all stamps.
+
+### Router UAMI — `helkinswarm-id-router` (Global Bot Identity)
+
+| Property | Value |
+|----------|-------|
+| Resource Name | `helkinswarm-id-router` |
+| Resource Group | `rg-helkinswarm-router` |
+| Client ID | ⏳ Populated after `deploy-router` workflow runs → stored as `BOT_APP_ID` GitHub variable |
+| Resource ID | ⏳ Populated after `deploy-router` workflow runs → stored as `ROUTER_UAMI_ID` GitHub variable |
+| Purpose | **The single global Teams bot identity.** All stamps and the router Bot Service register against this `msaAppId`. Teams sees one bot. |
+| Auth Type | `UserAssignedMSI` |
+
+> ⚠️ This UAMI is created fresh by `infra/main-router.bicep`. It has NO connection to Alpha UAMI `b3cd420b`.
+
+### Router Bot Service — `helkinswarm-router-bot`
+
+| Property | Value |
+|----------|-------|
+| Bot Name | `helkinswarm-router-bot` |
+| Resource Group | `rg-helkinswarm-router` |
+| msaAppId | ⏳ = `helkinswarm-id-router` client ID (same as `BOT_APP_ID`) |
+| Auth Type | `UserAssignedMSI` |
+| Messaging Endpoint | `https://helkinswarm-router.azurewebsites.net/api/messages` |
+| Teams Channel | Enabled |
+| Purpose | The **only** Bot Service with a Teams Channel. Stamps do NOT have Teams channels after router is live. |
+
+### Teams App Manifest
+
+| Property | Value |
+|----------|-------|
+| Teams App ID (`manifest.id`) | `0fe3ff72-40cc-43ab-85bf-a846e399be6d` — stable permanent UUID, not an Azure resource ID |
+| `botId` (Teams Manifest) | Set to `{{BOT_APP_ID}}` placeholder → substituted by `teams-package.yml` from `vars.BOT_APP_ID` |
+| Scopes | `personal` only (direct message to bot) |
+| Version | See `appPackage/manifest.json` |
+
+---
 
 ## Entra App Registrations
 
@@ -28,21 +70,21 @@
 
 ## Bot Service
 
-### Stamp `a7f2`
+### Stamp `a7f2` (proxied by router after router is deployed)
 | Property | Value |
-|----------|-------|
+|----------|---------|
 | Bot Name | `helkinswarm-bot-a7f2` |
-| Bot ID (msaAppId) | `e2883966-f38e-40e8-a1c0-d1145bdb23c5` (= UAMI Client ID) |
-| Auth Type | UserAssignedMSI |
+| msaAppId | When router deployed: `helkinswarm-id-router` client ID (= `BOT_APP_ID`). Before router: `e2883966` (stamp UAMI). |
+| Auth Type | `UserAssignedMSI` |
 | Messaging Endpoint | `https://helkinswarm-func-a7f2.purplepebble-508e1162.eastus2.azurecontainerapps.io/api/messages` |
-| Teams Channel | Enabled |
+| Teams Channel | Removed after router is live (Teams routes through router only) |
 
 ## Teams App Manifest
 | Property | Value |
 |----------|-------|
-| Manifest ID | `e2883966-f38e-40e8-a1c0-d1145bdb23c5` (= UAMI Client ID / Bot ID) |
-| Version | `2.0.0` |
-| Note | When global router is deployed (Phase 2), endpoint will be updated to the router's permanent URL |
+| Teams App ID | `0fe3ff72-40cc-43ab-85bf-a846e399be6d` (stable — never changes) |
+| `botId` | Injected from `BOT_APP_ID` at `teams-package.yml` build time |
+| Scopes | `personal` only |
 
 ## Azure Subscription & Tenant
 | Property | Value |
@@ -54,12 +96,14 @@
 
 ## GitHub Repository Variables
 | Variable | Value |
-|----------|-------|
+|----------|---------|
 | AZURE_CLIENT_ID | `97e5a7b7-9cd7-4019-9bc3-f9498f18ca6e` |
 | AZURE_TENANT_ID | `51b1f02a-e19b-4089-a5f6-3ebb72835521` |
 | AZURE_SUBSCRIPTION_ID | `65b1d40b-8962-46cd-b2d7-fa5d09b787a1` |
 | USER_PRINCIPAL_ID | `40f5c975-3aa2-47d8-b32d-a9d7a392f6dc` |
 | ALERT_EMAIL | (configured in GitHub) |
+| BOT_APP_ID | ⏳ Set by `deploy-router.yml` → `helkinswarm-id-router` client ID |
+| ROUTER_UAMI_ID | ⏳ Set by `deploy-router.yml` → `helkinswarm-id-router` resource ID |
 
 ---
 
