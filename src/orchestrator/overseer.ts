@@ -61,6 +61,7 @@ df.app.orchestration('overseer', function* (context) {
     state,
     userMessage: event.userMessage,
     conversationReference: event.conversationReference,
+    correlationId: crypto.randomUUID(),
   };
 
   const sessionResult: SessionResult = yield context.df.callSubOrchestrator(
@@ -109,6 +110,7 @@ function* processTurn(
     state,
     userMessage: event.userMessage,
     conversationReference: event.conversationReference,
+    correlationId: crypto.randomUUID(),
   };
 
   const sessionResult: SessionResult = yield context.df.callSubOrchestrator(

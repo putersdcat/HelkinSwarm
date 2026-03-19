@@ -1,37 +1,71 @@
-// LLM activity — calls the language model and returns the response.
-// Phase 3 will wire the real Foundry client + model router.
-// Spec ref: 06-Tool-Dispatch-LLM-Layer.md, 08-Orchestrator-Patterns.md
+// LLM activity — calls Azure AI Foundry and returns the response.
+// Spec ref: 06-Tool-Dispatch-LLM-Layer.md
 
 import * as df from 'durable-functions';
+import { createFoundryClient } from '../llm/foundryClient.js';
+import { getModelRouting } from '../llm/modelRouter.js';
+import { toolRegistry } from '../tools/toolRegistry.js';
 import type { PromptResult } from './buildPromptActivity.js';
+import type { ChatCompletionResponse } from '../llm/foundryClient.js';
 
 export interface LlmResult {
   content: string;
   model: string;
   tokensUsed: number;
-  toolCalls: Array<{ name: string; arguments: string }>;
-}
-
-function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
-
-export function callLlm(input: PromptResult): LlmResult {
-  // Phase 3 stub — returns a structured acknowledgment.
-  // The real implementation will route through the LLM client.
-  const userMsg = input.messages.find((m) => m.role === 'user');
-  const content = `[HelkinSwarm v0.1 — LLM stub] Received your message. The reasoning engine will be wired in Phase 3. Your message: "${userMsg?.content ?? '(empty)'}"`;
-
-  return {
-    content,
-    model: 'stub-v0.1',
-    tokensUsed: estimateTokens(content) + input.estimatedTokens,
-    toolCalls: [],
-  };
+  toolCalls: Array<{ id: string; name: string; arguments: string }>;
+  finishReason: string;
 }
 
 df.app.activity('llmActivity', {
-  handler: (input: PromptResult): LlmResult => {
-    return callLlm(input);
+  handler: async (input: PromptResult & { correlationId?: string }): Promise<LlmResult> => {
+    const client = createFoundryClient();
+    const routing = getModelRouting();
+    const correlationId = input.correlationId ?? crypto.randomUUID();
+
+    // Convert PromptResult messages to ChatMessage format
+    const messages = input.messages.map((m) => ({
+      role: m.role as 'system' | 'user' | 'assistant',
+      content: m.content,
+    }));
+
+    // Get OpenAI-compatible function schemas from tool registry
+    const tools = toolRegistry.toFunctionSchemas();
+
+    try {
+      const response: ChatCompletionResponse = await client.chatCompletion({
+        messages,
+        tools: tools.length > 0 ? tools : undefined,
+        toolChoice: tools.length > 0 ? 'auto' : undefined,
+        maxTokens: 4096,
+        temperature: 0.7,
+        correlationId,
+      });
+
+      const choice = response.choices[0];
+
+      const toolCalls =
+        choice.message.toolCalls?.map((tc) => ({
+          id: tc.id,
+          name: tc.function.name,
+          arguments: tc.function.arguments,
+        })) ?? [];
+
+      return {
+        content: choice.message.content ?? '',
+        model: response.model,
+        tokensUsed: response.usage.totalTokens,
+        toolCalls,
+        finishReason: choice.finishReason,
+      };
+    } catch (err) {
+      // Return a graceful error result — orchestrator handles the failure
+      return {
+        content: `LLM call failed: ${err instanceof Error ? err.message : String(err)}`,
+        model: routing.deploymentName,
+        tokensUsed: 0,
+        toolCalls: [],
+        finishReason: 'error',
+      };
+    }
   },
 });
