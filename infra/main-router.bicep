@@ -167,6 +167,8 @@ resource routerFunc 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'node' }
         { name: 'AzureWebJobsFeatureFlags', value: 'EnableWorkerIndexing' }
+        // ACR — explicitly required when acrUseManagedIdentityCreds:true for fresh-create
+        { name: 'DOCKER_REGISTRY_SERVER_URL', value: 'https://${routerAcr.properties.loginServer}' }
         // Bot Framework auth — router UAMI is the single global Teams bot identity
         { name: 'MicrosoftAppId', value: routerUami.properties.clientId }
         { name: 'MicrosoftAppType', value: 'UserAssignedMSI' }
