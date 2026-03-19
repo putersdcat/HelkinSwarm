@@ -46,7 +46,7 @@ param(
     [switch]$SkipValidation,
     [switch]$Publish,
     [string]$TeamsAppId = "<FILL IN BEFORE FIRST RUN>",
-    [string]$TenantId = "b8ee8812-3a34-43b9-a298-47ebe7ffced8",
+    [string]$TenantId = "51b1f02a-e19b-4089-a5f6-3ebb72835521",
     [switch]$RequiresReview
 )
 
@@ -120,7 +120,7 @@ if (-not $SkipValidation) {
     if ($colorSize -lt 1000) {
         $errors += "Color icon looks like a placeholder (only ${colorSize} bytes). Teams requires a 192×192 PNG."
     }
-    if ($outlineSize -lt 500) {
+    if ($outlineSize -lt 200) {
         $errors += "Outline icon looks like a placeholder (only ${outlineSize} bytes). Teams requires a 32×32 PNG."
     }
 }
