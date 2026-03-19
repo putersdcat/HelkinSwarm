@@ -109,9 +109,10 @@ jobs:
         run: |
           IMAGE=${{ needs.deploy-infra.outputs.acr-login-server }}/helkinswarm-router:${{ github.sha }}
           IMAGE_LATEST=${{ needs.deploy-infra.outputs.acr-login-server }}/helkinswarm-router:latest
-          docker build -f Dockerfile.router -t $IMAGE -t $IMAGE_LATEST .
-          docker push $IMAGE
-          docker push $IMAGE_LATEST
+          # Disable BuildKit to avoid cache key errors with newly-added directories
+          DOCKER_BUILDKIT=0 docker build -f Dockerfile.router -t $IMAGE -t $IMAGE_LATEST .
+          DOCKER_BUILDKIT=0 docker push $IMAGE
+          DOCKER_BUILDKIT=0 docker push $IMAGE_LATEST
 
   # ─────────────────────────────────────────────────────────────────────────
   # 3. Deploy Router Image to Container Apps Function App
