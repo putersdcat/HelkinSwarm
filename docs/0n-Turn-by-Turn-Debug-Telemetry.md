@@ -50,7 +50,7 @@ This is not a full observability replacement (see 13) but a quick, in-band diagn
 - **DevLoop Relay (0g)**: Allows querying and toggling; integrates with self-tuning loop for benchmark timings.
 - **Safety Pipeline (0e)**: Includes verification step timings to audit high-risk actions.
 - **Durable Hooks (0h) & Skill Memory (0i)**: Captures registration/injection latencies.
-- **Dev Console Tab**: Displays recent telemetry in the debug logs sub-tab.
+- **Dev Console Tab** (served from global SPA; data from stamp tab backend — see #107): Displays recent telemetry in the debug logs sub-tab.
 
 ### 6. Security & Safety Considerations
 - No PII or sensitive data in telemetry (timings only; anonymize tool names if high-risk).

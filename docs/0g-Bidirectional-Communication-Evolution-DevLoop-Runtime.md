@@ -21,7 +21,7 @@ This is the bridge that lets the developer-side LLM “ask the patient how it fe
   - `DEVQUERY: ... OVER`
 - Runtime responds with `HELKIN:` or `SWARM:` prefixed messages.
 - Messages are injected into the dedicated HelkinSwarm Teams chat thread via stored ConversationReference.
-- Correlation IDs appended for tracing (visible in dev console tab — served from global SPA; data from stamp tab backend, see #107).
+- Correlation IDs appended for tracing (visible in dev console tab — served from global SPA; data from stamp tab backend — see #107).
 - Used for health checks, tool enumeration, safety proxy testing, and PR validation.
 
 ### 3. Target Architecture (MVP Requirement)

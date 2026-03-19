@@ -15,7 +15,7 @@ DevLoop and the runtime communicate through a **dedicated, secure relay** (Durab
 - Prefix-based protocol: `DEVLOOP:`, `DEVQUERY:`, `HELKIN-REPLY:`, `SWARM-TOOL-REPORT:`
 - Structured JSON payloads with correlation IDs
 - Support for steering injections (non-terminating) and session resurrection
-- Full tracing in the Dev Console tab
+- Full tracing in the Dev Console tab (global SPA front-end; data served from stamp tab backend — see #107)
 
 This channel is the primary way DevLoop asks the runtime “what tools do you currently see?” and receives accurate, model-specific answers.
 

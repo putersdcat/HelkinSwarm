@@ -17,7 +17,7 @@ Observability is **not** an afterthought. It is a core architectural requirement
 | **Health Endpoint**    | `/api/health`                       | 8-component live status (LLM, memory, safety, durable hooks, skill vaults, Hydra-Net) |
 | **Diagnostics**        | `/api/sessions`, `/api/traces`, `/api/cost`, `/api/durable-hooks` | Real-time dashboards |
 | **Alerting**           | Azure Monitor Scheduled Query Rules | P0 alerts for EU violations, emergency stop, rate limits, verification failures |
-| **Dev Console Tab**    | Personal Teams tab                  | Owner-only deep inspection (sessions, traces, skill memory summary (0i), durable hook status (0h)) |
+| **Dev Console Tab**    | Personal Teams tab (served from global SPA; data from stamp tab backend — see #107) | Owner-only deep inspection (sessions, traces, skill memory summary (0i), durable hook status (0h)) |
 
 ### Correlation ID Flow
 
@@ -64,7 +64,7 @@ Returns a full JSON status:
 }
 ```
 
-### Dev Console Tab (Owner Only)
+### Dev Console Tab (Owner Only) (served from global SPA; data from stamp tab backend — see #107)
 
 A rich personal tab with:
 - Live session list + kill buttons

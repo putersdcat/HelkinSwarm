@@ -55,7 +55,7 @@ The unspoken reality we discussed today: the frontier models of 2026 are already
 - Cosmos DB containers: `multimodalMemory` (partitioned by user/skill) with multi-vector fields.
 - Ties directly into 0i (Skill-Specific Memory) and 0h (Durable Hooks).
 - SkillForge checklist requires new skills to declare supported modalities.
-- Dev Console tab shows Hydra-Net stats (embedding latency, vector count per skill).
+- Dev Console tab shows Hydra-Net stats (embedding latency, vector count per skill) (served from global SPA; data from stamp tab backend — see #107).
 - Bidirectional relay (0g) lets DevLoop query and test embeddings live.
 
 ### 6. Security & Safety Considerations

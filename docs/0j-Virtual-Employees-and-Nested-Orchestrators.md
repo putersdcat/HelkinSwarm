@@ -53,7 +53,7 @@ This is the bridge to the Iain M. Banks “Special Circumstances” forward-depl
 - **Spawn API**: Exposed via master Teams command or DevLoop (`DEVLOOP: spawn virtual employee "secretary" with persona X`).
 - **Durable Hooks** (0h) + Skill-Specific Memory (0i) inherited by every employee.
 - **Bidirectional Relay** (0g) for master ↔ employee steering and introspection.
-- **Dev Console Tab**: Master view shows all living employees, their status, and one-click “step into” session.
+- **Dev Console Tab** (served from global SPA; data from stamp tab backend — see #107): Master view shows all living employees, their status, and one-click "step into" session.
 - **SkillForge**: Employees can request new tools (with master approval).
 
 ### 6. Security & Safety Considerations
