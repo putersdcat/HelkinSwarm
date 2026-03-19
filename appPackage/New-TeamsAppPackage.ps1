@@ -25,7 +25,7 @@
 
 .PARAMETER TeamsAppId
     The Teams Admin Center app GUID (Graph teamsApp ID), not the botId.
-    Default: 6293e44e-86d5-4bac-bc44-94cc3f3142f2
+    Default: e2883966-f38e-40e8-a1c0-d1145bdb23c5
 
 .PARAMETER TenantId
     Entra tenant ID used for Connect-MgGraph delegated sign-in.
@@ -45,7 +45,7 @@ param(
     [switch]$Open,
     [switch]$SkipValidation,
     [switch]$Publish,
-    [string]$TeamsAppId = "<FILL IN BEFORE FIRST RUN>",
+    [string]$TeamsAppId = "e2883966-f38e-40e8-a1c0-d1145bdb23c5",
     [string]$TenantId = "51b1f02a-e19b-4089-a5f6-3ebb72835521",
     [switch]$RequiresReview
 )
