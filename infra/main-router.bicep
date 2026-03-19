@@ -152,8 +152,9 @@ resource routerFunc 'Microsoft.Web/sites@2023-12-01' = {
     siteConfig: {
       minimumElasticInstanceCount: 1
       functionAppScaleLimit: 3
-      // MCR placeholder — deploy-router.yml replaces with router ACR image after build
-      linuxFxVersion: 'DOCKER|mcr.microsoft.com/azure-functions/node:4-node20-appservice'
+      // MCR placeholder removed — use router ACR URL from the start (matches stamp pattern).
+      // Container won't start until deploy-code pushes the first image; that is expected.
+      linuxFxVersion: 'DOCKER|${routerAcr.properties.loginServer}/helkinswarm-router:latest'
       acrUseManagedIdentityCreds: true
       acrUserManagedIdentityID: routerUami.id
       ftpsState: 'Disabled'
