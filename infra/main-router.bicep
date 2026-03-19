@@ -1,7 +1,8 @@
 // ──────────────────────────────────────────────────────────────────────────────
 // HelkinSwarm — Global Router Infrastructure
-// Single Azure Function App on Consumption plan that routes Teams activities
-// to user-specific stamps by aadObjectId → user-map.json lookup.
+// Single Azure Function App on Container Apps (Consumption workload profile)
+// that routes Teams activities to user-specific stamps by
+// aadObjectId → user-map.json lookup.
 //
 // Deployed once, globally. Not per-stamp.
 // Resource group: rg-helkinswarm-router
@@ -27,17 +28,15 @@ param userPrincipalId string
 var routerUamiName = 'helkinswarm-id-router'
 var routerFuncName = 'helkinswarm-router'
 var routerStName   = 'helkinswarmrouterst'
-var routerPlanName = 'helkinswarm-router-plan'
+var routerCaeName  = 'helkinswarm-cae-router'
+var routerAcrName  = 'helkinswarmrouteracr'
 var routerBotName  = 'helkinswarm-router-bot'
 
 // Built-in ARM role definition IDs
 var roleStorageBlobDataOwner    = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
 var roleStorageQueueContributor = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
 var roleStorageTableContributor = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  1. STORAGE ACCOUNT (required for Consumption plan)
-// ═══════════════════════════════════════════════════════════════════════════
+var roleAcrPull                 = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  1. USER-ASSIGNED MANAGED IDENTITY (global bot identity — fresh, not Alpha)
@@ -95,29 +94,52 @@ resource tableRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  3. APP SERVICE PLAN (Consumption / Y1)
+//  3. AZURE CONTAINER REGISTRY (router Docker image)
 // ═══════════════════════════════════════════════════════════════════════════
 
-resource routerPlan 'Microsoft.Web/serverfarms@2023-12-01' = {
-  name: routerPlanName
+resource routerAcr 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+  name: routerAcrName
   location: location
-  sku: {
-    name: 'Y1'
-    tier: 'Dynamic'
-  }
+  sku: { name: 'Basic' }
   properties: {
-    reserved: true  // Linux
+    adminUserEnabled: false
+    publicNetworkAccess: 'Enabled'
+  }
+}
+
+resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(routerAcr.id, routerUami.id, roleAcrPull)
+  scope: routerAcr
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleAcrPull)
+    principalId: routerUami.properties.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  4. FUNCTION APP (Node 22 LTS, Consumption, router UAMI assigned)
+//  4. CONTAINER APPS MANAGED ENVIRONMENT
+//     Uses Consumption workload profile — no Dynamic VM quota needed.
+// ═══════════════════════════════════════════════════════════════════════════
+
+resource routerCae 'Microsoft.App/managedEnvironments@2024-03-01' = {
+  name: routerCaeName
+  location: location
+  properties: {
+    workloadProfiles: [
+      { name: 'Consumption', workloadProfileType: 'Consumption' }
+    ]
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  5. FUNCTION APP (Node 22 LTS, Container Apps, router UAMI assigned)
 // ═══════════════════════════════════════════════════════════════════════════
 
 resource routerFunc 'Microsoft.Web/sites@2023-12-01' = {
   name: routerFuncName
   location: location
-  kind: 'functionapp,linux'
+  kind: 'functionapp,linux,container'
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
@@ -125,10 +147,15 @@ resource routerFunc 'Microsoft.Web/sites@2023-12-01' = {
     }
   }
   properties: {
-    serverFarmId: routerPlan.id
+    managedEnvironmentId: routerCae.id
     httpsOnly: true
     siteConfig: {
-      linuxFxVersion: 'NODE|22'
+      minimumElasticInstanceCount: 1
+      functionAppScaleLimit: 3
+      // MCR placeholder — deploy-router.yml replaces with router ACR image after build
+      linuxFxVersion: 'DOCKER|mcr.microsoft.com/azure-functions/node:4-node20-appservice'
+      acrUseManagedIdentityCreds: true
+      acrUserManagedIdentityID: routerUami.id
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
       appSettings: [
@@ -138,7 +165,7 @@ resource routerFunc 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'AzureWebJobsStorage__clientId', value: routerUami.properties.clientId }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'node' }
-        { name: 'WEBSITE_NODE_DEFAULT_VERSION', value: '~22' }
+        { name: 'AzureWebJobsFeatureFlags', value: 'EnableWorkerIndexing' }
         // Bot Framework auth — router UAMI is the single global Teams bot identity
         { name: 'MicrosoftAppId', value: routerUami.properties.clientId }
         { name: 'MicrosoftAppType', value: 'UserAssignedMSI' }
@@ -150,7 +177,7 @@ resource routerFunc 'Microsoft.Web/sites@2023-12-01' = {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  5. BOT SERVICE + TEAMS CHANNEL (global — this is the ONE Teams entry point)
+//  6. BOT SERVICE + TEAMS CHANNEL (global — this is the ONE Teams entry point)
 //     All stamps are reached by proxy through this router.
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -188,6 +215,8 @@ resource teamsChannel 'Microsoft.BotService/botServices/channels@2022-09-15' = {
 output routerEndpoint string = 'https://${routerFunc.properties.defaultHostName}/api/messages'
 output routerHostName string = routerFunc.properties.defaultHostName
 output routerFunctionAppName string = routerFunc.name
+output routerAcrName string = routerAcr.name
+output routerAcrLoginServer string = routerAcr.properties.loginServer
 // routerUamiClientId is the global bot identity — stamp Bicep deploy needs this as routerBotId param
 output routerUamiClientId string = routerUami.properties.clientId
 output routerUamiResourceId string = routerUami.id

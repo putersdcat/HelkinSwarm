@@ -37,6 +37,8 @@ jobs:
       router-endpoint: ${{ steps.deploy.outputs.routerEndpoint }}
       router-hostname: ${{ steps.deploy.outputs.routerHostName }}
       function-app-name: ${{ steps.deploy.outputs.routerFunctionAppName }}
+      acr-name: ${{ steps.deploy.outputs.routerAcrName }}
+      acr-login-server: ${{ steps.deploy.outputs.routerAcrLoginServer }}
       router-uami-client-id: ${{ steps.deploy.outputs.routerUamiClientId }}
       router-uami-resource-id: ${{ steps.deploy.outputs.routerUamiResourceId }}
     steps:
@@ -68,6 +70,8 @@ jobs:
           echo "routerEndpoint=$(echo $RESULT | jq -r '.routerEndpoint.value')" >> "$GITHUB_OUTPUT"
           echo "routerHostName=$(echo $RESULT | jq -r '.routerHostName.value')" >> "$GITHUB_OUTPUT"
           echo "routerFunctionAppName=$(echo $RESULT | jq -r '.routerFunctionAppName.value')" >> "$GITHUB_OUTPUT"
+          echo "routerAcrName=$(echo $RESULT | jq -r '.routerAcrName.value')" >> "$GITHUB_OUTPUT"
+          echo "routerAcrLoginServer=$(echo $RESULT | jq -r '.routerAcrLoginServer.value')" >> "$GITHUB_OUTPUT"
           echo "routerUamiClientId=$(echo $RESULT | jq -r '.routerUamiClientId.value')" >> "$GITHUB_OUTPUT"
           echo "routerUamiResourceId=$(echo $RESULT | jq -r '.routerUamiResourceId.value')" >> "$GITHUB_OUTPUT"
       - name: Register global bot identity as GitHub variables
@@ -79,31 +83,16 @@ jobs:
           echo "✅ BOT_APP_ID set to router UAMI client ID: ${{ steps.deploy.outputs.routerUamiClientId }}"
           echo "✅ ROUTER_UAMI_ID set to router UAMI resource ID: ${{ steps.deploy.outputs.routerUamiResourceId }}"
   # ─────────────────────────────────────────────────────────────────────────
-  # 2. Build & Deploy Router Code
+  # 2. Build & Push Container Image to Router ACR
   # ─────────────────────────────────────────────────────────────────────────
-  deploy-code:
-    name: Build & Deploy Router
+  build-and-push:
+    name: Build & Push Router Image
     needs: deploy-infra
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Setup Node.js 22
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build
-        run: pnpm run build
 
       - name: Azure Login (OIDC)
         uses: azure/login@v2
@@ -112,31 +101,86 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Package router function
-        run: |
-          mkdir -p router-deploy
-          # Copy compiled router code
-          cp -r dist/src/router/* router-deploy/
-          # Copy config (user-map.json)
-          mkdir -p router-deploy/config
-          cp config/user-map.json router-deploy/config/
-          # Copy package files for production deps
-          cp package.json pnpm-lock.yaml router-deploy/
-          cd router-deploy
-          pnpm install --prod --frozen-lockfile
+      - name: Login to Router ACR
+        run: az acr login --name ${{ needs.deploy-infra.outputs.acr-name }}
 
-      - name: Deploy to Azure Functions
-        uses: Azure/functions-action@v1
+      - name: Build and push Docker image
+        run: |
+          IMAGE=${{ needs.deploy-infra.outputs.acr-login-server }}/helkinswarm-router:${{ github.sha }}
+          IMAGE_LATEST=${{ needs.deploy-infra.outputs.acr-login-server }}/helkinswarm-router:latest
+          docker build -t $IMAGE -t $IMAGE_LATEST .
+          docker push $IMAGE
+          docker push $IMAGE_LATEST
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # 3. Deploy Router Image to Container Apps Function App
+  # ─────────────────────────────────────────────────────────────────────────
+  deploy-code:
+    name: Deploy Router to Container Apps
+    needs: [deploy-infra, build-and-push]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
         with:
-          app-name: ${{ needs.deploy-infra.outputs.function-app-name }}
-          package: router-deploy
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Update Function App container image
+        run: |
+          FUNC_NAME=${{ needs.deploy-infra.outputs.function-app-name }}
+          ACR_SERVER=${{ needs.deploy-infra.outputs.acr-login-server }}
+          UAMI_RESOURCE_ID=${{ needs.deploy-infra.outputs.router-uami-resource-id }}
+          IMAGE_TAG=${{ github.sha }}
+
+          az functionapp config appsettings set \
+            --name "${FUNC_NAME}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --settings DOCKER_REGISTRY_SERVER_URL="${ACR_SERVER}"
+
+          az rest --method PATCH \
+            --url "/subscriptions/${{ env.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ env.RESOURCE_GROUP }}/providers/Microsoft.Web/sites/${FUNC_NAME}?api-version=2023-12-01" \
+            --body "{\"properties\":{\"siteConfig\":{\"linuxFxVersion\":\"DOCKER|${ACR_SERVER}/helkinswarm-router:${IMAGE_TAG}\",\"acrUseManagedIdentityCreds\":true,\"acrUserManagedIdentityID\":\"${UAMI_RESOURCE_ID}\"}}}"
+
+      - name: Verify health
+        run: |
+          echo "⏳ Waiting for container to start..."
+          sleep 45
+
+          HOSTNAME=$(az functionapp show \
+            --name ${{ needs.deploy-infra.outputs.function-app-name }} \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --query defaultHostName -o tsv 2>/dev/null || echo "")
+
+          if [ -z "$HOSTNAME" ]; then
+            CAE_DOMAIN=$(az containerapp env list \
+              --resource-group "${{ env.RESOURCE_GROUP }}" \
+              --query "[0].properties.defaultDomain" -o tsv 2>/dev/null || echo "")
+            HOSTNAME="${{ needs.deploy-infra.outputs.function-app-name }}.${CAE_DOMAIN}"
+          fi
+
+          echo "🏥 Router health: https://${HOSTNAME}/api/health"
+
+          MAX_RETRIES=6
+          RETRY=0
+          while [ $RETRY -lt $MAX_RETRIES ]; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$HOSTNAME/api/health" 2>/dev/null || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "✅ Router health OK (HTTP $HTTP_CODE)"
+              break
+            fi
+            RETRY=$((RETRY + 1))
+            echo "⏳ Attempt $RETRY/$MAX_RETRIES: HTTP $HTTP_CODE — retrying in 30s..."
+            sleep 30
+          done
 
   # ─────────────────────────────────────────────────────────────────────────
   # 3. Deployment Report
   # ─────────────────────────────────────────────────────────────────────────
   report:
     name: Deployment Report
-    needs: [deploy-infra, deploy-code]
+    needs: [deploy-infra, build-and-push, deploy-code]
     runs-on: ubuntu-latest
     if: always()
     steps:
@@ -147,6 +191,7 @@ jobs:
           echo "═══════════════════════════════════════════════"
           echo ""
           echo "Infra:  ${{ needs.deploy-infra.result }}"
+          echo "Image:  ${{ needs.build-and-push.result }}"
           echo "Code:   ${{ needs.deploy-code.result }}"
           echo ""
           echo "Router Endpoint:      ${{ needs.deploy-infra.outputs.router-endpoint }}"
