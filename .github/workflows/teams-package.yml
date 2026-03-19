@@ -17,7 +17,7 @@ on:
       skip_publish:
         description: "Build only — skip Graph API publish"
         type: boolean
-        default: false
+        default: true
       auto_version_bump:
         description: "Auto-increment patch version on each build"
         type: boolean
