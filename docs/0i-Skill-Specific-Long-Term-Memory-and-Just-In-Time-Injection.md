@@ -65,7 +65,7 @@ The unspoken reality we discussed: you are an expert user of every external syst
 - Cosmos DB containers: `skillMemory-{skillId}` (partitioned by user), `longRunningCatalog`.
 - Memory Manager injected into every sub-agent context via orchestrator.
 - SkillForge checklist now validates `longTermMemorySchema` and onboarding ritual.
-- Dev Console tab shows per-skill memory summary + last sync time.
+- Dev Console tab shows per-skill memory summary + last sync time (served from global SPA; data from stamp tab backend — see #107).
 - Ties directly into 0h durable hooks (hooks can write to skill vaults).
 
 ### 6. Security & Safety Considerations

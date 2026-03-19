@@ -21,7 +21,7 @@ This is the bridge that lets the developer-side LLM “ask the patient how it fe
   - `DEVQUERY: ... OVER`
 - Runtime responds with `HELKIN:` or `SWARM:` prefixed messages.
 - Messages are injected into the dedicated HelkinSwarm Teams chat thread via stored ConversationReference.
-- Correlation IDs appended for tracing (visible in dev console tab).
+- Correlation IDs appended for tracing (visible in dev console tab — served from global SPA; data from stamp tab backend, see #107).
 - Used for health checks, tool enumeration, safety proxy testing, and PR validation.
 
 ### 3. Target Architecture (MVP Requirement)
@@ -61,7 +61,7 @@ We replace the fragile MCP + impersonation model with a **dedicated, first-class
 ### 5. Integration Points
 - **MCP Extension** (`CopilotResurrection`): Listens for relay messages and can inject into running Copilot Chat session or start new one.
 - **Teams Bot** receives via Durable trigger and routes directly to orchestrator (bypassing normal user prompt path).
-- **Cosmos DB** stores full conversation + embeddings for retrospective analysis in the Dev Console tab.
+- **Cosmos DB** stores full conversation + embeddings for retrospective analysis in the Dev Console tab (served from global SPA; data from stamp tab backend — see #107).
 - **App Insights** automatically tags every bidirectional message with `devloop-correlation-id`.
 
 ### 6. Security & Safety Considerations
@@ -79,7 +79,7 @@ We replace the fragile MCP + impersonation model with a **dedicated, first-class
 ### 8. Acceptance Criteria
 - DevLoop can send `DEVQUERY: list all current tools and active model` and receive accurate, structured reply within <8 seconds.
 - Session resurrection works after forced termination.
-- Full trace appears in Dev Console tab with expandable reasoning chains.
+- Full trace appears in Dev Console tab with expandable reasoning chains (served from global SPA; data from stamp tab backend — see #107).
 - Protocol schema is versioned and backward-compatible.
 - North Star KV-cache path is documented with spike task for Q3 2026.
 

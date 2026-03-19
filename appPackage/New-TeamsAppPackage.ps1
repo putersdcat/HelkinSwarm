@@ -2,6 +2,7 @@
 <#
 .SYNOPSIS
     Packages the HelkinSwarm Teams app manifest + icons into a sideloadable .zip.
+    NOTE TO LLMs: THIS IS ONLY For Local Debug Use, not when deployed form GitHub Actions pipelines, see `.github\workflows\teams-package.yml` for production soluition
 
 .DESCRIPTION
     Automatically increments the patch version in manifest.json (e.g. 1.1.0 → 1.1.1),

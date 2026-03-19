@@ -67,7 +67,7 @@ This makes every skill a true **expert extension** of the user — deep, first-p
 - Cosmos DB containers: `durableHooks`, `skillMemory-{skillId}`
 - Graph subscriptions + Exchange rules via Microsoft Graph SDK.
 - Webhook endpoint in Azure Functions (Event Grid trigger).
-- Dev Console tab shows active durable hooks with status and last sync.
+- Dev Console tab shows active durable hooks with status and last sync (served from global SPA; data from stamp tab backend — see #107).
 - SkillForge checklist enforces “externalAutomationCapabilities” and “supportsDurableHooks”.
 
 ### 6. Security & Safety Considerations

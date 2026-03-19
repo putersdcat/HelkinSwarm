@@ -67,10 +67,13 @@ Cards are sent via the ack-update mechanism so the conversation feels seamless.
 
 ### Teams Tab Experiences (Control Center)
 
-The personal app includes static tabs for rich management:
-- **Get Started** – onboarding + quick commands
-- **Control Center** – live sessions, model health, memory stats, cost overview
-- **Dev Console** – owner-only deep inspection: session tracer, correlation search, durable hook status (0h), skill memory summary (0i), DevLoop relay status (0g)
+The personal app includes static tabs for rich management. Tab hosting uses a **global SPA + per-stamp backends** pattern — see issue #107 for the architecture decision and `docs/0o-Microsoft-Teams-App-Expansion-with-Tabs.md` for the full implementation plan.
+
+- **Get Started** – onboarding + quick commands (served from global SPA, data from stamp backend)
+- **Control Center** – live sessions, model health, memory stats, cost overview (served from global SPA, data from stamp backend)
+- **Dev Console** – owner-only deep inspection: session tracer, correlation search, durable hook status (0h), skill memory summary (0i), DevLoop relay status (0g) (served from global SPA, data from stamp backend)
+
+The manifest's `{{TAB_HOST_URL}}` placeholder is substituted by `teams-package.yml` at build time with the global tab SPA URL.
 
 ### Key Files
 
@@ -81,7 +84,8 @@ The personal app includes static tabs for rich management:
 | `src/bot/humanConfirmation.ts` | Confirmation card logic |
 | `src/bot/conversationStore.ts` | Proactive reply + durable hook storage |
 | `src/bot/maintenanceMode.ts` | Emergency stop flag |
-| `src/functions/tab*.ts` | Control Center + Dev Console tabs |
+| `src/functions/tab*.ts` | Tab API backends on stamps (GET endpoints returning tab data; front-end is the global SPA — see #107) |
+| `tabs/` | Global SPA front-end source (Azure Storage static website — see #107) |
 
 ### What NOT to Do
 

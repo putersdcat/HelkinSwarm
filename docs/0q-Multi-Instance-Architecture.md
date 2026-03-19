@@ -69,8 +69,19 @@ Examples for default alias `a7f2`:
 
 ### Global Shared Components
 - Entra App Registration + Service Principal: `HelkinSwarm-Core` (OAuth, GitHub integration)
-- Teams app manifest: single global app
+- Teams app manifest: single global app (see Tab Hosting below)
 - Central router function (`helkinswarm-router`): Azure Functions Consumption HTTP trigger that routes incoming Teams activity by `activity.from.aadObjectId` → user-specific endpoint
+
+### Tab Hosting — Global SPA + Per-Stamp Backends
+
+> **Architecture Decision #107.** Tabs use a stateless global SPA that routes to stamp-resident API backends client-side. This keeps the Teams manifest global (single URL) while all user data stays on the correct stamp.
+
+**Components:**
+- **Global Tab SPA**: Azure Storage static website (`helkinswarmtabsst`), served from `rg-helkinswarm-tabs`. Scale-to-zero, ~$0.001/GB. One URL in the manifest: `{{TAB_HOST_URL}}` substituted at build time.
+- **Per-Stamp Tab Backends**: Each stamp's Function App exposes `/api/tab/getting-started`, `/api/tab/control-center`, `/api/tab/dev-console`. Return JSON/HTML with stamp-specific data.
+- **Client-Side Routing**: SPA reads `aadObjectId` from Teams tab JWT context, looks up stamp alias from bundled `user-map.json`, calls stamp API with OBO token.
+
+**Resource group:** `rg-helkinswarm-tabs` (separate from stamps and router)
 
 ### Deployment Flow
 1. Commit to main

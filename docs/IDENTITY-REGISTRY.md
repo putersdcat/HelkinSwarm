@@ -77,8 +77,11 @@ Per `docs/0q-Multi-Instance-Architecture.md`, these are deployed once and shared
 |----------|-------|
 | Teams App ID (`manifest.id`) | `0fe3ff72-40cc-43ab-85bf-a846e399be6d` — stable permanent UUID, not an Azure resource ID |
 | `botId` (Teams Manifest) | Set to `{{BOT_APP_ID}}` placeholder → substituted by `teams-package.yml` from `vars.BOT_APP_ID` |
+| `staticTabs[].contentUrl` | Set to `{{TAB_HOST_URL}}/index.html` placeholder → substituted by `teams-package.yml` from `vars.TAB_HOST_URL` |
 | Scopes | `personal` only (direct message to bot) |
 | Version | See `appPackage/manifest.json` |
+
+> **Tab hosting note:** `{{TAB_HOST_URL}}` resolves to the global tab SPA on Azure Storage (see Tab Hosting in `docs/0q-Multi-Instance-Architecture.md` and issue #107). The SPA routes to per-stamp tab backends client-side using Teams JWT identity.
 
 ---
 
@@ -138,6 +141,9 @@ Per `docs/0q-Multi-Instance-Architecture.md`, these are deployed once and shared
 | AZURE_TENANT_ID | `51b1f02a-e19b-4089-a5f6-3ebb72835521` |
 | AZURE_SUBSCRIPTION_ID | `65b1d40b-8962-46cd-b2d7-fa5d09b787a1` |
 | USER_PRINCIPAL_ID | `40f5c975-3aa2-47d8-b32d-a9d7a392f6dc` |
+| BOT_APP_ID | `42d3359f-8757-421d-a853-fb2960cf2dac` — router UAMI client ID (set by deploy-router.yml) |
+| ROUTER_UAMI_ID | Full resource ID of `helkinswarm-id-router` (set by deploy-router.yml) |
+| TAB_HOST_URL | `https://helkinswarmtabsst.z6.web.core.windows.net` — global tab SPA URL (set by deploy-tabs.yml after Phase 2.5) |
 | ALERT_EMAIL | (configured in GitHub) |
 | BOT_APP_ID | `42d3359f-8757-421d-a853-fb2960cf2dac` — `helkinswarm-id-router` client ID ✅ |
 | ROUTER_UAMI_ID | `/subscriptions/65b1d40b-.../rg-helkinswarm-router/.../helkinswarm-id-router` ✅ |

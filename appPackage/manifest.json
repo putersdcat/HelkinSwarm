@@ -55,7 +55,7 @@
     {
       "entityId": "getting-started",
       "name": "Getting Started",
-      "contentUrl": "https://helkinswarm-func-a7f2.purplepebble-508e1162.eastus2.azurecontainerapps.io/api/tab/getting-started",
+      "contentUrl": "{{TAB_HOST_URL}}/getting-started.html",
       "scopes": [
         "personal"
       ]
@@ -63,7 +63,7 @@
     {
       "entityId": "control-center",
       "name": "Control Center",
-      "contentUrl": "https://helkinswarm-func-a7f2.purplepebble-508e1162.eastus2.azurecontainerapps.io/api/tab/control-center",
+      "contentUrl": "{{TAB_HOST_URL}}/control-center.html",
       "scopes": [
         "personal"
       ]
@@ -74,6 +74,7 @@
     "messageTeamMembers"
   ],
   "validDomains": [
+    "{{TAB_HOST_DOMAIN}}",
     "helkinswarm-router.salmonbeach-d4db91b5.eastus2.azurecontainerapps.io",
     "helkinswarm-func-a7f2.purplepebble-508e1162.eastus2.azurecontainerapps.io"
   ]

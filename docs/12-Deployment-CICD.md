@@ -14,7 +14,10 @@ The pipeline is intentionally simple, observable, and safe for a personal projec
 |-----------------------|--------------------------|--------------|
 | `ci.yml`              | Every push + PR          | Lint, TypeScript compile, type-check, Bicep validation |
 | `cd.yml`              | Push to `main`           | Bicep deploy → Docker build → ACR push → Container Apps update + SkillForge base image sync |
-| `teams-package.yml`   | Manual dispatch          | Builds the Teams app zip (ready for upload) |
+| `deploy-stamp.yml`    | Manual dispatch (`USER_ALIAS`) | Deploys a complete stamped user instance (RG + all resources) |
+| `deploy-router.yml`   | Manual dispatch          | Deploys the global router (rg-helkinswarm-router + Bot Service + Teams channel). Sets `BOT_APP_ID` and `ROUTER_UAMI_ID` GitHub variables. |
+| `deploy-tabs.yml`     | Manual dispatch          | Deploys the global tab SPA (rg-helkinswarm-tabs + Azure Storage static website). Sets `TAB_HOST_URL` GitHub variable. |
+| `teams-package.yml`   | Manual dispatch + push to `appPackage/**` | Substitutes `{{BOT_APP_ID}}`, `{{TAB_HOST_URL}}`, `{{TAB_HOST_DOMAIN}}` in manifest.json, then produces a sideloadable zip |
 
 All workflows use **OIDC federation** (no secrets stored in GitHub).
 
@@ -50,9 +53,12 @@ Health check runs immediately after deployment. If it fails, the pipeline aborts
 ### Teams App Package
 
 The `teams-package.yml` workflow:
-- Runs `scripts/New-TeamsAppPackage.ps1` (auto-bumps version)
+- Substitutes `{{BOT_APP_ID}}` from `vars.BOT_APP_ID` (set by `deploy-router.yml`)
+- Substitutes `{{TAB_HOST_URL}}` and `{{TAB_HOST_DOMAIN}}` from `vars.TAB_HOST_URL` (set by `deploy-tabs.yml`)
 - Produces a clean zip with manifest + icons
 - The generated zip must still be uploaded manually to your personal Teams catalog (as of March 2026; no full API publish path exists yet)
+
+> **Build-time substitution:** The manifest source always carries `{{BOT_APP_ID}}`, `{{TAB_HOST_URL}}`, and `{{TAB_HOST_DOMAIN}}` as placeholders. `teams-package.yml` does the substitution at build time. This means the committed `manifest.json` always works as a valid starting point — `BOT_APP_ID` is set by the first router deployment, `TAB_HOST_URL` is set after Phase 2.5 tabs deployment.
 
 ### One-Time Bootstrap (Run Once Locally)
 

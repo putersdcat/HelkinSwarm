@@ -66,17 +66,31 @@ jobs:
 
       # ── Inject global bot identity ─────────────────────────────────────
       # BOT_APP_ID is set by deploy-router.yml after the router UAMI is created.
-      # The manifest stores {{BOT_APP_ID}} as a placeholder; substitute at build time.
-      - name: Inject BOT_APP_ID into manifest
+      # TAB_HOST_URL is the global tab SPA URL (set after deploy-tabs.yml runs).
+      # The manifest stores {{BOT_APP_ID}}, {{TAB_HOST_URL}}, and {{TAB_HOST_DOMAIN}}
+      # as placeholders; all three are substituted at build time.
+      - name: Inject manifest placeholders
         env:
           BOT_APP_ID: ${{ vars.BOT_APP_ID }}
+          TAB_HOST_URL: ${{ vars.TAB_HOST_URL }}
         run: |
           if [ -z "$BOT_APP_ID" ]; then
             echo "❌ vars.BOT_APP_ID is not set — run deploy-router workflow first"
             exit 1
           fi
+          # TAB_HOST_URL is optional; if not set, tabs will 404 until tabs are deployed
+          echo "BOT_APP_ID: $BOT_APP_ID"
+          echo "TAB_HOST_URL: ${TAB_HOST_URL:-'(not set — tabs will 404 until deploy-tabs runs)'}"
           sed -i "s/{{BOT_APP_ID}}/${BOT_APP_ID}/g" appPackage/manifest.json
-          echo "✅ Injected BOT_APP_ID: $BOT_APP_ID"
+          # contentUrl uses full URL; validDomains uses domain only
+          if [ -n "$TAB_HOST_URL" ]; then
+            TAB_HOST_DOMAIN=$(echo "$TAB_HOST_URL" | sed 's|https\?://||')
+            sed -i "s|{{TAB_HOST_URL}}|${TAB_HOST_URL}|g" appPackage/manifest.json
+            sed -i "s|{{TAB_HOST_DOMAIN}}|${TAB_HOST_DOMAIN}|g" appPackage/manifest.json
+            echo "✅ Injected BOT_APP_ID and TAB_HOST_URL: $TAB_HOST_URL"
+          else
+            echo "⚠️ TAB_HOST_URL not set — tabs will use placeholder URL (will work after deploy-tabs.yml runs)"
+          fi
 
       # ── Validate manifest ──────────────────────────────────────────────
       - name: Validate manifest
@@ -101,6 +115,7 @@ jobs:
           echo "  Version: $VERSION"
           echo "  App ID:  $APP_ID"
           echo "  Bot ID:  $BOT_ID"
+          echo "  Tab SPA: ${TAB_HOST_URL:-'(placeholder — set deploy-tabs.yml vars.TAB_HOST_URL)'}"
           echo "  Color:   $COLOR_ICON"
           echo "  Outline: $OUTLINE_ICON"
 
