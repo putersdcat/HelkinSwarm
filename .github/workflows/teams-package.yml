@@ -8,7 +8,7 @@
 name: Teams App Package
 
 on:
-  workflow_dispatch:  # manual only — auto-push disabled until packaging pipeline is validated on v2
+  workflow_dispatch:  # manual only
     inputs:
       requires_review:
         description: "Require admin review before publish"
@@ -18,6 +18,16 @@ on:
         description: "Build only — skip Graph API publish"
         type: boolean
         default: false
+      auto_version_bump:
+        description: "Auto-increment patch version on each build"
+        type: boolean
+        default: false
+
+  push:  # Triggered automatically when appPackage/ files change — version bump IS the push
+    paths:
+      - 'appPackage/**'
+    branches:
+      - main
 
 permissions:
   id-token: write  # OIDC token for Azure login → Graph API
@@ -36,6 +46,7 @@ jobs:
 
       # ── Auto-increment patch version ───────────────────────────────────
       - name: Bump patch version
+        if: ${{ github.event.inputs.auto_version_bump == 'true' }}
         id: bump
         run: |
           MANIFEST="appPackage/manifest.json"
@@ -47,7 +58,7 @@ jobs:
           NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
 
           echo "📦 Version bump: $CURRENT → $NEW_VERSION"
-          jq --arg v "$NEW_VERSION" '.version = $v' "$MANIFEST" > /tmp/manifest.json
+          jq --arg v "$NEW_VERSION" '.version = $v' "$MANIFEST" > /tmp/manifest.jsonappPackage
           mv /tmp/manifest.json "$MANIFEST"
 
           echo "bumped-version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
@@ -165,7 +176,7 @@ jobs:
 
       # ── Commit version bump back to main ──────────────────────────────
       - name: Commit version bump
-        if: ${{ steps.bump.outputs.bumped-version != '' }}
+        if: ${{ github.event.inputs.auto_version_bump == 'true' && steps.bump.outputs.bumped-version != '' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
