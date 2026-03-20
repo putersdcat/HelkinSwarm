@@ -2,7 +2,11 @@
 // Spec ref: 10-Teams-Interface.md, 0e-Safety-and-Four-Eyes-Verification-Pipeline.md
 
 import * as df from 'durable-functions';
-import { BotFrameworkAdapter, type ConversationReference } from 'botbuilder';
+import {
+  CloudAdapter,
+  ConfigurationBotFrameworkAuthentication,
+  type ConversationReference,
+} from 'botbuilder';
 import { buildConfirmationCard, type ConfirmationCardData } from '../bot/confirmationCards.js';
 import { getConversationReference } from '../bot/conversationStore.js';
 
@@ -19,16 +23,33 @@ export interface SendConfirmationCardResult {
   error?: string;
 }
 
+let adapterInstance: CloudAdapter | undefined;
+
+function getAdapter(): CloudAdapter {
+  if (!adapterInstance) {
+    const appId = process.env['MicrosoftAppId'] ?? process.env['MICROSOFT_APP_ID'] ?? '';
+    const tenantId = process.env['MicrosoftAppTenantId'] ?? process.env['MICROSOFT_APP_TENANT_ID'] ?? '';
+
+    const auth = new ConfigurationBotFrameworkAuthentication({
+      MicrosoftAppId: appId,
+      MicrosoftAppType: 'UserAssignedMSI',
+      MicrosoftAppTenantId: tenantId,
+    });
+    adapterInstance = new CloudAdapter(auth);
+  }
+  return adapterInstance;
+}
+
 df.app.activity('sendConfirmationCardActivity', {
   handler: async (input: SendConfirmationCardInput): Promise<SendConfirmationCardResult> => {
     try {
-      const ref = await getConversationReference(input.userId);
-      if (!ref) {
+      const conversationReference = await getConversationReference(input.userId);
+      if (!conversationReference) {
         return { sent: false, error: 'No conversation reference found' };
       }
 
-      const appId = process.env['BOT_APP_ID'] ?? '';
-      const adapter = new BotFrameworkAdapter({ appId, appPassword: '' });
+      const adapter = getAdapter();
+      const appId = process.env['MicrosoftAppId'] ?? process.env['MICROSOFT_APP_ID'] ?? '';
 
       const cardData: ConfirmationCardData = {
         correlationId: input.correlationId,
@@ -40,8 +61,9 @@ df.app.activity('sendConfirmationCardActivity', {
 
       const card = buildConfirmationCard(cardData);
 
-      await adapter.continueConversation(
-        ref as ConversationReference,
+      await adapter.continueConversationAsync(
+        appId,
+        conversationReference as ConversationReference,
         async (context) => {
           await context.sendActivity({ attachments: [card] });
         },
@@ -49,10 +71,10 @@ df.app.activity('sendConfirmationCardActivity', {
 
       return { sent: true };
     } catch (err) {
-      return {
-        sent: false,
-        error: err instanceof Error ? err.message : String(err),
-      };
+      const message = err instanceof Error ? err.message : String(err);
+      // eslint-disable-next-line no-console
+      console.error('[sendConfirmationCardActivity] Failed to send card:', message);
+      return { sent: false, error: message };
     }
   },
 });
