@@ -42,6 +42,12 @@ param routerBotId string = ''
 @description('Resource ID of the global router UAMI. Required when routerBotId is provided.')
 param routerUamiId string = ''
 
+@description('Create/update the GraphOAuth Bot Service connection. Set true only on first stamp deploy or when OAuth scopes change. Leave false on all re-deploys to avoid ARM error 715-123420.')
+param createOAuthConnection bool = false
+
+@description('Maximum TPM ceiling for AI model deployments. Quota is capped at this value. Increase for higher throughput.')
+param quotaMaxTPM int = 100000
+
 // ─── Variables ──────────────────────────────────────────────────────────────
 
 // Resource names — all follow helkinswarm-{type}-{alias} (lowercase)
@@ -322,16 +328,21 @@ resource aiServices 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
 // Capacity is in thousands of tokens per minute.
 // Grok 4-1: DataZoneStandard (GlobalStandard quota 50/50 consumed by Alpha account).
 //   DataZoneStandard quota = 20k. 10k per model = 20k total.
-// gpt-5.4-mini, gpt-5.1-codex-mini, o4-mini: GlobalStandard, 10k each.
-// FW-* models: DataZoneStandard only (no GlobalStandard SKU available).
-// DeepSeek-V3.2: GlobalStandard, 10k.
-// text-embedding-3-large: GlobalStandard, 50k.
+// gpt-5.4-mini, gpt-5.1-codex-mini, o4-mini: GlobalStandard, 50k each.
+// FW-* models: DataZoneStandard only (no GlobalStandard SKU available), 30k each.
+// DeepSeek-V3.2: GlobalStandard, 50k.
+// text-embedding-3-large: GlobalStandard, 100k (quota ceiling: quotaMaxTPM param).
 // Deployments must be serial (dependsOn chain) to avoid ARM 429s.
+
+// Capacity helpers — capped at quotaMaxTPM (units = 1k TPM)
+var capEmbedding  = min(100, quotaMaxTPM / 1000)  // 100k TPM default
+var capPrimaryLlm = min(50,  quotaMaxTPM / 1000)   // 50k TPM default
+var capFastLlm    = min(30,  quotaMaxTPM / 1000)   // 30k TPM default (DataZoneStandard)
 
 resource aiDeployEmbedding 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
   parent: aiServices
   name: 'text-embedding-3-large'
-  sku: { name: 'GlobalStandard', capacity: 50 }
+  sku: { name: 'GlobalStandard', capacity: capEmbedding }
   properties: {
     model: { format: 'OpenAI', name: 'text-embedding-3-large', version: '1' }
   }
@@ -341,7 +352,7 @@ resource aiDeployGrokReasoning 'Microsoft.CognitiveServices/accounts/deployments
   parent: aiServices
   name: 'grok-4-1-fast-reasoning'
   dependsOn: [ aiDeployEmbedding ]
-  sku: { name: 'DataZoneStandard', capacity: 10 }
+  sku: { name: 'DataZoneStandard', capacity: capFastLlm }
   properties: {
     model: { format: 'xAI', name: 'grok-4-1-fast-reasoning', version: '1' }
   }
@@ -351,7 +362,7 @@ resource aiDeployGrokFast 'Microsoft.CognitiveServices/accounts/deployments@2024
   parent: aiServices
   name: 'grok-4-1-fast-non-reasoning'
   dependsOn: [ aiDeployGrokReasoning ]
-  sku: { name: 'DataZoneStandard', capacity: 10 }
+  sku: { name: 'DataZoneStandard', capacity: capFastLlm }
   properties: {
     model: { format: 'xAI', name: 'grok-4-1-fast-non-reasoning', version: '1' }
   }
@@ -361,7 +372,7 @@ resource aiDeployGpt54Mini 'Microsoft.CognitiveServices/accounts/deployments@202
   parent: aiServices
   name: 'gpt-5.4-mini'
   dependsOn: [ aiDeployGrokFast ]
-  sku: { name: 'GlobalStandard', capacity: 10 }
+  sku: { name: 'GlobalStandard', capacity: capPrimaryLlm }
   properties: {
     model: { format: 'OpenAI', name: 'gpt-5.4-mini', version: '2026-03-17' }
   }
@@ -371,7 +382,7 @@ resource aiDeployCodexMini 'Microsoft.CognitiveServices/accounts/deployments@202
   parent: aiServices
   name: 'gpt-5.1-codex-mini'
   dependsOn: [ aiDeployGpt54Mini ]
-  sku: { name: 'GlobalStandard', capacity: 10 }
+  sku: { name: 'GlobalStandard', capacity: capPrimaryLlm }
   properties: {
     model: { format: 'OpenAI', name: 'gpt-5.1-codex-mini', version: '2025-11-13' }
   }
@@ -381,7 +392,7 @@ resource aiDeployO4Mini 'Microsoft.CognitiveServices/accounts/deployments@2024-1
   parent: aiServices
   name: 'o4-mini'
   dependsOn: [ aiDeployCodexMini ]
-  sku: { name: 'GlobalStandard', capacity: 10 }
+  sku: { name: 'GlobalStandard', capacity: capPrimaryLlm }
   properties: {
     model: { format: 'OpenAI', name: 'o4-mini', version: '2025-04-16' }
   }
@@ -391,7 +402,7 @@ resource aiDeployFwMiniMax 'Microsoft.CognitiveServices/accounts/deployments@202
   parent: aiServices
   name: 'FW-MiniMax-M2.5'
   dependsOn: [ aiDeployO4Mini ]
-  sku: { name: 'DataZoneStandard', capacity: 10 }
+  sku: { name: 'DataZoneStandard', capacity: capFastLlm }
   properties: {
     model: { format: 'Fireworks', name: 'FW-MiniMax-M2.5', version: '1' }
   }
@@ -401,7 +412,7 @@ resource aiDeployFwKimi 'Microsoft.CognitiveServices/accounts/deployments@2024-1
   parent: aiServices
   name: 'FW-Kimi-K2.5'
   dependsOn: [ aiDeployFwMiniMax ]
-  sku: { name: 'DataZoneStandard', capacity: 10 }
+  sku: { name: 'DataZoneStandard', capacity: capFastLlm }
   properties: {
     model: { format: 'Fireworks', name: 'FW-Kimi-K2.5', version: '1' }
   }
@@ -411,7 +422,7 @@ resource aiDeployDeepSeek 'Microsoft.CognitiveServices/accounts/deployments@2024
   parent: aiServices
   name: 'DeepSeek-V3.2'
   dependsOn: [ aiDeployFwKimi ]
-  sku: { name: 'GlobalStandard', capacity: 10 }
+  sku: { name: 'GlobalStandard', capacity: capPrimaryLlm }
   properties: {
     model: { format: 'DeepSeek', name: 'DeepSeek-V3.2', version: '1' }
   }
@@ -566,7 +577,7 @@ resource teamsChannel 'Microsoft.BotService/botServices/channels@2022-09-15' = i
   }
 }
 
-resource oauthConnection 'Microsoft.BotService/botServices/connections@2022-09-15' = {
+resource oauthConnection 'Microsoft.BotService/botServices/connections@2022-09-15' = if (createOAuthConnection) {
   parent: botService
   name: 'GraphOAuth'
   location: 'global'
