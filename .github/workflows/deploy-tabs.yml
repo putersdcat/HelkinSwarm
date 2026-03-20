@@ -71,6 +71,13 @@ jobs:
             --location eastus2 \
             --tags "project=helkinswarm" "component=tabs" "env=global"
 
+      - name: Resolve CICD SP Object ID
+        id: cicd-sp
+        run: |
+          SP_OID=$(az ad sp show --id "${{ vars.AZURE_CLIENT_ID }}" --query id -o tsv)
+          echo "object-id=${SP_OID}" >> "$GITHUB_OUTPUT"
+          echo "✅ CICD SP object ID: ${SP_OID}"
+
       - name: Deploy Bicep
         id: deploy
         run: |
@@ -79,6 +86,7 @@ jobs:
             --template-file infra/main-tabs.bicep \
             --parameters \
               routerUamiResourceId=${{ vars.ROUTER_UAMI_ID }} \
+              cicdPrincipalId=${{ steps.cicd-sp.outputs.object-id }} \
             --query 'properties.outputs' -o json)
           echo "storageAccountName=$(echo $RESULT | jq -r '.storageAccountName.value')" >> "$GITHUB_OUTPUT"
 

@@ -18,8 +18,11 @@ targetScope = 'resourceGroup'
 @description('Deployment location for the tab host storage')
 param location string = 'eastus2'
 
-@description('Resource ID of the global router UAMI — gets Storage Blob Data Contributor for CI/CD uploads')
+@description('Resource ID of the global router UAMI — kept for future Router-initiated tab reads')
 param routerUamiResourceId string
+
+@description('Object ID of the CICD service principal — gets Storage Blob Data Contributor so the GitHub Actions workflow can upload SPA assets')
+param cicdPrincipalId string
 
 // ─── Variables ──────────────────────────────────────────────────────────────
 
@@ -49,10 +52,24 @@ resource tabsStorage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  2. RBAC — router UAMI can upload SPA assets during CI/CD
+//  2a. RBAC — CICD service principal uploads SPA assets during GitHub Actions
 // ═══════════════════════════════════════════════════════════════════════════
 
-resource blobContributorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource cicdBlobContributorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(tabsStorage.id, cicdPrincipalId, roleStorageBlobDataContributor)
+  scope: tabsStorage
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleStorageBlobDataContributor)
+    principalId: cicdPrincipalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  2b. RBAC — router UAMI retained for future Router-initiated tab reads
+// ═══════════════════════════════════════════════════════════════════════════
+
+resource routerBlobContributorRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid(tabsStorage.id, routerUamiResourceId, roleStorageBlobDataContributor)
   scope: tabsStorage
   properties: {
