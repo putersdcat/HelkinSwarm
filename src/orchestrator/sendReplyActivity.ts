@@ -46,6 +46,11 @@ function getAdapter(): CloudAdapter {
 
 async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
   try {
+    // Guard: Teams rejects activities with empty text
+    const messageText = input.message?.trim()
+      ? input.message
+      : 'I processed your request but have nothing to report back.';
+
     const adapter = getAdapter();
     const appId = process.env['MicrosoftAppId'] ?? process.env['MICROSOFT_APP_ID'] ?? '';
 
@@ -66,13 +71,13 @@ async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
           await turnContext.updateActivity({
             type: ActivityTypes.Message,
             id: ackActivityId,
-            text: input.message,
+            text: messageText,
           });
           const conversationId = (conversationReference as ConversationReference).conversation?.id ?? input.userId;
           await clearPendingAckId(input.userId, conversationId);
         } else {
           // No ack stored (e.g. first reply after container restart) — fall back to new message
-          await turnContext.sendActivity(input.message);
+          await turnContext.sendActivity(messageText);
         }
       },
     );

@@ -10,6 +10,7 @@ import type { SendReplyInput, SendReplyResult } from './sendReplyActivity.js';
 import type { ConversationReference } from 'botbuilder';
 
 import type { ToolDispatchInput, ToolDispatchResult } from './toolDispatchActivity.js';
+import type { LlmFollowUpInput } from './llmFollowUpActivity.js';
 
 export interface SessionInput {
   state: OverseerState;
@@ -80,17 +81,28 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       };
       toolResults = yield context.df.callActivity('toolDispatchActivity', dispatchInput);
 
-      // Build response from tool results
-      if (toolResults && toolResults.results.length > 0) {
-        const summaries = toolResults.results.map((r) =>
-          r.success ? `✓ ${r.toolName}: ${JSON.stringify(r.result)}` : `✗ ${r.toolName}: ${r.error}`,
-        );
-        responseContent = `${llmResult.content}\n\n## Tool Results\n${summaries.join('\n')}`;
-      }
+      // 3b. Call LLM again with tool results for natural language response
+      const followUpInput: LlmFollowUpInput = {
+        originalMessages: prompt.messages,
+        assistantToolCallMessage: {
+          content: llmResult.content,
+          toolCalls: llmResult.toolCalls,
+        },
+        toolResults: toolResults?.results ?? [],
+        correlationId,
+        modelOverride: input.modelOverride,
+      };
+      const followUp: LlmResult = yield context.df.callActivity('llmFollowUpActivity', followUpInput);
+      responseContent = followUp.content;
     }
   }
 
-  // 4. Send reply to Teams (proactive)
+  // 4. Guard against empty response — Teams rejects empty text
+  if (!responseContent || responseContent.trim().length === 0) {
+    responseContent = 'I processed your request but have nothing to report back.';
+  }
+
+  // 5. Send reply to Teams (proactive)
   const replyInput: SendReplyInput = {
     userId: input.state.userId,
     message: responseContent,
