@@ -8,6 +8,7 @@ import {
   type TurnContext,
   type Activity,
 } from 'botbuilder';
+import { getEnvConfig } from '../config/envConfig.js';
 
 /** Return type from processActivity */
 interface InvokeResponse {
@@ -31,8 +32,9 @@ let sharedAdapter: HelkinSwarmAdapter | undefined;
 export function createAdapter(): HelkinSwarmAdapter {
   if (sharedAdapter) return sharedAdapter;
 
-  const appId = process.env['MicrosoftAppId'] ?? process.env['MICROSOFT_APP_ID'] ?? '';
-  const tenantId = process.env['MicrosoftAppTenantId'] ?? process.env['MICROSOFT_APP_TENANT_ID'] ?? '';
+  const env = getEnvConfig();
+  const appId = env.microsoftAppId;
+  const tenantId = env.microsoftAppTenantId;
 
   const auth = new ConfigurationBotFrameworkAuthentication({
     MicrosoftAppId: appId,

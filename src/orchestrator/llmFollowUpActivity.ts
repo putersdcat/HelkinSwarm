@@ -4,9 +4,10 @@
 
 import * as df from 'durable-functions';
 import { FoundryClient } from '../llm/foundryClient.js';
-import { getModelRouting, getModelForTask } from '../llm/modelRouter.js';
+import { getModelRouting } from '../llm/modelRouter.js';
 import type { ChatMessage, ChatCompletionResponse } from '../llm/foundryClient.js';
 import type { LlmResult } from './llmActivity.js';
+import { getEnvConfig } from '../config/envConfig.js';
 
 export interface LlmFollowUpInput {
   /** Original conversation messages (system + user). */
@@ -34,9 +35,9 @@ df.app.activity('llmFollowUpActivity', {
     const correlationId = input.correlationId ?? crypto.randomUUID();
 
     const deploymentName = input.modelOverride === 'secondary'
-      ? (process.env['LLM_SECONDARY_MODEL'] ?? getModelForTask('fast'))
+      ? (getEnvConfig().llmSecondaryModel)
       : input.modelOverride === 'primary'
-        ? (process.env['LLM_PRIMARY_MODEL'] ?? getModelForTask('reasoning'))
+        ? (getEnvConfig().llmPrimaryModel)
         : routing.deploymentName;
 
     const client = new FoundryClient({ ...routing, deploymentName });

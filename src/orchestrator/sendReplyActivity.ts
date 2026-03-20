@@ -13,6 +13,7 @@ import {
   getPendingAckId,
   clearPendingAckId,
 } from '../bot/conversationStore.js';
+import { getEnvConfig } from '../config/envConfig.js';
 
 export interface SendReplyInput {
   /** User AAD Object ID — used to look up ConversationReference from Cosmos. */
@@ -31,13 +32,12 @@ let adapterInstance: CloudAdapter | undefined;
 
 function getAdapter(): CloudAdapter {
   if (!adapterInstance) {
-    const appId = process.env['MicrosoftAppId'] ?? process.env['MICROSOFT_APP_ID'] ?? '';
-    const tenantId = process.env['MicrosoftAppTenantId'] ?? process.env['MICROSOFT_APP_TENANT_ID'] ?? '';
+    const env = getEnvConfig();
 
     const auth = new ConfigurationBotFrameworkAuthentication({
-      MicrosoftAppId: appId,
+      MicrosoftAppId: env.microsoftAppId,
       MicrosoftAppType: 'UserAssignedMSI',
-      MicrosoftAppTenantId: tenantId,
+      MicrosoftAppTenantId: env.microsoftAppTenantId,
     });
     adapterInstance = new CloudAdapter(auth);
   }
@@ -52,7 +52,7 @@ async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
       : 'I processed your request but have nothing to report back.';
 
     const adapter = getAdapter();
-    const appId = process.env['MicrosoftAppId'] ?? process.env['MICROSOFT_APP_ID'] ?? '';
+    const appId = getEnvConfig().microsoftAppId;
 
     // Read ConversationReference from Cosmos (survives container restarts)
     const conversationReference = await getConversationReference(input.userId);

@@ -3,10 +3,11 @@
 
 import * as df from 'durable-functions';
 import { FoundryClient } from '../llm/foundryClient.js';
-import { getModelRouting, getModelForTask } from '../llm/modelRouter.js';
+import { getModelRouting } from '../llm/modelRouter.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import type { PromptResult } from './buildPromptActivity.js';
 import type { ChatCompletionResponse } from '../llm/foundryClient.js';
+import { getEnvConfig } from '../config/envConfig.js';
 
 export interface LlmResult {
   content: string;
@@ -23,9 +24,9 @@ df.app.activity('llmActivity', {
 
     // Apply model override for /heavy (force primary) or /light (force secondary) commands
     const deploymentName = input.modelOverride === 'secondary'
-      ? (process.env['LLM_SECONDARY_MODEL'] ?? getModelForTask('fast'))
+      ? (getEnvConfig().llmSecondaryModel)
       : input.modelOverride === 'primary'
-        ? (process.env['LLM_PRIMARY_MODEL'] ?? getModelForTask('reasoning'))
+        ? (getEnvConfig().llmPrimaryModel)
         : routing.deploymentName;
 
     const client = new FoundryClient({ ...routing, deploymentName });

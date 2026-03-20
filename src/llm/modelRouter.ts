@@ -1,6 +1,8 @@
 // Model router — selects the best model based on EU residency toggle.
 // Spec ref: 06-Tool-Dispatch-LLM-Layer.md, 0b-Model-Specific-Tool-Presentation.md
 
+import { getEnvConfig } from '../config/envConfig.js';
+
 // ---------------------------------------------------------------------------
 // Model lanes
 // ---------------------------------------------------------------------------
@@ -70,8 +72,8 @@ export function getModelRouting(llmProvider?: 'azure' | 'openrouter'): ModelRout
     lane: GLOBAL_LANE,
     laneName: 'global',
     isReasoning: true,
-    deploymentName: process.env['LLM_PRIMARY_MODEL'] ?? GLOBAL_LANE.primary,
-    apiBase: process.env.AZURE_AI_FOUNDRY_ENDPOINT ?? '',
+    deploymentName: getEnvConfig().llmPrimaryModel,
+    apiBase: getEnvConfig().azureAiFoundryEndpoint ?? '',
     usesObo: true,
   };
 }

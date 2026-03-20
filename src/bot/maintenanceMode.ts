@@ -4,6 +4,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { getContainer } from '../memory/cosmosClient.js';
+import { getEnvConfig } from '../config/envConfig.js';
 
 const CONTAINER_NAME = 'runtimeConfig';
 const DOC_ID = 'maintenance-mode';
@@ -19,7 +20,7 @@ interface MaintenanceModeDocument {
 }
 
 async function loadOwnerUserId(): Promise<string> {
-  const ownerFromEnv = process.env['OWNER_USER_ID'];
+  const ownerFromEnv = getEnvConfig().ownerUserId;
   if (ownerFromEnv) {
     return ownerFromEnv;
   }

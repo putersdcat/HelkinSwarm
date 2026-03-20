@@ -4,6 +4,7 @@
 
 import { getModelRouting, type ModelRouting } from './modelRouter.js';
 import { getBearerToken } from '../auth/identity.js';
+import { getEnvConfig } from '../config/envConfig.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -185,7 +186,7 @@ export class FoundryClient {
    */
   private async getOboToken(): Promise<string> {
     // Local dev override
-    const devToken = process.env['AZURE_FOUNDRY_OBO_TOKEN'];
+    const devToken = getEnvConfig().azureFoundryOboToken;
     if (devToken) return devToken;
 
     return getBearerToken('https://cognitiveservices.azure.com/.default');

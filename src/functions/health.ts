@@ -1,5 +1,6 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
 import { randomUUID } from 'node:crypto';
+import { getEnvConfig } from '../config/envConfig.js';
 
 interface HealthResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -20,8 +21,7 @@ export async function healthHandler(
   _request: HttpRequest,
   _context: InvocationContext,
 ): Promise<HttpResponseInit> {
-  const euMode = process.env['EU_RESIDENCY_MODE'] === 'true';
-  const safetyMode = process.env['SAFETY_MODE'] ?? 'confirmation-gated';
+  const env = getEnvConfig();
 
   const health: HealthResponse = {
     status: 'healthy',
@@ -33,8 +33,8 @@ export async function healthHandler(
       overseer: 'ok',
       llm: 'ok',
       memory: 'pending',
-      safetyMode,
-      euResidencyMode: euMode,
+      safetyMode: env.safetyMode,
+      euResidencyMode: env.euResidencyMode,
     },
   };
 

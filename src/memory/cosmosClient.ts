@@ -3,24 +3,23 @@
 
 import { CosmosClient } from '@azure/cosmos';
 import { getCredential } from '../auth/identity.js';
-
-const COSMOS_ENDPOINT = process.env['COSMOS_ENDPOINT'] ?? '';
-const COSMOS_DATABASE = process.env['COSMOS_DATABASE'] ?? 'helkinswarm';
+import { getEnvConfig } from '../config/envConfig.js';
 
 let _client: CosmosClient | undefined;
 
 export function getCosmosClient(): CosmosClient {
   if (!_client) {
-    if (!COSMOS_ENDPOINT) {
+    const endpoint = getEnvConfig().cosmosEndpoint;
+    if (!endpoint) {
       throw new Error('COSMOS_ENDPOINT environment variable is not set');
     }
-    _client = new CosmosClient({ endpoint: COSMOS_ENDPOINT, aadCredentials: getCredential() });
+    _client = new CosmosClient({ endpoint, aadCredentials: getCredential() });
   }
   return _client;
 }
 
 export function getDatabase() {
-  return getCosmosClient().database(COSMOS_DATABASE);
+  return getCosmosClient().database(getEnvConfig().cosmosDatabase);
 }
 
 export function getContainer(containerName: string) {

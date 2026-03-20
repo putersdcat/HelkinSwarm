@@ -20,6 +20,7 @@ import {
   setMaintenanceMode,
 } from './maintenanceMode.js';
 import { promptShields } from '../llm/promptShields.js';
+import { getEnvConfig } from '../config/envConfig.js';
 
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
@@ -247,7 +248,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     const idea = messageText.slice(6).trim();
 
-    if (process.env['SKILLFORGE_ENABLED'] !== 'true') {
+    if (!getEnvConfig().skillforgeEnabled) {
       await context.sendActivity('⚙️ SkillForge is not enabled (set SKILLFORGE_ENABLED=true to activate).');
       return;
     }

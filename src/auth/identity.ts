@@ -4,6 +4,7 @@
 
 import { DefaultAzureCredential, ManagedIdentityCredential } from '@azure/identity';
 import type { TokenCredential } from '@azure/identity';
+import { getEnvConfig } from '../config/envConfig.js';
 
 // ---------------------------------------------------------------------------
 // Singleton credential
@@ -18,7 +19,7 @@ let _credential: TokenCredential | undefined;
  */
 export function getCredential(): TokenCredential {
   if (!_credential) {
-    const clientId = process.env['AZURE_CLIENT_ID'];
+    const clientId = getEnvConfig().azureClientId;
     _credential = clientId
       ? new ManagedIdentityCredential({ clientId })
       : new DefaultAzureCredential();

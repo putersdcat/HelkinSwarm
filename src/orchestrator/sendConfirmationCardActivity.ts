@@ -9,6 +9,7 @@ import {
 } from 'botbuilder';
 import { buildConfirmationCard, type ConfirmationCardData } from '../bot/confirmationCards.js';
 import { getConversationReference } from '../bot/conversationStore.js';
+import { getEnvConfig } from '../config/envConfig.js';
 
 export interface SendConfirmationCardInput {
   userId: string;
@@ -28,13 +29,12 @@ let adapterInstance: CloudAdapter | undefined;
 
 function getAdapter(): CloudAdapter {
   if (!adapterInstance) {
-    const appId = process.env['MicrosoftAppId'] ?? process.env['MICROSOFT_APP_ID'] ?? '';
-    const tenantId = process.env['MicrosoftAppTenantId'] ?? process.env['MICROSOFT_APP_TENANT_ID'] ?? '';
+    const env = getEnvConfig();
 
     const auth = new ConfigurationBotFrameworkAuthentication({
-      MicrosoftAppId: appId,
+      MicrosoftAppId: env.microsoftAppId,
       MicrosoftAppType: 'UserAssignedMSI',
-      MicrosoftAppTenantId: tenantId,
+      MicrosoftAppTenantId: env.microsoftAppTenantId,
     });
     adapterInstance = new CloudAdapter(auth);
   }
@@ -50,7 +50,7 @@ df.app.activity('sendConfirmationCardActivity', {
       }
 
       const adapter = getAdapter();
-      const appId = process.env['MicrosoftAppId'] ?? process.env['MICROSOFT_APP_ID'] ?? '';
+      const appId = getEnvConfig().microsoftAppId;
 
       const cardData: ConfirmationCardData = {
         correlationId: input.correlationId,
