@@ -53,15 +53,15 @@
     {
       "entityId": "getting-started",
       "name": "Getting Started",
-      "contentUrl": "{{TAB_HOST_URL}}/getting-started.html",
-      "websiteUrl": "{{TAB_HOST_URL}}/getting-started.html",
+      "contentUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/getting-started.html",
+      "websiteUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/getting-started.html",
       "scopes": ["personal"]
     },
     {
       "entityId": "control-center",
       "name": "Control Center",
-      "contentUrl": "{{TAB_HOST_URL}}/control-center.html",
-      "websiteUrl": "{{TAB_HOST_URL}}/control-center.html",
+      "contentUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/control-center.html",
+      "websiteUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/control-center.html",
       "scopes": ["personal"]
     }
   ],
@@ -72,6 +72,6 @@
   "validDomains": [
     "helkinswarm-router.salmonbeach-d4db91b5.eastus2.azurecontainerapps.io",
     "helkinswarm-func-a7f2.purplepebble-508e1162.eastus2.azurecontainerapps.io",
-    "{{TAB_HOST_DOMAIN}}"
+    "helkinswarmtabsst.z20.web.core.windows.net"
   ]
 }

@@ -33,8 +33,6 @@ concurrency:
 permissions:
   id-token: write
   contents: read
-  # required for gh variable set in register-tab-url job
-  actions: write
 
 env:
   AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
@@ -201,28 +199,24 @@ jobs:
           fi
 
   # ─────────────────────────────────────────────────────────────────────────
-  # 3. Persist TAB_HOST_URL + trigger manifest rebuild
+  # 3. Report deployment result
   # ─────────────────────────────────────────────────────────────────────────
-  register-tab-url:
-    name: Register Tab URL & Report
+  # NOTE: GITHUB_TOKEN cannot set repository variables (HTTP 403) — this is a
+  # GitHub platform limitation. The storage account endpoint is static and has
+  # been hardcoded directly in appPackage/manifest.json. No variable-setting
+  # step is needed here.
+  report:
+    name: Report Deployment
     needs: [deploy-infra, deploy-spa]
     runs-on: ubuntu-latest
-    permissions:
-      actions: write
 
     steps:
-      - name: Set TAB_HOST_URL GitHub variable
+      - name: Report tab host URL
         env:
-          GH_TOKEN: ${{ github.token }}
           TAB_HOST_URL: ${{ needs.deploy-infra.outputs.tab-host-url }}
-          TAB_HOST_DOMAIN: ${{ needs.deploy-infra.outputs.tab-host-domain }}
         run: |
-          gh variable set TAB_HOST_URL  --body "$TAB_HOST_URL"  --repo ${{ github.repository }}
-          gh variable set TAB_HOST_DOMAIN --body "$TAB_HOST_DOMAIN" --repo ${{ github.repository }}
-          echo "✅ TAB_HOST_URL  = $TAB_HOST_URL"
-          echo "✅ TAB_HOST_DOMAIN = $TAB_HOST_DOMAIN"
+          echo "✅ Tab host deployed"
+          echo "   URL: ${TAB_HOST_URL}"
           echo ""
-          echo "📋 NEXT STEPS:"
-          echo "  1. Add staticTabs entries to appPackage/manifest.json using {{TAB_HOST_URL}}"
-          echo "  2. Run teams-package.yml to rebuild the Teams app package"
-          echo "  3. Re-upload the app package to Teams admin center"
+          echo "📋 Tab URL is hardcoded in appPackage/manifest.json"
+          echo "   Run teams-package.yml to rebuild the Teams app package if manifest changed."
