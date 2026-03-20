@@ -100,7 +100,7 @@ export class FoundryClient {
 
     const body: Record<string, unknown> = {
       model: this.routing.deploymentName,
-      messages: options.messages,
+      messages: options.messages.map(mapOutgoingMessage),
       max_tokens: options.maxTokens ?? 4096,
       temperature: options.temperature ?? 0.7,
       stream: false,
@@ -144,7 +144,10 @@ export class FoundryClient {
       );
     }
 
-    return response.json() as Promise<ChatCompletionResponse>;
+    // The OpenAI-compatible API returns snake_case keys (tool_calls, finish_reason, etc.)
+    // but our TypeScript interfaces use camelCase. Parse and map explicitly.
+    const raw = await response.json() as RawApiResponse;
+    return mapApiResponse(raw);
   }
 
   /**
@@ -237,6 +240,97 @@ export class FoundryError extends Error {
     super(message);
     this.name = 'FoundryError';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Raw API response types (snake_case — matches OpenAI wire format)
+// ---------------------------------------------------------------------------
+
+interface RawApiToolCall {
+  id: string;
+  type: 'function';
+  function: { name: string; arguments: string };
+}
+
+interface RawApiMessage {
+  role: string;
+  content: string | null;
+  tool_calls?: RawApiToolCall[] | null;
+  tool_call_id?: string;
+}
+
+interface RawApiChoice {
+  message: RawApiMessage;
+  finish_reason: string;
+  index: number;
+}
+
+interface RawApiUsage {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+}
+
+interface RawApiResponse {
+  id: string;
+  model: string;
+  choices: RawApiChoice[];
+  usage: RawApiUsage;
+  created: number;
+}
+
+/**
+ * Map outgoing camelCase ChatMessage to snake_case for the API.
+ */
+function mapOutgoingMessage(msg: ChatMessage): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    role: msg.role,
+    content: msg.content,
+  };
+  if (msg.toolCallId) {
+    out['tool_call_id'] = msg.toolCallId;
+  }
+  if (msg.name) {
+    out['name'] = msg.name;
+  }
+  if (msg.toolCalls && msg.toolCalls.length > 0) {
+    out['tool_calls'] = msg.toolCalls.map((tc) => ({
+      id: tc.id,
+      type: tc.type,
+      function: { name: tc.function.name, arguments: tc.function.arguments },
+    }));
+  }
+  return out;
+}
+
+/**
+ * Map the raw snake_case API response to our camelCase TypeScript types.
+ */
+function mapApiResponse(raw: RawApiResponse): ChatCompletionResponse {
+  return {
+    id: raw.id,
+    model: raw.model,
+    created: raw.created,
+    usage: {
+      promptTokens: raw.usage.prompt_tokens,
+      completionTokens: raw.usage.completion_tokens,
+      totalTokens: raw.usage.total_tokens,
+    },
+    choices: raw.choices.map((c) => ({
+      index: c.index,
+      finishReason: c.finish_reason as ChatCompletionChoice['finishReason'],
+      message: {
+        role: c.message.role as ChatMessage['role'],
+        content: c.message.content ?? '',
+        toolCallId: c.message.tool_call_id,
+        toolCalls: c.message.tool_calls?.map((tc) => ({
+          id: tc.id,
+          type: tc.type,
+          function: { name: tc.function.name, arguments: tc.function.arguments },
+        })),
+      },
+    })),
+  };
 }
 
 // ---------------------------------------------------------------------------
