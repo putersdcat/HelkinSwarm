@@ -35,7 +35,7 @@ export class PromptShields {
 
   /**
    * Check text against Azure Content Safety Prompt Shields.
-   * Returns a ShieldResult indicating whether the content passed.
+   * Uses the text:shieldPrompt API to detect jailbreak/injection attacks.
    */
   async check(text: string, correlationId: string): Promise<ShieldResult> {
     if (!this.endpoint) {
@@ -48,21 +48,18 @@ export class PromptShields {
     }
 
     try {
-      const response = await fetch(`${this.endpoint}/contentsafety/text:shield?api-version=2024-09-01`, {
+      const response = await fetch(`${this.endpoint}/contentsafety/text:shieldPrompt?api-version=2024-09-01`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Ocp-Apim-Subscription-Key': this.apiKey,
         },
         body: JSON.stringify({
-          text,
-          categories: ['hate', 'violence', 'sexual', 'selfHarm', 'jailbreak'],
-          outputType: 'FourLevels',
+          userPrompt: text,
         }),
       });
 
       if (!response.ok) {
-        // TODO: emit to App Insights telemetry instead of console.error
         // eslint-disable-next-line no-console
         console.error(`[PromptShields] Content Safety API error: ${response.status}`);
         // Fail closed — block on API error
@@ -74,28 +71,17 @@ export class PromptShields {
       }
 
       const data = (await response.json()) as {
-        categoriesAnalysis: Array<{ category: string; severity: number }>;
+        userPromptAnalysis: { attackDetected: boolean };
       };
 
-      const categories = {
-        hate: false,
-        violence: false,
-        sexual: false,
-        selfHarm: false,
-        jailbreak: false,
+      const jailbreak = data.userPromptAnalysis?.attackDetected === true;
+
+      return {
+        clean: !jailbreak,
+        categories: { hate: false, violence: false, sexual: false, selfHarm: false, jailbreak },
+        correlationId,
       };
-      const confidenceScores: Record<string, number> = {};
-
-      for (const cat of data.categoriesAnalysis) {
-        (categories as Record<string, boolean>)[cat.category] = cat.severity >= 2;
-        confidenceScores[cat.category] = cat.severity;
-      }
-
-      const clean = !Object.values(categories).some(Boolean);
-
-      return { clean, categories, confidenceScores, correlationId };
     } catch {
-      // TODO: emit to App Insights telemetry instead of console.error
       // Fail closed
       return {
         clean: false,
