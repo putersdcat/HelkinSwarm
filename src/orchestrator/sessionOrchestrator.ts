@@ -11,6 +11,8 @@ import type { ConversationReference } from 'botbuilder';
 
 import type { ToolDispatchInput, ToolDispatchResult } from './toolDispatchActivity.js';
 import type { LlmFollowUpInput } from './llmFollowUpActivity.js';
+import type { SendConfirmationCardInput, SendConfirmationCardResult } from './sendConfirmationCardActivity.js';
+import { toolRegistry } from '../tools/toolRegistry.js';
 
 export interface SessionInput {
   state: OverseerState;
@@ -57,23 +59,24 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   let responseContent = llmResult.content;
 
   if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
-    // Determine aggregate risk level from requested tool calls
-    // For Phase 2: all registered tools are low-risk read-only tools.
-    // Medium/High risk tools will go through the full verification pipeline.
-    const isLowRiskOnly = llmResult.toolCalls.every(() => {
-      // Phase 3: look up each tool's risk in the registry.
-      // For now, treat all tools as low-risk (core tools only).
-      return true;
+    // Determine aggregate risk from the tool registry
+    const isLowRiskOnly = llmResult.toolCalls.every((tc: { name: string }) => {
+      const def = toolRegistry.get(tc.name);
+      return def?.risk === 'low';
     });
 
     if (!isLowRiskOnly) {
+      // Determine the highest risk level among requested tools
+      const highestRisk = llmResult.toolCalls.some((tc: { name: string }) =>
+        toolRegistry.get(tc.name)?.risk === 'high') ? 'high' as const : 'medium' as const;
+
       // Run pre-execution verification for medium/high risk tools
       const verification = yield context.df.callActivity('verificationPipelineActivity', {
         correlationId,
         sessionId: input.state.userId,
         userId: input.state.userId,
-        toolName: 'multiple',
-        risk: 'medium',
+        toolName: llmResult.toolCalls.map((tc: { name: string }) => tc.name).join(', '),
+        risk: highestRisk,
         rawOutput: llmResult.toolCalls,
         originalQuery: input.userMessage,
       });
@@ -81,6 +84,48 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       if (!verification.passed) {
         responseContent = `Safety pipeline blocked this action: ${verification.error}`;
         safetyPassed = false;
+      }
+
+      // If verification passed, send confirmation card and wait for human approval
+      if (safetyPassed) {
+        const cardInput: SendConfirmationCardInput = {
+          userId: input.state.userId,
+          toolName: llmResult.toolCalls.map((tc: { name: string }) => tc.name).join(', '),
+          risk: highestRisk,
+          description: `Execute ${llmResult.toolCalls.length} tool(s): ${llmResult.toolCalls.map((tc: { name: string }) => tc.name).join(', ')}`,
+          correlationId,
+        };
+        const cardResult: SendConfirmationCardResult = yield context.df.callActivity(
+          'sendConfirmationCardActivity',
+          cardInput,
+        );
+
+        if (cardResult.sent) {
+          // Race: wait for human response OR 5-minute timeout
+          const timeoutMs = 5 * 60 * 1000;
+          const deadline = new Date(context.df.currentUtcDateTime.getTime() + timeoutMs);
+          const timer = context.df.createTimer(deadline);
+          const confirmation = context.df.waitForExternalEvent('ConfirmationResponse');
+
+          const winner = yield context.df.Task.any([confirmation, timer]);
+
+          if (winner === timer) {
+            // Timeout — auto-cancel
+            responseContent = `⏰ Action timed out after 5 minutes. The tool call was cancelled for safety.`;
+            safetyPassed = false;
+          } else {
+            timer.cancel();
+            const response = confirmation.result as { action: string };
+            if (response.action !== 'approved') {
+              responseContent = `❌ Action cancelled by user.`;
+              safetyPassed = false;
+            }
+          }
+        } else {
+          // Couldn't send card — fail closed
+          responseContent = `Safety: Unable to send confirmation card. Action blocked.`;
+          safetyPassed = false;
+        }
       }
     }
 
