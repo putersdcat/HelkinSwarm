@@ -16,6 +16,7 @@ import {
   isOwnerUserId,
   setMaintenanceMode,
 } from './maintenanceMode.js';
+import { promptShields } from '../llm/promptShields.js';
 
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
@@ -105,6 +106,22 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     if (maintenance.enabled) {
       await context.sendActivity('I am offline for maintenance.');
+      return;
+    }
+
+    // Prompt Shields check on incoming user message (spec 0e, step 4)
+    const shieldResult = await promptShields.check(messageText, correlationId);
+    if (!shieldResult.clean) {
+      const triggered = Object.entries(shieldResult.categories)
+        .filter(([, v]) => v)
+        .map(([k]) => k)
+        .join(', ');
+      console.warn(
+        `[HelkinSwarmBot] Prompt Shields blocked input: correlationId=${correlationId} categories=${triggered}`,
+      );
+      await context.sendActivity(
+        'I cannot process this request — it was flagged by the safety pipeline.',
+      );
       return;
     }
 
