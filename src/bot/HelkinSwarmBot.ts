@@ -69,13 +69,22 @@ export class HelkinSwarmBot extends ActivityHandler {
     // Get or start the eternal overseer instance for this user
     const instanceId = `overseer-${userId}`;
     const client = this.durableClient;
-    const status = await client.getStatus(instanceId);
+
+    // getStatus() throws (not returns null) when the instance doesn't exist yet (HTTP 404)
+    let statusRuntimeStatus: OrchestrationRuntimeStatus | undefined;
+    try {
+      const status = await client.getStatus(instanceId);
+      statusRuntimeStatus = status?.runtimeStatus;
+    } catch {
+      // 404 — orchestrator has never been started or was purged; treat as "not running"
+      statusRuntimeStatus = undefined;
+    }
 
     if (
-      !status ||
-      status.runtimeStatus === OrchestrationRuntimeStatus.Completed ||
-      status.runtimeStatus === OrchestrationRuntimeStatus.Failed ||
-      status.runtimeStatus === OrchestrationRuntimeStatus.Terminated
+      statusRuntimeStatus === undefined ||
+      statusRuntimeStatus === OrchestrationRuntimeStatus.Completed ||
+      statusRuntimeStatus === OrchestrationRuntimeStatus.Failed ||
+      statusRuntimeStatus === OrchestrationRuntimeStatus.Terminated
     ) {
       // Start a new overseer instance — it will wait for the first NewMessage event
       await client.startNew('overseer', { instanceId });
