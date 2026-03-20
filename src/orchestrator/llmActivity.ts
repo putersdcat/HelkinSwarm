@@ -39,6 +39,8 @@ df.app.activity('llmActivity', {
     // Get OpenAI-compatible function schemas from tool registry
     const tools = toolRegistry.toFunctionSchemas();
 
+    console.log(`[llmActivity] correlationId=${correlationId} deployment=${deploymentName} toolCount=${tools.length} toolNames=${tools.map(t => t.function.name).join(',')}`);
+
     try {
       const response: ChatCompletionResponse = await client.chatCompletion({
         messages,
@@ -58,6 +60,8 @@ df.app.activity('llmActivity', {
           arguments: tc.function.arguments,
         })) ?? [];
 
+      console.log(`[llmActivity] LLM responded: model=${response.model} finishReason=${choice.finishReason} contentLen=${(choice.message.content ?? '').length} toolCalls=${toolCalls.length} tokensUsed=${response.usage.totalTokens}`);
+
       return {
         content: choice.message.content ?? '',
         model: response.model,
@@ -66,6 +70,7 @@ df.app.activity('llmActivity', {
         finishReason: choice.finishReason,
       };
     } catch (err) {
+      console.error(`[llmActivity] LLM call failed: correlationId=${correlationId}`, err);
       // Return a graceful error result — orchestrator handles the failure
       return {
         content: `LLM call failed: ${err instanceof Error ? err.message : String(err)}`,
