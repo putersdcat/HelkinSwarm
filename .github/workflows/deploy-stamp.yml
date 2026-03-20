@@ -9,11 +9,22 @@
 name: Deploy Stamp
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'skills/**'
+      - 'infra/**'
+      - 'Dockerfile'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'tsconfig.json'
+      - 'host.json'
   workflow_dispatch:
     inputs:
       USER_ALIAS:
-        description: "4-char alphanumeric user alias (e.g. a7f2)"
-        required: true
+        description: "4-char alphanumeric user alias (e.g. a7f2). Defaults to vars.USER_ALIAS."
+        required: false
         type: string
       EU_RESIDENCY_MODE:
         description: "Enable EU Data Residency (DataZoneStandard models)"
@@ -23,7 +34,7 @@ on:
 
 # Only one stamp deployment at a time per alias
 concurrency:
-  group: deploy-${{ github.event.inputs.USER_ALIAS }}
+  group: deploy-${{ github.event.inputs.USER_ALIAS || vars.USER_ALIAS }}
   cancel-in-progress: false
 
 permissions:
@@ -35,9 +46,10 @@ env:
   AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
   AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
   USER_PRINCIPAL_ID: ${{ vars.USER_PRINCIPAL_ID }}
-  USER_ALIAS: ${{ github.event.inputs.USER_ALIAS }}
-  RESOURCE_GROUP: "rg-helkinswarm-${{ github.event.inputs.USER_ALIAS }}"
-  ACR_NAME: "helkinswarmacr${{ github.event.inputs.USER_ALIAS }}"
+  # Prefer explicit dispatch input; fall back to repo variable for push-triggered runs
+  USER_ALIAS: ${{ github.event.inputs.USER_ALIAS || vars.USER_ALIAS }}
+  RESOURCE_GROUP: "rg-helkinswarm-${{ github.event.inputs.USER_ALIAS || vars.USER_ALIAS }}"
+  ACR_NAME: "helkinswarmacr${{ github.event.inputs.USER_ALIAS || vars.USER_ALIAS }}"
 
 jobs:
   # ─────────────────────────────────────────────────────────────────────────
@@ -133,7 +145,7 @@ jobs:
               userAlias="${{ env.USER_ALIAS }}" \
               userPrincipalId="${{ vars.USER_PRINCIPAL_ID }}" \
               alertEmail="${{ vars.ALERT_EMAIL }}" \
-              euResidencyMode=${{ github.event.inputs.EU_RESIDENCY_MODE }} \
+              euResidencyMode=${{ github.event.inputs.EU_RESIDENCY_MODE || 'false' }} \
               routerBotId="${{ vars.BOT_APP_ID }}" \
               routerUamiId="${{ vars.ROUTER_UAMI_ID }}" \
             --output json 2>&1)

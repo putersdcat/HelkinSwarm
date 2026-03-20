@@ -319,13 +319,14 @@ resource aiServices 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
 }
 
 // ── AI Model Deployments — DESIRED STATE via Bicep ────────────────────────
-// All deployments use GlobalStandard SKU (global routing, no EU residency).
 // Capacity is in thousands of tokens per minute.
-// Grok 4-1 models: 10k TPM default (subscription quota = 50k total).
-// gpt-5.4-mini, gpt-5.1-codex-mini: 10k TPM (1000k quota available).
-// FW-* models use DataZoneStandard (only tier available for Fireworks models).
-// text-embedding-3-large: 50k TPM.
-// deployments must be serial (dependsOn chain) to avoid ARM 429s.
+// Grok 4-1: DataZoneStandard (GlobalStandard quota 50/50 consumed by Alpha account).
+//   DataZoneStandard quota = 20k. 10k per model = 20k total.
+// gpt-5.4-mini, gpt-5.1-codex-mini, o4-mini: GlobalStandard, 10k each.
+// FW-* models: DataZoneStandard only (no GlobalStandard SKU available).
+// DeepSeek-V3.2: GlobalStandard, 10k.
+// text-embedding-3-large: GlobalStandard, 50k.
+// Deployments must be serial (dependsOn chain) to avoid ARM 429s.
 
 resource aiDeployEmbedding 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
   parent: aiServices
@@ -340,7 +341,7 @@ resource aiDeployGrokReasoning 'Microsoft.CognitiveServices/accounts/deployments
   parent: aiServices
   name: 'grok-4-1-fast-reasoning'
   dependsOn: [ aiDeployEmbedding ]
-  sku: { name: 'GlobalStandard', capacity: 10 }
+  sku: { name: 'DataZoneStandard', capacity: 10 }
   properties: {
     model: { format: 'xAI', name: 'grok-4-1-fast-reasoning', version: '1' }
   }
@@ -350,7 +351,7 @@ resource aiDeployGrokFast 'Microsoft.CognitiveServices/accounts/deployments@2024
   parent: aiServices
   name: 'grok-4-1-fast-non-reasoning'
   dependsOn: [ aiDeployGrokReasoning ]
-  sku: { name: 'GlobalStandard', capacity: 10 }
+  sku: { name: 'DataZoneStandard', capacity: 10 }
   properties: {
     model: { format: 'xAI', name: 'grok-4-1-fast-non-reasoning', version: '1' }
   }
@@ -376,10 +377,20 @@ resource aiDeployCodexMini 'Microsoft.CognitiveServices/accounts/deployments@202
   }
 }
 
+resource aiDeployO4Mini 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
+  parent: aiServices
+  name: 'o4-mini'
+  dependsOn: [ aiDeployCodexMini ]
+  sku: { name: 'GlobalStandard', capacity: 10 }
+  properties: {
+    model: { format: 'OpenAI', name: 'o4-mini', version: '2025-04-16' }
+  }
+}
+
 resource aiDeployFwMiniMax 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
   parent: aiServices
   name: 'FW-MiniMax-M2.5'
-  dependsOn: [ aiDeployCodexMini ]
+  dependsOn: [ aiDeployO4Mini ]
   sku: { name: 'DataZoneStandard', capacity: 10 }
   properties: {
     model: { format: 'Fireworks', name: 'FW-MiniMax-M2.5', version: '1' }
