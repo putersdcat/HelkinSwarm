@@ -18,7 +18,9 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@azure/cosmos": "^4.9.2",
     "@azure/functions": "^4.6.0",
+    "@azure/identity": "^4.13.1",
     "@azure/monitor-opentelemetry": "^1.16.0",
     "botbuilder": "^4.23.3",
     "botframework-connector": "^4.23.3",

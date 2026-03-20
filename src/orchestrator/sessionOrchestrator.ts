@@ -90,7 +90,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
   // 4. Send reply to Teams (proactive)
   const replyInput: SendReplyInput = {
-    conversationReference: input.conversationReference,
+    userId: input.state.userId,
     message: responseContent,
   };
   const replyResult: SendReplyResult = yield context.df.callActivity(

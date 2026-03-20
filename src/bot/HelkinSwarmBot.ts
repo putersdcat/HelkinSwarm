@@ -10,6 +10,7 @@ import {
 import type { DurableClient } from 'durable-functions';
 import { OrchestrationRuntimeStatus } from 'durable-functions';
 import type { NewMessageEvent } from '../orchestrator/overseer.js';
+import { saveConversationReference } from './conversationStore.js';
 
 export class HelkinSwarmBot extends ActivityHandler {
   private durableClient: DurableClient | undefined;
@@ -94,6 +95,10 @@ export class HelkinSwarmBot extends ActivityHandler {
     const conversationReference = TurnContextClass.getConversationReference(
       context.activity,
     );
+
+    // Persist ConversationReference to Cosmos so sendReplyActivity can find it after restart
+    await saveConversationReference(userId, conversationReference);
+
     const event: NewMessageEvent = {
       userMessage: messageText,
       conversationReference,

@@ -7,9 +7,11 @@ import {
   ConfigurationBotFrameworkAuthentication,
   type ConversationReference,
 } from 'botbuilder';
+import { getConversationReference } from '../bot/conversationStore.js';
 
 export interface SendReplyInput {
-  conversationReference: Partial<ConversationReference>;
+  /** User AAD Object ID — used to look up ConversationReference from Cosmos. */
+  userId: string;
   message: string;
 }
 
@@ -41,9 +43,16 @@ async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
   try {
     const adapter = getAdapter();
     const appId = process.env['MicrosoftAppId'] ?? process.env['MICROSOFT_APP_ID'] ?? '';
+
+    // Read ConversationReference from Cosmos (survives container restarts)
+    const conversationReference = await getConversationReference(input.userId);
+    if (!conversationReference) {
+      throw new Error(`No ConversationReference found in Cosmos for userId=${input.userId}`);
+    }
+
     await adapter.continueConversationAsync(
       appId,
-      input.conversationReference as ConversationReference,
+      conversationReference as ConversationReference,
       async (turnContext) => {
         await turnContext.sendActivity(input.message);
       },
