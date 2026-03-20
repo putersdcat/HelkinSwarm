@@ -2,6 +2,7 @@
 // Spec ref: 04-Safety-Architecture.md, 0e-Safety-and-Four-Eyes-Verification-Pipeline.md
 
 import { safetyConfig } from '../config/safetyConfig.js';
+import { getBearerToken } from '../auth/identity.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,16 +27,15 @@ export interface ShieldResult {
 
 export class PromptShields {
   private endpoint: string;
-  private apiKey: string;
 
   constructor() {
     this.endpoint = safetyConfig.contentSafetyEndpoint ?? '';
-    this.apiKey = safetyConfig.contentSafetyKey ?? '';
   }
 
   /**
    * Check text against Azure Content Safety Prompt Shields.
    * Uses the text:shieldPrompt API to detect jailbreak/injection attacks.
+   * Auth via managed identity (same AI Services resource as LLM).
    */
   async check(text: string, correlationId: string): Promise<ShieldResult> {
     if (!this.endpoint) {
@@ -48,11 +48,13 @@ export class PromptShields {
     }
 
     try {
+      const token = await getBearerToken('https://cognitiveservices.azure.com/.default');
+
       const response = await fetch(`${this.endpoint}/contentsafety/text:shieldPrompt?api-version=2024-09-01`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Ocp-Apim-Subscription-Key': this.apiKey,
+          'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify({
           userPrompt: text,
