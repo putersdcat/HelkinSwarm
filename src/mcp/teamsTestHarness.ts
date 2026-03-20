@@ -596,6 +596,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         if (botReply !== null) break;
       }
 
+      const correlationId = `MCP-${Date.now().toString(16).toUpperCase()}`;
       return {
         content: [
           {
@@ -606,6 +607,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 botReply: botReply ?? null,
                 elapsed: botReply ? elapsed : `timeout after ${timeoutSeconds}s`,
                 runtime: health,
+                correlationId,
               },
               null,
               2,

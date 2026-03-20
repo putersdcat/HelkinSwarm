@@ -16,6 +16,8 @@ export interface SessionInput {
   userMessage: string;
   conversationReference: Partial<ConversationReference>;
   correlationId: string;
+  /** Optional model override for /heavy and /light slash commands. */
+  modelOverride?: 'primary' | 'secondary';
 }
 
 export interface SessionResult {
@@ -45,7 +47,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // 2. Call LLM (global frontier model via Foundry client)
   const llmResult: LlmResult = yield context.df.callActivity(
     'llmActivity',
-    { ...prompt, correlationId },
+    { ...prompt, correlationId, modelOverride: input.modelOverride },
   );
 
   // 3. If LLM returned tool calls, run the safety pipeline

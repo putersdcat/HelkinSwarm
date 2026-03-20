@@ -22,6 +22,8 @@ export interface NewMessageEvent {
   conversationReference: Partial<ConversationReference>;
   userId: string;
   userAlias: string;
+  /** Optional model override for /heavy and /light slash commands. */
+  modelOverride?: 'primary' | 'secondary';
 }
 
 df.app.orchestration('overseer', function* (context) {
@@ -62,6 +64,7 @@ df.app.orchestration('overseer', function* (context) {
     userMessage: event.userMessage,
     conversationReference: event.conversationReference,
     correlationId: crypto.randomUUID(),
+    modelOverride: event.modelOverride,
   };
 
   const sessionResult: SessionResult = yield context.df.callSubOrchestrator(
@@ -111,6 +114,7 @@ function* processTurn(
     userMessage: event.userMessage,
     conversationReference: event.conversationReference,
     correlationId: crypto.randomUUID(),
+    modelOverride: event.modelOverride,
   };
 
   const sessionResult: SessionResult = yield context.df.callSubOrchestrator(

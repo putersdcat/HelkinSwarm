@@ -2,8 +2,8 @@
 // Spec ref: 06-Tool-Dispatch-LLM-Layer.md
 
 import * as df from 'durable-functions';
-import { createFoundryClient } from '../llm/foundryClient.js';
-import { getModelRouting } from '../llm/modelRouter.js';
+import { FoundryClient } from '../llm/foundryClient.js';
+import { getModelRouting, getModelForTask } from '../llm/modelRouter.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import type { PromptResult } from './buildPromptActivity.js';
 import type { ChatCompletionResponse } from '../llm/foundryClient.js';
@@ -17,10 +17,18 @@ export interface LlmResult {
 }
 
 df.app.activity('llmActivity', {
-  handler: async (input: PromptResult & { correlationId?: string }): Promise<LlmResult> => {
-    const client = createFoundryClient();
+  handler: async (input: PromptResult & { correlationId?: string; modelOverride?: 'primary' | 'secondary' }): Promise<LlmResult> => {
     const routing = getModelRouting();
     const correlationId = input.correlationId ?? crypto.randomUUID();
+
+    // Apply model override for /heavy (force primary) or /light (force secondary) commands
+    const deploymentName = input.modelOverride === 'secondary'
+      ? (process.env['LLM_SECONDARY_MODEL'] ?? getModelForTask('fast'))
+      : input.modelOverride === 'primary'
+        ? (process.env['LLM_PRIMARY_MODEL'] ?? getModelForTask('reasoning'))
+        : routing.deploymentName;
+
+    const client = new FoundryClient({ ...routing, deploymentName });
 
     // Convert PromptResult messages to ChatMessage format
     const messages = input.messages.map((m) => ({

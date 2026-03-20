@@ -85,6 +85,24 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return;
     }
 
+    // /forge <idea> — SkillForge entry point (owner-only)
+    if (lowerMessage.startsWith('/forge')) {
+      await this.handleForge(context, userId, userAlias, messageText);
+      return;
+    }
+
+    // /heavy <prompt> — force primary frontier model for this turn (owner-only)
+    if (lowerMessage.startsWith('/heavy')) {
+      await this.handleModelOverride(context, userId, userAlias, messageText, 'primary');
+      return;
+    }
+
+    // /light <prompt> — force secondary fast model for this turn (owner-only)
+    if (lowerMessage.startsWith('/light')) {
+      await this.handleModelOverride(context, userId, userAlias, messageText, 'secondary');
+      return;
+    }
+
     if (maintenance.enabled) {
       await context.sendActivity('I am offline for maintenance.');
       return;
@@ -93,11 +111,20 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     // Immediate ack before orchestration work begins.
     await context.sendActivity('⌛ Working on it...');
 
-    // Get or start the eternal overseer instance for this user
-    const instanceId = `overseer-${userId}`;
-    const client = this.durableClient;
+    await this.raiseToOverseer(context, userId, userAlias, messageText);
+  }
 
-    // getStatus() throws (not returns null) when the instance doesn't exist yet (HTTP 404)
+  /** Route a user message to the eternal overseer, starting it if needed. */
+  private async raiseToOverseer(
+    context: TurnContext,
+    userId: string,
+    userAlias: string,
+    userMessage: string,
+    modelOverride?: 'primary' | 'secondary',
+  ): Promise<void> {
+    const client = this.durableClient!;
+    const instanceId = `overseer-${userId}`;
+
     let statusRuntimeStatus: OrchestrationRuntimeStatus | undefined;
     try {
       const status = await client.getStatus(instanceId);
@@ -113,27 +140,80 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       statusRuntimeStatus === OrchestrationRuntimeStatus.Failed ||
       statusRuntimeStatus === OrchestrationRuntimeStatus.Terminated
     ) {
-      // Start a new overseer instance — it will wait for the first NewMessage event
       await client.startNew('overseer', { instanceId });
     }
 
-    // Build the event payload
     const conversationReference = TurnContextClass.getConversationReference(
       context.activity,
     );
-
-    // Persist ConversationReference to Cosmos so sendReplyActivity can find it after restart
     await saveConversationReference(userId, conversationReference);
 
     const event: NewMessageEvent = {
-      userMessage: messageText,
+      userMessage,
       conversationReference,
       userId,
       userAlias,
+      ...(modelOverride !== undefined ? { modelOverride } : {}),
     };
 
-    // Raise the NewMessage event on the overseer
     await client.raiseEvent(instanceId, 'NewMessage', event);
+  }
+
+  /** /forge <idea> — SkillForge entry point (owner-only). */
+  private async handleForge(
+    context: TurnContext,
+    userId: string,
+    userAlias: string,
+    messageText: string,
+  ): Promise<void> {
+    if (!this.durableClient) return;
+
+    if (!(await isOwnerUserId(userId))) {
+      await context.sendActivity('⛔ Owner-only command.');
+      return;
+    }
+
+    const idea = messageText.slice(6).trim();
+
+    if (process.env['SKILLFORGE_ENABLED'] !== 'true') {
+      await context.sendActivity('⚙️ SkillForge is not enabled (set SKILLFORGE_ENABLED=true to activate).');
+      return;
+    }
+
+    if (!idea) {
+      await context.sendActivity('Usage: /forge <idea>');
+      return;
+    }
+
+    await context.sendActivity(`⚙️ SkillForge: routing "${idea}" to the orchestrator...`);
+    await this.raiseToOverseer(context, userId, userAlias, idea);
+  }
+
+  /** /heavy or /light — force a specific model tier for one turn (owner-only). */
+  private async handleModelOverride(
+    context: TurnContext,
+    userId: string,
+    userAlias: string,
+    messageText: string,
+    modelOverride: 'primary' | 'secondary',
+  ): Promise<void> {
+    if (!this.durableClient) return;
+
+    if (!(await isOwnerUserId(userId))) {
+      await context.sendActivity('⛔ Owner-only command.');
+      return;
+    }
+
+    const prompt = messageText.slice(6).trim();
+    if (!prompt) {
+      const cmd = modelOverride === 'primary' ? '/heavy' : '/light';
+      await context.sendActivity(`Usage: ${cmd} <prompt>`);
+      return;
+    }
+
+    const label = modelOverride === 'primary' ? '🔥 frontier model' : '⚡ fast model';
+    await context.sendActivity(`⌛ Working on it... (${label})`);
+    await this.raiseToOverseer(context, userId, userAlias, prompt, modelOverride);
   }
 
   private async handleEmergencyStop(

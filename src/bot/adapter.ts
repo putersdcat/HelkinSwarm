@@ -42,10 +42,17 @@ export function createAdapter(): HelkinSwarmAdapter {
 
   sharedAdapter = new HelkinSwarmAdapter(auth);
 
-  // Global error handler — log and swallow so the adapter stays alive
-  sharedAdapter.onTurnError = async (_context, error) => {
-    console.error('[HelkinSwarm Bot] Unhandled turn error:', error);
-    // Phase 3 will emit to Application Insights
+  // Global error handler — log with correlation ID, notify user, stay alive
+  sharedAdapter.onTurnError = async (context, error) => {
+    const correlationId = crypto.randomUUID();
+    console.error(`[HelkinSwarm Bot] correlationId=${correlationId} Unhandled turn error:`, error);
+    try {
+      await context.sendActivity(
+        `⚠️ An internal error occurred. Reference: ${correlationId}`,
+      );
+    } catch {
+      // ignore secondary failure — the turn is already broken
+    }
   };
 
   return sharedAdapter;
