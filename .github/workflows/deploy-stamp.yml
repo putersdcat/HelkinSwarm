@@ -87,6 +87,33 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Detect infrastructure changes
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "infraChanged=true" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ Manual dispatch — running full infra deployment."
+            exit 0
+          fi
+
+          BEFORE_SHA="${{ github.event.before }}"
+          if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            echo "infraChanged=true" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ No reliable before-SHA available — running full infra deployment."
+            exit 0
+          fi
+
+          CHANGED_FILES=$(git diff --name-only "$BEFORE_SHA" "${{ github.sha }}")
+          echo "$CHANGED_FILES"
+
+          if echo "$CHANGED_FILES" | grep -qE '^(infra/|\.github/workflows/deploy-stamp\.yml$)'; then
+            echo "infraChanged=true" >> "$GITHUB_OUTPUT"
+            echo "✅ Infrastructure-affecting files changed — running Bicep deployment."
+          else
+            echo "infraChanged=false" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ Code-only push detected — skipping Bicep deployment and reusing existing stamp resources."
+          fi
+
       - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
@@ -95,6 +122,7 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Create resource group if not exists
+        if: steps.changes.outputs.infraChanged == 'true'
         run: |
           az group create \
             --name "${{ env.RESOURCE_GROUP }}" \
@@ -103,6 +131,7 @@ jobs:
             --tags "project=HelkinSwarm" "userAlias=${{ env.USER_ALIAS }}" "managedBy=deploy-stamp.yml"
 
       - name: Reset UAMI role assignments (idempotency pre-check)
+        if: steps.changes.outputs.infraChanged == 'true'
         run: |
           set +e
           echo "🔍 Looking up UAMI principal ID..."
@@ -135,6 +164,7 @@ jobs:
 
       - name: Deploy Bicep
         id: bicep
+        if: steps.changes.outputs.infraChanged == 'true'
         run: |
           set +e
           echo "🚀 Deploying Bicep for stamp '${{ env.USER_ALIAS }}'..."
