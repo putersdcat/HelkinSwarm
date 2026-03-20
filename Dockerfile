@@ -42,5 +42,6 @@ COPY --from=build /app/package.json ./package.json
 # Copy config and skills manifests (JSON files needed at runtime)
 COPY config/ ./config/
 COPY skills/ ./skills/
+COPY src/persona/ ./src/persona/
 
 EXPOSE 80

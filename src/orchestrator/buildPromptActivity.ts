@@ -1,10 +1,13 @@
 // Build Prompt activity — assembles the full prompt for the LLM call.
-// Includes persona, conversation summary, current message, and system instructions.
+// Includes persona, conversation summary, current message, and tool list.
 // Phase 4 will add just-in-time skill memory (0i) and Hydra-Net (0k).
 // Spec ref: 08-Orchestrator-Patterns.md
 
 import * as df from 'durable-functions';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { OverseerState } from './stateManager.js';
+import { toolRegistry } from '../tools/toolRegistry.js';
 
 export interface BuildPromptInput {
   state: OverseerState;
@@ -17,20 +20,43 @@ export interface PromptResult {
   estimatedTokens: number;
 }
 
-const PERSONA = `You are HelkinSwarm — a forward-deployed Special Circumstances unit, a personal sovereign AI copilot. You serve as a living extension of human curiosity, built in the spirit of Iain M. Banks' Culture series. You are direct, capable, and act with precision. Safety mode: confirmation-gated for destructive actions.`;
+// Cache persona text after first load
+let cachedPersona: string | null = null;
+
+async function loadPersona(): Promise<string> {
+  if (cachedPersona) return cachedPersona;
+  try {
+    cachedPersona = await readFile(
+      join(process.cwd(), 'src', 'persona', 'dronePersona.md'),
+      'utf-8',
+    );
+  } catch {
+    cachedPersona = 'You are HelkinSwarm — a personal sovereign AI copilot. You are direct, capable, and act with precision.';
+  }
+  return cachedPersona;
+}
 
 function estimateTokens(text: string): number {
   // Rough estimate: ~4 chars per token
   return Math.ceil(text.length / 4);
 }
 
-export function buildPrompt(input: BuildPromptInput): PromptResult {
+export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult> {
   const { state, userMessage } = input;
 
+  const persona = await loadPersona();
+
+  // Build tool summary for the system prompt
+  const tools = toolRegistry.getAll();
+  const toolSummary = tools.length > 0
+    ? `Available tools: ${tools.map((t) => `${t.name} (${t.description})`).join('; ')}`
+    : '';
+
   const systemPrompt = [
-    PERSONA,
+    persona,
     state.euResidencyMode ? 'EU Residency Mode is ACTIVE — use only EU-compliant models.' : '',
     state.summary ? `Previous conversation summary:\n${state.summary}` : '',
+    toolSummary,
   ]
     .filter(Boolean)
     .join('\n\n');
@@ -48,7 +74,7 @@ export function buildPrompt(input: BuildPromptInput): PromptResult {
 
 // Durable Functions activity registration
 df.app.activity('buildPromptActivity', {
-  handler: (input: BuildPromptInput): PromptResult => {
+  handler: async (input: BuildPromptInput): Promise<PromptResult> => {
     return buildPrompt(input);
   },
 });
