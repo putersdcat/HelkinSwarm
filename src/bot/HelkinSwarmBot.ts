@@ -6,6 +6,9 @@ import {
   TeamsActivityHandler,
   type TurnContext,
   TurnContext as TurnContextClass,
+  type AdaptiveCardInvokeResponse,
+  type AdaptiveCardInvokeValue,
+  StatusCodes,
 } from 'botbuilder';
 import type { DurableClient } from 'durable-functions';
 import { OrchestrationRuntimeStatus } from 'durable-functions';
@@ -45,6 +48,52 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       }
       await next();
     });
+  }
+
+  /**
+   * Handle Adaptive Card Action.Execute invocations (confirmation cards).
+   * Routes the user's approve/deny back to the overseer as a Durable external event.
+   */
+  protected async onAdaptiveCardInvoke(
+    _context: TurnContext,
+    invokeValue: AdaptiveCardInvokeValue,
+  ): Promise<AdaptiveCardInvokeResponse> {
+    const data = invokeValue.action?.data as
+      | { action: string; correlationId: string; userId: string; toolName: string }
+      | undefined;
+
+    if (!data?.correlationId || !data?.userId) {
+      return { statusCode: StatusCodes.BAD_REQUEST, type: 'application/vnd.microsoft.error', value: { message: 'Missing confirmation data' } };
+    }
+
+    if (this.durableClient) {
+      const instanceId = `overseer-${data.userId}`;
+      await this.durableClient.raiseEvent(instanceId, 'ConfirmationResponse', {
+        action: data.action,
+        correlationId: data.correlationId,
+        toolName: data.toolName,
+        respondedAt: new Date().toISOString(),
+      });
+    }
+
+    const approved = data.action === 'approved';
+    return {
+      statusCode: StatusCodes.OK,
+      type: 'application/vnd.microsoft.card.adaptive',
+      value: {
+        type: 'AdaptiveCard',
+        version: '1.4',
+        body: [
+          {
+            type: 'TextBlock',
+            text: approved
+              ? `✅ Approved — executing ${data.toolName}`
+              : `❌ Cancelled — ${data.toolName} will not execute`,
+            wrap: true,
+          },
+        ],
+      },
+    };
   }
 
   private async handleIncomingMessage(context: TurnContext): Promise<void> {
