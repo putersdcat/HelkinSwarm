@@ -8,6 +8,7 @@ useAzureMonitor();
 
 import './health.js';
 import './messages.js';
+import './emergencyStop.js';
 
 // Orchestrator + activity registrations (Phase 2)
 import '../orchestrator/overseer.js';

@@ -3,7 +3,7 @@
 // Spec ref: 10-Teams-Interface.md, 08-Orchestrator-Patterns.md
 
 import {
-  ActivityHandler,
+  TeamsActivityHandler,
   type TurnContext,
   TurnContext as TurnContextClass,
 } from 'botbuilder';
@@ -11,8 +11,13 @@ import type { DurableClient } from 'durable-functions';
 import { OrchestrationRuntimeStatus } from 'durable-functions';
 import type { NewMessageEvent } from '../orchestrator/overseer.js';
 import { saveConversationReference } from './conversationStore.js';
+import {
+  getMaintenanceMode,
+  isOwnerUserId,
+  setMaintenanceMode,
+} from './maintenanceMode.js';
 
-export class HelkinSwarmBot extends ActivityHandler {
+export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
 
   /** Inject the Durable client from the Azure Functions HTTP trigger. */
@@ -45,7 +50,8 @@ export class HelkinSwarmBot extends ActivityHandler {
     const userId = context.activity.from.aadObjectId;
     const userAlias =
       context.activity.from.name ?? context.activity.from.id ?? 'unknown';
-    const messageText = context.activity.text ?? '';
+    const messageText = (context.activity.text ?? '').trim();
+    const correlationId = crypto.randomUUID();
 
     if (!userId) {
       await context.sendActivity(
@@ -61,11 +67,31 @@ export class HelkinSwarmBot extends ActivityHandler {
       return;
     }
 
-    // Emergency stop — immediate kill, no LLM needed
-    if (messageText.trim().toLowerCase() === '/emergency-stop') {
+    console.info(
+      `[HelkinSwarmBot] correlationId=${correlationId} userId=${userId} textLength=${messageText.length}`,
+    );
+
+    const maintenance = await getMaintenanceMode();
+    const lowerMessage = messageText.toLowerCase();
+
+    // Slash commands are handled before routing to the overseer.
+    if (lowerMessage === '/emergency-stop') {
       await this.handleEmergencyStop(context, userId);
       return;
     }
+
+    if (lowerMessage === '/emergency-resume') {
+      await this.handleEmergencyResume(context, userId);
+      return;
+    }
+
+    if (maintenance.enabled) {
+      await context.sendActivity('I am offline for maintenance.');
+      return;
+    }
+
+    // Immediate ack before orchestration work begins.
+    await context.sendActivity('⌛ Working on it...');
 
     // Get or start the eternal overseer instance for this user
     const instanceId = `overseer-${userId}`;
@@ -108,9 +134,6 @@ export class HelkinSwarmBot extends ActivityHandler {
 
     // Raise the NewMessage event on the overseer
     await client.raiseEvent(instanceId, 'NewMessage', event);
-
-    // Send a typing indicator while overseer processes
-    await context.sendActivity({ type: 'typing' });
   }
 
   private async handleEmergencyStop(
@@ -119,18 +142,71 @@ export class HelkinSwarmBot extends ActivityHandler {
   ): Promise<void> {
     if (!this.durableClient) return;
 
-    const instanceId = `overseer-${userId}`;
+    if (!(await isOwnerUserId(userId))) {
+      await context.sendActivity('⛔ Owner-only command.');
+      return;
+    }
+
     const client = this.durableClient;
 
     try {
-      await client.terminate(instanceId, 'Emergency stop invoked by user');
-      await context.sendActivity(
-        '⛔ Emergency stop executed. All operations terminated. Send a new message to restart.',
+      await setMaintenanceMode({
+        enabled: true,
+        updatedBy: userId,
+        reason: 'Emergency stop invoked via slash command',
+      });
+
+      const statuses = await client.getStatusAll();
+      const activeStatuses = new Set<OrchestrationRuntimeStatus>([
+        OrchestrationRuntimeStatus.Running,
+        OrchestrationRuntimeStatus.Pending,
+        OrchestrationRuntimeStatus.ContinuedAsNew,
+      ]);
+
+      const terminationTargets = statuses.filter(
+        (status) =>
+          status.instanceId &&
+          status.runtimeStatus &&
+          activeStatuses.has(status.runtimeStatus),
       );
-    } catch {
+
+      await Promise.all(
+        terminationTargets.map((status) =>
+          client.terminate(status.instanceId, 'Emergency stop invoked by owner'),
+        ),
+      );
+
+      console.error(
+        `[HelkinSwarmBot] P0 emergency stop activated by userId=${userId}; terminated=${terminationTargets.length}`,
+      );
+
       await context.sendActivity(
-        '⛔ Emergency stop: no active session found. You are clear.',
+        '⛔ Emergency stop executed. Maintenance mode is active. Send /emergency-resume to restore service.',
+      );
+    } catch (err: unknown) {
+      console.error('[HelkinSwarmBot] Emergency stop failed:', err);
+      await context.sendActivity(
+        '⛔ Emergency stop failed. Check stamp logs immediately.',
       );
     }
+  }
+
+  private async handleEmergencyResume(
+    context: TurnContext,
+    userId: string,
+  ): Promise<void> {
+    if (!(await isOwnerUserId(userId))) {
+      await context.sendActivity('⛔ Owner-only command.');
+      return;
+    }
+
+    await setMaintenanceMode({
+      enabled: false,
+      updatedBy: userId,
+      reason: 'Emergency resume invoked via slash command',
+    });
+
+    console.error(`[HelkinSwarmBot] P0 emergency resume activated by userId=${userId}`);
+    await context.sendActivity('✅ Maintenance mode cleared. HelkinSwarm is back online.');
   }
 }
