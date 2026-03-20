@@ -33,6 +33,8 @@ concurrency:
 permissions:
   id-token: write
   contents: read
+  # required for gh variable set in register-tab-url job
+  actions: write
 
 env:
   AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
@@ -205,6 +207,8 @@ jobs:
     name: Register Tab URL & Report
     needs: [deploy-infra, deploy-spa]
     runs-on: ubuntu-latest
+    permissions:
+      actions: write
 
     steps:
       - name: Set TAB_HOST_URL GitHub variable
