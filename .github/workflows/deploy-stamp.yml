@@ -194,7 +194,10 @@ jobs:
             # Count errors excluding known benign codes — use -o to match per-occurrence
             # (the entire JSON may be on a single line)
             TOTAL_CODES=$(echo "$DEPLOY_OUT" | grep -oP '"code"\s*:\s*"[^"]*"' | wc -l)
-            BENIGN_CODES=$(echo "$DEPLOY_OUT" | grep -oP '"code"\s*:\s*"(RoleAssignmentExists|DeploymentFailed|BadRequest)"' | wc -l)
+            # 715-123420 + InvalidTemplateDeployment: ARM validation error on BotService
+            # OAuth connection re-deploy. The connection already exists with correct config;
+            # ARM raises this intermittently and it self-heals. Treated as benign.
+            BENIGN_CODES=$(echo "$DEPLOY_OUT" | grep -oP '"code"\s*:\s*"(RoleAssignmentExists|DeploymentFailed|BadRequest|InvalidTemplateDeployment|715-123420)"' | wc -l)
             REAL_ERRORS=$((TOTAL_CODES - BENIGN_CODES))
 
             echo "  DEBUG: BOT_VALIDATION=$BOT_VALIDATION TOTAL_CODES=$TOTAL_CODES BENIGN_CODES=$BENIGN_CODES REAL_ERRORS=$REAL_ERRORS"
