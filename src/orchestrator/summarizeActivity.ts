@@ -2,6 +2,7 @@
 // Spec ref: 08-Orchestrator-Patterns.md
 
 import * as df from 'durable-functions';
+import { FoundryClient } from '../llm/foundryClient.js';
 
 export interface SummarizeInput {
   currentSummary: string;
@@ -14,27 +15,49 @@ export interface SummarizeResult {
   tokensUsed: number;
 }
 
-function summarize(input: SummarizeInput): SummarizeResult {
-  // Phase 3 will call the LLM to produce a real summary.
-  // For now, concatenate + trim to keep the flow working.
-  const combined = [
-    input.currentSummary ? `Previous context: ${input.currentSummary}` : '',
-    `Recent activity (${input.turnCount} turns): ${input.recentMessages}`,
+async function summarize(input: SummarizeInput): Promise<SummarizeResult> {
+  const context = [
+    input.currentSummary ? `Previous context:\n${input.currentSummary}` : '',
+    `Recent activity (${input.turnCount} turns):\n${input.recentMessages}`,
   ]
     .filter(Boolean)
-    .join('\n');
+    .join('\n\n');
 
-  // Truncate to a reasonable stub length
-  const summary = combined.length > 2000 ? combined.slice(-2000) : combined;
+  try {
+    const client = new FoundryClient();
+    const result = await client.chatCompletion({
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a summarization assistant. Condense the following conversation into a concise summary that preserves all key facts, decisions, user preferences, and pending actions. Keep it under 500 words.',
+        },
+        {
+          role: 'user',
+          content: context,
+        },
+      ],
+      maxTokens: 800,
+    });
 
-  return {
-    summary,
-    tokensUsed: Math.ceil(summary.length / 4),
-  };
+    const choice = result.choices[0];
+    return {
+      summary: choice?.message?.content || context.slice(-2000),
+      tokensUsed: result.usage?.totalTokens ?? 0,
+    };
+  } catch (err) {
+    // Fallback to truncation if LLM call fails
+    // eslint-disable-next-line no-console
+    console.error('[summarizeActivity] LLM summarization failed, using truncation fallback:', err);
+    const fallback = context.length > 2000 ? context.slice(-2000) : context;
+    return {
+      summary: fallback,
+      tokensUsed: Math.ceil(fallback.length / 4),
+    };
+  }
 }
 
 df.app.activity('summarizeActivity', {
-  handler: (input: SummarizeInput): SummarizeResult => {
+  handler: async (input: SummarizeInput): Promise<SummarizeResult> => {
     return summarize(input);
   },
 });
