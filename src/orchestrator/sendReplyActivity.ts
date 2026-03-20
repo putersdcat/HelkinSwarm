@@ -3,11 +3,16 @@
 
 import * as df from 'durable-functions';
 import {
+  ActivityTypes,
   CloudAdapter,
   ConfigurationBotFrameworkAuthentication,
   type ConversationReference,
 } from 'botbuilder';
-import { getConversationReference } from '../bot/conversationStore.js';
+import {
+  getConversationReference,
+  getPendingAckId,
+  clearPendingAckId,
+} from '../bot/conversationStore.js';
 
 export interface SendReplyInput {
   /** User AAD Object ID — used to look up ConversationReference from Cosmos. */
@@ -50,11 +55,25 @@ async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
       throw new Error(`No ConversationReference found in Cosmos for userId=${input.userId}`);
     }
 
+    const ackActivityId = await getPendingAckId(input.userId);
+
     await adapter.continueConversationAsync(
       appId,
       conversationReference as ConversationReference,
       async (turnContext) => {
-        await turnContext.sendActivity(input.message);
+        if (ackActivityId) {
+          // Replace the "⌛ Working on it..." placeholder in-place (spec: 10-Teams-Interface.md)
+          await turnContext.updateActivity({
+            type: ActivityTypes.Message,
+            id: ackActivityId,
+            text: input.message,
+          });
+          const conversationId = (conversationReference as ConversationReference).conversation?.id ?? input.userId;
+          await clearPendingAckId(input.userId, conversationId);
+        } else {
+          // No ack stored (e.g. first reply after container restart) — fall back to new message
+          await turnContext.sendActivity(input.message);
+        }
       },
     );
     return { success: true };

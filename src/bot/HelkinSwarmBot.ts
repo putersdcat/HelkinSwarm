@@ -10,7 +10,7 @@ import {
 import type { DurableClient } from 'durable-functions';
 import { OrchestrationRuntimeStatus } from 'durable-functions';
 import type { NewMessageEvent } from '../orchestrator/overseer.js';
-import { saveConversationReference } from './conversationStore.js';
+import { saveConversationReference, savePendingAckId } from './conversationStore.js';
 import {
   getMaintenanceMode,
   isOwnerUserId,
@@ -109,7 +109,13 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
 
     // Immediate ack before orchestration work begins.
-    await context.sendActivity('⌛ Working on it...');
+    // Store the activityId so sendReplyActivity can replace it in-place
+    // rather than sending a second message (spec: 10-Teams-Interface.md §Message Flow).
+    const ackResponse = await context.sendActivity('⌛ Working on it...');
+    if (ackResponse?.id) {
+      const conversationId = context.activity.conversation?.id ?? userId;
+      await savePendingAckId(userId, conversationId, ackResponse.id);
+    }
 
     await this.raiseToOverseer(context, userId, userAlias, messageText);
   }

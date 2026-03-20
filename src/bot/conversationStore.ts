@@ -17,6 +17,16 @@ interface ConvRefDocument {
   updatedAt: string;
 }
 
+interface PendingAckDocument {
+  /** Document id — 'ack-{userId}' */
+  id: string;
+  /** Partition key — same as convref for co-location */
+  conversationId: string;
+  userId: string;
+  activityId: string;
+  createdAt: string;
+}
+
 /** Upsert the ConversationReference for a user. Called on every inbound message. */
 export async function saveConversationReference(
   userId: string,
@@ -52,4 +62,49 @@ export async function getConversationReference(
     .fetchAll();
 
   return resources[0]?.conversationReference ?? null;
+}
+
+/**
+ * Store the activityId of the "⌛ Working on it..." ack message so it can be
+ * replaced in-place by sendReplyActivity (spec: 10-Teams-Interface.md §Message Flow).
+ */
+export async function savePendingAckId(
+  userId: string,
+  conversationId: string,
+  activityId: string,
+): Promise<void> {
+  const doc: PendingAckDocument = {
+    id: `ack-${userId}`,
+    conversationId,
+    userId,
+    activityId,
+    createdAt: new Date().toISOString(),
+  };
+  const container = getContainer(CONTAINER_NAME);
+  await container.items.upsert(doc);
+}
+
+/** Retrieve the pending ack activityId. Returns null if none stored. */
+export async function getPendingAckId(userId: string): Promise<string | null> {
+  const container = getContainer(CONTAINER_NAME);
+  const { resources } = await container.items
+    .query<PendingAckDocument>({
+      query: 'SELECT * FROM c WHERE c.id = @id',
+      parameters: [{ name: '@id', value: `ack-${userId}` }],
+    })
+    .fetchAll();
+  return resources[0]?.activityId ?? null;
+}
+
+/** Delete the pending ack record after the reply has been sent. */
+export async function clearPendingAckId(
+  userId: string,
+  conversationId: string,
+): Promise<void> {
+  const container = getContainer(CONTAINER_NAME);
+  try {
+    await container.item(`ack-${userId}`, conversationId).delete();
+  } catch {
+    // Already gone — safe to ignore
+  }
 }
