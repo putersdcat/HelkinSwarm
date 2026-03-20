@@ -61,7 +61,7 @@ jobs:
     steps:
       - name: Validate USER_ALIAS format
         run: |
-          ALIAS="${{ github.event.inputs.USER_ALIAS }}"
+          ALIAS="${{ github.event.inputs.USER_ALIAS || vars.USER_ALIAS }}"
           if ! echo "$ALIAS" | grep -qE '^[a-z0-9]{4}$'; then
             echo "❌ USER_ALIAS must be exactly 4 lowercase alphanumeric characters. Got: '$ALIAS'"
             exit 1
