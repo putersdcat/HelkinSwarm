@@ -3,6 +3,7 @@
 
 import * as df from 'durable-functions';
 import { toolRegistry } from '../tools/toolRegistry.js';
+import { getHandler } from '../capabilities/capabilityLoader.js';
 
 export interface ToolDispatchInput {
   toolCalls: Array<{ id: string; name: string; arguments: string }>;
@@ -53,11 +54,23 @@ df.app.activity('toolDispatchActivity', {
         continue;
       }
 
-      // Low/medium risk — dispatch to handler (Phase 3 stub)
+      // Low/medium risk — dispatch to handler
       try {
-        const parsedArgs = JSON.parse(call.arguments);
-        // Phase 3: real handler dispatch via skill module import
-        const result = { status: 'stub', toolName: call.name, args: parsedArgs };
+        const parsedArgs = JSON.parse(call.arguments) as Record<string, unknown>;
+        const handler = getHandler(call.name);
+
+        if (!handler) {
+          results.push({
+            toolCallId: call.id,
+            toolName: call.name,
+            success: false,
+            error: `No handler registered for tool: ${call.name}`,
+            requiresExecutor: false,
+          });
+          continue;
+        }
+
+        const result = await handler(parsedArgs);
         results.push({
           toolCallId: call.id,
           toolName: call.name,

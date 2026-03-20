@@ -24,3 +24,17 @@ import '../orchestrator/toolDispatchActivity.js';
 import '../orchestrator/subAgentActivity.js';
 import '../orchestrator/executorActivity.js';
 import '../orchestrator/verificationPipelineActivity.js';
+
+// Capability loader — scan skills/ directory and register tool handlers
+import { loadCapabilities } from '../capabilities/capabilityLoader.js';
+
+loadCapabilities().then((result) => {
+  console.log(
+    `[CapabilityLoader] Loaded ${result.skillsLoaded} skills, ${result.toolsRegistered} tools` +
+      (result.errors.length > 0
+        ? `, ${result.errors.length} errors: ${result.errors.map((e) => e.path).join(', ')}`
+        : ''),
+  );
+}).catch((err: unknown) => {
+  console.error('[CapabilityLoader] Failed to load capabilities:', err);
+});

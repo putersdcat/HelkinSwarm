@@ -19,6 +19,6 @@
     "noFallthroughCasesInSwitch": true,
     "isolatedModules": true
   },
-  "include": ["src/**/*.ts"],
+  "include": ["src/**/*.ts", "skills/**/*.ts"],
   "exclude": ["node_modules", "dist", "src/mcp/**"]
 }

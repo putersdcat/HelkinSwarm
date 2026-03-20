@@ -18,6 +18,7 @@ RUN pnpm install --frozen-lockfile
 # Copy source and build
 COPY tsconfig.json host.json ./
 COPY src/ src/
+COPY skills/ skills/
 
 RUN pnpm run build
 
@@ -37,5 +38,9 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/host.json ./host.json
 COPY --from=build /app/package.json ./package.json
+
+# Copy config and skills manifests (JSON files needed at runtime)
+COPY config/ ./config/
+COPY skills/ ./skills/
 
 EXPOSE 80

@@ -1,0 +1,48 @@
+{
+  "domain": "core",
+  "version": "1.0",
+  "tools": [
+    {
+      "name": "helkin_health_check",
+      "description": "Returns HelkinSwarm system health, active session count, and version.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "helkin_list_skills",
+      "description": "Lists all active skills, their domains, tool counts, and risk levels.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "helkin_get_costs",
+      "description": "Returns current month Azure spend breakdown by resource. Requires Azure Cost Management access.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    }
+  ]
+}

@@ -4,7 +4,7 @@
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
-// Types
+// Types — re-export from manifestSchema for backward compatibility
 // ---------------------------------------------------------------------------
 
 export const RiskLevel = z.enum(['low', 'medium', 'high']);
@@ -27,28 +27,11 @@ export const ToolDefinitionSchema = z.object({
 export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;
 
 // ---------------------------------------------------------------------------
-// Capability manifest schema (for skills)
-// ---------------------------------------------------------------------------
-
-export const CapabilityManifestSchema = z.object({
-  schemaVersion: z.string(),
-  skillId: z.string(),
-  tools: z.array(ToolDefinitionSchema),
-});
-
-export type CapabilityManifest = z.infer<typeof CapabilityManifestSchema>;
-
-// ---------------------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------------------
 
 export class ToolRegistry {
   private tools = new Map<string, ToolDefinition>();
-  private skillsRoot: string;
-
-  constructor(skillsRoot = 'skills') {
-    this.skillsRoot = skillsRoot;
-  }
 
   /**
    * Register a tool definition.
@@ -114,18 +97,6 @@ export class ToolRegistry {
   }
 
   /**
-   * Load tools from a capability manifest (scanned from skills/ directory).
-   */
-  loadFromManifest(manifest: CapabilityManifest): void {
-    for (const tool of manifest.tools) {
-      this.register({
-        ...tool,
-        handlerModule: `${this.skillsRoot}/${manifest.skillId}`,
-      });
-    }
-  }
-
-  /**
    * Clear all registered tools.
    */
   clear(): void {
@@ -138,31 +109,3 @@ export class ToolRegistry {
 // ---------------------------------------------------------------------------
 
 export const toolRegistry = new ToolRegistry();
-
-// ---------------------------------------------------------------------------
-// Core built-in tools (always registered)
-// ---------------------------------------------------------------------------
-
-toolRegistry.register({
-  name: 'helkin_health_check',
-  description: 'Returns HelkinSwarm system health, active session count, and version.',
-  risk: 'low',
-  dataSensitivity: 'non-pii',
-  requiresExecutor: false,
-});
-
-toolRegistry.register({
-  name: 'helkin_list_skills',
-  description: 'Lists all active skills and their last-used timestamps.',
-  risk: 'low',
-  dataSensitivity: 'non-pii',
-  requiresExecutor: false,
-});
-
-toolRegistry.register({
-  name: 'helkin_get_costs',
-  description: 'Returns current month Azure spend breakdown by resource.',
-  risk: 'low',
-  dataSensitivity: 'non-pii',
-  requiresExecutor: false,
-});
