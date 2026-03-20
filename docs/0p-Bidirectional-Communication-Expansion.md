@@ -21,6 +21,7 @@ In the digital body ethos (0l), this is the "reflex arc" — allowing the brain 
 
 ### 3. Target Architecture (MVP Requirement)
 1. **Extension Fork** (`src/mcp/copilot-resurrection-extension/`):
+   - External repo: https://github.com/putersdcat/copilot-resurrect.git (see issue #118).
    - Monitors local Copilot logs for OOM/terminations.
    - Triggers resurrection with Ignition Prompt via MCP outbound.
    - Handles inbound from agent (e.g., via webhook or polling).

@@ -59,7 +59,7 @@ We replace the fragile MCP + impersonation model with a **dedicated, first-class
 - Self-tuning loop: Runtime reports “I hallucinated these 3 tool calls last session” → DevLoop updates model-profile mask.
 
 ### 5. Integration Points
-- **MCP Extension** (`CopilotResurrection`): Listens for relay messages and can inject into running Copilot Chat session or start new one.
+- **MCP Extension** (`CopilotResurrection`): Listens for relay messages and can inject into running Copilot Chat session or start new one. External extension repo: https://github.com/putersdcat/copilot-resurrect.git (see issue #118).
 - **Teams Bot** receives via Durable trigger and routes directly to orchestrator (bypassing normal user prompt path).
 - **Cosmos DB** stores full conversation + embeddings for retrospective analysis in the Dev Console tab (served from global SPA; data from stamp tab backend — see #107).
 - **App Insights** automatically tags every bidirectional message with `devloop-correlation-id`.
