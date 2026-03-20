@@ -2,6 +2,10 @@
 // Each function self-registers via app.http() / app.timer() in its own file.
 // This barrel file simply ensures they are imported at startup.
 
+// *** Must be first import — initialises Azure Monitor / App Insights SDK ***
+import { useAzureMonitor } from '@azure/monitor-opentelemetry';
+useAzureMonitor();
+
 import './health.js';
 import './messages.js';
 
