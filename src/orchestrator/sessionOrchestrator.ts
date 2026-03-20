@@ -70,7 +70,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       const highestRisk = llmResult.toolCalls.some((tc: { name: string }) =>
         toolRegistry.get(tc.name)?.risk === 'high') ? 'high' as const : 'medium' as const;
 
-      // Run pre-execution verification for medium/high risk tools
+      // Run pre-execution verification pipeline (steps 1-4: schema, data min, spot check, shields)
       const verification = yield context.df.callActivity('verificationPipelineActivity', {
         correlationId,
         sessionId: input.state.userId,
@@ -81,13 +81,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         originalQuery: input.userMessage,
       });
 
-      if (!verification.passed) {
+      if (!verification.passed && !verification.requiresConfirmation) {
+        // Hard block from safety pipeline (prompt shields, schema validation, etc.)
         responseContent = `Safety pipeline blocked this action: ${verification.error}`;
         safetyPassed = false;
-      }
-
-      // If verification passed, send confirmation card and wait for human approval
-      if (safetyPassed) {
+      } else if (verification.requiresConfirmation) {
+        // Steps 1-4 passed but human confirmation required for medium/high risk
         const cardInput: SendConfirmationCardInput = {
           userId: input.state.userId,
           toolName: llmResult.toolCalls.map((tc: { name: string }) => tc.name).join(', '),
@@ -110,7 +109,6 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           const winner = yield context.df.Task.any([confirmation, timer]);
 
           if (winner === timer) {
-            // Timeout — auto-cancel
             responseContent = `⏰ Action timed out after 5 minutes. The tool call was cancelled for safety.`;
             safetyPassed = false;
           } else {
@@ -122,11 +120,11 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             }
           }
         } else {
-          // Couldn't send card — fail closed
           responseContent = `Safety: Unable to send confirmation card. Action blocked.`;
           safetyPassed = false;
         }
       }
+      // If verification.passed && !requiresConfirmation: proceed (full-destructive mode)
     }
 
     if (safetyPassed) {

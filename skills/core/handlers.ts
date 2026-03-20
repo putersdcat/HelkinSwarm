@@ -51,3 +51,11 @@ export const helkin_get_costs: ToolHandler = async (_args) => {
     hint: 'This will be available once the Azure management skill is implemented.',
   };
 };
+
+export const helkin_test_confirmation: ToolHandler = async (_args) => {
+  return {
+    status: 'success',
+    message: 'Confirmation test tool executed successfully after human approval.',
+    timestamp: new Date().toISOString(),
+  };
+};

@@ -43,6 +43,20 @@
         "properties": {},
         "required": []
       }
+    },
+    {
+      "name": "helkin_test_confirmation",
+      "description": "Test tool for verifying the Adaptive Card confirmation flow. Returns a simple success message after approval.",
+      "risk": "medium",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": true,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
     }
   ]
 }
