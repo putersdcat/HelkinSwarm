@@ -4,7 +4,7 @@
       "type": "stdio",
       "command": "node",
       "args": ["${workspaceFolder}/dist-mcp/src/mcp/teamsTestHarness.js"],
-      "env": { "MCP_RESTART": "1" }
+      "env": { "MCP_RESTART": "2" }
     }
   }
 }

@@ -65,7 +65,32 @@ interface CacheContext {
 }
 
 let _msalApp: PublicClientApplication | null = null;
-let _cachedToken: string | null = null;
+let _cachedToken: { token: string; expiresAt: number } | null = null;
+
+function parseJwtExpiry(token: string): number | null {
+  try {
+    const [, payload] = token.split('.');
+    if (!payload) return null;
+    const parsed = JSON.parse(Buffer.from(payload, 'base64url').toString('utf-8')) as {
+      exp?: number;
+    };
+    return parsed.exp ? parsed.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+function cacheAccessToken(token: string): string {
+  _cachedToken = {
+    token,
+    expiresAt: parseJwtExpiry(token) ?? Date.now() + 5 * 60 * 1000,
+  };
+  return token;
+}
+
+function clearCachedToken(): void {
+  _cachedToken = null;
+}
 
 function getMsalApp(): PublicClientApplication {
   if (!_msalApp) {
@@ -96,7 +121,11 @@ function getMsalApp(): PublicClientApplication {
 }
 
 async function getAccessToken(): Promise<string> {
-  if (_cachedToken) return _cachedToken;
+  if (_cachedToken && _cachedToken.expiresAt > Date.now() + 60_000) {
+    return _cachedToken.token;
+  }
+
+  clearCachedToken();
 
   const app = getMsalApp();
   const accounts = await app.getTokenCache().getAllAccounts();
@@ -108,8 +137,7 @@ async function getAccessToken(): Promise<string> {
         account: accounts[0] as AccountInfo,
       });
       if (result?.accessToken) {
-        _cachedToken = result.accessToken;
-        return _cachedToken;
+        return cacheAccessToken(result.accessToken);
       }
     } catch {
       // Cache expired — fall through to device flow
@@ -128,8 +156,7 @@ async function getAccessToken(): Promise<string> {
   } as DeviceCodeRequest);
 
   if (!result?.accessToken) throw new Error('Authentication failed — no access token returned');
-  _cachedToken = result.accessToken;
-  return _cachedToken;
+  return cacheAccessToken(result.accessToken);
 }
 
 // ── Settings ──────────────────────────────────────────────────────────────────
@@ -161,14 +188,27 @@ async function saveSettings(settings: HarnessSettings): Promise<void> {
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 
-async function graphGet<T>(path: string): Promise<T> {
+async function graphRequest(path: string, init?: RequestInit, retryOnAuthFailure = true): Promise<Response> {
   const token = await getAccessToken();
   const resp = await fetch(`${GRAPH_BASE}${path}`, {
+    ...init,
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
     },
   });
+
+  if (retryOnAuthFailure && (resp.status === 401 || resp.status === 403)) {
+    clearCachedToken();
+    return graphRequest(path, init, false);
+  }
+
+  return resp;
+}
+
+async function graphGet<T>(path: string): Promise<T> {
+  const resp = await graphRequest(path);
   if (!resp.ok) {
     const body = await resp.text();
     throw new McpError(ErrorCode.InternalError, `Graph GET ${path} failed: ${resp.status} ${body}`);
@@ -177,13 +217,8 @@ async function graphGet<T>(path: string): Promise<T> {
 }
 
 async function graphPost<T>(path: string, body: unknown): Promise<T> {
-  const token = await getAccessToken();
-  const resp = await fetch(`${GRAPH_BASE}${path}`, {
+  const resp = await graphRequest(path, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
     body: JSON.stringify(body),
   });
   if (!resp.ok) {
