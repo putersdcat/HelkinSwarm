@@ -48,3 +48,7 @@ appid.txt
 
 # Compiled ARM templates (generated from Bicep)
 infra/main.json
+# MCP Teams Test Harness — local auth cache and discovered chat settings
+.local/
+.vscode/mcp-settings.json
+dist-mcp/

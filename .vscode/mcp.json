@@ -1,0 +1,10 @@
+{
+  "servers": {
+    "helkinswarm-teams-test": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${workspaceFolder}/dist-mcp/src/mcp/teamsTestHarness.js"],
+      "env": {}
+    }
+  }
+}

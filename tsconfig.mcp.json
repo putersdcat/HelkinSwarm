@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist-mcp",
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": ["src/mcp/**/*.ts"],
+  "exclude": ["node_modules", "dist", "dist-mcp"]
+}
