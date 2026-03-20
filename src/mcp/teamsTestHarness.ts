@@ -32,6 +32,7 @@ import { PublicClientApplication, type DeviceCodeRequest, type AccountInfo } fro
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { dirname, join } from 'path';
+import { homedir } from 'os';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -47,7 +48,9 @@ const STAMP_HEALTH_URL =
 const REPO_ROOT = join(__dirname, '..', '..', '..'); // dist-mcp/src/mcp → repo root
 
 const SETTINGS_PATH = join(REPO_ROOT, '.vscode', 'mcp-settings.json');
-const TOKEN_CACHE_PATH = join(REPO_ROOT, '.local', 'msal-cache.json');
+// Persist cache outside the repo so it survives workspace resets and re-clones.
+// One device-code auth per machine; refresh token persists ~90 days silently.
+const TOKEN_CACHE_PATH = join(homedir(), '.helkinswarm', 'msal-cache.json');
 
 // ── MSAL Auth ─────────────────────────────────────────────────────────────────
 
@@ -304,21 +307,27 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       await getAccessToken(); // triggers device flow if needed
 
       const chatsResp = await graphGet<{ value: GraphChat[] }>(
-        '/me/chats?$expand=members&$top=100',
+        '/me/chats?$expand=members&$top=50',
       );
       const chats = chatsResp.value;
 
       let botChat: GraphChat | undefined;
       let botUserId: string | undefined;
 
+      // Known bot user IDs for auto-detection (router UAMI client ID = global bot identity)
+      const KNOWN_BOT_USER_IDS = new Set([
+        '42d3359f-8757-421d-a853-fb2960cf2dac', // helkinswarm-id-router (v2 global bot)
+      ]);
+
       for (const chat of chats) {
         if (chat.chatType !== 'oneOnOne') continue;
         for (const member of chat.members ?? []) {
           const name_lower = (member.displayName ?? '').toLowerCase();
-          if (
+          const matchesName =
             name_lower.includes(BOT_DISPLAY_NAME_HINT.toLowerCase()) ||
-            name_lower.includes('helkin')
-          ) {
+            name_lower.includes('helkin');
+          const matchesId = member.userId ? KNOWN_BOT_USER_IDS.has(member.userId) : false;
+          if (matchesName || matchesId) {
             botChat = chat;
             botUserId = member.userId;
             break;
