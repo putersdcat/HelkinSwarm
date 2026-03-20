@@ -75,6 +75,47 @@ Full technical specification lives in the `docs/` folder (01-Project-Overview.md
 
 ---
 
+### Local Development Setup
+
+**Prerequisites:**
+- Node.js 22 LTS
+- pnpm
+- Azure Functions Core Tools v4 (`npm i -g azure-functions-core-tools@4`)
+- Azure CLI (`az`)
+- `az login` completed for your tenant
+
+**Quick start:**
+```powershell
+git clone https://github.com/putersdcat/HelkinSwarm.git
+cd HelkinSwarm
+pnpm install
+pnpm build
+```
+
+**Configure environment:**
+```powershell
+cp .env.example .env
+# Fill in your values — see src/config/envConfig.ts for Zod schema & defaults
+```
+
+**Run locally:**
+```powershell
+pnpm start   # Runs 'func start' — Azure Functions local runtime
+```
+
+**Auth locally:** `DefaultAzureCredential` auto-detects your `az login` session. No secrets needed. In production, UAMI (`AZURE_CLIENT_ID`) is used instead.
+
+**One-time Azure bootstrap:**
+```powershell
+# Deploy infrastructure (requires az login + gh auth login)
+.\scripts\Bootstrap-Azure.ps1
+# Or via GitHub Actions: push to main triggers CI/CD pipeline
+```
+
+**Bot Framework Emulator:** Connect to `http://localhost:7071/api/messages` with the `MicrosoftAppId` and `MicrosoftAppPassword` left blank for local testing.
+
+---
+
 ### Tech Stack (high-level)
 
 - **Runtime**: TypeScript + Azure Functions v4 on Container Apps
