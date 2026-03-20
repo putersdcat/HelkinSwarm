@@ -20,6 +20,7 @@ on:
       - 'pnpm-lock.yaml'
       - 'tsconfig.json'
       - 'host.json'
+      - '.github/workflows/deploy-stamp.yml'
   workflow_dispatch:
     inputs:
       USER_ALIAS:
