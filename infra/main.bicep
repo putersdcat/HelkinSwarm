@@ -81,8 +81,8 @@ var allIdentityObjs = union(stampIdentityObj, routerIdentityObj)
 
 // LLM model deployment names — global frontier only (euResidencyMode param kept for compat but unused here)
 // Deployment names must match the Bicep model deployment resources below.
-var llmPrimary          = 'grok-4-1-fast-reasoning'
-var llmSecondary        = 'grok-4-1-fast-non-reasoning'
+var llmPrimary          = 'grok-4-1-fast-non-reasoning'
+var llmSecondary        = 'grok-4-1-fast-reasoning'
 var llmFallbackPrimary  = 'gpt-5.4-mini'
 var llmFallbackSecond   = 'gpt-5.1-codex-mini'
 var llmCodingPrimary    = 'FW-MiniMax-M2.5'

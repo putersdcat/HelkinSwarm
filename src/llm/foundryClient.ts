@@ -95,7 +95,8 @@ export class FoundryClient {
    * Handles both Azure AI Foundry (OBO) and OpenRouter (BYOK) paths.
    */
   async chatCompletion(options: Omit<FoundryClientOptions, 'routing'>): Promise<ChatCompletionResponse> {
-    const url = `${this.apiBase}/openai/deployments/${this.routing.deploymentName}/chat/completions?api-version=2024-06-01`;
+    const base = this.apiBase.replace(/\/+$/, '');
+    const url = `${base}/openai/deployments/${this.routing.deploymentName}/chat/completions?api-version=2024-06-01`;
 
     const body: Record<string, unknown> = {
       model: this.routing.deploymentName,
@@ -131,6 +132,7 @@ export class FoundryClient {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(55_000),
     });
 
     if (!response.ok) {
