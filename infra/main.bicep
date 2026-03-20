@@ -520,6 +520,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
 
         // ── Stamp identity ──
         { name: 'USER_ALIAS', value: userAlias }
+        { name: 'OWNER_USER_ID', value: userPrincipalId }
 
         // ── Feature toggles ──
         { name: 'SKILLFORGE_ENABLED', value: 'false' }

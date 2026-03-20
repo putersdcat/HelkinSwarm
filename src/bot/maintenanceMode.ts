@@ -19,6 +19,11 @@ interface MaintenanceModeDocument {
 }
 
 async function loadOwnerUserId(): Promise<string> {
+  const ownerFromEnv = process.env['OWNER_USER_ID'];
+  if (ownerFromEnv) {
+    return ownerFromEnv;
+  }
+
   const mapPath = join(process.cwd(), 'config', 'user-map.json');
   const raw = await readFile(mapPath, 'utf-8');
   const parsed = JSON.parse(raw) as {
