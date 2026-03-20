@@ -37,6 +37,8 @@ async function loadOwnerUserId(): Promise<string> {
 }
 
 export async function isOwnerUserId(userId: string): Promise<boolean> {
+  // Runtime owner checks prefer the stamped environment variable in Azure and
+  // only fall back to config/user-map.json for local development scenarios.
   return userId === (await loadOwnerUserId());
 }
 
