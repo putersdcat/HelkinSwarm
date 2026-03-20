@@ -3,6 +3,7 @@
 // Spec ref: 06-Tool-Dispatch-LLM-Layer.md, 0c-BYOK-External-LLM-Support.md
 
 import { getModelRouting, type ModelRouting } from './modelRouter.js';
+import { getBearerToken } from '../auth/identity.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -64,13 +65,6 @@ export interface ToolDefinition {
     parameters: Record<string, unknown>;
   };
 }
-
-// ---------------------------------------------------------------------------
-// Module-level MI token cache — shared across FoundryClient instances
-// ---------------------------------------------------------------------------
-
-interface MiTokenCache { token: string; expiresAt: number; }
-let miTokenCache: MiTokenCache | null = null;
 
 // ---------------------------------------------------------------------------
 // Foundry client
@@ -190,40 +184,11 @@ export class FoundryClient {
    * Falls back to AZURE_FOUNDRY_OBO_TOKEN env var for local dev.
    */
   private async getOboToken(): Promise<string> {
-    const now = Date.now();
-    if (miTokenCache && miTokenCache.expiresAt > now + 60_000) {
-      return miTokenCache.token;
-    }
-
     // Local dev override
     const devToken = process.env['AZURE_FOUNDRY_OBO_TOKEN'];
     if (devToken) return devToken;
 
-    const endpoint = process.env['IDENTITY_ENDPOINT'];
-    const header   = process.env['IDENTITY_HEADER'];
-    const clientId = process.env['AZURE_CLIENT_ID'] ?? '';
-    const resource = 'https://cognitiveservices.azure.com/';
-
-    if (!endpoint || !header) {
-      // Not running in Azure — placeholder for local debug
-      return 'placeholder-obo-token';
-    }
-
-    const url = `${endpoint}?resource=${encodeURIComponent(resource)}&client_id=${encodeURIComponent(clientId)}&api-version=2019-08-01`;
-    const response = await fetch(url, { headers: { 'X-IDENTITY-HEADER': header } });
-
-    if (!response.ok) {
-      throw new FoundryError(
-        `MI token acquisition failed: ${response.status} ${response.statusText}`,
-        response.status,
-        'imds',
-      );
-    }
-
-    const data = await response.json() as { access_token: string; expires_on: string };
-    const expiresAt = parseInt(data.expires_on, 10) * 1000;
-    miTokenCache = { token: data.access_token, expiresAt };
-    return data.access_token;
+    return getBearerToken('https://cognitiveservices.azure.com/.default');
   }
 }
 

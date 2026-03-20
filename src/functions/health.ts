@@ -30,9 +30,9 @@ export async function healthHandler(
     version: process.env['npm_package_version'] ?? '0.1.0',
     components: {
       runtime: 'ok',
-      overseer: 'ok',         // Phase 2 — wired
-      llm: 'pending',        // Phase 3 — stub active
-      memory: 'pending',     // Phase 4
+      overseer: 'ok',
+      llm: 'ok',
+      memory: 'pending',
       safetyMode,
       euResidencyMode: euMode,
     },
