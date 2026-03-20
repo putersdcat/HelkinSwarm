@@ -130,6 +130,12 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Wait for RBAC propagation
+        run: |
+          echo "⏳ Waiting 90s for Azure RBAC role assignment propagation..."
+          sleep 90
+          echo "✅ Propagation wait complete"
+
       - name: Upload SPA assets to $web container
         run: |
           if [ -d "tabs" ] && [ "$(ls -A tabs)" ]; then
