@@ -93,6 +93,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           risk: highestRisk,
           description: `Execute ${llmResult.toolCalls.length} tool(s): ${llmResult.toolCalls.map((tc: { name: string }) => tc.name).join(', ')}`,
           correlationId,
+          sessionInstanceId: context.df.instanceId,
         };
         const cardResult: SendConfirmationCardResult = yield context.df.callActivity(
           'sendConfirmationCardActivity',

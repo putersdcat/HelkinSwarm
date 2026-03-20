@@ -59,15 +59,15 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     invokeValue: AdaptiveCardInvokeValue,
   ): Promise<AdaptiveCardInvokeResponse> {
     const data = invokeValue.action?.data as
-      | { action: string; correlationId: string; userId: string; toolName: string }
+      | { action: string; correlationId: string; userId: string; toolName: string; sessionInstanceId: string }
       | undefined;
 
-    if (!data?.correlationId || !data?.userId) {
+    if (!data?.correlationId || !data?.userId || !data?.sessionInstanceId) {
       return { statusCode: StatusCodes.BAD_REQUEST, type: 'application/vnd.microsoft.error', value: { message: 'Missing confirmation data' } };
     }
 
     if (this.durableClient) {
-      const instanceId = `overseer-${data.userId}`;
+      const instanceId = data.sessionInstanceId;
       await this.durableClient.raiseEvent(instanceId, 'ConfirmationResponse', {
         action: data.action,
         correlationId: data.correlationId,

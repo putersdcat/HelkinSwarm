@@ -16,6 +16,7 @@ export interface SendConfirmationCardInput {
   risk: 'medium' | 'high';
   description: string;
   correlationId: string;
+  sessionInstanceId: string;
 }
 
 export interface SendConfirmationCardResult {
@@ -57,6 +58,7 @@ df.app.activity('sendConfirmationCardActivity', {
         toolName: input.toolName,
         risk: input.risk,
         description: input.description,
+        sessionInstanceId: input.sessionInstanceId,
       };
 
       const card = buildConfirmationCard(cardData);

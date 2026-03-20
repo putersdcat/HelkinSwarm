@@ -9,6 +9,7 @@ export interface ConfirmationCardData {
   toolName: string;
   risk: 'medium' | 'high';
   description: string;
+  sessionInstanceId: string;
   timeoutSeconds?: number;
 }
 
@@ -60,6 +61,7 @@ export function buildConfirmationCard(data: ConfirmationCardData): Attachment {
           correlationId: data.correlationId,
           userId: data.userId,
           toolName: data.toolName,
+          sessionInstanceId: data.sessionInstanceId,
         },
       },
       {
@@ -71,6 +73,7 @@ export function buildConfirmationCard(data: ConfirmationCardData): Attachment {
           correlationId: data.correlationId,
           userId: data.userId,
           toolName: data.toolName,
+          sessionInstanceId: data.sessionInstanceId,
         },
       },
     ],
