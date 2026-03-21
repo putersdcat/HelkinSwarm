@@ -19,10 +19,11 @@ export interface ModelLane {
 }
 
 const GLOBAL_LANE: ModelLane = {
-  primary: 'grok-4-1-fast-reasoning',
+  primary: 'grok-4-1-fast-non-reasoning',
   secondary: 'grok-4-1-fast-non-reasoning',
   embedding: 'text-embedding-3-large',
-  reasoning: 'grok-4-1-fast-reasoning',
+  // grok-4-1-fast-reasoning consistently times out (>55s); tracked in #128
+  reasoning: 'o4-mini',
 };
 
 const EU_LANE: ModelLane = {
