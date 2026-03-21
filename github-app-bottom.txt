@@ -1,0 +1,690 @@
+- generic [ref=e2]:
+  - region
+  - generic [ref=e3]:
+    - link "Skip to content" [ref=e4] [cursor=pointer]:
+      - /url: "#start-of-content"
+    - banner "Global Navigation Menu" [ref=e8]:
+      - generic [ref=e9]:
+        - generic [ref=e10]:
+          - button "Open menu" [ref=e12] [cursor=pointer]:
+            - img [ref=e13]
+          - link "Homepage (g then d)" [ref=e15] [cursor=pointer]:
+            - /url: /
+            - img [ref=e16]
+        - generic [ref=e18]:
+          - navigation "Breadcrumbs" [ref=e19]:
+            - list [ref=e20]:
+              - listitem [ref=e21]:
+                - link "Settings" [ref=e22] [cursor=pointer]:
+                  - /url: /settings/profile
+                  - generic [ref=e23]: Settings
+              - listitem [ref=e24]:
+                - link "Developer Settings" [ref=e25] [cursor=pointer]:
+                  - /url: /settings/apps
+                  - generic [ref=e26]: Developer Settings
+          - button "Search or jump to…" [ref=e29] [cursor=pointer]:
+            - generic [ref=e30]:
+              - generic:
+                - img
+              - generic [ref=e31]:
+                - generic:
+                  - text: Type
+                  - generic: /
+                  - text: to search
+        - generic [ref=e32]:
+          - generic [ref=e33]:
+            - generic [ref=e35]:
+              - link "Chat with Copilot" [ref=e37] [cursor=pointer]:
+                - /url: /copilot
+                - img [ref=e38]
+              - button "Open agents panel" [ref=e42] [cursor=pointer]:
+                - generic [ref=e43]:
+                  - generic:
+                    - img
+                  - generic:
+                    - img
+            - button "Create new..." [ref=e45] [cursor=pointer]:
+              - generic [ref=e46]:
+                - generic:
+                  - img
+              - generic:
+                - img
+            - link "Issues (g then i)" [ref=e47] [cursor=pointer]:
+              - /url: /issues
+              - img [ref=e48]
+            - link "Pull requests (g then p)" [ref=e51] [cursor=pointer]:
+              - /url: /pulls
+              - img [ref=e52]
+            - link "Repositories" [ref=e54] [cursor=pointer]:
+              - /url: /repos
+              - img [ref=e55]
+          - link "You have unread notifications (g then n)" [ref=e57] [cursor=pointer]:
+            - /url: /notifications
+            - img [ref=e58]
+          - button "Open user navigation menu" [ref=e61] [cursor=pointer]:
+            - img "Eric Anderson" [ref=e62]
+  - main [ref=e65]:
+    - generic [ref=e68]:
+      - heading "Create GitHub App" [level=2] [ref=e70]
+      - form "GitHub App" [ref=e71]:
+        - generic [ref=e72]:
+          - term [ref=e73]: GitHub App name*
+          - definition [ref=e74]:
+            - textbox "GitHub App name*" [ref=e75]: HelkinSwarm Bot
+            - paragraph [ref=e76]: The name of your GitHub App.
+        - generic [ref=e79]:
+          - generic [ref=e80]:
+            - link "Markdown supported" [ref=e82] [cursor=pointer]:
+              - /url: https://docs.github.com/github/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax
+              - img [ref=e83]
+              - text: Markdown supported
+            - navigation [ref=e85]:
+              - generic [ref=e86]: Write
+              - generic [ref=e87]: Preview
+          - textbox "This is displayed to users of your GitHub App" [ref=e89]
+        - generic [ref=e90]:
+          - term [ref=e91]: Homepage URL*
+          - definition [ref=e92]:
+            - textbox "Homepage URL*" [ref=e93]: https://github.com/putersdcat/HelkinSwarm
+            - paragraph [ref=e94]: The full URL to your GitHub App’s website.
+        - generic [ref=e95]:
+          - heading "Identifying and authorizing users" [level=2] [ref=e96]
+          - generic [ref=e97]:
+            - text: The full URL to redirect to after a user authorizes an installation.
+            - paragraph [ref=e98]:
+              - text: Read our
+              - link "Callback URL documentation" [ref=e99] [cursor=pointer]:
+                - /url: https://docs.github.com/apps/creating-github-apps/registering-a-github-app/about-the-user-authorization-callback-url/
+              - text: for more information.
+          - button "Add Callback URL" [ref=e101] [cursor=pointer]
+        - generic [ref=e104]:
+          - term [ref=e105]: Callback URL
+          - definition [ref=e106]:
+            - textbox "Callback URL" [ref=e107]:
+              - /placeholder: e.g. https://example.com/auth
+            - button "Delete" [ref=e109] [cursor=pointer]
+        - generic [ref=e110]:
+          - term [ref=e111]:
+            - generic [ref=e112]:
+              - checkbox "Expire user authorization tokens" [checked] [ref=e113]
+              - text: Expire user authorization tokens
+          - definition [ref=e114]:
+            - paragraph [ref=e115]:
+              - text: This will provide a
+              - code [ref=e116]: refresh_token
+              - text: which can be used to request an updated access token when this access token expires.
+        - generic [ref=e117]:
+          - term [ref=e118]:
+            - generic [ref=e119]:
+              - checkbox "Request user authorization (OAuth) during installation" [ref=e120]
+              - text: Request user authorization (OAuth) during installation
+          - definition [ref=e121]:
+            - paragraph [ref=e122]: Requests that the installing user grants access to their identity during installation of your App
+            - paragraph [ref=e123]:
+              - text: Read our
+              - link "Identifying and authorizing users for GitHub Apps documentation" [ref=e124] [cursor=pointer]:
+                - /url: https://docs.github.com/apps/building-github-apps/identifying-and-authorizing-users-for-github-apps/
+              - text: for more information.
+        - generic [ref=e125]:
+          - term [ref=e126]:
+            - generic [ref=e127]:
+              - checkbox [ref=e128]
+              - text: Enable Device Flow
+          - definition [ref=e129]:
+            - paragraph [ref=e130]: Allow this GitHub App to authorize users via the Device Flow.
+            - paragraph [ref=e131]:
+              - text: Read the
+              - link "Device Flow documentation" [ref=e132] [cursor=pointer]:
+                - /url: https://docs.github.com/apps/creating-github-apps/authenticating-with-a-github-app/generating-a-user-access-token-for-a-github-app#using-the-device-flow-to-generate-a-user-access-token
+              - text: for more information.
+        - heading "Post installation" [level=2] [ref=e134]
+        - generic [ref=e135]:
+          - term [ref=e136]: Setup URL (optional)
+          - definition [ref=e137]:
+            - textbox "Setup URL (optional)" [ref=e138]:
+              - /placeholder: ""
+            - paragraph [ref=e139]: Users will be redirected to this URL after installing your GitHub App to complete additional setup.
+        - generic [ref=e140]:
+          - term [ref=e141]:
+            - generic [ref=e142]:
+              - checkbox "Redirect on update" [ref=e143]
+              - text: Redirect on update
+          - definition [ref=e144]:
+            - paragraph [ref=e145]: Redirect users to the 'Setup URL' after installations are updated (E.g. repositories added/removed).
+        - heading "Webhook" [level=2] [ref=e147]
+        - generic [ref=e149]:
+          - checkbox "Active" [ref=e150] [cursor=pointer]
+          - generic [ref=e151]:
+            - generic [ref=e152] [cursor=pointer]: Active
+            - generic [ref=e153]: We will deliver event details when this hook is triggered.
+        - generic [ref=e154]:
+          - term [ref=e155]: Webhook URL
+          - definition [ref=e156]:
+            - textbox "Webhook URL" [ref=e293]
+            - paragraph [ref=e158]:
+              - text: Events will POST to this URL. Read our
+              - link "webhook documentation" [ref=e159] [cursor=pointer]:
+                - /url: https://docs.github.com/webhooks/
+              - text: for more information.
+        - generic [ref=e160]:
+          - generic [ref=e162]:
+            - text: Secret
+            - textbox "Secret" [ref=e164]
+          - paragraph [ref=e165]:
+            - text: Read our
+            - link "webhook secret documentation" [ref=e166] [cursor=pointer]:
+              - /url: https://docs.github.com/webhooks/securing/
+            - text: for more information.
+        - separator [ref=e167]
+        - generic [ref=e168]:
+          - heading "Permissions" [level=2] [ref=e170]
+          - paragraph [ref=e171]:
+            - text: User permissions are granted on an individual user basis as part of the
+            - link "User authorization flow" [ref=e172] [cursor=pointer]:
+              - /url: https://docs.github.com/apps/building-github-apps/identifying-and-authorizing-users-for-github-apps/#identifying-and-authorizing-users-for-github-apps
+            - text: .
+            - text: Read our
+            - link "permissions documentation" [ref=e173] [cursor=pointer]:
+              - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps
+            - text: for information about specific permissions.
+          - list [ref=e175]:
+            - listitem [ref=e176]:
+              - region "repository-permissions" [ref=e177]:
+                - group [ref=e179]:
+                  - button "Repository permissions 1 selected 1 mandatory Repository permissions permit access to repositories and related resources." [expanded] [ref=e688] [cursor=pointer]:
+                    - generic [ref=e182]:
+                      - generic [ref=e183]:
+                        - generic [ref=e184]:
+                          - heading "Repository permissions" [level=3] [ref=e185]
+                          - generic [ref=e186]:
+                            - 'generic "Label: repository permission count" [ref=e689]': 1 selected
+                            - 'generic "Label: repository mandatory permission count" [ref=e690]': 1 mandatory
+                        - paragraph [ref=e187]: Repository permissions permit access to repositories and related resources.
+                      - img [ref=e294]
+                  - list [ref=e298]:
+                    - listitem [ref=e299]:
+                      - generic [ref=e300]:
+                        - strong [ref=e302]: Actions
+                        - generic [ref=e303]:
+                          - text: Workflows, workflow runs and artifacts.
+                          - link "Info" [ref=e304] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-actions
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e307] [cursor=pointer]':
+                        - generic [ref=e309]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e310]:
+                      - generic [ref=e311]:
+                        - strong [ref=e313]: Administration
+                        - generic [ref=e314]:
+                          - text: Repository creation, deletion, settings, teams, and collaborators.
+                          - link "Info" [ref=e315] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-administration
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e318] [cursor=pointer]':
+                        - generic [ref=e320]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e321]:
+                      - generic [ref=e322]:
+                        - strong [ref=e324]: Artifact metadata
+                        - generic [ref=e325]:
+                          - text: Create and retrieve artifact metadata for a repository.
+                          - link "Info" [ref=e326] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-artifact-metadata
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e329] [cursor=pointer]':
+                        - generic [ref=e331]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e332]:
+                      - generic [ref=e333]:
+                        - strong [ref=e335]: Attestations
+                        - generic [ref=e336]:
+                          - text: Create and retrieve attestations for a repository.
+                          - link "Info" [ref=e337] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-attestations
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e340] [cursor=pointer]':
+                        - generic [ref=e342]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e343]:
+                      - generic [ref=e344]:
+                        - strong [ref=e346]: Checks
+                        - generic [ref=e347]:
+                          - text: Checks on code.
+                          - link "Info" [ref=e348] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-checks
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e351] [cursor=pointer]':
+                        - generic [ref=e353]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e354]:
+                      - generic [ref=e355]:
+                        - strong [ref=e357]: Code scanning alerts
+                        - generic [ref=e358]:
+                          - text: View and manage code scanning alerts.
+                          - link "Info" [ref=e359] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-code-scanning-alerts
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e362] [cursor=pointer]':
+                        - generic [ref=e364]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e365]:
+                      - generic [ref=e366]:
+                        - strong [ref=e368]: Codespaces
+                        - generic [ref=e369]:
+                          - text: Create, edit, delete and list Codespaces.
+                          - link "Info" [ref=e370] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-codespaces
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e373] [cursor=pointer]':
+                        - generic [ref=e375]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e376]:
+                      - generic [ref=e377]:
+                        - strong [ref=e379]: Codespaces lifecycle admin
+                        - generic [ref=e380]:
+                          - text: Manage the lifecycle of Codespaces, including starting and stopping.
+                          - link "Info" [ref=e381] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-codespaces-lifecycle-admin
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e384] [cursor=pointer]':
+                        - generic [ref=e386]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e387]:
+                      - generic [ref=e388]:
+                        - strong [ref=e390]: Codespaces metadata
+                        - generic [ref=e391]:
+                          - text: Access Codespaces metadata including the devcontainers and machine type.
+                          - link "Info" [ref=e392] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-codespaces-metadata
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e395] [cursor=pointer]':
+                        - generic [ref=e397]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e398]:
+                      - generic [ref=e399]:
+                        - strong [ref=e401]: Codespaces secrets
+                        - generic [ref=e402]:
+                          - text: Restrict Codespaces user secrets modifications to specific repositories.
+                          - link "Info" [ref=e403] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-codespaces-secrets
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e406] [cursor=pointer]':
+                        - generic [ref=e408]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e409]:
+                      - generic [ref=e410]:
+                        - strong [ref=e412]: Commit statuses
+                        - generic [ref=e413]:
+                          - text: Commit statuses.
+                          - link "Info" [ref=e414] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-commit-statuses
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e417] [cursor=pointer]':
+                        - generic [ref=e419]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e420]:
+                      - generic [ref=e421]:
+                        - strong [ref=e423]: Contents
+                        - generic [ref=e424]:
+                          - text: Repository contents, commits, branches, downloads, releases, and merges.
+                          - link "Info" [ref=e425] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-contents
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e428] [cursor=pointer]':
+                        - generic [ref=e430]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e431]:
+                      - generic [ref=e432]:
+                        - strong [ref=e434]: Custom properties
+                        - generic [ref=e435]:
+                          - text: Read and write repository custom properties values at the repository level, when allowed by the property.
+                          - link "Info" [ref=e436] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-custom-properties
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e439] [cursor=pointer]':
+                        - generic [ref=e441]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e442]:
+                      - generic [ref=e443]:
+                        - strong [ref=e445]: Dependabot alerts
+                        - generic [ref=e446]:
+                          - text: Retrieve Dependabot alerts.
+                          - link "Info" [ref=e447] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-dependabot-alerts
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e450] [cursor=pointer]':
+                        - generic [ref=e452]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e453]:
+                      - generic [ref=e454]:
+                        - strong [ref=e456]: Dependabot secrets
+                        - generic [ref=e457]:
+                          - text: Manage Dependabot repository secrets.
+                          - link "Info" [ref=e458] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-dependabot-secrets
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e461] [cursor=pointer]':
+                        - generic [ref=e463]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e464]:
+                      - generic [ref=e465]:
+                        - strong [ref=e467]: Deployments
+                        - generic [ref=e468]:
+                          - text: Deployments and deployment statuses.
+                          - link "Info" [ref=e469] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-deployments
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e472] [cursor=pointer]':
+                        - generic [ref=e474]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e475]:
+                      - generic [ref=e476]:
+                        - strong [ref=e478]: Discussions
+                        - generic [ref=e479]:
+                          - text: Discussions and related comments and labels.
+                          - link "Info" [ref=e480] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-discussions
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e483] [cursor=pointer]':
+                        - generic [ref=e485]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e486]:
+                      - generic [ref=e487]:
+                        - strong [ref=e489]: Environments
+                        - generic [ref=e490]:
+                          - text: Manage repository environments.
+                          - link "Info" [ref=e491] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-environments
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e494] [cursor=pointer]':
+                        - generic [ref=e496]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e497]:
+                      - generic [ref=e498]:
+                        - generic [ref=e499]:
+                          - strong [ref=e500]: Issues
+                          - 'generic "Label: selected" [ref=e691]': Selected
+                        - generic [ref=e501]:
+                          - text: Issues and related comments, assignees, labels, and milestones.
+                          - link "Info" [ref=e502] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-issues
+                            - text: Learn more.
+                      - 'button "Access: Read and write" [active] [ref=e692] [cursor=pointer]':
+                        - generic [ref=e507]: "Access: Read and write"
+                        - generic:
+                          - img
+                    - listitem [ref=e508]:
+                      - generic [ref=e509]:
+                        - strong [ref=e511]: Merge queues
+                        - generic [ref=e512]:
+                          - text: Manage a repository's merge queues
+                          - link "Info" [ref=e513] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-merge-queues
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e516] [cursor=pointer]':
+                        - generic [ref=e518]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e519]:
+                      - generic [ref=e520]:
+                        - generic [ref=e521]:
+                          - strong [ref=e522]: Metadata
+                          - 'generic "Label: mandatory" [ref=e693]': Mandatory
+                        - generic [ref=e523]:
+                          - text: Search repositories, list collaborators, and access repository metadata.
+                          - link "Info" [ref=e524] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-metadata
+                            - text: Learn more.
+                      - generic [ref=e526]:
+                        - 'button "Access: Read-only" [disabled] [ref=e694]':
+                          - generic [ref=e529]: "Access: Read-only"
+                          - generic:
+                            - img
+                        - tooltip "This is a mandatory permission and cannot be changed" [ref=e695]:
+                          - generic: This is a mandatory permission and cannot be changed
+                    - listitem [ref=e530]:
+                      - generic [ref=e531]:
+                        - strong [ref=e533]: Packages
+                        - generic [ref=e534]:
+                          - text: Packages published to the GitHub Package Platform.
+                          - link "Info" [ref=e535] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-packages
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e538] [cursor=pointer]':
+                        - generic [ref=e540]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e541]:
+                      - generic [ref=e542]:
+                        - strong [ref=e544]: Pages
+                        - generic [ref=e545]:
+                          - text: Retrieve Pages statuses, configuration, and builds, as well as create new builds.
+                          - link "Info" [ref=e546] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-pages
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e549] [cursor=pointer]':
+                        - generic [ref=e551]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e552]:
+                      - generic [ref=e553]:
+                        - strong [ref=e555]: Projects
+                        - generic [ref=e556]:
+                          - text: Manage classic projects within a repository.
+                          - link "Info" [ref=e557] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-projects
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e560] [cursor=pointer]':
+                        - generic [ref=e562]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e563]:
+                      - generic [ref=e564]:
+                        - strong [ref=e566]: Pull requests
+                        - generic [ref=e567]:
+                          - text: Pull requests and related comments, assignees, labels, milestones, and merges.
+                          - link "Info" [ref=e568] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-pull-requests
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e571] [cursor=pointer]':
+                        - generic [ref=e573]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e574]:
+                      - generic [ref=e575]:
+                        - strong [ref=e577]: Repository security advisories
+                        - generic [ref=e578]:
+                          - text: View and manage repository security advisories.
+                          - link "Info" [ref=e579] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-repository-security-advisories
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e582] [cursor=pointer]':
+                        - generic [ref=e584]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e585]:
+                      - generic [ref=e586]:
+                        - strong [ref=e588]: Secret scanning alert dismissal requests
+                        - generic [ref=e589]:
+                          - text: View and manage secret scanning alert dismissal requests
+                          - link "Info" [ref=e590] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-secret-scanning-alert-dismissal-requests
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e593] [cursor=pointer]':
+                        - generic [ref=e595]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e596]:
+                      - generic [ref=e597]:
+                        - strong [ref=e599]: Secret scanning alerts
+                        - generic [ref=e600]:
+                          - text: View and manage secret scanning alerts.
+                          - link "Info" [ref=e601] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-secret-scanning-alerts
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e604] [cursor=pointer]':
+                        - generic [ref=e606]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e607]:
+                      - generic [ref=e608]:
+                        - strong [ref=e610]: Secret scanning push protection bypass requests
+                        - generic [ref=e611]:
+                          - text: Review and manage repository secret scanning push protection bypass requests.
+                          - link "Info" [ref=e612] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-secret-scanning-push-protection-bypass-requests
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e615] [cursor=pointer]':
+                        - generic [ref=e617]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e618]:
+                      - generic [ref=e619]:
+                        - strong [ref=e621]: Secrets
+                        - generic [ref=e622]:
+                          - text: Manage Actions repository secrets.
+                          - link "Info" [ref=e623] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-secrets
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e626] [cursor=pointer]':
+                        - generic [ref=e628]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e629]:
+                      - generic [ref=e630]:
+                        - strong [ref=e632]: Single file
+                        - generic [ref=e633]:
+                          - text: Manage just a single file.
+                          - link "Info" [ref=e634] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-single-file
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e637] [cursor=pointer]':
+                        - generic [ref=e639]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e640]:
+                      - generic [ref=e641]:
+                        - strong [ref=e643]: Variables
+                        - generic [ref=e644]:
+                          - text: Manage Actions repository variables.
+                          - link "Info" [ref=e645] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-variables
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e648] [cursor=pointer]':
+                        - generic [ref=e650]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e651]:
+                      - generic [ref=e652]:
+                        - strong [ref=e654]: Webhooks
+                        - generic [ref=e655]:
+                          - text: Manage the post-receive hooks for a repository.
+                          - link "Info" [ref=e656] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-webhooks
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e659] [cursor=pointer]':
+                        - generic [ref=e661]: "Access: No access"
+                        - generic:
+                          - img
+                    - listitem [ref=e662]:
+                      - generic [ref=e663]:
+                        - strong [ref=e665]: Workflows
+                        - generic [ref=e666]:
+                          - text: Update GitHub Action workflow files.
+                          - link "Info" [ref=e667] [cursor=pointer]:
+                            - /url: https://docs.github.com/rest/overview/permissions-required-for-github-apps#repository-permissions-for-workflows
+                            - text: Learn more.
+                      - 'button "Access: No access" [ref=e670] [cursor=pointer]':
+                        - generic [ref=e672]: "Access: No access"
+                        - generic:
+                          - img
+            - listitem [ref=e190]:
+              - region "organization-permissions" [ref=e191]:
+                - group [ref=e193]:
+                  - button "Organization permissions Organization permissions permit access to organization related resources." [ref=e194] [cursor=pointer]:
+                    - generic [ref=e196]:
+                      - generic [ref=e197]:
+                        - heading "Organization permissions" [level=3] [ref=e199]
+                        - paragraph [ref=e201]: Organization permissions permit access to organization related resources.
+                      - img [ref=e202]
+            - listitem [ref=e204]:
+              - region "user-permissions" [ref=e205]:
+                - group [ref=e207]:
+                  - button "Account permissions These permissions are granted on an individual user basis as part of the User authorization flow." [ref=e208] [cursor=pointer]:
+                    - generic [ref=e210]:
+                      - generic [ref=e211]:
+                        - heading "Account permissions" [level=3] [ref=e213]
+                        - paragraph [ref=e215]: These permissions are granted on an individual user basis as part of the User authorization flow.
+                      - img [ref=e216]
+        - radiogroup "Where can this GitHub App be installed?" [ref=e244]:
+          - generic [ref=e245]: Where can this GitHub App be installed?
+          - generic [ref=e246]:
+            - generic [ref=e247]:
+              - radio "Only on this account" [checked] [ref=e248] [cursor=pointer]
+              - generic [ref=e249]:
+                - generic [ref=e250] [cursor=pointer]: Only on this account
+                - generic [ref=e251]: Only allow this GitHub App to be installed on the @putersdcat account.
+            - generic [ref=e252]:
+              - radio "Any account" [ref=e253] [cursor=pointer]
+              - generic [ref=e254]:
+                - generic [ref=e255] [cursor=pointer]: Any account
+                - generic [ref=e256]: Allow this GitHub App to be installed by any user or organization.
+        - generic [ref=e257]:
+          - button "Create GitHub App" [ref=e258] [cursor=pointer]
+          - link "Cancel" [ref=e259] [cursor=pointer]:
+            - /url: /settings/apps
+  - contentinfo [ref=e260]:
+    - heading "Footer" [level=2] [ref=e261]
+    - generic [ref=e262]:
+      - generic [ref=e263]:
+        - link "GitHub Homepage" [ref=e264] [cursor=pointer]:
+          - /url: https://github.com
+          - img [ref=e265]
+        - generic [ref=e267]: © 2026 GitHub, Inc.
+      - navigation "Footer" [ref=e268]:
+        - heading "Footer navigation" [level=3] [ref=e269]
+        - list "Footer navigation" [ref=e270]:
+          - listitem [ref=e271]:
+            - link "Terms" [ref=e272] [cursor=pointer]:
+              - /url: https://docs.github.com/site-policy/github-terms/github-terms-of-service
+          - listitem [ref=e273]:
+            - link "Privacy" [ref=e274] [cursor=pointer]:
+              - /url: https://docs.github.com/site-policy/privacy-policies/github-privacy-statement
+          - listitem [ref=e275]:
+            - link "Security" [ref=e276] [cursor=pointer]:
+              - /url: https://github.com/security
+          - listitem [ref=e277]:
+            - link "Status" [ref=e278] [cursor=pointer]:
+              - /url: https://www.githubstatus.com/
+          - listitem [ref=e279]:
+            - link "Community" [ref=e280] [cursor=pointer]:
+              - /url: https://github.community/
+          - listitem [ref=e281]:
+            - link "Docs" [ref=e282] [cursor=pointer]:
+              - /url: https://docs.github.com/
+          - listitem [ref=e283]:
+            - link "Contact" [ref=e284] [cursor=pointer]:
+              - /url: https://support.github.com?tags=dotcom-footer
+          - listitem [ref=e285]:
+            - button "Manage cookies" [ref=e287] [cursor=pointer]
+          - listitem [ref=e288]:
+            - button "Do not share my personal information" [ref=e290] [cursor=pointer]

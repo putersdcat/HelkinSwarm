@@ -83,6 +83,7 @@ df.app.activity('llmFollowUpActivity', {
         content: textContent(choice.message.content) || 'Tool execution complete.',
         model: response.model,
         tokensUsed: response.usage.totalTokens,
+        promptTokens: response.usage.promptTokens,
         toolCalls: [], // Follow-up should not request more tools (single-turn tool use)
         finishReason: choice.finishReason,
       };
@@ -91,6 +92,7 @@ df.app.activity('llmFollowUpActivity', {
         content: `Follow-up LLM call failed: ${err instanceof Error ? err.message : String(err)}`,
         model: routing.deploymentName,
         tokensUsed: 0,
+        promptTokens: 0,
         toolCalls: [],
         finishReason: 'error',
       };

@@ -32,6 +32,8 @@ export interface SessionInput {
 export interface SessionResult {
   response: string;
   tokensUsed: number;
+  /** Prompt tokens sent TO the model (context pressure metric). Fix: #137 */
+  promptTokens: number;
   model: string;
   toolCalls: Array<{ name: string; arguments: string }>;
   toolResults: ToolDispatchResult | null;
@@ -273,6 +275,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   return {
     response: responseContent,
     tokensUsed: llmResult.tokensUsed,
+    promptTokens: llmResult.promptTokens,
     model: llmResult.model,
     toolCalls: llmResult.toolCalls,
     toolResults,

@@ -11,7 +11,8 @@ import {
 } from './stateManager.js';
 import {
   createTokenBudget,
-  addTokens,
+  recordTokenUsage,
+  shouldContinueAsNew,
   shouldSummarize,
 } from './tokenBudget.js';
 import type { SessionInput, SessionResult } from './sessionOrchestrator.js';
@@ -65,9 +66,11 @@ df.app.orchestration('overseer', function* (context) {
     return;
   }
 
-  // Initialize token budget from state
-  let tokenBudget = createTokenBudget(state.maxTokens);
-  tokenBudget = addTokens(tokenBudget, state.totalTokens);
+  // Initialize token budget from state — uses latest prompt tokens for pressure measurement (#137)
+  let tokenBudget = createTokenBudget(state.model ?? 'grok-4-1-fast-non-reasoning');
+  if (state.latestPromptTokens) {
+    tokenBudget = recordTokenUsage(tokenBudget, state.latestPromptTokens, 0);
+  }
 
   // Main eternal loop: wait for events, process, decide whether to ContinueAsNew
   // Each iteration handles one message, then the orchestrator checks budget.
@@ -109,14 +112,16 @@ df.app.orchestration('overseer', function* (context) {
     return;
   }
 
-  // Update token budget
-  tokenBudget = addTokens(tokenBudget, sessionResult.tokensUsed);
-  state.totalTokens = tokenBudget.totalTokens;
+  // Update token budget — record prompt tokens for pressure measurement (#137)
+  tokenBudget = recordTokenUsage(tokenBudget, sessionResult.promptTokens, sessionResult.tokensUsed);
+  state.latestPromptTokens = tokenBudget.latestPromptTokens;
+  state.accumulatedTokens = tokenBudget.accumulatedTokens;
+  state.model = sessionResult.model;
   state.turnCount++;
   state.lastActivityTimestamp = new Date().toISOString();
 
-  // Check if we need to summarize + ContinueAsNew
-  if (shouldSummarize(tokenBudget)) {
+  // Check if we need to ContinueAsNew (80% context pressure) or summarize (75%)
+  if (shouldContinueAsNew(tokenBudget) || shouldSummarize(tokenBudget)) {
     const summarizeInput: SummarizeInput = {
       currentSummary: state.summary,
       recentMessages: sessionResult.response,
@@ -180,7 +185,9 @@ function* processTurn(
     return;
   }
 
-  state.totalTokens += sessionResult.tokensUsed;
+  state.latestPromptTokens = sessionResult.promptTokens;
+  state.accumulatedTokens = (state.accumulatedTokens ?? 0) + sessionResult.tokensUsed;
+  state.model = sessionResult.model;
   state.turnCount++;
   state.lastActivityTimestamp = new Date().toISOString();
 

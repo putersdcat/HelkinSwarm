@@ -13,6 +13,13 @@ export const OverseerStateSchema = z.object({
   conversationId: z.string(),
   summary: z.string().default(''),
   turnCount: z.number().default(0),
+  /** Latest prompt token count from last LLM call — context pressure metric (#137). */
+  latestPromptTokens: z.number().default(0),
+  /** Accumulated total tokens across all turns — reporting only, not used for thresholds (#137). */
+  accumulatedTokens: z.number().default(0),
+  /** Active model name for context limit lookup (#137). */
+  model: z.string().default('grok-4-1-fast-non-reasoning'),
+  /** @deprecated Use latestPromptTokens instead. Kept for backward compat with existing Cosmos docs. */
   totalTokens: z.number().default(0),
   maxTokens: z.number().default(128_000),
   lastActivityTimestamp: z.string().datetime().optional(),
@@ -43,6 +50,8 @@ export function stateForContinueAsNew(
     ...current,
     summary,
     turnCount: 0,
+    latestPromptTokens: 0,
+    accumulatedTokens: 0,
     totalTokens: 0,
     lastActivityTimestamp: new Date().toISOString(),
   };

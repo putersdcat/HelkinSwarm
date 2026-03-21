@@ -15,6 +15,8 @@ export interface LlmResult {
   content: string;
   model: string;
   tokensUsed: number;
+  /** Prompt tokens sent TO the model (context pressure metric). Fix: #137 */
+  promptTokens: number;
   toolCalls: Array<{ id: string; name: string; arguments: string }>;
   finishReason: string;
 }
@@ -94,6 +96,7 @@ df.app.activity('llmActivity', {
         content: textContent(choice.message.content),
         model: response.model,
         tokensUsed: response.usage.totalTokens,
+        promptTokens: response.usage.promptTokens,
         toolCalls,
         finishReason: choice.finishReason,
       };
@@ -107,6 +110,7 @@ df.app.activity('llmActivity', {
         content: `LLM call failed: ${err instanceof Error ? err.message : String(err)}`,
         model: routing.deploymentName,
         tokensUsed: 0,
+        promptTokens: 0,
         toolCalls: [],
         finishReason: 'error',
       };
