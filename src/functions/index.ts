@@ -43,3 +43,33 @@ loadCapabilities().then((result) => {
 }).catch((err: unknown) => {
   console.error('[CapabilityLoader] Failed to load capabilities:', err);
 });
+
+// ---------------------------------------------------------------------------
+// Graceful shutdown handler (#136)
+// On SIGTERM/SIGINT: enable maintenance mode so new messages get a polite
+// "deploying" response, then allow a grace period for in-flight work.
+// ---------------------------------------------------------------------------
+import { setMaintenanceMode } from '../bot/maintenanceMode.js';
+
+const SHUTDOWN_GRACE_MS = 10_000;
+
+function handleShutdown(signal: string): void {
+  console.log(`[shutdown] Received ${signal} — entering maintenance mode, grace=${SHUTDOWN_GRACE_MS}ms`);
+
+  setMaintenanceMode({
+    enabled: true,
+    updatedBy: 'system-shutdown',
+    reason: `Graceful shutdown on ${signal}`,
+  }).catch((err: unknown) => {
+    console.error('[shutdown] Failed to set maintenance mode:', err);
+  });
+
+  // Give in-flight orchestrations time to complete, then exit
+  setTimeout(() => {
+    console.log('[shutdown] Grace period elapsed — exiting');
+    process.exit(0);
+  }, SHUTDOWN_GRACE_MS);
+}
+
+process.on('SIGTERM', () => handleShutdown('SIGTERM'));
+process.on('SIGINT', () => handleShutdown('SIGINT'));
