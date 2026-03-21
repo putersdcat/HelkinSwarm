@@ -363,9 +363,10 @@ resource aiServices 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
 // Deployments must be serial (dependsOn chain) to avoid ARM 429s.
 
 // Capacity helpers — capped at quotaMaxTPM (units = 1k TPM)
-var capEmbedding  = min(100, quotaMaxTPM / 1000)  // 100k TPM default
-var capPrimaryLlm = min(10,  quotaMaxTPM / 1000)   // 10k — conservative to fit within quota ceilings
-var capFastLlm    = min(10,  quotaMaxTPM / 1000)   // 10k TPM (DataZoneStandard quota = 20k ÷ 2 models)
+var capEmbedding   = min(100, quotaMaxTPM / 1000) // 100k TPM default
+var capFastLlm     = min(20,  quotaMaxTPM / 1000) // 20k TPM each — primary Grok pair (DataZoneStandard quota = 20k per model)
+var capPrimaryLlm  = min(10,  quotaMaxTPM / 1000) // 10k — secondary GlobalStandard models
+var capReserveLlm  = 1                            // 1k — reserve models (not actively used, keep deployed at minimum)
 
 resource aiDeployEmbedding 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
   parent: aiServices
@@ -430,7 +431,7 @@ resource aiDeployFwMiniMax 'Microsoft.CognitiveServices/accounts/deployments@202
   parent: aiServices
   name: 'FW-MiniMax-M2.5'
   dependsOn: [ aiDeployO4Mini ]
-  sku: { name: 'DataZoneStandard', capacity: capFastLlm }
+  sku: { name: 'DataZoneStandard', capacity: capReserveLlm }
   properties: {
     model: { format: 'Fireworks', name: 'FW-MiniMax-M2.5', version: '1' }
   }
@@ -440,7 +441,7 @@ resource aiDeployFwKimi 'Microsoft.CognitiveServices/accounts/deployments@2024-1
   parent: aiServices
   name: 'FW-Kimi-K2.5'
   dependsOn: [ aiDeployFwMiniMax ]
-  sku: { name: 'DataZoneStandard', capacity: capFastLlm }
+  sku: { name: 'DataZoneStandard', capacity: capReserveLlm }
   properties: {
     model: { format: 'Fireworks', name: 'FW-Kimi-K2.5', version: '1' }
   }
@@ -450,7 +451,7 @@ resource aiDeployDeepSeek 'Microsoft.CognitiveServices/accounts/deployments@2024
   parent: aiServices
   name: 'DeepSeek-V3.2'
   dependsOn: [ aiDeployFwKimi ]
-  sku: { name: 'GlobalStandard', capacity: capPrimaryLlm }
+  sku: { name: 'GlobalStandard', capacity: capReserveLlm }
   properties: {
     model: { format: 'DeepSeek', name: 'DeepSeek-V3.2', version: '1' }
   }
