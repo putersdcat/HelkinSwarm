@@ -48,6 +48,10 @@ param createOAuthConnection bool = false
 @description('Maximum TPM ceiling for AI model deployments. Quota is capped at this value. Increase for higher throughput.')
 param quotaMaxTPM int = 100000
 
+@description('GitHub Personal Access Token for self-repo issue management (skills/github). Populated from GH Actions secret.')
+@secure()
+param githubToken string = ''
+
 // ─── Variables ──────────────────────────────────────────────────────────────
 
 // Resource names — all follow helkinswarm-{type}-{alias} (lowercase)
@@ -552,8 +556,8 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'BOT_OAUTH_CONNECTION_NAME', value: 'GraphOAuth' }
         { name: 'ENTRA_OBO_CLIENT_SECRET', value: '' }
 
-        // ── GitHub API — populated via KV after secrets are seeded ──
-        { name: 'GITHUB_TOKEN', value: '' }
+        // ── GitHub API — populated via GH Actions secret ──
+        { name: 'GITHUB_TOKEN', value: githubToken }
 
         // ── Observability (spec 13) ──
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
