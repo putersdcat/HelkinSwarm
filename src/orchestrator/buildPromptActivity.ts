@@ -10,6 +10,7 @@ import { toolRegistry } from '../tools/toolRegistry.js';
 import { getUserProfile, profileToPromptFragment } from '../memory/userProfile.js';
 import { getModelRouting } from '../llm/modelRouter.js';
 import { MemoryManager } from '../memory/memoryManager.js';
+import { buildPriorsPromptFragment } from '../persona/operatorDomainPriors.js';
 
 export interface BuildPromptInput {
   state: OverseerState;
@@ -122,6 +123,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   const systemPrompt = [
     persona,
     modelIdentity,
+    buildPriorsPromptFragment(),
     preferencesFragment ? `User preferences: ${preferencesFragment}` : '',
     onboardingInstructions,
     recalledMemory,
