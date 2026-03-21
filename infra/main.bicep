@@ -336,7 +336,7 @@ resource aiServices 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
 
 // Capacity helpers — capped at quotaMaxTPM (units = 1k TPM)
 var capEmbedding  = min(100, quotaMaxTPM / 1000)  // 100k TPM default
-var capPrimaryLlm = min(50,  quotaMaxTPM / 1000)   // 50k TPM default
+var capPrimaryLlm = min(10,  quotaMaxTPM / 1000)   // 10k — conservative to fit within quota ceilings
 var capFastLlm    = min(10,  quotaMaxTPM / 1000)   // 10k TPM (DataZoneStandard quota = 20k ÷ 2 models)
 
 resource aiDeployEmbedding 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
