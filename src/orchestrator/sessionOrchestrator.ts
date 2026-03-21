@@ -14,6 +14,8 @@ import type { LlmFollowUpInput } from './llmFollowUpActivity.js';
 import type { SendConfirmationCardInput, SendConfirmationCardResult } from './sendConfirmationCardActivity.js';
 import type { StoreMemoryInput } from './storeMemoryActivity.js';
 import type { SubAgentInput, SubAgentResult } from './subAgentActivity.js';
+import type { ExecutorInput, ExecutorResult } from './executorActivity.js';
+import { signExecutorPayload, hashPayload } from './executorActivity.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 
 export interface SessionInput {
@@ -188,6 +190,42 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         ...subAgentResults,
         ...(directResults?.results ?? []),
       ];
+
+      // Execute high-risk tools through the executor activity (#58)
+      // These were flagged by toolDispatchActivity as requiresExecutor
+      for (let i = 0; i < mergedResults.length; i++) {
+        const r = mergedResults[i];
+        if (!r.requiresExecutor) continue;
+
+        const tc = llmResult.toolCalls.find((t: { id: string }) => t.id === r.toolCallId);
+        if (!tc) continue;
+
+        const parsedArgs = JSON.parse(tc.arguments) as Record<string, unknown>;
+        const pHash = hashPayload(parsedArgs);
+        const signature = signExecutorPayload(input.state.userId, tc.name, pHash);
+
+        const execInput: ExecutorInput = {
+          action: inferAction(tc.name),
+          toolName: tc.name,
+          signedPayload: signature,
+          payloadHash: pHash,
+          correlationId,
+          sessionId: input.state.userId,
+          userId: input.state.userId,
+          targetResource: toolRegistry.get(tc.name)?.handlerModule ?? 'unknown',
+          arguments: parsedArgs,
+        };
+        const execResult: ExecutorResult = yield context.df.callActivity('executorActivity', execInput);
+        mergedResults[i] = {
+          toolCallId: r.toolCallId,
+          toolName: r.toolName,
+          success: execResult.success,
+          result: execResult.result,
+          error: execResult.error,
+          requiresExecutor: true,
+        };
+      }
+
       toolResults = {
         results: mergedResults,
         totalCalls: mergedResults.length,
@@ -242,3 +280,13 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     safetyPassed,
   } satisfies SessionResult;
 });
+
+// ---------------------------------------------------------------------------
+// Helper: infer the executor action type from the tool name (#58)
+// ---------------------------------------------------------------------------
+function inferAction(toolName: string): ExecutorInput['action'] {
+  if (toolName.includes('delete') || toolName.includes('remove')) return 'delete';
+  if (toolName.includes('move') || toolName.includes('archive')) return 'move';
+  if (toolName.includes('create') || toolName.includes('send') || toolName.includes('write')) return 'create';
+  return 'admin';
+}
