@@ -361,6 +361,18 @@ resource containerSkillMemory 'Microsoft.DocumentDB/databaseAccounts/sqlDatabase
   }
 }
 
+resource containerMsalTokenCache 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: cosmosDatabase
+  name: 'msalTokenCache'
+  properties: {
+    resource: {
+      id: 'msalTokenCache'
+      partitionKey: { paths: [ '/userId' ], kind: 'Hash' }
+      defaultTtl: 86400 // 24 hours — tokens are short-lived
+    }
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  8. AZURE AI SERVICES — Foundry (spec 03, 06)
 //     SKU is always S0 at the account level.

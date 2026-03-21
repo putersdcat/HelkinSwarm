@@ -5,7 +5,7 @@
 import type { ICachePlugin, TokenCacheContext } from '@azure/msal-node';
 import { getContainer } from '../memory/cosmosClient.js';
 
-const CONTAINER_NAME = 'userProfiles'; // co-locate with user data; partition key = userId
+const CONTAINER_NAME = 'msalTokenCache'; // dedicated container with 24h TTL
 const CACHE_DOC_PREFIX = 'msal-cache-';
 
 /**
