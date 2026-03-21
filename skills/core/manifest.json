@@ -93,6 +93,39 @@
         },
         "required": ["communicationStyle"]
       }
+    },
+    {
+      "name": "helkin_forget_skill",
+      "description": "Forget all stored memories for a specific skill domain. Use when user says 'forget everything about outlook' or similar.",
+      "risk": "medium",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": true,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "skillId": {
+            "type": "string",
+            "description": "The skill domain to forget (e.g. 'outlook', 'github')"
+          }
+        },
+        "required": ["skillId"]
+      }
+    },
+    {
+      "name": "helkin_skill_catalog",
+      "description": "List all skill memory vaults with entry counts and last update times. Shows what the system remembers about each skill domain.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
     }
   ]
 }

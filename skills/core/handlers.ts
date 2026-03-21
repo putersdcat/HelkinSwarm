@@ -110,3 +110,49 @@ export const helkin_save_preferences: ToolHandler = async (args) => {
     },
   };
 };
+
+export const helkin_forget_skill: ToolHandler = async (args) => {
+  const { MemoryManager } = await import('../../src/memory/memoryManager.js');
+
+  const userId = args['userId'] as string | undefined;
+  const skillId = args['skillId'] as string | undefined;
+  if (!userId || !skillId) {
+    return { status: 'error', message: 'userId and skillId are required.' };
+  }
+
+  const mm = new MemoryManager(userId);
+  const deleted = await mm.forgetSkillMemory(skillId);
+
+  return {
+    status: 'success',
+    message: `Forgot ${deleted} memories for skill '${skillId}'.`,
+    skillId,
+    deletedCount: deleted,
+  };
+};
+
+export const helkin_skill_catalog: ToolHandler = async (args) => {
+  const { MemoryManager } = await import('../../src/memory/memoryManager.js');
+
+  const userId = args['userId'] as string | undefined;
+  if (!userId) {
+    return { status: 'error', message: 'userId is required.' };
+  }
+
+  const mm = new MemoryManager(userId);
+  const catalog = await mm.getSkillCatalog();
+
+  if (catalog.length === 0) {
+    return { status: 'success', message: 'No skill memory vaults found.', vaults: [] };
+  }
+
+  return {
+    status: 'success',
+    totalVaults: catalog.length,
+    vaults: catalog.map((v) => ({
+      skill: v.skillId,
+      entries: v.entryCount,
+      lastUpdated: v.lastUpdated,
+    })),
+  };
+};

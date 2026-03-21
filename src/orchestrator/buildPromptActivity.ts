@@ -81,12 +81,39 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   const modelIdentity = `You are running on model deployment: ${routing.deploymentName} (lane: ${routing.laneName}, primary: ${routing.lane.primary}, secondary: ${routing.lane.secondary}).`;
 
   // Recall relevant memories for context injection (#134)
+  // JIT injection: also recall skill-specific memories based on detected domains (#66)
   let recalledMemory = '';
   try {
     const mm = new MemoryManager(state.userId);
+
+    // General memory recall (cross-skill)
     const memories = await mm.recall(userMessage, { topK: 3, minScore: 0.7 });
+
+    // Skill-scoped JIT injection: detect active skill domains from tool registry
+    // and pull skill-specific memories for relevant domains
+    const skillDomains = [...new Set(
+      toolRegistry.getAll()
+        .map((t) => t.handlerModule)
+        .filter(Boolean)
+        .map((m) => m!.replace('skills/', '')),
+    )];
+
+    const skillMemories = skillDomains.length > 0
+      ? await mm.recallForSkills(userMessage, skillDomains, { topK: 2, minScore: 0.65 })
+      : new Map<string, never[]>();
+
+    // Format memories with skill attribution
+    const parts: string[] = [];
     if (memories.length > 0) {
-      recalledMemory = `Relevant context from past interactions:\n${memories.map((m) => `- ${m.content}`).join('\n')}`;
+      parts.push(memories.map((m) => `- ${m.content}`).join('\n'));
+    }
+    for (const [skillId, mems] of skillMemories) {
+      if (mems.length > 0) {
+        parts.push(`[${skillId} skill context]\n${mems.map((m) => `- ${m.content}`).join('\n')}`);
+      }
+    }
+    if (parts.length > 0) {
+      recalledMemory = `Relevant context from past interactions:\n${parts.join('\n')}`;
     }
   } catch {
     // Memory recall unavailable — proceed without

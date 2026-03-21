@@ -5,6 +5,7 @@ import * as df from 'durable-functions';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { getHandler } from '../capabilities/capabilityLoader.js';
 import { trackEvent } from '../observability/telemetry.js';
+import { MemoryManager } from '../memory/memoryManager.js';
 
 export interface ToolDispatchInput {
   toolCalls: Array<{ id: string; name: string; arguments: string }>;
@@ -78,6 +79,14 @@ df.app.activity('toolDispatchActivity', {
           toolName: call.name,
           success: true,
         } });
+
+        // Store tool result as skill memory for JIT injection (#66)
+        if (tool.handlerModule) {
+          const skillId = tool.handlerModule.replace('skills/', '');
+          const mm = new MemoryManager(input.userId);
+          mm.storeToolResult(skillId, call.name, JSON.stringify(result)).catch(() => { /* non-fatal */ });
+        }
+
         results.push({
           toolCallId: call.id,
           toolName: call.name,
