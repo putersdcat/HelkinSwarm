@@ -224,6 +224,14 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       statusRuntimeStatus === OrchestrationRuntimeStatus.Failed ||
       statusRuntimeStatus === OrchestrationRuntimeStatus.Terminated
     ) {
+      // Purge the old instance if it exists in a terminal state — required before startNew
+      if (statusRuntimeStatus !== undefined) {
+        try {
+          await client.purgeInstanceHistory(instanceId);
+        } catch {
+          // Purge may fail if instance was already cleaned up — safe to ignore
+        }
+      }
       await client.startNew('overseer', { instanceId });
     }
 

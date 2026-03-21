@@ -18,6 +18,7 @@ import type { SessionInput, SessionResult } from './sessionOrchestrator.js';
 import type { SummarizeInput, SummarizeResult } from './summarizeActivity.js';
 import type { SaveStateInput } from './saveStateActivity.js';
 import type { LoadStateInput } from './loadStateActivity.js';
+import type { SendReplyInput } from './sendReplyActivity.js';
 
 export interface NewMessageEvent {
   userMessage: string;
@@ -81,10 +82,25 @@ df.app.orchestration('overseer', function* (context) {
     modelOverride: event.modelOverride,
   };
 
-  const sessionResult: SessionResult = yield context.df.callSubOrchestrator(
-    'sessionOrchestrator',
-    sessionInput,
-  );
+  let sessionResult: SessionResult;
+  try {
+    sessionResult = yield context.df.callSubOrchestrator(
+      'sessionOrchestrator',
+      sessionInput,
+    );
+  } catch (err) {
+    // Session failed — send error reply to user and continue (don't crash the overseer)
+    console.error(`[overseer] sessionOrchestrator failed for user=${state.userId}`, err);
+    const errorReply: SendReplyInput = {
+      userId: state.userId,
+      message: `⚠️ Something went wrong processing your message. The error has been logged. Please try again.`,
+    };
+    yield context.df.callActivity('sendReplyActivity', errorReply);
+    // Persist state and cycle — overseer survives the failure
+    yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
+    context.df.continueAsNew(state);
+    return;
+  }
 
   // Update token budget
   tokenBudget = addTokens(tokenBudget, sessionResult.tokensUsed);
@@ -133,10 +149,24 @@ function* processTurn(
     modelOverride: event.modelOverride,
   };
 
-  const sessionResult: SessionResult = yield context.df.callSubOrchestrator(
-    'sessionOrchestrator',
-    sessionInput,
-  );
+  let sessionResult: SessionResult;
+  try {
+    sessionResult = yield context.df.callSubOrchestrator(
+      'sessionOrchestrator',
+      sessionInput,
+    );
+  } catch (err) {
+    // Session failed — send error reply and cycle
+    console.error(`[overseer] processTurn failed for user=${state.userId}`, err);
+    const errorReply: SendReplyInput = {
+      userId: state.userId,
+      message: `⚠️ Something went wrong processing your message. The error has been logged. Please try again.`,
+    };
+    yield context.df.callActivity('sendReplyActivity', errorReply);
+    yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
+    context.df.continueAsNew(state);
+    return;
+  }
 
   state.totalTokens += sessionResult.tokensUsed;
   state.turnCount++;
