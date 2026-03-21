@@ -18,6 +18,7 @@ import type { ExecutorInput, ExecutorResult } from './executorActivity.js';
 import { signExecutorPayload, hashPayload } from './executorActivity.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { canonicalizeInput } from './inputCanonicalizer.js';
+import { computeToolBudget } from './toolBudgetScaler.js';
 
 export interface SessionInput {
   state: OverseerState;
@@ -71,15 +72,32 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   let responseContent = llmResult.content;
 
   if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
+    // Compute adaptive tool budget (#139)
+    const domains = new Set(
+      llmResult.toolCalls.map((tc: { name: string }) => {
+        // Derive domain from tool name convention: "domain_verb_noun"
+        const parts = tc.name.split('_');
+        return parts.length > 1 ? parts[0] : 'core';
+      }),
+    );
+    const { budget } = computeToolBudget({
+      userMessage: canonicalizedMessage,
+      historyLength: input.state.turnCount ?? 0,
+      domainCount: domains.size,
+    });
+
+    // Truncate tool calls to the adaptive budget
+    const toolCallsForDispatch = llmResult.toolCalls.slice(0, budget);
+
     // Determine aggregate risk from the tool registry
-    const isLowRiskOnly = llmResult.toolCalls.every((tc: { name: string }) => {
+    const isLowRiskOnly = toolCallsForDispatch.every((tc: { name: string }) => {
       const def = toolRegistry.get(tc.name);
       return def?.risk === 'low';
     });
 
     if (!isLowRiskOnly) {
       // Determine the highest risk level among requested tools
-      const highestRisk = llmResult.toolCalls.some((tc: { name: string }) =>
+      const highestRisk = toolCallsForDispatch.some((tc: { name: string }) =>
         toolRegistry.get(tc.name)?.risk === 'high') ? 'high' as const : 'medium' as const;
 
       // Run pre-execution verification pipeline (steps 1-4: schema, data min, spot check, shields)
@@ -87,9 +105,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         correlationId,
         sessionId: input.state.userId,
         userId: input.state.userId,
-        toolName: llmResult.toolCalls.map((tc: { name: string }) => tc.name).join(', '),
+        toolName: toolCallsForDispatch.map((tc: { name: string }) => tc.name).join(', '),
         risk: highestRisk,
-        rawOutput: llmResult.toolCalls,
+        rawOutput: toolCallsForDispatch,
         originalQuery: input.userMessage,
       });
 
@@ -101,9 +119,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         // Steps 1-4 passed but human confirmation required for medium/high risk
         const cardInput: SendConfirmationCardInput = {
           userId: input.state.userId,
-          toolName: llmResult.toolCalls.map((tc: { name: string }) => tc.name).join(', '),
+          toolName: toolCallsForDispatch.map((tc: { name: string }) => tc.name).join(', '),
           risk: highestRisk,
-          description: `Execute ${llmResult.toolCalls.length} tool(s): ${llmResult.toolCalls.map((tc: { name: string }) => tc.name).join(', ')}`,
+          description: `Execute ${toolCallsForDispatch.length} tool(s): ${toolCallsForDispatch.map((tc: { name: string }) => tc.name).join(', ')}`,
           correlationId,
           sessionInstanceId: context.df.instanceId,
         };
@@ -142,10 +160,10 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
     if (safetyPassed) {
       // Split tool calls: sub-agent isolated vs direct dispatch (#47)
-      const subAgentCalls: typeof llmResult.toolCalls = [];
-      const directCalls: typeof llmResult.toolCalls = [];
+      const subAgentCalls: typeof toolCallsForDispatch = [];
+      const directCalls: typeof toolCallsForDispatch = [];
 
-      for (const tc of llmResult.toolCalls) {
+      for (const tc of toolCallsForDispatch) {
         const def = toolRegistry.get(tc.name);
         if (def?.requiresSubAgent) {
           subAgentCalls.push(tc);
@@ -203,7 +221,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         const r = mergedResults[i];
         if (!r.requiresExecutor) continue;
 
-        const tc = llmResult.toolCalls.find((t: { id: string }) => t.id === r.toolCallId);
+        const tc = toolCallsForDispatch.find((t: { id: string }) => t.id === r.toolCallId);
         if (!tc) continue;
 
         const parsedArgs = JSON.parse(tc.arguments) as Record<string, unknown>;
@@ -242,7 +260,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         originalMessages: prompt.messages,
         assistantToolCallMessage: {
           content: llmResult.content,
-          toolCalls: llmResult.toolCalls,
+          toolCalls: toolCallsForDispatch,
         },
         toolResults: toolResults?.results ?? [],
         correlationId,
