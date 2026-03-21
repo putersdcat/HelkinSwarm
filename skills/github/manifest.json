@@ -1,0 +1,210 @@
+{
+  "domain": "github",
+  "version": "1.0",
+  "tools": [
+    {
+      "name": "github_list_issues",
+      "description": "List issues in the HelkinSwarm repository. Supports filtering by state (open/closed/all), labels, milestone, and assignee.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": ["open", "closed", "all"],
+            "description": "Filter by issue state (default: open)"
+          },
+          "labels": {
+            "type": "string",
+            "description": "Comma-separated list of label names to filter by"
+          },
+          "milestone": {
+            "type": "string",
+            "description": "Milestone number or title to filter by"
+          },
+          "assignee": {
+            "type": "string",
+            "description": "GitHub username to filter by assignee"
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Results per page (max 100, default 30)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "github_search_issues",
+      "description": "Full-text search across HelkinSwarm issues and pull requests. Uses GitHub search syntax.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query — supports GitHub search syntax (e.g. 'memory in:title label:bug')"
+          },
+          "per_page": {
+            "type": "number",
+            "description": "Results per page (max 100, default 30)"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "github_get_issue",
+      "description": "Get full details of a specific issue by number, including body, labels, milestone, and comments.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "issue_number": {
+            "type": "number",
+            "description": "The issue number to retrieve"
+          }
+        },
+        "required": ["issue_number"]
+      }
+    },
+    {
+      "name": "github_create_issue",
+      "description": "Create a new issue in the HelkinSwarm repository with title, body, labels, and optional milestone.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Issue title"
+          },
+          "body": {
+            "type": "string",
+            "description": "Issue body (Markdown supported)"
+          },
+          "labels": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Labels to apply"
+          },
+          "milestone": {
+            "type": "number",
+            "description": "Milestone number to assign"
+          },
+          "assignees": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "GitHub usernames to assign"
+          }
+        },
+        "required": ["title"]
+      }
+    },
+    {
+      "name": "github_update_issue",
+      "description": "Update an existing issue — change title, body, state, labels, milestone, or assignees.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "issue_number": {
+            "type": "number",
+            "description": "The issue number to update"
+          },
+          "title": {
+            "type": "string",
+            "description": "New title"
+          },
+          "body": {
+            "type": "string",
+            "description": "New body"
+          },
+          "state": {
+            "type": "string",
+            "enum": ["open", "closed"],
+            "description": "New state"
+          },
+          "labels": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Labels to set (replaces existing)"
+          },
+          "milestone": {
+            "type": "number",
+            "description": "Milestone number (null to remove)"
+          },
+          "assignees": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Assignees to set (replaces existing)"
+          }
+        },
+        "required": ["issue_number"]
+      }
+    },
+    {
+      "name": "github_add_comment",
+      "description": "Add a comment to an existing issue in the HelkinSwarm repository.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "issue_number": {
+            "type": "number",
+            "description": "The issue number to comment on"
+          },
+          "body": {
+            "type": "string",
+            "description": "Comment body (Markdown supported)"
+          }
+        },
+        "required": ["issue_number", "body"]
+      }
+    },
+    {
+      "name": "github_list_milestones",
+      "description": "List milestones in the HelkinSwarm repository for prioritization context.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": ["open", "closed", "all"],
+            "description": "Filter by state (default: open)"
+          }
+        },
+        "required": []
+      }
+    }
+  ]
+}
