@@ -22,6 +22,7 @@ import {
 } from './maintenanceMode.js';
 import { promptShields } from '../llm/promptShields.js';
 import { getEnvConfig } from '../config/envConfig.js';
+import { getAckVariant } from './ackVariants.js';
 
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
@@ -240,10 +241,10 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return;
     }
 
-    // Immediate ack before orchestration work begins.
+    // Immediate ack before orchestration work begins (#143 — rotating variants).
     // Store the activityId so sendReplyActivity can replace it in-place
     // rather than sending a second message (spec: 10-Teams-Interface.md §Message Flow).
-    const ackResponse = await context.sendActivity('⌛ Working on it...');
+    const ackResponse = await context.sendActivity(getAckVariant());
     if (ackResponse?.id) {
       const conversationId = context.activity.conversation?.id ?? userId;
       await savePendingAckId(userId, conversationId, ackResponse.id);
