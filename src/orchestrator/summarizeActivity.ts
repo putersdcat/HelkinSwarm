@@ -2,7 +2,7 @@
 // Spec ref: 08-Orchestrator-Patterns.md
 
 import * as df from 'durable-functions';
-import { FoundryClient } from '../llm/foundryClient.js';
+import { FoundryClient, textContent } from '../llm/foundryClient.js';
 
 export interface SummarizeInput {
   currentSummary: string;
@@ -41,7 +41,7 @@ async function summarize(input: SummarizeInput): Promise<SummarizeResult> {
 
     const choice = result.choices[0];
     return {
-      summary: choice?.message?.content || context.slice(-2000),
+      summary: textContent(choice?.message?.content) || context.slice(-2000),
       tokensUsed: result.usage?.totalTokens ?? 0,
     };
   } catch (err) {

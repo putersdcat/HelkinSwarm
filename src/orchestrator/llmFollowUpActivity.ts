@@ -3,7 +3,7 @@
 // Spec ref: 06-Tool-Dispatch-LLM-Layer.md
 
 import * as df from 'durable-functions';
-import { FoundryClient } from '../llm/foundryClient.js';
+import { FoundryClient, textContent } from '../llm/foundryClient.js';
 import { getModelRouting } from '../llm/modelRouter.js';
 import type { ChatMessage, ChatCompletionResponse } from '../llm/foundryClient.js';
 import type { LlmResult } from './llmActivity.js';
@@ -80,7 +80,7 @@ df.app.activity('llmFollowUpActivity', {
       const choice = response.choices[0];
 
       return {
-        content: choice.message.content ?? 'Tool execution complete.',
+        content: textContent(choice.message.content) || 'Tool execution complete.',
         model: response.model,
         tokensUsed: response.usage.totalTokens,
         toolCalls: [], // Follow-up should not request more tools (single-turn tool use)

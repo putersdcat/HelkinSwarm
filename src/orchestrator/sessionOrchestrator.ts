@@ -22,6 +22,8 @@ export interface SessionInput {
   correlationId: string;
   /** Optional model override for /heavy and /light slash commands. */
   modelOverride?: 'primary' | 'secondary';
+  /** Image URLs extracted from Teams attachments (#130) */
+  imageUrls?: string[];
 }
 
 export interface SessionResult {
@@ -51,7 +53,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // 2. Call LLM (global frontier model via Foundry client)
   const llmResult: LlmResult = yield context.df.callActivity(
     'llmActivity',
-    { ...prompt, correlationId, modelOverride: input.modelOverride },
+    { ...prompt, correlationId, modelOverride: input.modelOverride, imageUrls: input.imageUrls },
   );
 
   // 3. If LLM returned tool calls, run the safety pipeline

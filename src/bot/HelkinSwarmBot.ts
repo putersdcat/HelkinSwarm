@@ -101,8 +101,14 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     const userId = context.activity.from.aadObjectId;
     const userAlias =
       context.activity.from.name ?? context.activity.from.id ?? 'unknown';
-    const messageText = (context.activity.text ?? '').trim();
+    let messageText = (context.activity.text ?? '').trim();
     const correlationId = crypto.randomUUID();
+
+    // Extract quoted reply context from Teams reply-with-quote (#129)
+    const quotedText = this.extractQuotedReply(context);
+    if (quotedText) {
+      messageText = `[Quoted context: "${quotedText}"]\n\n${messageText}`;
+    }
 
     if (!userId) {
       await context.sendActivity(
@@ -203,7 +209,10 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       await savePendingAckId(userId, conversationId, ackResponse.id);
     }
 
-    await this.raiseToOverseer(context, userId, userAlias, messageText);
+    // Extract image URLs from Teams inline attachments (#130)
+    const imageUrls = this.extractImageUrls(context);
+
+    await this.raiseToOverseer(context, userId, userAlias, messageText, undefined, imageUrls);
   }
 
   /** Route a user message to the eternal overseer, starting it if needed. */
@@ -213,6 +222,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     userAlias: string,
     userMessage: string,
     modelOverride?: 'primary' | 'secondary',
+    imageUrls?: string[],
   ): Promise<void> {
     const client = this.durableClient!;
     const instanceId = `overseer-${userId}`;
@@ -254,6 +264,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       userId,
       userAlias,
       ...(modelOverride !== undefined ? { modelOverride } : {}),
+      ...(imageUrls && imageUrls.length > 0 ? { imageUrls } : {}),
     };
 
     await client.raiseEvent(instanceId, 'NewMessage', event);
@@ -388,5 +399,55 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     console.error(`[HelkinSwarmBot] P0 emergency resume activated by userId=${userId}`);
     await context.sendActivity('✅ Maintenance mode cleared. HelkinSwarm is back online.');
+  }
+
+  /**
+   * Extract quoted reply text from Teams reply-with-quote messages (#129).
+   * Teams embeds the quoted content in the activity's HTML or as a blockquote.
+   */
+  private extractQuotedReply(context: TurnContext): string | undefined {
+    // Teams reply-with-quote: the parent message reference is in activity.value
+    // or in the HTML body as a <blockquote>. Check entities for 'quote' type first.
+    const entities = context.activity.entities;
+    if (entities) {
+      for (const entity of entities) {
+        if (entity.type === 'quote' && typeof entity.text === 'string') {
+          return entity.text.trim();
+        }
+      }
+    }
+
+    // Fallback: extract from HTML body if textFormat is 'html'
+    if (context.activity.textFormat === 'html' && context.activity.text) {
+      const blockquoteMatch = /<blockquote[^>]*>([\s\S]*?)<\/blockquote>/i.exec(
+        context.activity.text,
+      );
+      if (blockquoteMatch?.[1]) {
+        // Strip HTML tags from the quoted content
+        return blockquoteMatch[1].replace(/<[^>]+>/g, '').trim();
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Extract image URLs from Teams inline image attachments (#130).
+   * Teams sends inline images as contentUrl attachments with image/* contentType.
+   */
+  private extractImageUrls(context: TurnContext): string[] {
+    const attachments = context.activity.attachments;
+    if (!attachments) return [];
+
+    const urls: string[] = [];
+    for (const attachment of attachments) {
+      if (
+        attachment.contentType?.startsWith('image/') &&
+        attachment.contentUrl
+      ) {
+        urls.push(attachment.contentUrl);
+      }
+    }
+    return urls;
   }
 }

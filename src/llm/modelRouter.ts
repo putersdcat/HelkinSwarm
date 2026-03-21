@@ -16,6 +16,8 @@ export interface ModelLane {
   embedding: string;
   /** Reasoning model variant (if supported) */
   reasoning?: string;
+  /** Vision-capable model for image processing (#130) */
+  vision?: string;
 }
 
 const GLOBAL_LANE: ModelLane = {
@@ -24,6 +26,7 @@ const GLOBAL_LANE: ModelLane = {
   embedding: 'text-embedding-3-large',
   // grok-4-1-fast-reasoning consistently times out (>55s); tracked in #128
   reasoning: 'o4-mini',
+  vision: 'gpt-5.4-mini', // vision-capable fallback
 };
 
 const EU_LANE: ModelLane = {
@@ -103,7 +106,7 @@ export function getModelRouting(llmProvider?: 'azure' | 'openrouter'): ModelRout
 }
 
 /** Returns the best model for a given task type */
-export function getModelForTask(task: 'reasoning' | 'fast' | 'embedding'): string {
+export function getModelForTask(task: 'reasoning' | 'fast' | 'embedding' | 'vision'): string {
   const routing = getModelRouting();
   switch (task) {
     case 'reasoning':
@@ -112,5 +115,7 @@ export function getModelForTask(task: 'reasoning' | 'fast' | 'embedding'): strin
       return routing.lane.secondary;
     case 'embedding':
       return routing.lane.embedding;
+    case 'vision':
+      return routing.lane.vision ?? routing.lane.primary;
   }
 }

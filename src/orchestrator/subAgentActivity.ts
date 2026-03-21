@@ -3,7 +3,7 @@
 // Spec ref: 06-Tool-Dispatch-LLM-Layer.md, 0b-Model-Specific-Tool-Presentation.md
 
 import * as df from 'durable-functions';
-import { createFoundryClient } from '../llm/foundryClient.js';
+import { createFoundryClient, textContent } from '../llm/foundryClient.js';
 import { getModelForTask } from '../llm/modelRouter.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import type { ChatMessage } from '../llm/foundryClient.js';
@@ -82,9 +82,9 @@ User context: ${input.userContext}`;
       } else {
         // Sub-agent returned text — parse if possible
         try {
-          output = JSON.parse(choice.message.content);
+          output = JSON.parse(textContent(choice.message.content));
         } catch {
-          output = { text: choice.message.content };
+          output = { text: textContent(choice.message.content) };
         }
       }
 

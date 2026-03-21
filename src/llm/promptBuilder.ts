@@ -2,6 +2,7 @@
 // Spec ref: 06-Tool-Dispatch-LLM-Layer.md, 0i-Skill-Specific-Long-Term-Memory-and-Just-In-Time-Injection.md, 0k-Multimodal-Embedding-Hydra-Net-and-Just-In-Time-Injection.md
 
 import type { ChatMessage } from './foundryClient.js';
+import { textContent } from './foundryClient.js';
 import { getModelRouting } from './modelRouter.js';
 
 // ---------------------------------------------------------------------------
@@ -107,7 +108,7 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
     // The model will see them in context
   }
 
-  const estimatedTokens = messages.reduce((sum, m) => sum + estimateTokens(m.content), 0);
+  const estimatedTokens = messages.reduce((sum, m) => sum + estimateTokens(textContent(m.content)), 0);
 
   return {
     messages,

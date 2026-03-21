@@ -27,6 +27,8 @@ export interface NewMessageEvent {
   userAlias: string;
   /** Optional model override for /heavy and /light slash commands. */
   modelOverride?: 'primary' | 'secondary';
+  /** Image URLs extracted from Teams attachments (#130) */
+  imageUrls?: string[];
 }
 
 df.app.orchestration('overseer', function* (context) {
@@ -80,6 +82,7 @@ df.app.orchestration('overseer', function* (context) {
     conversationReference: event.conversationReference,
     correlationId: crypto.randomUUID(),
     modelOverride: event.modelOverride,
+    imageUrls: event.imageUrls,
   };
 
   let sessionResult: SessionResult;
@@ -151,6 +154,7 @@ function* processTurn(
     conversationReference: event.conversationReference,
     correlationId: crypto.randomUUID(),
     modelOverride: event.modelOverride,
+    imageUrls: event.imageUrls,
   };
 
   let sessionResult: SessionResult;

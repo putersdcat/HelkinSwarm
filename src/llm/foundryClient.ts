@@ -10,9 +10,15 @@ import { getEnvConfig } from '../config/envConfig.js';
 // Types
 // ---------------------------------------------------------------------------
 
+export interface ContentPart {
+  type: 'text' | 'image_url';
+  text?: string;
+  image_url?: { url: string; detail?: 'low' | 'high' | 'auto' };
+}
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string;
+  content: string | ContentPart[];
   name?: string;
   toolCallId?: string;
   toolCalls?: Array<{
@@ -26,6 +32,13 @@ export interface ToolCall {
   id: string;
   name: string;
   arguments: Record<string, unknown>;
+}
+
+/** Extract plain text from ChatMessage content (handles both string and ContentPart[] forms). */
+export function textContent(content: string | ContentPart[] | undefined): string {
+  if (content === undefined) return '';
+  if (typeof content === 'string') return content;
+  return content.filter((p) => p.type === 'text').map((p) => p.text ?? '').join('');
 }
 
 export interface ChatCompletionChoice {

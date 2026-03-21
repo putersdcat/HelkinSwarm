@@ -3,10 +3,11 @@
 
 import * as df from 'durable-functions';
 import { FoundryClient } from '../llm/foundryClient.js';
-import { getModelRouting } from '../llm/modelRouter.js';
+import { getModelRouting, getModelForTask } from '../llm/modelRouter.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import type { PromptResult } from './buildPromptActivity.js';
-import type { ChatCompletionResponse } from '../llm/foundryClient.js';
+import type { ChatCompletionResponse, ChatMessage, ContentPart } from '../llm/foundryClient.js';
+import { textContent } from '../llm/foundryClient.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { trackEvent } from '../observability/telemetry.js';
 
@@ -19,24 +20,41 @@ export interface LlmResult {
 }
 
 df.app.activity('llmActivity', {
-  handler: async (input: PromptResult & { correlationId?: string; modelOverride?: 'primary' | 'secondary' }): Promise<LlmResult> => {
+  handler: async (input: PromptResult & { correlationId?: string; modelOverride?: 'primary' | 'secondary'; imageUrls?: string[] }): Promise<LlmResult> => {
     const routing = getModelRouting();
     const correlationId = input.correlationId ?? crypto.randomUUID();
+    const hasImages = input.imageUrls && input.imageUrls.length > 0;
 
     // Apply model override for /heavy (force primary) or /light (force secondary) commands
-    const deploymentName = input.modelOverride === 'secondary'
-      ? (getEnvConfig().llmSecondaryModel)
-      : input.modelOverride === 'primary'
-        ? (getEnvConfig().llmPrimaryModel)
-        : routing.deploymentName;
+    // If images are present and no explicit override, use the vision-capable model (#130)
+    let deploymentName: string;
+    if (input.modelOverride === 'secondary') {
+      deploymentName = getEnvConfig().llmSecondaryModel;
+    } else if (input.modelOverride === 'primary') {
+      deploymentName = getEnvConfig().llmPrimaryModel;
+    } else if (hasImages) {
+      deploymentName = getModelForTask('vision');
+    } else {
+      deploymentName = routing.deploymentName;
+    }
 
     const client = new FoundryClient({ ...routing, deploymentName });
 
     // Convert PromptResult messages to ChatMessage format
-    const messages = input.messages.map((m) => ({
-      role: m.role as 'system' | 'user' | 'assistant',
-      content: m.content,
-    }));
+    // If images are present, convert the last user message to multimodal content parts (#130)
+    const messages: ChatMessage[] = input.messages.map((m, idx) => {
+      if (hasImages && m.role === 'user' && idx === input.messages.length - 1) {
+        const parts: ContentPart[] = [{ type: 'text', text: m.content }];
+        for (const url of input.imageUrls!) {
+          parts.push({ type: 'image_url', image_url: { url, detail: 'auto' } });
+        }
+        return { role: m.role as 'system' | 'user' | 'assistant', content: parts };
+      }
+      return {
+        role: m.role as 'system' | 'user' | 'assistant',
+        content: m.content,
+      };
+    });
 
     // Get OpenAI-compatible function schemas from tool registry
     const tools = toolRegistry.toFunctionSchemas();
@@ -73,7 +91,7 @@ df.app.activity('llmActivity', {
       console.log(`[llmActivity] LLM responded: model=${response.model} finishReason=${choice.finishReason} contentLen=${(choice.message.content ?? '').length} toolCalls=${toolCalls.length} tokensUsed=${response.usage.totalTokens}`);
 
       return {
-        content: choice.message.content ?? '',
+        content: textContent(choice.message.content),
         model: response.model,
         tokensUsed: response.usage.totalTokens,
         toolCalls,
