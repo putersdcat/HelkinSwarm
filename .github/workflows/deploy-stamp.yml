@@ -181,7 +181,6 @@ jobs:
               euResidencyMode=${{ github.event.inputs.EU_RESIDENCY_MODE || 'false' }} \
               routerBotId="${{ vars.BOT_APP_ID }}" \
               routerUamiId="${{ vars.ROUTER_UAMI_ID }}" \
-              githubToken="${{ secrets.GITHUB_TOKEN }}" \
             --output json 2>&1)
           DEPLOY_EXIT=$?
 

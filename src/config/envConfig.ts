@@ -41,9 +41,6 @@ const EnvConfigSchema = z.object({
   // Owner
   ownerUserId: z.string().optional(),
 
-  // GitHub API (skills/github — self-repo management)
-  githubToken: z.string().optional(),
-
   // Local dev overrides (never set in production)
   azureFoundryOboToken: z.string().optional(),
 });
@@ -72,7 +69,6 @@ function loadFromEnv(): EnvConfig {
     skillforgeEnabled: process.env['SKILLFORGE_ENABLED']?.toLowerCase() === 'true',
     devLoopEnabled: process.env['DEVLOOP_ENABLED']?.toLowerCase() === 'true',
     ownerUserId: process.env['OWNER_USER_ID'] || undefined,
-    githubToken: process.env['GITHUB_TOKEN'] || undefined,
     azureFoundryOboToken: process.env['AZURE_FOUNDRY_OBO_TOKEN'] || undefined,
   };
 

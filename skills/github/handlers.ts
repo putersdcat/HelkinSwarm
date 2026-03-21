@@ -2,11 +2,13 @@
 // Spec ref: 05-Capabilities-Framework.md, 06-Tool-Dispatch-LLM-Layer.md
 // Issue: #121
 //
-// Auth: GITHUB_TOKEN env var (PAT or GitHub App installation token).
+// Auth: GitHub App installation token (minted via @octokit/auth-app).
+// Credentials: GITHUB_APP_ID, GITHUB_APP_INSTALLATION_ID, GITHUB_APP_PRIVATE_KEY (KV refs).
 // Scope: putersdcat/HelkinSwarm only — no cross-repo access.
 
 import type { ToolHandler } from '../../src/capabilities/capabilityLoader.js';
 import { z } from 'zod';
+import { getGitHubInstallationToken } from './githubAppAuth.js';
 
 // ---------------------------------------------------------------------------
 // Constants & helpers
@@ -16,15 +18,10 @@ const OWNER = 'putersdcat';
 const REPO = 'HelkinSwarm';
 const API_BASE = `https://api.github.com/repos/${OWNER}/${REPO}`;
 
-function getToken(): string {
-  const token = process.env['GITHUB_TOKEN'];
-  if (!token) throw new Error('GITHUB_TOKEN is not configured. Set it in Key Vault or Container App env.');
-  return token;
-}
-
-function headers(): Record<string, string> {
+async function headers(): Promise<Record<string, string>> {
+  const token = await getGitHubInstallationToken();
   return {
-    'Authorization': `Bearer ${getToken()}`,
+    'Authorization': `Bearer ${token}`,
     'Accept': 'application/vnd.github+json',
     'X-GitHub-Api-Version': '2022-11-28',
     'User-Agent': 'HelkinSwarm/1.0',
@@ -91,9 +88,10 @@ async function ghFetch<T>(
   schema: z.ZodType<T>,
   init?: RequestInit,
 ): Promise<T> {
+  const h = await headers();
   const response = await fetch(url, {
     ...init,
-    headers: { ...headers(), ...init?.headers },
+    headers: { ...h, ...init?.headers },
   });
 
   if (!response.ok) {

@@ -48,9 +48,6 @@ param createOAuthConnection bool = false
 @description('Maximum TPM ceiling for AI model deployments. Quota is capped at this value. Increase for higher throughput.')
 param quotaMaxTPM int = 100000
 
-@description('GitHub Personal Access Token for self-repo issue management (skills/github). Populated from GH Actions secret.')
-@secure()
-param githubToken string = ''
 
 // ─── Variables ──────────────────────────────────────────────────────────────
 
@@ -556,8 +553,10 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'BOT_OAUTH_CONNECTION_NAME', value: 'GraphOAuth' }
         { name: 'ENTRA_OBO_CLIENT_SECRET', value: '' }
 
-        // ── GitHub API — populated via GH Actions secret ──
-        { name: 'GITHUB_TOKEN', value: githubToken }
+        // ── GitHub App auth — KV references resolved by UAMI at runtime ──
+        { name: 'GITHUB_APP_ID',              value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=GitHubAppId)' }
+        { name: 'GITHUB_APP_INSTALLATION_ID', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=GitHubInstallationId)' }
+        { name: 'GITHUB_APP_PRIVATE_KEY',     value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=GitHubAppPrivateKey)' }
 
         // ── Observability (spec 13) ──
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
