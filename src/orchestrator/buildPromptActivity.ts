@@ -9,6 +9,7 @@ import { join } from 'node:path';
 import type { OverseerState } from './stateManager.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { getUserProfile, profileToPromptFragment } from '../memory/userProfile.js';
+import { getModelRouting } from '../llm/modelRouter.js';
 
 export interface BuildPromptInput {
   state: OverseerState;
@@ -75,8 +76,13 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
     ? `Available tools: ${tools.map((t) => `${t.name} (${t.description})`).join('; ')}`
     : '';
 
+  // Inject model identity so the LLM knows what it's running on (#131)
+  const routing = getModelRouting();
+  const modelIdentity = `You are running on model deployment: ${routing.deploymentName} (lane: ${routing.laneName}, primary: ${routing.lane.primary}, secondary: ${routing.lane.secondary}).`;
+
   const systemPrompt = [
     persona,
+    modelIdentity,
     preferencesFragment ? `User preferences: ${preferencesFragment}` : '',
     onboardingInstructions,
     state.euResidencyMode ? 'EU Residency Mode is ACTIVE — use only EU-compliant models.' : '',
