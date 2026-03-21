@@ -45,11 +45,25 @@ loadCapabilities().then((result) => {
 });
 
 // ---------------------------------------------------------------------------
+// Startup: clear maintenance mode from any previous graceful shutdown (#136)
+// The shutdown handler sets maintenance=true in Cosmos; we must clear it
+// when the new container starts to resume normal operation.
+// ---------------------------------------------------------------------------
+import { setMaintenanceMode } from '../bot/maintenanceMode.js';
+
+setMaintenanceMode({
+  enabled: false,
+  updatedBy: 'system-startup',
+  reason: 'Container started — clearing shutdown maintenance flag',
+}).catch((err: unknown) => {
+  console.error('[startup] Failed to clear maintenance mode:', err);
+});
+
+// ---------------------------------------------------------------------------
 // Graceful shutdown handler (#136)
 // On SIGTERM/SIGINT: enable maintenance mode so new messages get a polite
 // "deploying" response, then allow a grace period for in-flight work.
 // ---------------------------------------------------------------------------
-import { setMaintenanceMode } from '../bot/maintenanceMode.js';
 
 const SHUTDOWN_GRACE_MS = 10_000;
 
