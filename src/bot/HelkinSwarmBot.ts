@@ -154,6 +154,17 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return;
     }
 
+    // /preferences — update communication preferences
+    if (lowerMessage === '/preferences') {
+      await this.raiseToOverseer(
+        context,
+        userId,
+        userAlias,
+        'I want to update my communication preferences. Please ask me about my preferences one at a time.',
+      );
+      return;
+    }
+
     if (maintenance.enabled) {
       await context.sendActivity('I am offline for maintenance.');
       return;

@@ -57,6 +57,42 @@
         "properties": {},
         "required": []
       }
+    },
+    {
+      "name": "helkin_save_preferences",
+      "description": "Save user preferences collected during onboarding (name, communication style, proactiveness, language). Call this after gathering the user's preferences.",
+      "risk": "low",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "addressAs": {
+            "type": "string",
+            "description": "How the user wants to be addressed (name, nickname, title)"
+          },
+          "communicationStyle": {
+            "type": "string",
+            "enum": ["concise", "detailed", "casual", "formal"],
+            "description": "Preferred communication style"
+          },
+          "proactive": {
+            "type": "boolean",
+            "description": "Whether to proactively offer suggestions"
+          },
+          "language": {
+            "type": "string",
+            "description": "Preferred language (ISO 639-1 code, e.g. 'en', 'nl', 'de')"
+          },
+          "timezone": {
+            "type": "string",
+            "description": "User timezone (IANA format, e.g. 'Europe/Amsterdam')"
+          }
+        },
+        "required": ["communicationStyle"]
+      }
     }
   ]
 }
