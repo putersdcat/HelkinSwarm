@@ -12,6 +12,7 @@ import type { ConversationReference } from 'botbuilder';
 import type { ToolDispatchInput, ToolDispatchResult } from './toolDispatchActivity.js';
 import type { LlmFollowUpInput } from './llmFollowUpActivity.js';
 import type { SendConfirmationCardInput, SendConfirmationCardResult } from './sendConfirmationCardActivity.js';
+import type { StoreMemoryInput } from './storeMemoryActivity.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 
 export interface SessionInput {
@@ -168,6 +169,14 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     'sendReplyActivity',
     replyInput,
   );
+
+  // 6. Store conversation turn in vector memory (non-blocking, best-effort) (#134)
+  const memoryInput: StoreMemoryInput = {
+    userId: input.state.userId,
+    userMessage: input.userMessage,
+    assistantReply: responseContent,
+  };
+  yield context.df.callActivity('storeMemoryActivity', memoryInput);
 
   return {
     response: responseContent,

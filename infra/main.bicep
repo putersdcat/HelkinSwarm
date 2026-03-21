@@ -244,6 +244,30 @@ resource containerMultimodalMemory 'Microsoft.DocumentDB/databaseAccounts/sqlDat
       id: 'multimodalMemory'
       partitionKey: { paths: [ '/userId' ], kind: 'Hash' }
       defaultTtl: 31536000 // 365 days
+      indexingPolicy: {
+        indexingMode: 'consistent'
+        automatic: true
+        includedPaths: [
+          { path: '/*' }
+        ]
+        excludedPaths: [
+          { path: '/_etag/?' }
+          { path: '/vector/*' }
+        ]
+        vectorIndexes: [
+          { path: '/vector', type: 'diskANN' }
+        ]
+      }
+      vectorEmbeddingPolicy: {
+        vectorEmbeddings: [
+          {
+            path: '/vector'
+            dataType: 'float32'
+            dimensions: 3072    // text-embedding-3-large outputs 3072 dims
+            distanceFunction: 'cosine'
+          }
+        ]
+      }
     }
   }
 }

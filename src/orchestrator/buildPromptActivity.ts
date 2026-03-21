@@ -1,6 +1,5 @@
 // Build Prompt activity — assembles the full prompt for the LLM call.
-// Includes persona, conversation summary, current message, and tool list.
-// Phase 4 will add just-in-time skill memory (0i) and Hydra-Net (0k).
+// Includes persona, conversation summary, current message, tool list, and recalled memory.
 // Spec ref: 08-Orchestrator-Patterns.md
 
 import * as df from 'durable-functions';
@@ -10,6 +9,7 @@ import type { OverseerState } from './stateManager.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { getUserProfile, profileToPromptFragment } from '../memory/userProfile.js';
 import { getModelRouting } from '../llm/modelRouter.js';
+import { MemoryManager } from '../memory/memoryManager.js';
 
 export interface BuildPromptInput {
   state: OverseerState;
@@ -80,11 +80,24 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   const routing = getModelRouting();
   const modelIdentity = `You are running on model deployment: ${routing.deploymentName} (lane: ${routing.laneName}, primary: ${routing.lane.primary}, secondary: ${routing.lane.secondary}).`;
 
+  // Recall relevant memories for context injection (#134)
+  let recalledMemory = '';
+  try {
+    const mm = new MemoryManager(state.userId);
+    const memories = await mm.recall(userMessage, { topK: 3, minScore: 0.7 });
+    if (memories.length > 0) {
+      recalledMemory = `Relevant context from past interactions:\n${memories.map((m) => `- ${m.content}`).join('\n')}`;
+    }
+  } catch {
+    // Memory recall unavailable — proceed without
+  }
+
   const systemPrompt = [
     persona,
     modelIdentity,
     preferencesFragment ? `User preferences: ${preferencesFragment}` : '',
     onboardingInstructions,
+    recalledMemory,
     state.euResidencyMode ? 'EU Residency Mode is ACTIVE — use only EU-compliant models.' : '',
     state.summary ? `Previous conversation summary:\n${state.summary}` : '',
     toolSummary,

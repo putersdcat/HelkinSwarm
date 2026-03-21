@@ -28,6 +28,7 @@ import '../orchestrator/verificationPipelineActivity.js';
 import '../orchestrator/sendConfirmationCardActivity.js';
 import '../orchestrator/saveStateActivity.js';
 import '../orchestrator/loadStateActivity.js';
+import '../orchestrator/storeMemoryActivity.js';
 
 // Capability loader — scan skills/ directory and register tool handlers
 import { loadCapabilities } from '../capabilities/capabilityLoader.js';
