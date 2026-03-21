@@ -229,7 +229,7 @@ resource containerSessions 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/c
   properties: {
     resource: {
       id: 'sessions'
-      partitionKey: { paths: [ '/sessionId' ], kind: 'Hash' }
+      partitionKey: { paths: [ '/userId' ], kind: 'Hash' }
       defaultTtl: 259200 // 72h
     }
   }

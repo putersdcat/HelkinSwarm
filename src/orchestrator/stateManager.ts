@@ -1,8 +1,11 @@
 // State manager — loads and persists overseer state for ContinueAsNew cycles.
 // Spec ref: 08-Orchestrator-Patterns.md
-// Phase 4 will swap the in-memory stub for Cosmos DB persistence.
 
 import { z } from 'zod';
+import { getContainer } from '../memory/cosmosClient.js';
+
+const SESSIONS_CONTAINER = 'sessions';
+const TTL_SECONDS = 72 * 60 * 60; // 72h
 
 export const OverseerStateSchema = z.object({
   userId: z.string(),
@@ -43,4 +46,50 @@ export function stateForContinueAsNew(
     totalTokens: 0,
     lastActivityTimestamp: new Date().toISOString(),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Cosmos DB persistence
+// ---------------------------------------------------------------------------
+
+interface SessionDocument {
+  id: string;
+  userId: string;
+  state: OverseerState;
+  updatedAt: string;
+  ttl: number;
+}
+
+/**
+ * Load overseer state from Cosmos sessions container.
+ * Returns undefined if no session exists for this user.
+ */
+export async function loadState(userId: string): Promise<OverseerState | undefined> {
+  const container = getContainer(SESSIONS_CONTAINER);
+  try {
+    const { resource } = await container.item(userId, userId).read<SessionDocument>();
+    if (!resource) return undefined;
+    return OverseerStateSchema.parse(resource.state);
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: number }).code === 404) {
+      return undefined;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Save overseer state to Cosmos sessions container.
+ * Uses upsert with 72h TTL. Partition key: userId.
+ */
+export async function saveState(state: OverseerState): Promise<void> {
+  const container = getContainer(SESSIONS_CONTAINER);
+  const doc: SessionDocument = {
+    id: state.userId,
+    userId: state.userId,
+    state,
+    updatedAt: new Date().toISOString(),
+    ttl: TTL_SECONDS,
+  };
+  await container.items.upsert(doc);
 }

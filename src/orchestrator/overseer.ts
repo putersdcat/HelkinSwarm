@@ -16,6 +16,7 @@ import {
 } from './tokenBudget.js';
 import type { SessionInput, SessionResult } from './sessionOrchestrator.js';
 import type { SummarizeInput, SummarizeResult } from './summarizeActivity.js';
+import type { SaveStateInput } from './saveStateActivity.js';
 
 export interface NewMessageEvent {
   userMessage: string;
@@ -95,11 +96,13 @@ df.app.orchestration('overseer', function* (context) {
 
     // Build carry-over state for ContinueAsNew
     const newState = stateForContinueAsNew(state, summarizeResult.summary);
+    yield context.df.callActivity('saveStateActivity', { state: newState } satisfies SaveStateInput);
     context.df.continueAsNew(newState);
     return;
   }
 
-  // No summarization needed — ContinueAsNew with current state
+  // No summarization needed — persist state to Cosmos, then ContinueAsNew
+  yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
   context.df.continueAsNew(state);
 });
 
@@ -126,5 +129,6 @@ function* processTurn(
   state.turnCount++;
   state.lastActivityTimestamp = new Date().toISOString();
 
+  yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
   context.df.continueAsNew(state);
 }
