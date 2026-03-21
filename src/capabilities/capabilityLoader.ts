@@ -132,3 +132,26 @@ async function loadHandlers(
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Tab backend helpers (ADDENDA-03 — #141)
+// These are called by the tab API backends to populate quick-stat cards.
+// ---------------------------------------------------------------------------
+
+/** Total number of tools registered across all loaded skills. */
+export function getLoadedCapabilitiesCount(): number {
+  return toolRegistry.size;
+}
+
+/**
+ * List of active skill domains (e.g. ["helkin", "github", "outlook"])
+ * derived from tool name prefixes.
+ */
+export function getActiveSkills(): string[] {
+  const domains = new Set<string>();
+  for (const name of toolRegistry.getToolNames()) {
+    const domain = name.split('_')[0];
+    if (domain) domains.add(domain);
+  }
+  return Array.from(domains).sort();
+}
