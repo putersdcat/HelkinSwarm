@@ -266,7 +266,7 @@ resource containerIdeMessages 'Microsoft.DocumentDB/databaseAccounts/sqlDatabase
     resource: {
       id: 'ide-messages'
       partitionKey: { paths: [ '/correlationTag' ], kind: 'Hash' }
-      defaultTtl: 86400 // 24h
+      defaultTtl: 604800 // 7 days (spec: 0g)
     }
   }
 }
@@ -303,6 +303,34 @@ resource containerRuntimeConfig 'Microsoft.DocumentDB/databaseAccounts/sqlDataba
       id: 'runtimeConfig'
       partitionKey: { paths: [ '/scope' ], kind: 'Hash' }
       defaultTtl: -1
+    }
+  }
+}
+
+resource containerLongRunningCatalog 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: cosmosDatabase
+  name: 'longRunningCatalog'
+  properties: {
+    resource: {
+      id: 'longRunningCatalog'
+      partitionKey: { paths: [ '/userId' ], kind: 'Hash' }
+      defaultTtl: -1 // persistent catalog
+    }
+  }
+}
+
+resource containerSkillMemory 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: cosmosDatabase
+  name: 'skillMemory'
+  properties: {
+    resource: {
+      id: 'skillMemory'
+      partitionKey: { paths: [ '/userId' ], kind: 'Hash' }
+      defaultTtl: 31536000 // 365 days
+      indexingPolicy: {
+        includedPaths: [ { path: '/*' } ]
+        excludedPaths: [ { path: '/embedding/*' } ]
+      }
     }
   }
 }
