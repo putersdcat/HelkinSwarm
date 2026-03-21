@@ -24,6 +24,8 @@ import { promptShields } from '../llm/promptShields.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { getAckVariant } from './ackVariants.js';
 import { isColdStarting } from './lifecycleNotices.js';
+import { loadCapabilities } from '../capabilities/capabilityLoader.js';
+import { toolRegistry } from '../tools/toolRegistry.js';
 
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
@@ -216,6 +218,23 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     // /unlink — revoke Graph OAuth connection (#31)
     if (lowerMessage === '/unlink') {
       await this.handleUnlink(context, userId);
+      return;
+    }
+
+    // /reload skills — hot-reload capability manifests (owner-only, #79)
+    if (lowerMessage === '/reload skills') {
+      if (!(await isOwnerUserId(userId))) {
+        await context.sendActivity('⛔ Owner-only command.');
+        return;
+      }
+      toolRegistry.clear();
+      const result = await loadCapabilities();
+      await context.sendActivity(
+        `♻️ Skills reloaded: ${result.skillsLoaded} skills, ${result.toolsRegistered} tools` +
+          (result.errors.length > 0
+            ? `, ${result.errors.length} errors: ${result.errors.map((e) => e.path).join(', ')}`
+            : ''),
+      );
       return;
     }
 

@@ -40,6 +40,13 @@ loadCapabilities().then((result) => {
         ? `, ${result.errors.length} errors: ${result.errors.map((e) => e.path).join(', ')}`
         : ''),
   );
+
+  // Hot-reload capabilities every 5 minutes (#79)
+  setInterval(() => {
+    loadCapabilities().catch((err: unknown) => {
+      console.warn('[CapabilityLoader] Periodic reload failed:', err);
+    });
+  }, 5 * 60 * 1000);
 }).catch((err: unknown) => {
   console.error('[CapabilityLoader] Failed to load capabilities:', err);
 });

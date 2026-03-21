@@ -104,6 +104,11 @@ export class ToolRegistry {
   clear(): void {
     this.tools.clear();
   }
+
+  /** Number of registered tools. */
+  get size(): number {
+    return this.tools.size;
+  }
 }
 
 // ---------------------------------------------------------------------------
