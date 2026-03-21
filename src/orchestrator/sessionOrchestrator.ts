@@ -17,6 +17,7 @@ import type { SubAgentInput, SubAgentResult } from './subAgentActivity.js';
 import type { ExecutorInput, ExecutorResult } from './executorActivity.js';
 import { signExecutorPayload, hashPayload } from './executorActivity.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
+import { canonicalizeInput } from './inputCanonicalizer.js';
 
 export interface SessionInput {
   state: OverseerState;
@@ -45,10 +46,13 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   const input: SessionInput = context.df.getInput() as SessionInput;
   const correlationId = input.correlationId ?? crypto.randomUUID();
 
+  // 0. Canonicalize user input (#138)
+  const { text: canonicalizedMessage } = canonicalizeInput(input.userMessage);
+
   // 1. Build prompt (persona + summary + user message)
   const promptInput: BuildPromptInput = {
     state: input.state,
-    userMessage: input.userMessage,
+    userMessage: canonicalizedMessage,
   };
   const prompt: PromptResult = yield context.df.callActivity(
     'buildPromptActivity',
