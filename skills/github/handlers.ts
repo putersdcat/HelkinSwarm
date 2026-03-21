@@ -203,19 +203,21 @@ export const github_get_issue: ToolHandler = async (args) => {
 // ---------------------------------------------------------------------------
 
 export const github_create_issue: ToolHandler = async (args) => {
-  const title = String(args['title'] ?? '');
+  const title = String(args['title'] ?? '').trim();
   if (!title) return { error: 'title is required' };
 
-  const body: Record<string, unknown> = { title };
-  if (args['body']) body['body'] = String(args['body']);
-  if (args['labels'] && Array.isArray(args['labels'])) body['labels'] = args['labels'];
-  if (args['milestone']) body['milestone'] = Number(args['milestone']);
-  if (args['assignees'] && Array.isArray(args['assignees'])) body['assignees'] = args['assignees'];
+  const issueBody = String(args['body'] ?? '').trim();
+  if (!issueBody) return { error: 'body is required — every issue needs context and acceptance criteria' };
+
+  const payload: Record<string, unknown> = { title, body: issueBody };
+  if (args['labels'] && Array.isArray(args['labels'])) payload['labels'] = args['labels'];
+  if (args['milestone']) payload['milestone'] = Number(args['milestone']);
+  if (args['assignees'] && Array.isArray(args['assignees'])) payload['assignees'] = args['assignees'];
 
   const issue = await ghFetch(`${API_BASE}/issues`, GitHubIssueSchema, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    body: JSON.stringify(payload),
   });
 
   return {

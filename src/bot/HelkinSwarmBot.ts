@@ -170,8 +170,16 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return;
     }
 
+    // Strip DevLoop protocol prefixes and correlation tags before shields check (#132).
+    // Prefixes like "DEVLOOP:", "SWARM:", "HUMAN:" trigger false positives in Prompt Shields.
+    const textForShields = messageText
+      .replace(/^(?:DEVLOOP|SWARM|HUMAN):\s*/i, '')
+      .replace(/\[(?:probe|DL)-[^\]]*\]\s*/gi, '')
+      .replace(/\s*OVER\s*$/i, '')
+      .trim();
+
     // Prompt Shields check on incoming user message (spec 0e, step 4)
-    const shieldResult = await promptShields.check(messageText, correlationId);
+    const shieldResult = await promptShields.check(textForShields, correlationId);
     if (!shieldResult.clean) {
       const triggered = Object.entries(shieldResult.categories)
         .filter(([, v]) => v)

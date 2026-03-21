@@ -82,7 +82,7 @@
     },
     {
       "name": "github_create_issue",
-      "description": "Create a new issue in the HelkinSwarm repository with title, body, labels, and optional milestone.",
+      "description": "Create a new issue in the HelkinSwarm repository. ALWAYS provide a descriptive body with context, acceptance criteria, and relevant details — never create issues with an empty body.",
       "risk": "low",
       "dataSensitivity": "non-pii",
       "allowedModelLane": "any",
@@ -114,7 +114,7 @@
             "description": "GitHub usernames to assign"
           }
         },
-        "required": ["title"]
+        "required": ["title", "body"]
       }
     },
     {
