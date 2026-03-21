@@ -17,6 +17,7 @@ import {
 import type { SessionInput, SessionResult } from './sessionOrchestrator.js';
 import type { SummarizeInput, SummarizeResult } from './summarizeActivity.js';
 import type { SaveStateInput } from './saveStateActivity.js';
+import type { LoadStateInput } from './loadStateActivity.js';
 
 export interface NewMessageEvent {
   userMessage: string;
@@ -39,11 +40,23 @@ df.app.orchestration('overseer', function* (context) {
     const firstMsg: NewMessageEvent = yield context.df.waitForExternalEvent(
       'NewMessage',
     );
-    state = createInitialState({
-      userId: firstMsg.userId,
-      userAlias: firstMsg.userAlias,
-      conversationId: firstMsg.conversationReference.conversation?.id ?? 'unknown',
-    });
+
+    // Attempt to restore state from Cosmos (survives orchestrator purge / container restart)
+    const restoredState: OverseerState | null = yield context.df.callActivity(
+      'loadStateActivity',
+      { userId: firstMsg.userId } satisfies LoadStateInput,
+    );
+
+    if (restoredState) {
+      state = restoredState;
+    } else {
+      state = createInitialState({
+        userId: firstMsg.userId,
+        userAlias: firstMsg.userAlias,
+        conversationId: firstMsg.conversationReference.conversation?.id ?? 'unknown',
+      });
+    }
+
     // Process this first message immediately
     yield* processTurn(context, state, firstMsg);
     return;
