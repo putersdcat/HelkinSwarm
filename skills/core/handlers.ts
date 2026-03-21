@@ -8,6 +8,15 @@ export const helkin_health_check: ToolHandler = async (_args) => {
   const euMode = process.env['EU_RESIDENCY_MODE'] === 'true';
   const safetyMode = process.env['SAFETY_MODE'] ?? 'confirmation-gated';
 
+  let memoryStatus: 'ok' | 'pending' = 'pending';
+  try {
+    const { getDatabase } = await import('../../src/memory/cosmosClient.js');
+    await getDatabase().read();
+    memoryStatus = 'ok';
+  } catch {
+    // Cosmos not reachable — report pending
+  }
+
   return {
     status: 'healthy',
     timestamp: new Date().toISOString(),
@@ -16,7 +25,7 @@ export const helkin_health_check: ToolHandler = async (_args) => {
       runtime: 'ok',
       overseer: 'ok',
       llm: 'ok',
-      memory: 'pending',
+      memory: memoryStatus,
     },
     safetyMode,
     euResidencyMode: euMode,
