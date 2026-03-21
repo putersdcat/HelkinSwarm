@@ -23,6 +23,7 @@ import {
 import { promptShields } from '../llm/promptShields.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { getAckVariant } from './ackVariants.js';
+import { isColdStarting } from './lifecycleNotices.js';
 
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
@@ -143,6 +144,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       await context.sendActivity(
         'Unable to identify your Entra ID. Please try again from a signed-in Teams client.',
       );
+      return;
+    }
+
+    // Cold-start guard: block processing for 3s after container start (#142)
+    if (isColdStarting()) {
+      await context.sendActivity('⏳ Starting up — please try again in a few seconds.');
       return;
     }
 

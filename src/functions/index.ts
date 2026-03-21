@@ -50,6 +50,7 @@ loadCapabilities().then((result) => {
 // when the new container starts to resume normal operation.
 // ---------------------------------------------------------------------------
 import { setMaintenanceMode } from '../bot/maintenanceMode.js';
+import { sendStartupNotice, sendShutdownNotice } from '../bot/lifecycleNotices.js';
 
 setMaintenanceMode({
   enabled: false,
@@ -58,6 +59,13 @@ setMaintenanceMode({
 }).catch((err: unknown) => {
   console.error('[startup] Failed to clear maintenance mode:', err);
 });
+
+// Send startup lifecycle notice to owner (#142)
+setTimeout(() => {
+  sendStartupNotice().catch((err: unknown) => {
+    console.warn('[startup] Failed to send startup notice:', err);
+  });
+}, 5_000);
 
 // ---------------------------------------------------------------------------
 // Graceful shutdown handler (#136)
@@ -69,6 +77,11 @@ const SHUTDOWN_GRACE_MS = 10_000;
 
 function handleShutdown(signal: string): void {
   console.log(`[shutdown] Received ${signal} — entering maintenance mode, grace=${SHUTDOWN_GRACE_MS}ms`);
+
+  // Send shutdown lifecycle notice to owner (#142)
+  sendShutdownNotice().catch((err: unknown) => {
+    console.warn('[shutdown] Failed to send shutdown notice:', err);
+  });
 
   setMaintenanceMode({
     enabled: true,
