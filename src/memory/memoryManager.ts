@@ -39,6 +39,7 @@ export interface RecallOptions {
   skillId?: string;
   topK?: number;
   minScore?: number;
+  modalities?: string[]; // Extension point for multimodal filtering (0k)
 }
 
 export interface RecallResult {
@@ -162,6 +163,65 @@ export class MemoryManager {
       content: combined,
       tags: ['conversation'],
       metadata: { type: 'conversation_turn' },
+    });
+  }
+
+  /**
+   * Get all memories for a specific skill vault.
+   * Returns skill-scoped memory entries ordered by creation date.
+   */
+  async getSkillVault(skillId: string): Promise<RecallResult[]> {
+    const container = getContainer(MEMORY_CONTAINER);
+    const querySpec = {
+      query: 'SELECT c.content, c.skillId, c.tags, c.createdAt FROM c WHERE c.userId = @userId AND c.skillId = @skillId ORDER BY c.createdAt DESC',
+      parameters: [
+        { name: '@userId', value: this.userId },
+        { name: '@skillId', value: skillId },
+      ],
+    };
+
+    try {
+      const { resources } = await container.items.query<{
+        content: string;
+        skillId?: string;
+        tags: string[];
+        createdAt: string;
+      }>(querySpec).fetchAll();
+
+      return resources.map((r) => ({ ...r, score: 1.0 }));
+    } catch (err) {
+      console.warn(`[MemoryManager] getSkillVault failed: ${err}`);
+      return [];
+    }
+  }
+
+  /**
+   * Upsert a skill-specific memory entry (keyed by skillId + content hash).
+   * Useful for skill config, learned preferences, etc.
+   */
+  async upsertSkillMemory(skillId: string, data: { key: string; value: string }): Promise<void> {
+    const container = getContainer(MEMORY_CONTAINER);
+    const id = `skill-${skillId}-${data.key}`;
+
+    // Generate embedding for the value
+    let vector: number[] | undefined;
+    try {
+      const client = new FoundryClient(getModelRouting());
+      vector = await client.getEmbedding(data.value);
+    } catch {
+      // Non-fatal — store without vector
+    }
+
+    await container.items.upsert({
+      id,
+      userId: this.userId,
+      content: data.value,
+      skillId,
+      tags: ['skill-memory', data.key],
+      metadata: { type: 'skill_memory', key: data.key },
+      vector,
+      createdAt: new Date().toISOString(),
+      ttl: 31536000,
     });
   }
 }
