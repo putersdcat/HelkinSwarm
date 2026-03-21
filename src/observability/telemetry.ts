@@ -19,6 +19,7 @@ export type TelemetryEventName =
   | 'TurnCompleted'
   | 'PromptShieldResult'
   | 'ToolExecuted'
+  | 'SubAgentToolExecuted'
   | 'ScopedTokenMinted'
   | 'VerificationPipelineResult'
   | 'HumanConfirmationRequested'

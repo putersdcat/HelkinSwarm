@@ -26,6 +26,8 @@ export const ToolManifestEntry = z.object({
   allowedModelLane: AllowedModelLane.default('any'),
   requiresConfirmation: z.boolean().default(false),
   requiresExecutor: z.boolean().default(false),
+  /** Route through isolated sub-agent LLM session (#47) */
+  requiresSubAgent: z.boolean().default(false),
   externalAutomationCapabilities: z.array(ExternalAutomationCapability).default([]),
   longTermMemorySchema: z.array(z.string()).default([]),
   inputSchema: z.record(z.unknown()).optional(),

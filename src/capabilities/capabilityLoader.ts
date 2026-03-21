@@ -78,6 +78,7 @@ export async function loadCapabilities(
             risk: tool.risk,
             dataSensitivity: tool.dataSensitivity,
             requiresExecutor: tool.requiresExecutor,
+            requiresSubAgent: tool.requiresSubAgent,
             handlerModule: `skills/${manifest.domain}`,
             inputSchema: tool.inputSchema,
             outputSchema: tool.outputSchema,

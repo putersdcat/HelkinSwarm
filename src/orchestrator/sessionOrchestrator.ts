@@ -13,6 +13,7 @@ import type { ToolDispatchInput, ToolDispatchResult } from './toolDispatchActivi
 import type { LlmFollowUpInput } from './llmFollowUpActivity.js';
 import type { SendConfirmationCardInput, SendConfirmationCardResult } from './sendConfirmationCardActivity.js';
 import type { StoreMemoryInput } from './storeMemoryActivity.js';
+import type { SubAgentInput, SubAgentResult } from './subAgentActivity.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 
 export interface SessionInput {
@@ -132,14 +133,65 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     }
 
     if (safetyPassed) {
-      // Dispatch tools
-      const dispatchInput: ToolDispatchInput = {
-        toolCalls: llmResult.toolCalls,
-        correlationId,
-        sessionId: input.state.userId,
-        userId: input.state.userId,
+      // Split tool calls: sub-agent isolated vs direct dispatch (#47)
+      const subAgentCalls: typeof llmResult.toolCalls = [];
+      const directCalls: typeof llmResult.toolCalls = [];
+
+      for (const tc of llmResult.toolCalls) {
+        const def = toolRegistry.get(tc.name);
+        if (def?.requiresSubAgent) {
+          subAgentCalls.push(tc);
+        } else {
+          directCalls.push(tc);
+        }
+      }
+
+      // Run sub-agent isolated tool calls (fresh LLM session, secondary model)
+      const subAgentResults: ToolDispatchResult['results'] = [];
+      for (const tc of subAgentCalls) {
+        const def = toolRegistry.get(tc.name);
+        const subInput: SubAgentInput = {
+          toolName: tc.name,
+          toolDescription: def?.description ?? tc.name,
+          toolInputSchema: def?.inputSchema,
+          arguments: JSON.parse(tc.arguments) as Record<string, unknown>,
+          userContext: input.userMessage,
+          correlationId,
+          sessionId: input.state.userId,
+          userId: input.state.userId,
+        };
+        const subResult: SubAgentResult = yield context.df.callActivity('subAgentActivity', subInput);
+        subAgentResults.push({
+          toolCallId: tc.id,
+          toolName: tc.name,
+          success: subResult.success,
+          result: subResult.output,
+          error: subResult.error,
+          requiresExecutor: false,
+        });
+      }
+
+      // Run direct-dispatch tool calls (handler only, no LLM)
+      let directResults: ToolDispatchResult | null = null;
+      if (directCalls.length > 0) {
+        const dispatchInput: ToolDispatchInput = {
+          toolCalls: directCalls,
+          correlationId,
+          sessionId: input.state.userId,
+          userId: input.state.userId,
+        };
+        directResults = yield context.df.callActivity('toolDispatchActivity', dispatchInput);
+      }
+
+      // Merge results
+      const mergedResults: ToolDispatchResult['results'] = [
+        ...subAgentResults,
+        ...(directResults?.results ?? []),
+      ];
+      toolResults = {
+        results: mergedResults,
+        totalCalls: mergedResults.length,
       };
-      toolResults = yield context.df.callActivity('toolDispatchActivity', dispatchInput);
 
       // 3b. Call LLM again with tool results for natural language response
       const followUpInput: LlmFollowUpInput = {

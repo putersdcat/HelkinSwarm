@@ -22,6 +22,8 @@ export const ToolDefinitionSchema = z.object({
   outputSchema: z.record(z.unknown()).optional(),
   handlerModule: z.string().optional(),
   requiresExecutor: z.boolean().default(false),
+  /** Route through subAgentActivity for fresh isolated LLM session (#47) */
+  requiresSubAgent: z.boolean().default(false),
 });
 
 export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;

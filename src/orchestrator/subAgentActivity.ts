@@ -1,11 +1,14 @@
 // Sub-agent activity — runs a tool call in an isolated LLM session.
 // No shared conversation history; uses secondary model; minimal context.
+// The LLM decides how to invoke the tool, then the handler executes it.
 // Spec ref: 06-Tool-Dispatch-LLM-Layer.md, 0b-Model-Specific-Tool-Presentation.md
 
 import * as df from 'durable-functions';
-import { createFoundryClient, textContent } from '../llm/foundryClient.js';
-import { getModelForTask } from '../llm/modelRouter.js';
+import { FoundryClient, textContent } from '../llm/foundryClient.js';
+import { getModelRouting, getModelForTask } from '../llm/modelRouter.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
+import { getHandler } from '../capabilities/capabilityLoader.js';
+import { trackEvent } from '../observability/telemetry.js';
 import type { ChatMessage } from '../llm/foundryClient.js';
 
 export interface SubAgentInput {
@@ -16,6 +19,7 @@ export interface SubAgentInput {
   userContext: string;
   correlationId: string;
   sessionId: string;
+  userId: string;
 }
 
 export interface SubAgentResult {
@@ -29,27 +33,34 @@ export interface SubAgentResult {
 
 df.app.activity('subAgentActivity', {
   handler: async (input: SubAgentInput): Promise<SubAgentResult> => {
-    const client = createFoundryClient();
+    // Create a client using the secondary (fast) model — fresh routing, no shared state
+    const baseRouting = getModelRouting();
+    const secondaryModel = getModelForTask('fast');
+    const client = new FoundryClient({
+      ...baseRouting,
+      deploymentName: secondaryModel,
+      isReasoning: false,
+    });
+
     const tool = toolRegistry.get(input.toolName);
-    const model = getModelForTask('fast');
 
-    // Build minimal context message for the sub-agent
-    const systemPrompt = `You are a tool-use sub-agent. You have one task: use the provided tool with the given arguments.
-Do NOT call any other tools. Return only the tool result as a JSON object.
+    // Build minimal context — ONLY what the sub-agent needs for this one tool
+    const systemPrompt = `You are a tool-use sub-agent. You have exactly one task: call the provided tool.
+Do NOT call any other tools. Do NOT attempt recursive tool calling.
+Return only the tool result.
+
 Tool: ${input.toolName}
-Description: ${input.toolDescription}
-Arguments: ${JSON.stringify(input.arguments, null, 2)}
-
-User context: ${input.userContext}`;
+Description: ${input.toolDescription}`;
 
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
       {
         role: 'user',
-        content: `Execute tool "${input.toolName}" with these arguments: ${JSON.stringify(input.arguments)}`,
+        content: `Execute tool "${input.toolName}" with arguments: ${JSON.stringify(input.arguments)}`,
       },
     ];
 
+    // Only expose the single requested tool — prevents recursive calls
     const tools = tool
       ? [
           {
@@ -63,6 +74,8 @@ User context: ${input.userContext}`;
         ]
       : [];
 
+    let tokensUsed = 0;
+
     try {
       const response = await client.chatCompletion({
         messages,
@@ -73,35 +86,75 @@ User context: ${input.userContext}`;
         correlationId: input.correlationId,
       });
 
+      tokensUsed = response.usage.totalTokens;
       const choice = response.choices[0];
-      let output: unknown = null;
 
-      if (choice.finishReason === 'tool_calls' && choice.message.toolCalls) {
-        // Sub-agent called the tool — extract result
-        output = { toolCalls: choice.message.toolCalls };
-      } else {
-        // Sub-agent returned text — parse if possible
-        try {
-          output = JSON.parse(textContent(choice.message.content));
-        } catch {
-          output = { text: textContent(choice.message.content) };
+      if (choice.finishReason === 'tool_calls' && choice.message.toolCalls?.length) {
+        // Sub-agent decided to call the tool — now actually execute the handler
+        const tc = choice.message.toolCalls[0];
+        const handler = getHandler(tc.function.name);
+
+        if (!handler) {
+          return {
+            success: false,
+            model: secondaryModel,
+            output: null,
+            error: `No handler registered for tool: ${tc.function.name}`,
+            tokensUsed,
+            correlationId: input.correlationId,
+          };
         }
+
+        const parsedArgs = JSON.parse(tc.function.arguments) as Record<string, unknown>;
+        parsedArgs['userId'] = input.userId;
+        const handlerResult = await handler(parsedArgs);
+
+        trackEvent({
+          name: 'SubAgentToolExecuted',
+          correlationId: input.correlationId,
+          userId: input.userId,
+          properties: { toolName: tc.function.name, success: true, model: secondaryModel },
+        });
+
+        return {
+          success: true,
+          model: secondaryModel,
+          output: handlerResult,
+          tokensUsed,
+          correlationId: input.correlationId,
+        };
+      }
+
+      // Sub-agent returned text instead of tool call — parse if possible
+      const text = textContent(choice.message.content);
+      let output: unknown;
+      try {
+        output = JSON.parse(text);
+      } catch {
+        output = { text };
       }
 
       return {
         success: true,
-        model: response.model,
+        model: secondaryModel,
         output,
-        tokensUsed: response.usage.totalTokens,
+        tokensUsed,
         correlationId: input.correlationId,
       };
     } catch (err) {
+      trackEvent({
+        name: 'SubAgentToolExecuted',
+        correlationId: input.correlationId,
+        userId: input.userId,
+        properties: { toolName: input.toolName, success: false, error: err instanceof Error ? err.message : String(err) },
+      });
+
       return {
         success: false,
-        model,
+        model: secondaryModel,
         output: null,
         error: err instanceof Error ? err.message : String(err),
-        tokensUsed: 0,
+        tokensUsed,
         correlationId: input.correlationId,
       };
     }
