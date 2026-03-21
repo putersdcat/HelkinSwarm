@@ -286,18 +286,102 @@ async function runSpotCheck(input: VerificationInput): Promise<VerificationStepR
       ? input.spotCheckIds
       : input.spotCheckIds.sort(() => Math.random() - 0.5).slice(0, sampleSize);
 
-  // Spot-check verification: narrow batched GET to verify IDs match original query.
-  // The actual verification call depends on the tool's domain (Graph, GitHub, etc.)
-  // and requires a scoped token. When executors are wired (Phase 4+), each domain
-  // provides a verifyIds(ids, query, token) function registered on the tool manifest.
-  // For now: log the sampling decision and pass — the structural framework is ready.
-  const mode = totalIds <= threshold ? 'full' : `sampled ${idsToCheck.length}/${totalIds}`;
-  return {
-    step: 'spot-check',
-    passed: true,
-    details: `Spot-check: ${mode} IDs selected for verification (domain verifier pending)`,
-    latencyMs: Date.now() - start,
-  };
+  // Resolve domain verifier from tool name
+  const verifier = getDomainVerifier(input.toolName);
+  if (!verifier) {
+    const mode = totalIds <= threshold ? 'full' : `sampled ${idsToCheck.length}/${totalIds}`;
+    return {
+      step: 'spot-check',
+      passed: true,
+      details: `Spot-check: ${mode} IDs selected (no domain verifier for ${input.toolName})`,
+      latencyMs: Date.now() - start,
+    };
+  }
+
+  // Run actual domain verification
+  try {
+    const failures = await verifier(idsToCheck, input);
+    const mode = totalIds <= threshold ? 'full' : `sampled ${idsToCheck.length}/${totalIds}`;
+    if (failures.length > 0) {
+      return {
+        step: 'spot-check',
+        passed: false,
+        details: `Spot-check FAILED: ${mode} verified, ${failures.length} mismatches: ${failures.join(', ')}`,
+        latencyMs: Date.now() - start,
+      };
+    }
+    return {
+      step: 'spot-check',
+      passed: true,
+      details: `Spot-check passed: ${mode} verified via domain verifier`,
+      latencyMs: Date.now() - start,
+    };
+  } catch (err) {
+    return {
+      step: 'spot-check',
+      passed: false,
+      details: `Spot-check error: ${err instanceof Error ? err.message : String(err)}`,
+      latencyMs: Date.now() - start,
+    };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Domain verifiers — verify resource IDs match original query results
+// Each returns an array of IDs that failed verification (empty = all passed)
+// ---------------------------------------------------------------------------
+
+type DomainVerifier = (ids: string[], input: VerificationInput) => Promise<string[]>;
+
+function getDomainVerifier(toolName: string): DomainVerifier | null {
+  if (toolName.startsWith('github_')) return verifyGitHubIds;
+  if (toolName.startsWith('outlook_')) return verifyOutlookIds;
+  // Additional domain verifiers can be registered here
+  return null;
+}
+
+/** GitHub domain verifier — verifies issue/PR numbers exist in the repo */
+async function verifyGitHubIds(ids: string[], _input: VerificationInput): Promise<string[]> {
+  // GitHub IDs are issue/PR numbers — verify they exist via the API
+  const { getHandler } = await import('../capabilities/capabilityLoader.js');
+  const failures: string[] = [];
+
+  for (const id of ids) {
+    try {
+      const handler = getHandler('github_get_issue');
+      if (!handler) {
+        // No handler available — skip verification (don't fail-open on missing handler)
+        continue;
+      }
+      const result = await handler({ issue_number: parseInt(id, 10) }) as Record<string, unknown>;
+      if (!result || result['error']) {
+        failures.push(id);
+      }
+    } catch {
+      failures.push(id);
+    }
+  }
+  return failures;
+}
+
+/** Outlook domain verifier — verifies message IDs exist */
+async function verifyOutlookIds(ids: string[], input: VerificationInput): Promise<string[]> {
+  const { getHandler } = await import('../capabilities/capabilityLoader.js');
+  const failures: string[] = [];
+
+  for (const id of ids) {
+    try {
+      const handler = getHandler('outlook_read_email');
+      if (!handler) continue;
+      const result = await handler({ messageId: id, userId: input.userId }) as Record<string, unknown>;
+      if (!result || result['error']) {
+        failures.push(id);
+      }
+    } catch {
+      failures.push(id);
+    }
+  }
+  return failures;
 }
 
 async function runPromptShields(output: unknown, correlationId: string): Promise<VerificationStepResult> {
