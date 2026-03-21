@@ -91,11 +91,15 @@ df.app.orchestration('overseer', function* (context) {
   } catch (err) {
     // Session failed — send error reply to user and continue (don't crash the overseer)
     console.error(`[overseer] sessionOrchestrator failed for user=${state.userId}`, err);
-    const errorReply: SendReplyInput = {
-      userId: state.userId,
-      message: `⚠️ Something went wrong processing your message. The error has been logged. Please try again.`,
-    };
-    yield context.df.callActivity('sendReplyActivity', errorReply);
+    try {
+      const errorReply: SendReplyInput = {
+        userId: state.userId,
+        message: `⚠️ Something went wrong processing your message. The error has been logged. Please try again.`,
+      };
+      yield context.df.callActivity('sendReplyActivity', errorReply);
+    } catch (replyErr) {
+      console.error(`[overseer] Failed to send error reply for user=${state.userId}`, replyErr);
+    }
     // Persist state and cycle — overseer survives the failure
     yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
     context.df.continueAsNew(state);
@@ -158,11 +162,15 @@ function* processTurn(
   } catch (err) {
     // Session failed — send error reply and cycle
     console.error(`[overseer] processTurn failed for user=${state.userId}`, err);
-    const errorReply: SendReplyInput = {
-      userId: state.userId,
-      message: `⚠️ Something went wrong processing your message. The error has been logged. Please try again.`,
-    };
-    yield context.df.callActivity('sendReplyActivity', errorReply);
+    try {
+      const errorReply: SendReplyInput = {
+        userId: state.userId,
+        message: `⚠️ Something went wrong processing your message. The error has been logged. Please try again.`,
+      };
+      yield context.df.callActivity('sendReplyActivity', errorReply);
+    } catch (replyErr) {
+      console.error(`[overseer] Failed to send error reply for user=${state.userId}`, replyErr);
+    }
     yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
     context.df.continueAsNew(state);
     return;
