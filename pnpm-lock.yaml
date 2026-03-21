@@ -20,6 +20,9 @@ importers:
       '@azure/monitor-opentelemetry':
         specifier: ^1.16.0
         version: 1.16.0
+      '@azure/msal-node':
+        specifier: ^3.8.10
+        version: 3.8.10
       '@octokit/auth-app':
         specifier: ^8.2.0
         version: 8.2.0
@@ -39,9 +42,6 @@ importers:
         specifier: ^3.24.0
         version: 3.25.76
     devDependencies:
-      '@azure/msal-node':
-        specifier: ^3.8.10
-        version: 3.8.10
       '@eslint/js':
         specifier: ^9.0.0
         version: 9.39.4

@@ -38,6 +38,9 @@ const EnvConfigSchema = z.object({
   skillforgeEnabled: z.boolean().default(false),
   devLoopEnabled: z.boolean().default(false),
 
+  // Bot OAuth (#31)
+  botOAuthConnectionName: z.string().default('GraphOAuth'),
+
   // Owner
   ownerUserId: z.string().optional(),
 
@@ -68,6 +71,7 @@ function loadFromEnv(): EnvConfig {
     euResidencyMode: process.env['EU_RESIDENCY_MODE']?.toLowerCase() === 'true',
     skillforgeEnabled: process.env['SKILLFORGE_ENABLED']?.toLowerCase() === 'true',
     devLoopEnabled: process.env['DEVLOOP_ENABLED']?.toLowerCase() === 'true',
+    botOAuthConnectionName: process.env['BOT_OAUTH_CONNECTION_NAME'] || undefined,
     ownerUserId: process.env['OWNER_USER_ID'] || undefined,
     azureFoundryOboToken: process.env['AZURE_FOUNDRY_OBO_TOKEN'] || undefined,
   };

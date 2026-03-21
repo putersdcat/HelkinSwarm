@@ -9,6 +9,7 @@ import {
   type AdaptiveCardInvokeResponse,
   type AdaptiveCardInvokeValue,
   StatusCodes,
+  CardFactory,
 } from 'botbuilder';
 import type { DurableClient } from 'durable-functions';
 import { OrchestrationRuntimeStatus } from 'durable-functions';
@@ -97,6 +98,33 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     };
   }
 
+  /**
+   * Handle Teams SSO token exchange (#31).
+   * Called when the user completes the OAuth consent flow from the OAuthCard.
+   */
+  protected async handleTeamsSigninVerifyState(
+    context: TurnContext,
+    _query: unknown,
+  ): Promise<void> {
+    const userId = context.activity.from.aadObjectId ?? 'unknown';
+    console.error(`[HelkinSwarmBot] SSO verify state for userId=${userId}`);
+    await context.sendActivity('✅ Account linked successfully! I can now access your personal data (email, calendar, files) on your behalf.');
+  }
+
+  /**
+   * Handle Teams SSO token exchange invoke (#31).
+   * This is the Teams-specific handling for the tokenExchange activity.
+   */
+  protected async handleTeamsSigninTokenExchange(
+    context: TurnContext,
+    _query: unknown,
+  ): Promise<void> {
+    const userId = context.activity.from.aadObjectId ?? 'unknown';
+    console.error(`[HelkinSwarmBot] SSO token exchange for userId=${userId}`);
+    // Token is automatically cached by the Bot Framework in the configured connection.
+    // MSAL Cosmos cache plugin (#30) handles persistence.
+  }
+
   private async handleIncomingMessage(context: TurnContext): Promise<void> {
     const userId = context.activity.from.aadObjectId;
     const userAlias =
@@ -168,6 +196,18 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         userAlias,
         'I want to update my communication preferences. Please ask me about my preferences one at a time.',
       );
+      return;
+    }
+
+    // /link — trigger Graph OAuth consent flow (#31)
+    if (lowerMessage === '/link') {
+      await this.handleLink(context);
+      return;
+    }
+
+    // /unlink — revoke Graph OAuth connection (#31)
+    if (lowerMessage === '/unlink') {
+      await this.handleUnlink(context, userId);
       return;
     }
 
@@ -399,6 +439,57 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     console.error(`[HelkinSwarmBot] P0 emergency resume activated by userId=${userId}`);
     await context.sendActivity('✅ Maintenance mode cleared. HelkinSwarm is back online.');
+  }
+
+  /**
+   * /link — trigger Graph OAuth consent flow (#31).
+   * Sends an OAuthCard that opens the Entra consent screen.
+   * On successful sign-in, the Bot Framework caches the token in the configured connection.
+   */
+  private async handleLink(context: TurnContext): Promise<void> {
+    const connectionName = getEnvConfig().botOAuthConnectionName;
+    if (!connectionName) {
+      await context.sendActivity('⚠️ OAuth connection not configured (BOT_OAUTH_CONNECTION_NAME).');
+      return;
+    }
+
+    // Try to get an existing token first (user may already be linked)
+    const tokenResponse = await (context.adapter as { getUserToken?(c: TurnContext, cn: string): Promise<{ token: string } | undefined> })
+      .getUserToken?.(context, connectionName);
+
+    if (tokenResponse?.token) {
+      await context.sendActivity('✅ You are already linked! Your Graph credentials are active.');
+      return;
+    }
+
+    // Send an OAuthCard to trigger the consent flow
+    const card = CardFactory.oauthCard(
+      connectionName,
+      '🔗 Link your Microsoft account',
+      'Sign in to grant HelkinSwarm access to your personal data (email, calendar, files).',
+    );
+    await context.sendActivity({ attachments: [card] });
+  }
+
+  /**
+   * /unlink — revoke Graph OAuth tokens (#31).
+   */
+  private async handleUnlink(context: TurnContext, userId: string): Promise<void> {
+    const connectionName = getEnvConfig().botOAuthConnectionName;
+    if (!connectionName) {
+      await context.sendActivity('⚠️ OAuth connection not configured.');
+      return;
+    }
+
+    try {
+      await (context.adapter as { signOutUser?(c: TurnContext, cn: string): Promise<void> })
+        .signOutUser?.(context, connectionName);
+      await context.sendActivity('✅ Unlinked. Your Graph credentials have been revoked.');
+      console.error(`[HelkinSwarmBot] User unlinked: userId=${userId}`);
+    } catch (err) {
+      console.error('[HelkinSwarmBot] signOutUser failed:', err);
+      await context.sendActivity('⚠️ Failed to unlink. Please try again or remove consent from https://myapps.microsoft.com');
+    }
   }
 
   /**
