@@ -8,6 +8,7 @@ import { toolRegistry } from '../tools/toolRegistry.js';
 import type { PromptResult } from './buildPromptActivity.js';
 import type { ChatCompletionResponse } from '../llm/foundryClient.js';
 import { getEnvConfig } from '../config/envConfig.js';
+import { trackEvent } from '../observability/telemetry.js';
 
 export interface LlmResult {
   content: string;
@@ -40,6 +41,7 @@ df.app.activity('llmActivity', {
     // Get OpenAI-compatible function schemas from tool registry
     const tools = toolRegistry.toFunctionSchemas();
 
+    trackEvent({ name: 'LlmCallStarted', correlationId, properties: { deployment: deploymentName, toolCount: tools.length } });
     console.log(`[llmActivity] correlationId=${correlationId} deployment=${deploymentName} toolCount=${tools.length} toolNames=${tools.map(t => t.function.name).join(',')}`);
 
     try {
@@ -61,6 +63,13 @@ df.app.activity('llmActivity', {
           arguments: tc.function.arguments,
         })) ?? [];
 
+      trackEvent({ name: 'LlmCallCompleted', correlationId, properties: {
+        model: response.model,
+        finishReason: choice.finishReason,
+        contentLen: (choice.message.content ?? '').length,
+        toolCallCount: toolCalls.length,
+        tokensUsed: response.usage.totalTokens,
+      } });
       console.log(`[llmActivity] LLM responded: model=${response.model} finishReason=${choice.finishReason} contentLen=${(choice.message.content ?? '').length} toolCalls=${toolCalls.length} tokensUsed=${response.usage.totalTokens}`);
 
       return {
@@ -71,6 +80,9 @@ df.app.activity('llmActivity', {
         finishReason: choice.finishReason,
       };
     } catch (err) {
+      trackEvent({ name: 'LlmCallFailed', correlationId, properties: {
+        error: err instanceof Error ? err.message : String(err),
+      } });
       console.error(`[llmActivity] LLM call failed: correlationId=${correlationId}`, err);
       // Return a graceful error result — orchestrator handles the failure
       return {

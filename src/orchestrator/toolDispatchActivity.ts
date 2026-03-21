@@ -4,6 +4,7 @@
 import * as df from 'durable-functions';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { getHandler } from '../capabilities/capabilityLoader.js';
+import { trackEvent } from '../observability/telemetry.js';
 
 export interface ToolDispatchInput {
   toolCalls: Array<{ id: string; name: string; arguments: string }>;
@@ -71,6 +72,10 @@ df.app.activity('toolDispatchActivity', {
         }
 
         const result = await handler(parsedArgs);
+        trackEvent({ name: 'ToolExecuted', correlationId: input.correlationId, userId: input.userId, properties: {
+          toolName: call.name,
+          success: true,
+        } });
         results.push({
           toolCallId: call.id,
           toolName: call.name,
@@ -79,6 +84,11 @@ df.app.activity('toolDispatchActivity', {
           requiresExecutor: false,
         });
       } catch (err) {
+        trackEvent({ name: 'ToolExecuted', correlationId: input.correlationId, userId: input.userId, properties: {
+          toolName: call.name,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+        } });
         results.push({
           toolCallId: call.id,
           toolName: call.name,

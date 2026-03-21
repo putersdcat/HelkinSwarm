@@ -20,6 +20,9 @@ importers:
       '@azure/monitor-opentelemetry':
         specifier: ^1.16.0
         version: 1.16.0
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.0
       botbuilder:
         specifier: ^4.23.3
         version: 4.23.3
