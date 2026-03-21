@@ -25,6 +25,15 @@ const GLOBAL_LANE: ModelLane = {
   reasoning: 'grok-4-1-fast-reasoning',
 };
 
+const EU_LANE: ModelLane = {
+  // DataZoneStandard deployments only — data stays within EU boundary.
+  // Grok models are already DataZoneStandard in Bicep.
+  primary: 'grok-4-1-fast-reasoning',
+  secondary: 'grok-4-1-fast-non-reasoning',
+  embedding: 'text-embedding-3-large', // GlobalStandard — no DZ embedding exists yet
+  reasoning: 'grok-4-1-fast-reasoning',
+};
+
 const BYOK_LANE: ModelLane = {
   primary: 'gpt-4o',
   secondary: 'gpt-4o-mini',
@@ -40,7 +49,7 @@ export interface ModelRouting {
   /** The resolved model lane */
   lane: ModelLane;
   /** Which lane we are using (for telemetry) */
-  laneName: 'global' | 'byok';
+  laneName: 'global' | 'eu' | 'byok';
   /** Whether this is a reasoning model */
   isReasoning: boolean;
   /** Deployment name in Azure AI Foundry */
@@ -53,6 +62,7 @@ export interface ModelRouting {
 
 /** Returns the active model routing based on current config + override */
 export function getModelRouting(llmProvider?: 'azure' | 'openrouter'): ModelRouting {
+  const config = getEnvConfig();
   const provider = llmProvider ?? 'azure';
 
   if (provider === 'openrouter') {
@@ -67,13 +77,25 @@ export function getModelRouting(llmProvider?: 'azure' | 'openrouter'): ModelRout
     };
   }
 
+  // EU DataZoneStandard lane — restricts to DZ-only deployments
+  if (config.euResidencyMode) {
+    return {
+      lane: EU_LANE,
+      laneName: 'eu',
+      isReasoning: true,
+      deploymentName: EU_LANE.primary,
+      apiBase: config.azureAiFoundryEndpoint ?? '',
+      usesObo: true,
+    };
+  }
+
   // Azure AI Foundry global frontier (default — Unchained)
   return {
     lane: GLOBAL_LANE,
     laneName: 'global',
     isReasoning: true,
-    deploymentName: getEnvConfig().llmPrimaryModel,
-    apiBase: getEnvConfig().azureAiFoundryEndpoint ?? '',
+    deploymentName: config.llmPrimaryModel,
+    apiBase: config.azureAiFoundryEndpoint ?? '',
     usesObo: true,
   };
 }
