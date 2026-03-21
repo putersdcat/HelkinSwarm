@@ -91,11 +91,12 @@ export function getModelRouting(llmProvider?: 'azure' | 'openrouter'): ModelRout
   }
 
   // Azure AI Foundry global frontier (default — Unchained)
+  const deploymentName = config.llmPrimaryModel;
   return {
     lane: GLOBAL_LANE,
     laneName: 'global',
-    isReasoning: true,
-    deploymentName: config.llmPrimaryModel,
+    isReasoning: deploymentName === GLOBAL_LANE.reasoning || deploymentName.includes('reasoning'),
+    deploymentName,
     apiBase: config.azureAiFoundryEndpoint ?? '',
     usesObo: true,
   };

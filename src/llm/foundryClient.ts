@@ -93,6 +93,9 @@ export class FoundryClient {
     const base = this.apiBase.replace(/\/+$/, '');
     const url = `${base}/openai/deployments/${this.routing.deploymentName}/chat/completions?api-version=2024-06-01`;
 
+    // Reasoning models need longer timeouts (#128)
+    const timeoutMs = this.routing.isReasoning ? 120_000 : 55_000;
+
     const body: Record<string, unknown> = {
       model: this.routing.deploymentName,
       messages: options.messages.map(mapOutgoingMessage),
@@ -127,7 +130,7 @@ export class FoundryClient {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(55_000),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     if (!response.ok) {
