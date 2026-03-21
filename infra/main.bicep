@@ -197,6 +197,7 @@ resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
     ]
     capabilities: [
       { name: 'EnableServerless' }
+      { name: 'EnableNoSQLVectorSearch' }
     ]
     consistencyPolicy: { defaultConsistencyLevel: 'Session' }
   }
