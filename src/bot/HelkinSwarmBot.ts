@@ -238,6 +238,20 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return;
     }
 
+    // /status — quick health snapshot
+    if (lowerMessage === '/status') {
+      const health = await getMaintenanceMode();
+      const safe = process.env.SAFETY_MODE ?? 'confirmation-gated';
+      const version = process.env.HELKINSWARM_VERSION ?? '0.1.0';
+      await context.sendActivity(
+        `HelkinSwarm ${version} — ` +
+          `maintenance: ${health.enabled ? 'ON' : 'OFF'}, ` +
+          `safety: ${safe}, ` +
+          `tools: ${toolRegistry.size}`,
+      );
+      return;
+    }
+
     if (maintenance.enabled) {
       await context.sendActivity('I am offline for maintenance.');
       return;
