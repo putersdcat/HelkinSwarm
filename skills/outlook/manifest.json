@@ -1,0 +1,184 @@
+{
+  "domain": "outlook",
+  "version": "1.0",
+  "tools": [
+    {
+      "name": "outlook_list_emails",
+      "description": "List recent emails from the user's mailbox. Returns subject, sender, date, preview, and read status. Supports filtering by folder and top N.",
+      "risk": "low",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "number",
+            "description": "Number of emails to retrieve (default: 10, max: 50)"
+          },
+          "folder": {
+            "type": "string",
+            "description": "Folder name to list from: inbox, sentitems, drafts, archive (default: inbox)"
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData filter expression, e.g. 'isRead eq false' for unread only"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "outlook_read_email",
+      "description": "Read the full body of a specific email by its ID. Returns subject, sender, recipients, body, and attachments list.",
+      "risk": "low",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": "The Graph API message ID"
+          }
+        },
+        "required": ["messageId"]
+      }
+    },
+    {
+      "name": "outlook_send_email",
+      "description": "Send an email on behalf of the user. Requires linked account (OBO). High risk — requires confirmation.",
+      "risk": "high",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": true,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "to": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Array of recipient email addresses"
+          },
+          "subject": {
+            "type": "string",
+            "description": "Email subject"
+          },
+          "body": {
+            "type": "string",
+            "description": "Email body (plain text or HTML)"
+          },
+          "bodyType": {
+            "type": "string",
+            "enum": ["text", "html"],
+            "description": "Body content type (default: text)"
+          },
+          "cc": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "CC recipient email addresses"
+          }
+        },
+        "required": ["to", "subject", "body"]
+      }
+    },
+    {
+      "name": "outlook_search_emails",
+      "description": "Search emails across the user's mailbox using KQL (keyword query language). Returns matching messages.",
+      "risk": "low",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search query (KQL syntax). Examples: 'subject:meeting', 'from:alice@contoso.com', 'hasAttachment:true'"
+          },
+          "top": {
+            "type": "number",
+            "description": "Max results (default: 10, max: 25)"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "outlook_list_calendar_events",
+      "description": "List upcoming calendar events from the user's default calendar. Returns subject, organizer, start/end times, location, and attendees.",
+      "risk": "low",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "number",
+            "description": "Number of events to retrieve (default: 10)"
+          },
+          "startDateTime": {
+            "type": "string",
+            "description": "ISO 8601 start date/time filter (default: now)"
+          },
+          "endDateTime": {
+            "type": "string",
+            "description": "ISO 8601 end date/time filter (default: 7 days from now)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "outlook_create_calendar_event",
+      "description": "Create a calendar event on behalf of the user. High risk — requires confirmation.",
+      "risk": "high",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": true,
+      "requiresExecutor": false,
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "Event subject"
+          },
+          "start": {
+            "type": "string",
+            "description": "ISO 8601 start date/time"
+          },
+          "end": {
+            "type": "string",
+            "description": "ISO 8601 end date/time"
+          },
+          "location": {
+            "type": "string",
+            "description": "Event location (optional)"
+          },
+          "body": {
+            "type": "string",
+            "description": "Event body/notes (optional)"
+          },
+          "attendees": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Attendee email addresses (optional)"
+          },
+          "isOnlineMeeting": {
+            "type": "boolean",
+            "description": "Create as Teams meeting (default: false)"
+          }
+        },
+        "required": ["subject", "start", "end"]
+      }
+    }
+  ]
+}
