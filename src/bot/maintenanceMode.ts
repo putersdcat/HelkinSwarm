@@ -10,6 +10,15 @@ const CONTAINER_NAME = 'runtimeConfig';
 const DOC_ID = 'maintenance-mode';
 const SCOPE = 'global';
 
+// ---------------------------------------------------------------------------
+// In-memory startup override (#145)
+// During a fresh container start, Cosmos may still hold enabled=true from
+// the previous container's graceful shutdown.  The startup clear is async
+// and may not finish before the first message arrives.  We keep an in-memory
+// flag that short-circuits the Cosmos read until the clear succeeds.
+// ---------------------------------------------------------------------------
+let _startupClearPending = true;
+
 interface MaintenanceModeDocument {
   id: string;
   scope: string;
@@ -44,6 +53,18 @@ export async function isOwnerUserId(userId: string): Promise<boolean> {
 }
 
 export async function getMaintenanceMode(): Promise<MaintenanceModeDocument> {
+  // If we just started and haven't confirmed the clear, assume NOT in
+  // maintenance so incoming messages aren't blocked (#145).
+  if (_startupClearPending) {
+    return {
+      id: DOC_ID,
+      scope: SCOPE,
+      enabled: false,
+      updatedAt: new Date().toISOString(),
+      updatedBy: 'startup-override',
+    };
+  }
+
   const container = getContainer(CONTAINER_NAME);
   try {
     const { resource } = await container
@@ -83,5 +104,9 @@ export async function setMaintenanceMode(input: {
     reason: input.reason,
   };
   await container.items.upsert(doc);
+
+  // Once any successful write lands, the startup override is no longer needed.
+  _startupClearPending = false;
+
   return doc;
 }

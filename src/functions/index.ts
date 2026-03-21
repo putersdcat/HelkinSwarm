@@ -52,19 +52,37 @@ loadCapabilities().then((result) => {
 });
 
 // ---------------------------------------------------------------------------
-// Startup: clear maintenance mode from any previous graceful shutdown (#136)
+// Startup: clear maintenance mode from any previous graceful shutdown (#136, #145)
 // The shutdown handler sets maintenance=true in Cosmos; we must clear it
 // when the new container starts to resume normal operation.
+// In-memory override in maintenanceMode.ts means messages are NOT blocked
+// while this runs — but we still need to clear Cosmos for consistency.
 // ---------------------------------------------------------------------------
 import { setMaintenanceMode } from '../bot/maintenanceMode.js';
 import { sendStartupNotice, sendShutdownNotice } from '../bot/lifecycleNotices.js';
 
-setMaintenanceMode({
-  enabled: false,
-  updatedBy: 'system-startup',
-  reason: 'Container started — clearing shutdown maintenance flag',
-}).catch((err: unknown) => {
-  console.error('[startup] Failed to clear maintenance mode:', err);
+async function clearMaintenanceWithRetry(attempts = 3, delayMs = 2000): Promise<void> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await setMaintenanceMode({
+        enabled: false,
+        updatedBy: 'system-startup',
+        reason: 'Container started — clearing shutdown maintenance flag',
+      });
+      console.log('[startup] Maintenance mode cleared in Cosmos');
+      return;
+    } catch (err: unknown) {
+      console.warn(`[startup] Maintenance clear attempt ${i + 1}/${attempts} failed:`, err);
+      if (i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
+      }
+    }
+  }
+  console.error('[startup] All maintenance clear attempts failed — Cosmos may still show enabled=true');
+}
+
+clearMaintenanceWithRetry().catch(() => {
+  // Already logged inside the function
 });
 
 // Send startup lifecycle notice to owner (#142)
