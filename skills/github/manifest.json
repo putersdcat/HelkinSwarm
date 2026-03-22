@@ -10,6 +10,11 @@
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [
+        { "type": "github-actions", "action": "Workflow triggers on issue events (opened, labeled, closed)" },
+        { "type": "github-projects", "action": "Project board automation rules for issue triage" }
+      ],
+      "longTermMemorySchema": ["label_taxonomy", "active_milestones"],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -46,6 +51,10 @@
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [
+        { "type": "github-saved-searches", "action": "Saved search queries and custom notification filters" }
+      ],
+      "longTermMemorySchema": ["frequent_search_patterns"],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -69,6 +78,8 @@
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -88,6 +99,11 @@
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [
+        { "type": "github-actions", "action": "Workflow triggers on issues.opened for auto-labeling and triage" },
+        { "type": "issue-templates", "action": "Repository issue templates for structured creation" }
+      ],
+      "longTermMemorySchema": ["common_labels", "issue_template_patterns"],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -125,6 +141,11 @@
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [
+        { "type": "github-actions", "action": "Workflow triggers on issues.edited and issues.closed" },
+        { "type": "github-projects", "action": "Auto-move cards on state change" }
+      ],
+      "longTermMemorySchema": ["workflow_state_patterns"],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -171,6 +192,10 @@
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [
+        { "type": "github-actions", "action": "Workflow triggers on issue_comment.created for bot commands" }
+      ],
+      "longTermMemorySchema": [],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -194,6 +219,8 @@
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": ["active_milestone_numbers"],
       "inputSchema": {
         "type": "object",
         "properties": {

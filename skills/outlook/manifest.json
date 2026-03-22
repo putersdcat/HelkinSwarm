@@ -10,6 +10,11 @@
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [
+        { "type": "outlook-rules", "action": "Inbox rules for automatic sorting, forwarding, and flagging" },
+        { "type": "focused-inbox", "action": "ML-based priority sorting via Focused Inbox" }
+      ],
+      "longTermMemorySchema": ["frequently_accessed_folders", "important_senders"],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -37,6 +42,8 @@
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -56,6 +63,11 @@
       "allowedModelLane": "any",
       "requiresConfirmation": true,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [
+        { "type": "outlook-rules", "action": "Auto-replies, send-later scheduling, and Quick Parts templates" },
+        { "type": "graph-subscriptions", "action": "Webhook notifications on sent item changes" }
+      ],
+      "longTermMemorySchema": ["common_recipients", "email_signature_style"],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -94,6 +106,10 @@
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [
+        { "type": "outlook-search-folders", "action": "Saved search folders for persistent KQL queries" }
+      ],
+      "longTermMemorySchema": ["frequent_search_queries"],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -117,6 +133,11 @@
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [
+        { "type": "calendar-sharing", "action": "Shared calendars and delegate access" },
+        { "type": "graph-subscriptions", "action": "Webhook notifications on calendar changes" }
+      ],
+      "longTermMemorySchema": ["recurring_meeting_patterns", "preferred_meeting_times"],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -144,6 +165,11 @@
       "allowedModelLane": "any",
       "requiresConfirmation": true,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [
+        { "type": "scheduling-assistant", "action": "FindMeetingTimes API for optimal slot discovery" },
+        { "type": "booking-pages", "action": "Microsoft Bookings for external scheduling" }
+      ],
+      "longTermMemorySchema": ["default_meeting_duration", "common_attendees", "preferred_online_meeting_provider"],
       "inputSchema": {
         "type": "object",
         "properties": {

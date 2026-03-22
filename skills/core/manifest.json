@@ -10,6 +10,8 @@
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
       "inputSchema": {
         "type": "object",
         "properties": {},
@@ -24,6 +26,8 @@
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
       "inputSchema": {
         "type": "object",
         "properties": {},
@@ -38,6 +42,10 @@
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [
+        { "type": "azure-cost-management", "action": "Budget alerts and anomaly detection via native Azure Cost Management" }
+      ],
+      "longTermMemorySchema": ["monthly_cost_baseline", "cost_anomaly_thresholds"],
       "inputSchema": {
         "type": "object",
         "properties": {},
@@ -52,6 +60,8 @@
       "allowedModelLane": "any",
       "requiresConfirmation": true,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
       "inputSchema": {
         "type": "object",
         "properties": {},
@@ -66,6 +76,8 @@
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": ["preferred_name", "communication_style", "language", "timezone"],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -102,6 +114,8 @@
       "allowedModelLane": "any",
       "requiresConfirmation": true,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -121,6 +135,8 @@
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
       "inputSchema": {
         "type": "object",
         "properties": {},
