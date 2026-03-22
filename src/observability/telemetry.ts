@@ -39,6 +39,8 @@ export type TelemetryEventName =
   | 'LlmCallFailed'
   | 'GraphNotificationProcessed'
   | 'GraphSubscriptionRenewed'
+  | 'PendingIntentCreated'
+  | 'PendingIntentRecovered'
   | 'StateLoaded'
   | 'StateSaved';
 

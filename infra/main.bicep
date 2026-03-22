@@ -309,6 +309,18 @@ resource containerIdeMessages 'Microsoft.DocumentDB/databaseAccounts/sqlDatabase
   }
 }
 
+resource containerPendingIntents 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: cosmosDatabase
+  name: 'pendingIntents'
+  properties: {
+    resource: {
+      id: 'pendingIntents'
+      partitionKey: { paths: [ '/userId' ], kind: 'Hash' }
+      defaultTtl: 604800 // 7 days — pending intents auto-expire (#116)
+    }
+  }
+}
+
 resource containerConversationReferences 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
   parent: cosmosDatabase
   name: 'conversationReferences'

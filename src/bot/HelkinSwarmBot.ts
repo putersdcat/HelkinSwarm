@@ -27,6 +27,7 @@ import { isColdStarting } from './lifecycleNotices.js';
 import { loadCapabilities } from '../capabilities/capabilityLoader.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { parseDevLoopMessage } from '../devloop/radioProtocol.js';
+import { createPendingIntent } from '../orchestrator/pendingIntentStore.js';
 
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
@@ -354,21 +355,39 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     // Extract image URLs from Teams inline attachments (#130)
     const imageUrls = this.extractImageUrls(context);
 
-    await this.raiseToOverseer(
-      context,
-      userId,
-      userAlias,
-      messageText,
-      undefined,
-      imageUrls,
-      devLoopParsed.isDevLoop ? {
-        isDevLoop: devLoopParsed.isDevLoop,
-        prefix: devLoopParsed.prefix,
-        correlationTag: devLoopParsed.correlationTag,
-        body: devLoopParsed.body,
-        hasOver: devLoopParsed.hasOver,
-      } : undefined,
-    );
+    const devLoopCtx = devLoopParsed.isDevLoop ? {
+      isDevLoop: devLoopParsed.isDevLoop,
+      prefix: devLoopParsed.prefix,
+      correlationTag: devLoopParsed.correlationTag,
+      body: devLoopParsed.body,
+      hasOver: devLoopParsed.hasOver,
+    } : undefined;
+
+    try {
+      await this.raiseToOverseer(
+        context,
+        userId,
+        userAlias,
+        messageText,
+        undefined,
+        imageUrls,
+        devLoopCtx,
+      );
+    } catch (err) {
+      // Overseer unreachable — persist as pending intent for startup recovery (#116)
+      const conversationReference = TurnContextClass.getConversationReference(context.activity);
+      const { trackingId } = await createPendingIntent({
+        userId,
+        messageText,
+        conversationReferenceJson: JSON.stringify(conversationReference),
+        imageUrls,
+        devLoopContextJson: devLoopCtx ? JSON.stringify(devLoopCtx) : undefined,
+      });
+      await context.sendActivity(
+        `⏳ Your message has been queued (tracking: ${trackingId}). I'll process it when I'm back online.`,
+      );
+      console.error(`[HelkinSwarmBot] Queued pending intent ${trackingId}: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   /** Route a user message to the eternal overseer, starting it if needed. */
