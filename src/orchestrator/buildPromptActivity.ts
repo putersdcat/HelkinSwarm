@@ -11,10 +11,14 @@ import { getUserProfile, profileToPromptFragment } from '../memory/userProfile.j
 import { getModelRouting } from '../llm/modelRouter.js';
 import { MemoryManager } from '../memory/memoryManager.js';
 import { buildPriorsPromptFragment } from '../persona/operatorDomainPriors.js';
+import { buildDevLoopSystemBlock } from '../devloop/sessionContext.js';
+import type { DevLoopContext } from '../devloop/radioProtocol.js';
 
 export interface BuildPromptInput {
   state: OverseerState;
   userMessage: string;
+  /** Parsed DevLoop protocol context (#147) */
+  devLoopContext?: DevLoopContext;
 }
 
 export interface PromptResult {
@@ -120,10 +124,16 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
     // Memory recall unavailable — proceed without
   }
 
+  // Inject DevLoop session context when in a DevLoop session (#147)
+  const devLoopBlock = input.devLoopContext?.isDevLoop
+    ? buildDevLoopSystemBlock(input.devLoopContext)
+    : '';
+
   const systemPrompt = [
     persona,
     modelIdentity,
     buildPriorsPromptFragment(),
+    devLoopBlock,
     preferencesFragment ? `User preferences: ${preferencesFragment}` : '',
     onboardingInstructions,
     recalledMemory,

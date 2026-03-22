@@ -20,6 +20,7 @@ import type { SummarizeInput, SummarizeResult } from './summarizeActivity.js';
 import type { SaveStateInput } from './saveStateActivity.js';
 import type { LoadStateInput } from './loadStateActivity.js';
 import type { SendReplyInput } from './sendReplyActivity.js';
+import type { DevLoopContext } from '../devloop/radioProtocol.js';
 
 export interface NewMessageEvent {
   userMessage: string;
@@ -30,6 +31,8 @@ export interface NewMessageEvent {
   modelOverride?: 'primary' | 'secondary';
   /** Image URLs extracted from Teams attachments (#130) */
   imageUrls?: string[];
+  /** Parsed DevLoop protocol context when message has protocol markers (#147) */
+  devLoopContext?: DevLoopContext;
 }
 
 df.app.orchestration('overseer', function* (context) {
@@ -86,6 +89,7 @@ df.app.orchestration('overseer', function* (context) {
     correlationId: crypto.randomUUID(),
     modelOverride: event.modelOverride,
     imageUrls: event.imageUrls,
+    devLoopContext: event.devLoopContext,
   };
 
   let sessionResult: SessionResult;
@@ -160,6 +164,7 @@ function* processTurn(
     correlationId: crypto.randomUUID(),
     modelOverride: event.modelOverride,
     imageUrls: event.imageUrls,
+    devLoopContext: event.devLoopContext,
   };
 
   let sessionResult: SessionResult;

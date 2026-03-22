@@ -19,6 +19,7 @@ import { signExecutorPayload, hashPayload } from './executorActivity.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { canonicalizeInput } from './inputCanonicalizer.js';
 import { computeToolBudget } from './toolBudgetScaler.js';
+import type { DevLoopContext } from '../devloop/radioProtocol.js';
 
 export interface SessionInput {
   state: OverseerState;
@@ -29,6 +30,8 @@ export interface SessionInput {
   modelOverride?: 'primary' | 'secondary';
   /** Image URLs extracted from Teams attachments (#130) */
   imageUrls?: string[];
+  /** Parsed DevLoop protocol context (#147) */
+  devLoopContext?: DevLoopContext;
 }
 
 export interface SessionResult {
@@ -50,10 +53,17 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // 0. Canonicalize user input (#138)
   const { text: canonicalizedMessage } = canonicalizeInput(input.userMessage);
 
+  // 0b. For DevLoop sessions, use the clean body (protocol markers stripped) as
+  // the user message for the LLM — the DevLoop context is injected via system prompt (#147).
+  const userMessageForLlm = input.devLoopContext?.isDevLoop
+    ? input.devLoopContext.body
+    : canonicalizedMessage;
+
   // 1. Build prompt (persona + summary + user message)
   const promptInput: BuildPromptInput = {
     state: input.state,
-    userMessage: canonicalizedMessage,
+    userMessage: userMessageForLlm,
+    devLoopContext: input.devLoopContext,
   };
   const prompt: PromptResult = yield context.df.callActivity(
     'buildPromptActivity',
@@ -277,9 +287,16 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   }
 
   // 5. Send reply to Teams (proactive)
+  // For DevLoop sessions, wrap the response in protocol format (#147)
+  let replyMessage = responseContent;
+  if (input.devLoopContext?.isDevLoop) {
+    const tag = input.devLoopContext.correlationTag ? ` ${input.devLoopContext.correlationTag}` : '';
+    replyMessage = `SWARM: ${responseContent}${tag} OVER`;
+  }
+
   const replyInput: SendReplyInput = {
     userId: input.state.userId,
-    message: responseContent,
+    message: replyMessage,
   };
   const replyResult: SendReplyResult = yield context.df.callActivity(
     'sendReplyActivity',

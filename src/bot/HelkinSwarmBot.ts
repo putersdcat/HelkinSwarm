@@ -26,6 +26,7 @@ import { getAckVariant } from './ackVariants.js';
 import { isColdStarting } from './lifecycleNotices.js';
 import { loadCapabilities } from '../capabilities/capabilityLoader.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
+import { parseDevLoopMessage } from '../devloop/radioProtocol.js';
 
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
@@ -257,13 +258,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return;
     }
 
-    // Strip DevLoop protocol prefixes and correlation tags before shields check (#132).
-    // Prefixes like "DEVLOOP:", "SWARM:", "HUMAN:" trigger false positives in Prompt Shields.
-    const textForShields = messageText
-      .replace(/^(?:DEVLOOP|SWARM|HUMAN):\s*/i, '')
-      .replace(/\[(?:probe|DL)-[^\]]*\]\s*/gi, '')
-      .replace(/\s*OVER\s*$/i, '')
-      .trim();
+    // Parse DevLoop protocol markers (#147) — must happen before shields check
+    const devLoopParsed = parseDevLoopMessage(messageText);
+
+    // Use clean message body (without protocol markers) for shields check (#132, #147).
+    // DevLoop protocol markers trigger false positives in Prompt Shields.
+    const textForShields = devLoopParsed.isDevLoop ? devLoopParsed.body : messageText;
 
     // Prompt Shields check on incoming user message (spec 0e, step 4)
     const shieldResult = await promptShields.check(textForShields, correlationId);
@@ -293,7 +293,21 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     // Extract image URLs from Teams inline attachments (#130)
     const imageUrls = this.extractImageUrls(context);
 
-    await this.raiseToOverseer(context, userId, userAlias, messageText, undefined, imageUrls);
+    await this.raiseToOverseer(
+      context,
+      userId,
+      userAlias,
+      messageText,
+      undefined,
+      imageUrls,
+      devLoopParsed.isDevLoop ? {
+        isDevLoop: devLoopParsed.isDevLoop,
+        prefix: devLoopParsed.prefix,
+        correlationTag: devLoopParsed.correlationTag,
+        body: devLoopParsed.body,
+        hasOver: devLoopParsed.hasOver,
+      } : undefined,
+    );
   }
 
   /** Route a user message to the eternal overseer, starting it if needed. */
@@ -304,6 +318,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     userMessage: string,
     modelOverride?: 'primary' | 'secondary',
     imageUrls?: string[],
+    devLoopContext?: NewMessageEvent['devLoopContext'],
   ): Promise<void> {
     const client = this.durableClient!;
     const instanceId = `overseer-${userId}`;
@@ -346,6 +361,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       userAlias,
       ...(modelOverride !== undefined ? { modelOverride } : {}),
       ...(imageUrls && imageUrls.length > 0 ? { imageUrls } : {}),
+      ...(devLoopContext !== undefined ? { devLoopContext } : {}),
     };
 
     await client.raiseEvent(instanceId, 'NewMessage', event);
