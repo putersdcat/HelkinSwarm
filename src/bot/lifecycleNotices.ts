@@ -108,7 +108,7 @@ export async function sendShutdownNotice(): Promise<void> {
   if (shutdownSent) return;
   shutdownSent = true;
 
-  const message = '🔴 **HelkinSwarm going offline** for maintenance. In-flight work will complete.';
+  const message = '🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete.';
 
   try {
     await sendProactiveMessage(message);
