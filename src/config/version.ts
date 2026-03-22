@@ -9,11 +9,18 @@ import { fileURLToPath } from 'node:url';
 
 function loadVersion(): string {
   try {
-    // Navigate from dist/src/config/version.js → project root/package.json
     const thisDir = dirname(fileURLToPath(import.meta.url));
-    const pkgPath = resolve(thisDir, '..', '..', '..', 'package.json');
-    const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { version?: string };
-    return pkg.version ?? '0.0.0-unknown';
+    // Try multiple levels — works from both dist/src/config/ (runtime) and src/config/ (vitest)
+    for (const depth of ['..', '../..', '../../..']) {
+      const pkgPath = resolve(thisDir, depth, 'package.json');
+      try {
+        const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8')) as { version?: string };
+        if (pkg.version) return pkg.version;
+      } catch {
+        continue;
+      }
+    }
+    return '0.0.0-unknown';
   } catch {
     return '0.0.0-unknown';
   }
