@@ -85,6 +85,15 @@ clearMaintenanceWithRetry().catch(() => {
   // Already logged inside the function
 });
 
+// Delayed second clear (#146): the old container's SIGTERM handler may write
+// enabled=true to Cosmos *after* our initial clear succeeds.  A second clear
+// 15s later overwrites that late write and resolves the race condition.
+setTimeout(() => {
+  clearMaintenanceWithRetry(2, 3000).catch(() => {
+    // Already logged inside the function
+  });
+}, 15_000);
+
 // Send startup lifecycle notice to owner (#142)
 setTimeout(() => {
   sendStartupNotice().catch((err: unknown) => {
