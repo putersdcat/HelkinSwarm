@@ -79,8 +79,25 @@ df.app.activity('llmFollowUpActivity', {
 
       const choice = response.choices[0];
 
+      const llmContent = textContent(choice.message.content);
+
+      // If the LLM returned empty content, build a summary from tool results
+      // so the user sees actionable details (issue numbers, URLs, etc.) rather
+      // than a generic "Tool execution complete." message.
+      let content: string;
+      if (llmContent) {
+        content = llmContent;
+      } else {
+        const summaries = input.toolResults.map((tr) => {
+          if (!tr.success) return `**${tr.toolName}** failed: ${tr.error ?? 'unknown error'}`;
+          const resultStr = typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result, null, 2);
+          return `**${tr.toolName}**: ${resultStr}`;
+        });
+        content = summaries.join('\n\n');
+      }
+
       return {
-        content: textContent(choice.message.content) || 'Tool execution complete.',
+        content,
         model: response.model,
         tokensUsed: response.usage.totalTokens,
         promptTokens: response.usage.promptTokens,
