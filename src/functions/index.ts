@@ -11,6 +11,8 @@ import './messages.js';
 import './emergencyStop.js';
 import './hookReceiver.js';
 import './devLoopRelay.js';
+import './graphNotificationHandler.js';
+import './subscriptionRenewalTimer.js';
 
 // Orchestrator + activity registrations (Phase 2)
 import '../orchestrator/overseer.js';
