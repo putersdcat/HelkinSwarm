@@ -19,7 +19,7 @@ const EnvConfigSchema = z.object({
 
   // LLM / AI Foundry
   azureAiFoundryEndpoint: z.string().url('AZURE_AI_FOUNDRY_ENDPOINT must be a valid URL').optional(),
-  llmPrimaryModel: z.string().default('grok-4-1-fast-reasoning'),
+  llmPrimaryModel: z.string().default('grok-4-1-fast-non-reasoning'),
   llmSecondaryModel: z.string().default('grok-4-1-fast-non-reasoning'),
   llmEmbeddingModel: z.string().default('text-embedding-3-large'),
 
