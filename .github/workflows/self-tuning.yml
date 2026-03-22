@@ -1,0 +1,50 @@
+name: Self-Tuning Eval
+on:
+  push:
+    paths:
+      - 'model-profiles/**'
+      - 'skills/**/capabilities.json'
+      - 'src/llm/selfTuning/**'
+  schedule:
+    - cron: '0 6 * * 1' # Weekly Monday 06:00 UTC
+  repository_dispatch:
+    types: [eval-trigger]
+  workflow_dispatch:
+    inputs:
+      models:
+        description: 'Comma-separated model IDs (blank = all)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
+
+      - name: Run eval loop
+        run: echo "Self-tuning eval loop placeholder — requires #97 (Monte-Carlo framework) to be implemented"
+        env:
+          EVAL_MODELS: ${{ github.event.inputs.models || '' }}
+
+      # Once #97 is delivered, this step will:
+      # 1. Run the benchmark framework against all models
+      # 2. Promote winning profiles
+      # 3. Commit updated profiles back to main
+      # 4. Create GitHub Issues with before/after score charts
