@@ -287,11 +287,13 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   }
 
   // 5. Send reply to Teams (proactive)
-  // For DevLoop sessions, wrap the response in protocol format (#147)
+  // For DevLoop sessions, wrap the response in protocol format (#147, #92)
   let replyMessage = responseContent;
   if (input.devLoopContext?.isDevLoop) {
     const tag = input.devLoopContext.correlationTag ? ` ${input.devLoopContext.correlationTag}` : '';
-    replyMessage = `SWARM: ${responseContent}${tag} OVER`;
+    // Use HELKIN-REPLY for interrogation queries, SWARM for steering messages (#92)
+    const replyPrefix = input.devLoopContext.prefix === 'DEVQUERY' ? 'HELKIN-REPLY' : 'SWARM';
+    replyMessage = `${replyPrefix}: ${responseContent}${tag} OVER`;
   }
 
   const replyInput: SendReplyInput = {

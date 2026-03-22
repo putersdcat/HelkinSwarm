@@ -1,14 +1,32 @@
 // Radio Protocol parser — detects and parses DevLoop bidirectional messages.
 // Spec ref: docs/0g-Bidirectional-Communication-Evolution-DevLoop-Runtime.md
-// Fix: #147
+// Issues: #147, #92
 
 import { z } from 'zod';
+
+// ---------------------------------------------------------------------------
+// Protocol version — bump when schema changes
+// ---------------------------------------------------------------------------
+export const DEVLOOP_PROTOCOL_VERSION = '1.0.0' as const;
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-export const DevLoopPrefixSchema = z.enum(['DEVLOOP', 'DEVQUERY', 'SWARM', 'HUMAN']);
+/**
+ * All recognised protocol prefixes:
+ *   IDE → Runtime: DEVLOOP (steering), DEVQUERY (interrogation)
+ *   Runtime → IDE: SWARM (general reply), HELKIN-REPLY (query answer), SWARM-TOOL-REPORT (tool state)
+ *   Human:         HUMAN (pass-through)
+ */
+export const DevLoopPrefixSchema = z.enum([
+  'DEVLOOP',
+  'DEVQUERY',
+  'SWARM',
+  'HELKIN-REPLY',
+  'SWARM-TOOL-REPORT',
+  'HUMAN',
+]);
 export type DevLoopPrefix = z.infer<typeof DevLoopPrefixSchema>;
 
 export interface DevLoopMessage {
@@ -54,8 +72,8 @@ export function toDevLoopContext(msg: DevLoopMessage): DevLoopContext | undefine
 // Regex patterns
 // ---------------------------------------------------------------------------
 
-/** Matches protocol prefix at start of message: DEVLOOP: / DEVQUERY: / SWARM: / HUMAN: */
-const PREFIX_RE = /^(DEVLOOP|DEVQUERY|SWARM|HUMAN):\s*/i;
+/** Matches protocol prefix at start of message: DEVLOOP: / DEVQUERY: / SWARM-TOOL-REPORT: / SWARM: / HELKIN-REPLY: / HUMAN: */
+const PREFIX_RE = /^(DEVLOOP|DEVQUERY|SWARM-TOOL-REPORT|HELKIN-REPLY|SWARM|HUMAN):\s*/i;
 
 /** Matches correlation tags: [DL-YYYYMMDDHHmmss-XXXX] or [probe-XXXX] */
 const CORRELATION_TAG_RE = /\[(DL-[^\]]+|probe-[^\]]+)\]/gi;
