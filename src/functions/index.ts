@@ -52,11 +52,10 @@ loadCapabilities().then((result) => {
 });
 
 // ---------------------------------------------------------------------------
-// Startup: clear maintenance mode from any previous graceful shutdown (#136, #145)
-// The shutdown handler sets maintenance=true in Cosmos; we must clear it
-// when the new container starts to resume normal operation.
-// In-memory override in maintenanceMode.ts means messages are NOT blocked
-// while this runs — but we still need to clear Cosmos for consistency.
+// Startup: clear maintenance mode (#145)
+// On startup, clear any stale maintenance flag in Cosmos (e.g. from a manual
+// /emergency-stop). The in-memory _startupClearPending flag in maintenanceMode.ts
+// prevents blocking messages while this async operation runs.
 // ---------------------------------------------------------------------------
 import { setMaintenanceMode } from '../bot/maintenanceMode.js';
 import { sendStartupNotice, sendShutdownNotice } from '../bot/lifecycleNotices.js';
@@ -93,27 +92,27 @@ setTimeout(() => {
 }, 5_000);
 
 // ---------------------------------------------------------------------------
-// Graceful shutdown handler (#136)
-// On SIGTERM/SIGINT: enable maintenance mode so new messages get a polite
-// "deploying" response, then allow a grace period for in-flight work.
+// Graceful shutdown handler (#136, #145)
+// On SIGTERM/SIGINT: log and allow grace period for in-flight work.
+//
+// IMPORTANT: We do NOT set maintenance mode on shutdown anymore.
+// Container Apps uses rolling updates — the old container keeps serving
+// traffic until the new container passes health checks. Setting maintenance
+// mode on SIGTERM blocks messages on the only container serving traffic,
+// causing the "offline for maintenance" bug after every deploy (#145).
+//
+// In-flight orchestrations complete naturally during the grace period.
+// The new container starts fresh with _startupClearPending=true.
 // ---------------------------------------------------------------------------
 
 const SHUTDOWN_GRACE_MS = 10_000;
 
 function handleShutdown(signal: string): void {
-  console.log(`[shutdown] Received ${signal} — entering maintenance mode, grace=${SHUTDOWN_GRACE_MS}ms`);
+  console.log(`[shutdown] Received ${signal} — grace=${SHUTDOWN_GRACE_MS}ms for in-flight work`);
 
   // Send shutdown lifecycle notice to owner (#142)
   sendShutdownNotice().catch((err: unknown) => {
     console.warn('[shutdown] Failed to send shutdown notice:', err);
-  });
-
-  setMaintenanceMode({
-    enabled: true,
-    updatedBy: 'system-shutdown',
-    reason: `Graceful shutdown on ${signal}`,
-  }).catch((err: unknown) => {
-    console.error('[shutdown] Failed to set maintenance mode:', err);
   });
 
   // Give in-flight orchestrations time to complete, then exit
