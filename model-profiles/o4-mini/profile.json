@@ -1,0 +1,23 @@
+{
+  "model": "o4-mini",
+  "version": 1,
+  "presentation": "flat_json",
+  "maxToolsPerTurn": 0,
+  "schemaInjection": {
+    "includeJsonSchema": true,
+    "includeExamples": true,
+    "compact": false
+  },
+  "preferredNaming": "snake_case",
+  "examples": [],
+  "knownLimitations": [
+    "Reasoning model — may not follow tool schema precisely without examples",
+    "Token-heavy reasoning chains can consume context budget"
+  ],
+  "excludeTools": [],
+  "boostTools": [],
+  "meta": {
+    "updatedAt": "2026-03-22T00:00:00Z",
+    "updatedBy": "manual"
+  }
+}
