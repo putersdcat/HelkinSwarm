@@ -133,3 +133,36 @@ pre {
   font-size: 12px;
   color: var(--muted);
 }
+
+.card-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.mini-card {
+  flex: 1;
+  min-width: 120px;
+  text-align: center;
+}
+.mini-card h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.stat {
+  font-size: 16px;
+  font-weight: 600;
+}
+.btn-kill {
+  background: transparent;
+  border: 1px solid var(--error);
+  color: var(--error);
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.btn-kill:hover { background: var(--error-bg); }
+.btn-kill:disabled { opacity: 0.5; cursor: not-allowed; }

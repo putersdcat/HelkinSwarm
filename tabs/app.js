@@ -83,6 +83,21 @@
     });
   }
 
+  function apiPost(endpoint) {
+    return getAadToken().then(function (token) {
+      return fetch(TAB_API_BASE + "/" + endpoint, {
+        method: "POST",
+        headers: {
+          "x-helkinswarm-user-id": token,
+          "Authorization": "Bearer " + token,
+        },
+      });
+    }).then(function (resp) {
+      if (!resp.ok) throw new Error("Tab API error: " + resp.status);
+      return resp.json();
+    });
+  }
+
   function showError(panelId, msg) {
     var el = document.getElementById(panelId);
     if (el) el.innerHTML = '<div class="error-msg">' + esc(msg) + "</div>";
@@ -199,27 +214,138 @@
 
     renderDevConsole: function () {
       var panelId = "panel-dev-console";
-      apiCall("sessions")
+      apiCall("dev-console")
         .then(function (data) {
-          var rows = (data.sessions || [])
-            .slice(0, 20)
+          var sessions = (data.sessions && data.sessions.list) || [];
+          var sessActive = data.sessions ? data.sessions.active : 0;
+          var sessTotal = data.sessions ? data.sessions.total : 0;
+
+          // Sessions table with kill buttons
+          var sessRows = sessions
+            .slice(0, 25)
             .map(function (s) {
               var badge = s.isRunning ? "ok" : "warn";
+              var killBtn = s.isRunning
+                ? '<button class="btn-kill" data-instance="' + esc(s.instanceId) + '">Kill</button>'
+                : "";
               return (
                 "<tr><td>" + esc(s.instanceId) + "</td>" +
                 "<td>" + esc(s.name) + "</td>" +
                 '<td><span class="badge badge-' + badge + '">' + esc(s.runtimeStatus) + "</span></td>" +
-                "<td>" + (s.createdAt ? new Date(s.createdAt).toLocaleString() : "—") + "</td></tr>"
+                "<td>" + (s.createdAt ? new Date(s.createdAt).toLocaleString() : "—") + "</td>" +
+                "<td>" + killBtn + "</td></tr>"
               );
             })
             .join("");
 
-          document.getElementById(panelId).innerHTML =
+          // Hooks summary
+          var hooks = (data.hooks && data.hooks.list) || [];
+          var hookRows = hooks
+            .slice(0, 15)
+            .map(function (h) {
+              var badge = h.status === "active" ? "ok" : h.status === "paused" ? "warn" : "error";
+              return (
+                "<tr><td>" + esc(h.id) + "</td>" +
+                "<td>" + esc(h.hookType) + "</td>" +
+                "<td>" + esc(h.skillDomain) + "</td>" +
+                '<td><span class="badge badge-' + badge + '">' + esc(h.status) + "</span></td>" +
+                "<td>" + (h.expiresAt ? new Date(h.expiresAt).toLocaleString() : "—") + "</td></tr>"
+              );
+            })
+            .join("");
+
+          // Relay stats
+          var relay = data.relay || { total: 0, pending: 0 };
+
+          // Maintenance status
+          var maintBadge = data.maintenance ? "error" : "ok";
+          var maintText = data.maintenance ? "ACTIVE" : "Clear";
+
+          var html =
             "<h1>Dev Console</h1>" +
-            '<div class="card"><h2>Orchestration Sessions (' +
-            esc(data.active) + " active / " + esc(data.total) + " total)</h2>" +
-            "<table><tr><th>Instance</th><th>Name</th><th>Status</th><th>Created</th></tr>" +
-            rows + "</table></div>";
+
+            // Status cards row
+            '<div class="card-row">' +
+            '<div class="card mini-card"><h3>Sessions</h3><span class="stat">' +
+            esc(sessActive) + " / " + esc(sessTotal) + "</span></div>" +
+            '<div class="card mini-card"><h3>Hooks</h3><span class="stat">' +
+            esc(data.hooks ? data.hooks.active : 0) + " / " + esc(data.hooks ? data.hooks.total : 0) + "</span></div>" +
+            '<div class="card mini-card"><h3>Relay (24h)</h3><span class="stat">' +
+            esc(relay.total) + " msgs / " + esc(relay.pending) + " pending</span></div>" +
+            '<div class="card mini-card"><h3>Maintenance</h3><span class="badge badge-' +
+            maintBadge + '">' + maintText + "</span></div>" +
+            '<div class="card mini-card"><h3>Safety</h3><span class="stat">' +
+            esc(data.safetyMode) + "</span></div>" +
+            "</div>" +
+
+            // Sessions table
+            '<div class="card"><h2>Orchestration Sessions</h2>' +
+            "<table><tr><th>Instance</th><th>Name</th><th>Status</th><th>Created</th><th>Action</th></tr>" +
+            sessRows + "</table></div>" +
+
+            // Hooks table
+            '<div class="card"><h2>Durable Hooks</h2>' +
+            (hookRows
+              ? "<table><tr><th>Hook ID</th><th>Type</th><th>Skill</th><th>Status</th><th>Expires</th></tr>" +
+                hookRows + "</table>"
+              : "<p>No hooks registered.</p>") +
+            "</div>" +
+
+            // Correlation search
+            '<div class="card"><h2>Correlation Search</h2>' +
+            '<div style="display:flex;gap:8px;margin-bottom:8px">' +
+            '<input id="corr-input" type="text" placeholder="Enter correlation tag..." ' +
+            'style="flex:1;padding:6px 10px;border:1px solid var(--border);border-radius:4px;font-size:13px">' +
+            '<button id="corr-search-btn" class="cmd-btn">Search</button></div>' +
+            '<div id="corr-results"></div>' +
+            "</div>";
+
+          document.getElementById(panelId).innerHTML = html;
+
+          // Wire kill buttons
+          document.querySelectorAll(".btn-kill").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              var instanceId = btn.getAttribute("data-instance");
+              btn.disabled = true;
+              btn.textContent = "Killing...";
+              apiPost("sessions/" + instanceId + "/terminate")
+                .then(function () { router.renderDevConsole(); })
+                .catch(function (err) { btn.textContent = "Error: " + err.message; });
+            });
+          });
+
+          // Wire correlation search
+          var searchBtn = document.getElementById("corr-search-btn");
+          if (searchBtn) {
+            searchBtn.addEventListener("click", function () {
+              var input = document.getElementById("corr-input");
+              var tag = input ? input.value.trim() : "";
+              if (!tag) return;
+              var results = document.getElementById("corr-results");
+              if (results) results.innerHTML = "<p>Searching...</p>";
+              apiCall("traces?corr=" + encodeURIComponent(tag))
+                .then(function (data) {
+                  if (!data.messages || data.messages.length === 0) {
+                    results.innerHTML = "<p>No messages found for tag: " + esc(tag) + "</p>";
+                    return;
+                  }
+                  var rows = data.messages.map(function (m) {
+                    return (
+                      "<tr><td>" + esc(m.direction) + "</td>" +
+                      "<td>" + esc(m.messageType) + "</td>" +
+                      "<td>" + (m.createdAt ? new Date(m.createdAt).toLocaleString() : "—") + "</td>" +
+                      "<td><pre>" + esc((m.payload || "").substring(0, 200)) + "</pre></td></tr>"
+                    );
+                  }).join("");
+                  results.innerHTML =
+                    "<table><tr><th>Direction</th><th>Type</th><th>Time</th><th>Payload</th></tr>" +
+                    rows + "</table>";
+                })
+                .catch(function (err) {
+                  results.innerHTML = '<p class="error-msg">' + esc(err.message) + "</p>";
+                });
+            });
+          }
         })
         .catch(function (err) {
           if (String(err.message).startsWith("cold-start:")) {
