@@ -124,3 +124,20 @@ export function parseDevLoopMessage(raw: string): DevLoopMessage {
     raw,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Resurrection command schema (#92 AC4)
+// ---------------------------------------------------------------------------
+
+/** Sent by DevLoop to restart a dead/terminated overseer session. */
+export const ResurrectionCommandSchema = z.object({
+  /** Target user whose session should be resurrected */
+  userId: z.string(),
+  /** Why the resurrection was requested */
+  reason: z.string().optional(),
+  /** Optional message to inject into the new session */
+  initialMessage: z.string().optional(),
+  /** Protocol version for forward-compat */
+  protocolVersion: z.string().default(DEVLOOP_PROTOCOL_VERSION),
+});
+export type ResurrectionCommand = z.infer<typeof ResurrectionCommandSchema>;

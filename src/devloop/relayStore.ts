@@ -4,6 +4,7 @@
 
 import { z } from 'zod';
 import { getContainer } from '../memory/cosmosClient.js';
+import { DEVLOOP_PROTOCOL_VERSION } from './radioProtocol.js';
 
 const IDE_MESSAGES_CONTAINER = 'ide-messages';
 const TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
@@ -17,13 +18,14 @@ export const IdeMessageDocumentSchema = z.object({
   correlationTag: z.string(),
   direction: z.enum(['inbound', 'outbound']),
   sender: z.enum(['devloop', 'runtime']),
-  messageType: z.enum(['DEVQUERY', 'DEVLOOP', 'HELKIN-REPLY', 'ASYNC-NOTIFICATION', 'HEARTBEAT']),
+  messageType: z.enum(['DEVQUERY', 'DEVLOOP', 'HELKIN-REPLY', 'ASYNC-NOTIFICATION', 'HEARTBEAT', 'SWARM-TOOL-REPORT']),
   payload: z.record(z.unknown()),
   timestamp: z.string(),
   expiresAt: z.string(),
   status: z.enum(['pending', 'delivered', 'failed']),
   deliveredAt: z.string().optional(),
   deliveryAttempts: z.number().default(0),
+  protocolVersion: z.string().default(DEVLOOP_PROTOCOL_VERSION),
   ttl: z.number().default(TTL_SECONDS),
 });
 
@@ -56,6 +58,7 @@ export async function writeRelayMessage(input: RelayMessageInput): Promise<IdeMe
     expiresAt: new Date(now.getTime() + TTL_SECONDS * 1000).toISOString(),
     status: 'pending',
     deliveryAttempts: 0,
+    protocolVersion: DEVLOOP_PROTOCOL_VERSION,
     ttl: TTL_SECONDS,
   };
 

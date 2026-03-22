@@ -8,14 +8,18 @@ import {
   type InvocationContext,
 } from '@azure/functions';
 import * as df from 'durable-functions';
+import { OrchestrationRuntimeStatus } from 'durable-functions';
 import { z } from 'zod';
 import { isOwnerUserId } from '../bot/maintenanceMode.js';
+import { getConversationReference } from '../bot/conversationStore.js';
 import {
   writeRelayMessage,
   pollOutboundMessages,
   markDelivered,
   getMessagesByCorrelation,
 } from '../devloop/relayStore.js';
+import { ResurrectionCommandSchema } from '../devloop/radioProtocol.js';
+import type { NewMessageEvent } from '../orchestrator/overseer.js';
 import { trackEvent } from '../observability/telemetry.js';
 
 // ---------------------------------------------------------------------------
@@ -24,7 +28,7 @@ import { trackEvent } from '../observability/telemetry.js';
 
 const PushPayloadSchema = z.object({
   correlationTag: z.string(),
-  messageType: z.enum(['DEVQUERY', 'DEVLOOP', 'HEARTBEAT']),
+  messageType: z.enum(['DEVQUERY', 'DEVLOOP', 'HEARTBEAT', 'SWARM-TOOL-REPORT']),
   payload: z.record(z.unknown()).default({}),
 });
 
@@ -182,6 +186,107 @@ app.http('devloopThread', {
     return {
       status: 200,
       jsonBody: { correlationTag, messages, count: messages.length },
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/devloop/resurrect — Restart a dead/terminated overseer (#92 AC4)
+// ---------------------------------------------------------------------------
+
+const TERMINAL_STATUSES = new Set<OrchestrationRuntimeStatus>([
+  OrchestrationRuntimeStatus.Completed,
+  OrchestrationRuntimeStatus.Failed,
+  OrchestrationRuntimeStatus.Terminated,
+]);
+
+app.http('devloopResurrect', {
+  methods: ['POST'],
+  authLevel: 'function',
+  route: 'devloop/resurrect',
+  extraInputs: [df.input.durableClient()],
+  handler: async (req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
+    const callerId = req.headers.get('x-helkinswarm-user-id');
+    if (!callerId || !(await isOwnerUserId(callerId))) {
+      return { status: 403, jsonBody: { error: 'Owner-only endpoint.' } };
+    }
+
+    let body: ReturnType<typeof ResurrectionCommandSchema.parse>;
+    try {
+      body = ResurrectionCommandSchema.parse(await req.json());
+    } catch {
+      return { status: 400, jsonBody: { error: 'Invalid payload. Required: userId.' } };
+    }
+
+    const targetUserId = body.userId;
+    const instanceId = `overseer-${targetUserId}`;
+    const client = df.getClient(context);
+
+    // 1. Check current orchestrator status
+    let wasTerminal = false;
+    try {
+      const status = await client.getStatus(instanceId);
+      if (status && !TERMINAL_STATUSES.has(status.runtimeStatus)) {
+        return {
+          status: 200,
+          jsonBody: {
+            resurrected: false,
+            reason: 'Session is already running.',
+            runtimeStatus: status.runtimeStatus,
+          },
+        };
+      }
+      // Terminal or not found — proceed with resurrection
+      if (status) {
+        wasTerminal = true;
+        await client.purgeInstanceHistory(instanceId);
+      }
+    } catch {
+      // Instance not found — fine, we'll start fresh
+    }
+
+    // 2. Start new overseer
+    await client.startNew('overseer', { instanceId });
+
+    // 3. If an initial message was provided and we have a conversation reference, inject it
+    if (body.initialMessage) {
+      const convRef = await getConversationReference(targetUserId);
+      if (convRef) {
+        const event: NewMessageEvent = {
+          userMessage: body.initialMessage,
+          conversationReference: convRef,
+          userId: targetUserId,
+          userAlias: targetUserId.slice(0, 4),
+          devLoopContext: {
+            isDevLoop: true,
+            prefix: 'DEVLOOP',
+            correlationTag: null,
+            body: body.initialMessage,
+            hasOver: false,
+          },
+        };
+        // Small delay to let the orchestrator reach its waitForExternalEvent
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        await client.raiseEvent(instanceId, 'NewMessage', event);
+      }
+    }
+
+    context.log(`[devloopRelay] Resurrect: user=${targetUserId} wasTerminal=${wasTerminal} reason=${body.reason ?? 'none'}`);
+    trackEvent({
+      name: 'DevLoopRelayPush',
+      correlationId: `resurrect-${targetUserId}-${Date.now()}`,
+      userId: callerId,
+      properties: { action: 'resurrect', targetUserId, wasTerminal, reason: body.reason ?? 'none' },
+    });
+
+    return {
+      status: 200,
+      jsonBody: {
+        resurrected: true,
+        instanceId,
+        wasTerminal,
+        initialMessageInjected: !!body.initialMessage,
+      },
     };
   },
 });
