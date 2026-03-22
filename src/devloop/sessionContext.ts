@@ -26,6 +26,8 @@ export function buildDevLoopSystemBlock(parsed: DevLoopContext): string {
     '- When reporting status, include all component states.',
     '- You may use any available tools to answer DevLoop queries.',
     '- Do NOT use personal addressing (e.g. names, greetings, honorifics). This is a system channel, not a user conversation.',
+    '- When asked about tools or capabilities, ALWAYS call helkin_list_skills to get the real registry — never guess tool counts or names.',
+    '- When asked about health or status, ALWAYS call helkin_health_check for live data.',
   ];
 
   if (parsed.correlationTag) {

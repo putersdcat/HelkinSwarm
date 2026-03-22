@@ -261,6 +261,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     // Parse DevLoop protocol markers (#147) — must happen before shields check
     const devLoopParsed = parseDevLoopMessage(messageText);
 
+    // DEVLOOP-KILL emergency kill switch (#93) — abort all sessions immediately
+    if (devLoopParsed.isDevLoop && devLoopParsed.body.toUpperCase().startsWith('KILL')) {
+      await this.handleEmergencyStop(context, userId);
+      return;
+    }
+
     // Use clean message body (without protocol markers) for shields check (#132, #147).
     // DevLoop protocol markers trigger false positives in Prompt Shields.
     const textForShields = devLoopParsed.isDevLoop ? devLoopParsed.body : messageText;
