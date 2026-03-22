@@ -285,6 +285,18 @@ resource containerDurableHooks 'Microsoft.DocumentDB/databaseAccounts/sqlDatabas
   }
 }
 
+resource containerTentativeActions 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: cosmosDatabase
+  name: 'tentativeActions'
+  properties: {
+    resource: {
+      id: 'tentativeActions'
+      partitionKey: { paths: [ '/userId' ], kind: 'Hash' }
+      defaultTtl: 86400 // 24 hours — pending actions auto-expire
+    }
+  }
+}
+
 resource containerIdeMessages 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
   parent: cosmosDatabase
   name: 'ide-messages'

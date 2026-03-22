@@ -65,6 +65,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     _context: TurnContext,
     invokeValue: AdaptiveCardInvokeValue,
   ): Promise<AdaptiveCardInvokeResponse> {
+    const verb = invokeValue.action?.verb;
+
+    if (verb === 'tentative_action') {
+      return this.handleTentativeActionInvoke(invokeValue);
+    }
+
     const data = invokeValue.action?.data as
       | { action: string; correlationId: string; userId: string; toolName: string; sessionInstanceId: string }
       | undefined;
@@ -96,6 +102,49 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
             text: approved
               ? `✅ Approved — executing ${data.toolName}`
               : `❌ Cancelled — ${data.toolName} will not execute`,
+            wrap: true,
+          },
+        ],
+      },
+    };
+  }
+
+  /**
+   * Handle tentative action approve/deny from Adaptive Card (#74).
+   */
+  private async handleTentativeActionInvoke(
+    invokeValue: AdaptiveCardInvokeValue,
+  ): Promise<AdaptiveCardInvokeResponse> {
+    const data = invokeValue.action?.data as
+      | { action: string; actionId: string; correlationId: string; userId: string; hookId: string }
+      | undefined;
+
+    if (!data?.actionId || !data?.userId) {
+      return { statusCode: StatusCodes.BAD_REQUEST, type: 'application/vnd.microsoft.error', value: { message: 'Missing tentative action data' } };
+    }
+
+    const approved = data.action === 'approved';
+
+    // Import dynamically to avoid circular dependencies at module level
+    const { approveTentativeAction, denyTentativeAction } = await import('./tentativeActionBridge.js');
+    if (approved) {
+      await approveTentativeAction(data.actionId, data.userId);
+    } else {
+      await denyTentativeAction(data.actionId, data.userId);
+    }
+
+    return {
+      statusCode: StatusCodes.OK,
+      type: 'application/vnd.microsoft.card.adaptive',
+      value: {
+        type: 'AdaptiveCard',
+        version: '1.4',
+        body: [
+          {
+            type: 'TextBlock',
+            text: approved
+              ? `✅ Action confirmed — proceeding`
+              : `❌ Action cancelled`,
             wrap: true,
           },
         ],
