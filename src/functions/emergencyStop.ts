@@ -11,6 +11,7 @@ import {
 import * as df from 'durable-functions';
 import { OrchestrationRuntimeStatus } from 'durable-functions';
 import { isOwnerUserId, setMaintenanceMode } from '../bot/maintenanceMode.js';
+import { pauseAllHooksForUser } from '../orchestrator/hookCatalog.js';
 
 async function readUserId(req: HttpRequest): Promise<string | null> {
   const headerUserId = req.headers.get('x-helkinswarm-user-id');
@@ -61,6 +62,15 @@ app.http('emergency-stop', {
 
     const client = df.getClient(context);
     const terminated = await terminateAllOrchestrations(client);
+
+    // Pause all active durable hooks for the user (#72)
+    let hooksPaused = 0;
+    try {
+      hooksPaused = await pauseAllHooksForUser(userId);
+    } catch (hookErr) {
+      context.error(`[EmergencyStop] Failed to pause hooks for userId=${userId}`, hookErr);
+    }
+
     await setMaintenanceMode({
       enabled: true,
       updatedBy: userId,
@@ -68,13 +78,14 @@ app.http('emergency-stop', {
       reason: 'Emergency stop invoked via HTTP endpoint',
     });
 
-    context.error(`[EmergencyStop] P0 event: maintenance enabled by userId=${userId}; terminated=${terminated}`);
+    context.error(`[EmergencyStop] P0 event: maintenance enabled by userId=${userId}; terminated=${terminated}; hooksPaused=${hooksPaused}`);
     return {
       status: 200,
       jsonBody: {
         ok: true,
         maintenanceMode: true,
         terminated,
+        hooksPaused,
       },
     };
   },
