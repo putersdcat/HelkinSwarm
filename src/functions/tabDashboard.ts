@@ -16,15 +16,34 @@ import { getModelRouting } from '../llm/modelRouter.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { getLoadedCapabilitiesCount, getActiveSkills } from '../capabilities/capabilityLoader.js';
 
+const TAB_CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': 'https://helkinswarmtabsst.z20.web.core.windows.net',
+  'Access-Control-Allow-Headers': 'x-helkinswarm-user-id, Authorization',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+};
+
 app.http('tab-dashboard', {
-  methods: ['GET'],
-  authLevel: 'function',
+  methods: ['GET', 'OPTIONS'],
+  authLevel: 'anonymous',
   route: 'tab/dashboard',
   extraInputs: [df.input.durableClient()],
   handler: async (req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
+    if (req.method === 'OPTIONS') {
+      return { status: 204, headers: TAB_CORS_HEADERS };
+    }
+
+    // Cold-start guard: 503 while capabilities are still loading
+    if (process.uptime() < 5) {
+      return {
+        status: 503,
+        headers: { ...TAB_CORS_HEADERS, 'Retry-After': '5' },
+        jsonBody: { status: 'cold-start', message: 'HelkinSwarm is starting up...', retryAfter: 5 },
+      };
+    }
+
     const userId = req.headers.get('x-helkinswarm-user-id');
     if (!userId || !(await isOwnerUserId(userId))) {
-      return { status: 403, jsonBody: { error: 'Owner-only endpoint.' } };
+      return { status: 403, headers: TAB_CORS_HEADERS, jsonBody: { error: 'Owner-only endpoint.' } };
     }
 
     const client = df.getClient(context);
@@ -45,6 +64,7 @@ app.http('tab-dashboard', {
 
     return {
       status: 200,
+      headers: TAB_CORS_HEADERS,
       jsonBody: {
         status: 'healthy',
         uptime: process.uptime(),

@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HelkinSwarm</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="nav">
+    <span class="nav-title">HelkinSwarm</span>
+    <span class="nav-buttons">
+      <button onclick="router.navigate('get-started')" class="nav-btn">Get Started</button>
+      <button onclick="router.navigate('control-center')" class="nav-btn">Control Center</button>
+      <button onclick="router.navigate('dev-console')" class="nav-btn">Dev Console</button>
+    </span>
+  </div>
+
+  <div id="panel-get-started" class="panel"></div>
+  <div id="panel-control-center" class="panel"></div>
+  <div id="panel-dev-console" class="panel"></div>
+  <div id="loading" class="panel active">
+    <div class="card loading-card">
+      <h1>Loading...</h1>
+      <p>Initializing Teams SDK...</p>
+    </div>
+  </div>
+
+  <script src="vendor/microsoftTeams.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -13,15 +13,25 @@ import * as df from 'durable-functions';
 import { OrchestrationRuntimeStatus } from 'durable-functions';
 import { isOwnerUserId } from '../bot/maintenanceMode.js';
 
+const TAB_CORS_HEADERS: Record<string, string> = {
+  'Access-Control-Allow-Origin': 'https://helkinswarmtabsst.z20.web.core.windows.net',
+  'Access-Control-Allow-Headers': 'x-helkinswarm-user-id, Authorization',
+  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+};
+
 app.http('tab-sessions', {
-  methods: ['GET'],
-  authLevel: 'function',
+  methods: ['GET', 'OPTIONS'],
+  authLevel: 'anonymous',
   route: 'tab/sessions',
   extraInputs: [df.input.durableClient()],
   handler: async (req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
+    if (req.method === 'OPTIONS') {
+      return { status: 204, headers: TAB_CORS_HEADERS };
+    }
+
     const userId = req.headers.get('x-helkinswarm-user-id');
     if (!userId || !(await isOwnerUserId(userId))) {
-      return { status: 403, jsonBody: { error: 'Owner-only endpoint.' } };
+      return { status: 403, headers: TAB_CORS_HEADERS, jsonBody: { error: 'Owner-only endpoint.' } };
     }
 
     const client = df.getClient(context);
@@ -48,6 +58,7 @@ app.http('tab-sessions', {
 
     return {
       status: 200,
+      headers: TAB_CORS_HEADERS,
       jsonBody: {
         sessions,
         total: sessions.length,

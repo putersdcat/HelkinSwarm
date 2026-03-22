@@ -136,6 +136,17 @@ jobs:
           sleep 90
           echo "✅ Propagation wait complete"
 
+      - name: Inject API base URL into SPA
+        env:
+          TAB_API_BASE: ${{ vars.TAB_API_BASE }}
+        run: |
+          if [ -f "tabs/app.js" ] && [ -n "$TAB_API_BASE" ]; then
+            sed -i "s|{{TAB_API_BASE}}|${TAB_API_BASE}|g" tabs/app.js
+            echo "✅ Injected TAB_API_BASE: $TAB_API_BASE"
+          elif [ -f "tabs/app.js" ]; then
+            echo "⚠️ TAB_API_BASE not set — SPA API calls will fail until vars.TAB_API_BASE is configured"
+          fi
+
       - name: Upload SPA assets to $web container
         run: |
           if [ -d "tabs" ] && [ "$(ls -A tabs)" ]; then
