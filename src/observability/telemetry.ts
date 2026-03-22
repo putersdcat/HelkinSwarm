@@ -31,6 +31,8 @@ export type TelemetryEventName =
   | 'ContinueAsNewTriggered'
   | 'EUResidencyViolation'
   | 'DevLoopSteerReceived'
+  | 'DevLoopRelayPush'
+  | 'DevLoopRelayPoll'
   | 'LlmCallStarted'
   | 'LlmCallCompleted'
   | 'LlmCallFailed'

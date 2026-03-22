@@ -10,6 +10,7 @@ import './health.js';
 import './messages.js';
 import './emergencyStop.js';
 import './hookReceiver.js';
+import './devLoopRelay.js';
 
 // Orchestrator + activity registrations (Phase 2)
 import '../orchestrator/overseer.js';
