@@ -78,6 +78,33 @@ function canonicalizeGitRefs(text: string, changes: string[]): string {
 }
 
 // ---------------------------------------------------------------------------
+// Rule 6 — DevLoop protocol sanitization (fix: #146)
+// Strip DEVLOOP/SWARM/HUMAN prefixes, correlation tags, and "OVER" suffixes
+// before the message reaches the LLM. Azure's content filter flags these
+// pseudo-military markers as jailbreak attempts.
+// Mirrors the regex in HelkinSwarmBot.ts used for Prompt Shields pre-check.
+// ---------------------------------------------------------------------------
+function sanitizeDevloopProtocol(text: string, changes: string[]): string {
+  let result = text;
+  const prefixMatch = result.match(/^(?:DEVLOOP|SWARM|HUMAN):\s*/i);
+  if (prefixMatch) {
+    result = result.slice(prefixMatch[0].length);
+    changes.push(`Stripped protocol prefix: ${prefixMatch[0].trim()}`);
+  }
+  const tagsBefore = result;
+  result = result.replace(/\[(?:probe|DL)-[^\]]*\]\s*/gi, '');
+  if (result !== tagsBefore) {
+    changes.push('Stripped DevLoop correlation tags');
+  }
+  const overMatch = result.match(/\s*OVER\s*$/i);
+  if (overMatch) {
+    result = result.slice(0, -overMatch[0].length);
+    changes.push('Stripped protocol OVER suffix');
+  }
+  return result.trim();
+}
+
+// ---------------------------------------------------------------------------
 // Main export
 // ---------------------------------------------------------------------------
 
@@ -86,6 +113,7 @@ export function canonicalizeInput(text: string): CanonicalizationResult {
   const changes: string[] = [];
   let result = text;
 
+  result = sanitizeDevloopProtocol(result, changes);
   result = canonicalizeAngleBracketEmails(result, changes);
   result = canonicalizeUpnWhitespace(result, changes);
   result = canonicalizeJiraKeys(result, changes);
