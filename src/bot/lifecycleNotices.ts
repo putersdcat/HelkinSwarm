@@ -144,7 +144,8 @@ export async function sendStartupNotice(): Promise<void> {
   startupSent = true;
   // Cosmos-based dedup: skip if another container already sent this recently.
   if (!(await shouldSendNotice('startup'))) return;
-  const version = process.env.HELKINSWARM_VERSION ?? 'dev';
+  const { APP_VERSION } = await import('../config/version.js');
+  const version = APP_VERSION;
   const startTime = new Date().toISOString();
   const message = `🟢 **HelkinSwarm Online**\n\nVersion: ${version}\nStarted: ${startTime}\nReady to assist.`;
 
