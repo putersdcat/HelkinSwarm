@@ -12,16 +12,29 @@ applyTo: "src/llm/**"
 
 ```typescript
 // src/llm/modelRouter.ts — source of truth
-const routing = {
-  primary:   euResidencyMode ? "gpt-5"                    : "grok-4-1-fast-reasoning",
-  secondary: euResidencyMode ? "o4-mini"                  : "grok-4-1-fast",
-  embedding: euResidencyMode ? "text-embedding-3-large-eu": "text-embedding-3-large"
+const GLOBAL_LANE = {
+  primary:   "grok-4-1-fast-non-reasoning",
+  secondary: "grok-4-1-fast-non-reasoning",
+  embedding: "text-embedding-3-large",
+  reasoning: "o4-mini",
+  vision:    "gpt-5.4-mini",
 };
+
+const EU_LANE = {
+  primary:   "grok-4-1-fast-reasoning",
+  secondary: "grok-4-1-fast-non-reasoning",
+  embedding: "text-embedding-3-large",  // GlobalStandard — no DZ embedding exists yet
+  reasoning: "grok-4-1-fast-reasoning",
+};
+
+// BYOK lane reads from env config (openrouterFallbackPrimary/Secondary)
 ```
 
 - **Default** (`euResidencyMode = false`): Best available global frontier models in Azure AI Foundry
 - **EU mode** (`euResidencyMode = true`): DataZoneStandard models only — no data ever leaves the EU boundary
+- **BYOK mode**: User-supplied OpenRouter models (defaults from envConfig)
 - The overseer uses the `primary` model; sub-agent tool calls use `secondary` by default
+- `grok-4-1-fast-reasoning` consistently times out (>55s) on Global lane; tracked in #128
 
 ## Key Files
 

@@ -1,5 +1,5 @@
 ---
-applyTo: "src/safety/**"
+applyTo: "src/config/safetyConfig.ts,src/llm/promptShields.ts,src/bot/confirmationCards.ts,src/auth/scopedTokenMinter.ts,src/functions/emergencyStop.ts"
 ---
 
 # Safety Architecture
