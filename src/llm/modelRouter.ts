@@ -123,3 +123,35 @@ export function getModelForTask(task: 'reasoning' | 'fast' | 'embedding' | 'visi
       return routing.lane.vision ?? routing.lane.primary;
   }
 }
+
+/**
+ * Returns an ordered fallback chain of ModelRouting objects: primary → secondary
+ * → BYOK (if configured). Deduplicated by deployment name.
+ * Used by FoundryClient to cascade through models on throttle/failure (#152).
+ */
+export function getFallbackChain(): ModelRouting[] {
+  const primary = getModelRouting();
+  const chain: ModelRouting[] = [primary];
+  const seen = new Set<string>([primary.deploymentName]);
+
+  // Secondary model in the same lane
+  const secondaryName = primary.lane.secondary;
+  if (secondaryName && !seen.has(secondaryName)) {
+    seen.add(secondaryName);
+    chain.push({
+      ...primary,
+      deploymentName: secondaryName,
+      isReasoning: false,
+    });
+  }
+
+  // BYOK / OpenRouter as last-resort fallback (only if API key is available)
+  if (primary.laneName !== 'byok' && process.env['OPENROUTER_API_KEY']) {
+    const byokRouting = getModelRouting('openrouter');
+    if (!seen.has(byokRouting.deploymentName)) {
+      chain.push(byokRouting);
+    }
+  }
+
+  return chain;
+}

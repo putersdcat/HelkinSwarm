@@ -13,7 +13,7 @@
     "build:mcp": "tsc --project tsconfig.mcp.json",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
-    "test": "echo \"No tests yet\" && exit 0",
+    "test": "vitest run",
     "start": "func start",
     "clean": "rm -rf dist"
   },
@@ -39,7 +39,8 @@
     "eslint": "^9.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.7.0",
-    "typescript-eslint": "^8.0.0"
+    "typescript-eslint": "^8.0.0",
+    "vitest": "^4.1.0"
   },
   "packageManager": "pnpm@10.2.0"
 }

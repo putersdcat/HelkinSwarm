@@ -2,9 +2,11 @@
 // Handles global frontier, EU DataZoneStandard, and BYOK OpenRouter paths.
 // Spec ref: 06-Tool-Dispatch-LLM-Layer.md, 0c-BYOK-External-LLM-Support.md
 
-import { getModelRouting, type ModelRouting } from './modelRouter.js';
+import { getModelRouting, getFallbackChain, type ModelRouting } from './modelRouter.js';
 import { getBearerToken } from '../auth/identity.js';
 import { getEnvConfig } from '../config/envConfig.js';
+import { isModelDegraded, markModelDegraded, clearModelDegraded } from './modelCircuitBreaker.js';
+import { trackEvent } from '../observability/telemetry.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -99,18 +101,79 @@ export class FoundryClient {
   }
 
   /**
-   * Send a chat completion request to the Foundry endpoint.
-   * Handles both Azure AI Foundry (OBO) and OpenRouter (BYOK) paths.
+   * Send a chat completion request with automatic fallback on throttle/failure (#152).
+   * Cascades through the fallback chain: primary → secondary → BYOK.
+   * Degraded models are skipped for a cooldown period.
    */
   async chatCompletion(options: Omit<FoundryClientOptions, 'routing'>): Promise<ChatCompletionResponse> {
-    const base = this.apiBase.replace(/\/+$/, '');
-    const url = `${base}/openai/deployments/${this.routing.deploymentName}/chat/completions?api-version=2024-06-01`;
+    const correlationId = options.correlationId ?? crypto.randomUUID();
+
+    // Get the full fallback chain; the first entry is always the configured primary.
+    const chain = getFallbackChain();
+
+    // Filter out currently degraded models — but keep at least the last resort.
+    const available = chain.filter((r) => !isModelDegraded(r.deploymentName));
+    const candidates = available.length > 0 ? available : [chain[chain.length - 1]];
+
+    let lastError: FoundryError | Error | undefined;
+
+    for (let i = 0; i < candidates.length; i++) {
+      const routing = candidates[i];
+      try {
+        const result = await this.callSingleModel(routing, options, correlationId);
+        // Successful response — clear any degradation for this model.
+        clearModelDegraded(routing.deploymentName);
+        return result;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        const isRetryable = isRetryableError(err);
+
+        if (isRetryable) {
+          const reason = err instanceof FoundryError
+            ? `HTTP ${err.statusCode}`
+            : (err instanceof Error && err.name === 'TimeoutError') ? 'timeout' : 'error';
+          markModelDegraded(routing.deploymentName, reason);
+
+          trackEvent({
+            name: 'LlmFallbackTriggered',
+            correlationId,
+            properties: {
+              originalModel: routing.deploymentName,
+              fallbackModel: candidates[i + 1]?.deploymentName ?? 'none',
+              reason,
+              chainPosition: i,
+            },
+          });
+        }
+
+        // If not retryable or this is the last candidate, throw
+        if (!isRetryable || i === candidates.length - 1) {
+          throw lastError;
+        }
+        // Otherwise continue to next candidate in chain
+      }
+    }
+
+    // Should never reach here, but TypeScript requires it
+    throw lastError ?? new Error('All models in fallback chain exhausted');
+  }
+
+  /**
+   * Execute a single chat completion request against a specific model routing.
+   */
+  private async callSingleModel(
+    routing: ModelRouting,
+    options: Omit<FoundryClientOptions, 'routing'>,
+    correlationId: string,
+  ): Promise<ChatCompletionResponse> {
+    const base = routing.apiBase.replace(/\/+$/, '');
+    const url = `${base}/openai/deployments/${routing.deploymentName}/chat/completions?api-version=2024-06-01`;
 
     // Reasoning models need longer timeouts (#128)
-    const timeoutMs = this.routing.isReasoning ? 120_000 : 55_000;
+    const timeoutMs = routing.isReasoning ? 120_000 : 55_000;
 
     const body: Record<string, unknown> = {
-      model: this.routing.deploymentName,
+      model: routing.deploymentName,
       messages: options.messages.map(mapOutgoingMessage),
       max_tokens: options.maxTokens ?? 4096,
       temperature: options.temperature ?? 0.7,
@@ -124,17 +187,16 @@ export class FoundryClient {
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'x-correlation-id': options.correlationId ?? crypto.randomUUID(),
+      'x-correlation-id': correlationId,
     };
 
     // Azure AI Foundry — use OBO token or MI token
-    if (this.routing.laneName !== 'byok') {
+    if (routing.laneName !== 'byok') {
       const oboToken = await this.getOboToken();
       headers['Authorization'] = `Bearer ${oboToken}`;
     } else {
       // OpenRouter — use API key directly
       headers['Authorization'] = `Bearer ${this.apiKey}`;
-      // OpenRouter uses a different URL pattern
       headers['HTTP-Referer'] = 'https://helkinswarm.dev';
       headers['X-Title'] = 'HelkinSwarm';
     }
@@ -151,12 +213,10 @@ export class FoundryClient {
       throw new FoundryError(
         `Chat completion failed: ${response.status} ${response.statusText} — ${errorText}`,
         response.status,
-        this.routing.deploymentName,
+        routing.deploymentName,
       );
     }
 
-    // The OpenAI-compatible API returns snake_case keys (tool_calls, finish_reason, etc.)
-    // but our TypeScript interfaces use camelCase. Parse and map explicitly.
     const raw = await response.json() as RawApiResponse;
     return mapApiResponse(raw);
   }
@@ -222,6 +282,28 @@ export class FoundryError extends Error {
     super(message);
     this.name = 'FoundryError';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Retryable error detection (#152)
+// ---------------------------------------------------------------------------
+
+const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+
+/** Determine if an error is retryable (throttle, timeout, server error). */
+function isRetryableError(err: unknown): boolean {
+  if (err instanceof FoundryError) {
+    return RETRYABLE_STATUS_CODES.has(err.statusCode);
+  }
+  // AbortSignal.timeout() throws a DOMException with name "TimeoutError"
+  if (err instanceof Error && err.name === 'TimeoutError') {
+    return true;
+  }
+  // Network failures (fetch rejects on DNS/connection issues)
+  if (err instanceof TypeError && err.message.includes('fetch')) {
+    return true;
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
