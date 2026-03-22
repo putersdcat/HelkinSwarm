@@ -181,17 +181,28 @@ app.http('tab-traces', {
     }
 
     const corr = req.query.get('corr');
-    if (!corr || corr.length < 3) {
-      return { status: 400, headers: TAB_CORS_HEADERS, jsonBody: { error: 'corr query param required (min 3 chars).' } };
-    }
 
     try {
       const { getMessagesByCorrelation } = await import('../devloop/relayStore.js');
+      const { getTraceTree, listRecentTraces } = await import('../observability/sessionTracer.js');
+
+      // If no corr param, return recent traces list
+      if (!corr || corr.length < 3) {
+        const recent = listRecentTraces(30);
+        return {
+          status: 200,
+          headers: TAB_CORS_HEADERS,
+          jsonBody: { recent },
+        };
+      }
+
       const messages = await getMessagesByCorrelation(corr);
+      const traceTree = getTraceTree(corr);
+
       return {
         status: 200,
         headers: TAB_CORS_HEADERS,
-        jsonBody: { correlationTag: corr, messages, count: messages.length },
+        jsonBody: { correlationTag: corr, messages, count: messages.length, traceTree: traceTree ?? null },
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);

@@ -166,3 +166,20 @@ pre {
 }
 .btn-kill:hover { background: var(--error-bg); }
 .btn-kill:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Trace tree — Session Tracer (#140) */
+.trace-tree { margin: 12px 0; }
+.trace-tree h3 { margin: 0 0 8px; font-size: 14px; }
+.trace-summary { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.trace-total { font-weight: 600; }
+.trace-node { padding: 3px 0; font-size: 13px; line-height: 1.5; }
+.trace-toggle { cursor: pointer; display: inline-block; width: 16px; text-align: center; -webkit-user-select: none; user-select: none; }
+.trace-leaf { display: inline-block; width: 16px; text-align: center; color: var(--muted); }
+.trace-duration { color: var(--muted); font-size: 11px; font-family: monospace; }
+.trace-status { font-size: 10px; padding: 1px 5px; border-radius: 3px; text-transform: uppercase; font-weight: 600; }
+.trace-ok { background: #e6f9e6; color: #1a7a1a; }
+.trace-running { background: #fff3cd; color: #856404; }
+.trace-error { background: #f8d7da; color: #721c24; }
+.trace-error-badge { color: #dc3545; cursor: help; }
+.trace-detail { font-size: 11px; color: var(--muted); font-style: italic; }
+.trace-children { border-left: 1px solid var(--border); margin-left: 8px; padding-left: 4px; }

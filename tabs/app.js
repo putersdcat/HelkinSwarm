@@ -26,6 +26,38 @@
     return d > 0 ? d + "d " + h + "h " + m + "m" : h + "h " + m + "m";
   }
 
+  // Phase type icons for trace tree (#140)
+  var PHASE_ICONS = {
+    llm: "🤖", tool: "🔧", verification: "🛡️",
+    memory: "🧠", reply: "💬", orchestrator: "⚙️"
+  };
+
+  /**
+   * Render trace phases as a collapsible tree (recursive).
+   * Each node shows: icon, name, duration, status badge, detail.
+   * Children are nested with indent and collapsible via toggle button.
+   */
+  function renderTracePhases(phases, depth) {
+    if (!phases || phases.length === 0) return "";
+    var indent = depth * 20;
+    return phases.map(function (p) {
+      var icon = PHASE_ICONS[p.type] || "📋";
+      var statusCls = p.status === "error" ? "trace-error" : (p.status === "running" ? "trace-running" : "trace-ok");
+      var hasChildren = p.children && p.children.length > 0;
+      var toggle = hasChildren ? '<span class="trace-toggle">▼</span>' : '<span class="trace-leaf">·</span>';
+      var childHtml = hasChildren ? '<div class="trace-children">' + renderTracePhases(p.children, depth + 1) + '</div>' : '';
+      var errorBadge = p.error ? ' <span class="trace-error-badge" title="' + esc(p.error) + '">⚠</span>' : '';
+      return '<div class="trace-node" style="margin-left:' + indent + 'px">' +
+        toggle + ' ' + icon + ' <strong>' + esc(p.name) + '</strong> ' +
+        '<span class="trace-duration">' + p.durationMs + 'ms</span> ' +
+        '<span class="trace-status ' + statusCls + '">' + esc(p.status) + '</span>' +
+        errorBadge +
+        (p.detail ? ' <span class="trace-detail">' + esc(p.detail) + '</span>' : '') +
+        childHtml +
+        '</div>';
+    }).join("");
+  }
+
   function applyTheme(theme) {
     var root = document.documentElement;
     if (theme === "dark") {
@@ -325,21 +357,50 @@
               if (results) results.innerHTML = "<p>Searching...</p>";
               apiCall("traces?corr=" + encodeURIComponent(tag))
                 .then(function (data) {
-                  if (!data.messages || data.messages.length === 0) {
-                    results.innerHTML = "<p>No messages found for tag: " + esc(tag) + "</p>";
-                    return;
+                  var html = "";
+
+                  // Render trace tree if available
+                  if (data.traceTree && data.traceTree.phases && data.traceTree.phases.length > 0) {
+                    html += '<div class="trace-tree">' +
+                      '<h3>Trace Tree — ' + esc(data.correlationTag) + '</h3>' +
+                      '<div class="trace-summary">' +
+                      '<span class="trace-total">Total: ' + data.traceTree.totalMs + 'ms</span> · ' +
+                      '<span class="trace-started">' + new Date(data.traceTree.turnStartedAt).toLocaleString() + '</span></div>' +
+                      renderTracePhases(data.traceTree.phases, 0) +
+                      '</div>';
                   }
-                  var rows = data.messages.map(function (m) {
-                    return (
-                      "<tr><td>" + esc(m.direction) + "</td>" +
-                      "<td>" + esc(m.messageType) + "</td>" +
-                      "<td>" + (m.createdAt ? new Date(m.createdAt).toLocaleString() : "—") + "</td>" +
-                      "<td><pre>" + esc((m.payload || "").substring(0, 200)) + "</pre></td></tr>"
-                    );
-                  }).join("");
-                  results.innerHTML =
-                    "<table><tr><th>Direction</th><th>Type</th><th>Time</th><th>Payload</th></tr>" +
-                    rows + "</table>";
+
+                  // Render relay messages
+                  if (data.messages && data.messages.length > 0) {
+                    var rows = data.messages.map(function (m) {
+                      return (
+                        "<tr><td>" + esc(m.direction) + "</td>" +
+                        "<td>" + esc(m.messageType) + "</td>" +
+                        "<td>" + (m.createdAt ? new Date(m.createdAt).toLocaleString() : "—") + "</td>" +
+                        "<td><pre>" + esc((m.payload || "").substring(0, 200)) + "</pre></td></tr>"
+                      );
+                    }).join("");
+                    html += "<h3>Relay Messages (" + data.count + ")</h3>" +
+                      "<table><tr><th>Direction</th><th>Type</th><th>Time</th><th>Payload</th></tr>" +
+                      rows + "</table>";
+                  }
+
+                  if (!html) {
+                    html = "<p>No trace data found for: " + esc(tag) + "</p>";
+                  }
+                  results.innerHTML = html;
+
+                  // Wire collapsible tree nodes
+                  results.querySelectorAll(".trace-toggle").forEach(function (btn) {
+                    btn.addEventListener("click", function () {
+                      var children = btn.parentElement.querySelector(".trace-children");
+                      if (children) {
+                        var hidden = children.style.display === "none";
+                        children.style.display = hidden ? "block" : "none";
+                        btn.textContent = hidden ? "▼" : "▶";
+                      }
+                    });
+                  });
                 })
                 .catch(function (err) {
                   results.innerHTML = '<p class="error-msg">' + esc(err.message) + "</p>";

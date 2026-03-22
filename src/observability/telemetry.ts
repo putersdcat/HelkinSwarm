@@ -7,6 +7,7 @@
 // automatically forwards these to App Insights.
 
 import { trace, SpanStatusCode, type Span } from '@opentelemetry/api';
+import { recordTracePhase, type TracePhaseType } from './sessionTracer.js';
 
 const tracer = trace.getTracer('helkinswarm', '0.1.0');
 
@@ -40,6 +41,29 @@ export type TelemetryEventName =
   | 'GraphSubscriptionRenewed'
   | 'StateLoaded'
   | 'StateSaved';
+
+// ---------------------------------------------------------------------------
+// Session Tracer — maps events to trace phases for Dev Console (#140)
+// ---------------------------------------------------------------------------
+
+const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> = {
+  LlmCallStarted: 'llm',
+  LlmCallCompleted: 'llm',
+  LlmCallFailed: 'llm',
+  ToolExecuted: 'tool',
+  SubAgentToolExecuted: 'tool',
+  VerificationPipelineResult: 'verification',
+  HumanConfirmationRequested: 'verification',
+  HumanConfirmationReceived: 'verification',
+  SkillMemoryInjected: 'memory',
+  StateLoaded: 'memory',
+  StateSaved: 'memory',
+  TurnStarted: 'orchestrator',
+  TurnCompleted: 'orchestrator',
+  ContinueAsNewTriggered: 'orchestrator',
+  DurableHookRegistered: 'orchestrator',
+  DurableHookTriggered: 'orchestrator',
+};
 
 // ---------------------------------------------------------------------------
 // Core tracking API
@@ -78,6 +102,43 @@ export function trackEvent(event: TelemetryEvent): void {
     span.setAttributes(attrs);
     span.end();
   }
+
+  // Also record in session tracer for Dev Console (#140)
+  const phaseType = EVENT_TO_PHASE_TYPE[event.name];
+  if (phaseType) {
+    const durationMs = typeof event.properties?.['durationMs'] === 'number' ? event.properties['durationMs'] : 0;
+    const isError = event.name === 'LlmCallFailed' || (event.properties?.['error'] !== undefined);
+    const detail = buildTraceDetail(event);
+
+    recordTracePhase({
+      correlationId: event.correlationId,
+      userId: event.userId,
+      phaseId: `${event.name}-${Date.now()}`,
+      name: event.name,
+      type: phaseType,
+      durationMs,
+      status: isError ? 'error' : 'completed',
+      detail,
+      error: isError ? String(event.properties?.['error'] ?? event.name) : undefined,
+    });
+  }
+}
+
+/** Build a human-readable detail string for trace phases */
+function buildTraceDetail(event: TelemetryEvent): string {
+  const parts: string[] = [];
+  const p = event.properties;
+  if (!p) return event.name;
+
+  if (p['deployment']) parts.push(`model: ${p['deployment']}`);
+  if (p['toolName']) parts.push(`tool: ${p['toolName']}`);
+  if (p['totalTokens']) parts.push(`tokens: ${p['totalTokens']}`);
+  if (p['promptTokens']) parts.push(`prompt: ${p['promptTokens']}`);
+  if (p['completionTokens']) parts.push(`completion: ${p['completionTokens']}`);
+  if (p['result']) parts.push(`result: ${p['result']}`);
+  if (p['skillDomain']) parts.push(`skill: ${p['skillDomain']}`);
+
+  return parts.length > 0 ? parts.join(', ') : event.name;
 }
 
 /**
