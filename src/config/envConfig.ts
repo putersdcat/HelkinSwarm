@@ -44,6 +44,11 @@ const EnvConfigSchema = z.object({
   // Owner
   ownerUserId: z.string().optional(),
 
+  // OpenRouter / BYOK fallback
+  llmProvider: z.enum(['azure', 'openrouter']).default('azure'),
+  openrouterFallbackPrimary: z.string().default('moonshotai/kimi-k2.5'),
+  openrouterFallbackSecondary: z.string().default('moonshotai/kimi-k2.5'),
+
   // Local dev overrides (never set in production)
   azureFoundryOboToken: z.string().optional(),
 });
@@ -73,6 +78,9 @@ function loadFromEnv(): EnvConfig {
     devLoopEnabled: process.env['DEVLOOP_ENABLED']?.toLowerCase() === 'true',
     botOAuthConnectionName: process.env['BOT_OAUTH_CONNECTION_NAME'] || undefined,
     ownerUserId: process.env['OWNER_USER_ID'] || undefined,
+    llmProvider: process.env['LLM_PROVIDER'] || undefined,
+    openrouterFallbackPrimary: process.env['OPENROUTER_FALLBACK_PRIMARY'] || undefined,
+    openrouterFallbackSecondary: process.env['OPENROUTER_FALLBACK_SECONDARY'] || undefined,
     azureFoundryOboToken: process.env['AZURE_FOUNDRY_OBO_TOKEN'] || undefined,
   };
 

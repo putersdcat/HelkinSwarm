@@ -38,12 +38,15 @@ const EU_LANE: ModelLane = {
   reasoning: 'grok-4-1-fast-reasoning',
 };
 
-const BYOK_LANE: ModelLane = {
-  primary: 'gpt-4o',
-  secondary: 'gpt-4o-mini',
-  embedding: 'text-embedding-3-large',
-  reasoning: undefined,
-};
+function getBYOKLane(): ModelLane {
+  const config = getEnvConfig();
+  return {
+    primary: config.openrouterFallbackPrimary,
+    secondary: config.openrouterFallbackSecondary,
+    embedding: 'text-embedding-3-large',
+    reasoning: undefined,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Router
@@ -67,15 +70,16 @@ export interface ModelRouting {
 /** Returns the active model routing based on current config + override */
 export function getModelRouting(llmProvider?: 'azure' | 'openrouter'): ModelRouting {
   const config = getEnvConfig();
-  const provider = llmProvider ?? 'azure';
+  const provider = llmProvider ?? config.llmProvider ?? 'azure';
 
   if (provider === 'openrouter') {
     // BYOK / OpenRouter path — global models via OpenRouter
+    const byokLane = getBYOKLane();
     return {
-      lane: BYOK_LANE,
+      lane: byokLane,
       laneName: 'byok',
       isReasoning: false,
-      deploymentName: BYOK_LANE.primary,
+      deploymentName: byokLane.primary,
       apiBase: 'https://openrouter.ai/api/v1',
       usesObo: false,
     };
