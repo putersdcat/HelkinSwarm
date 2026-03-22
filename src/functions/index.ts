@@ -57,15 +57,30 @@ loadCapabilities().then((result) => {
 // /emergency-stop). The in-memory _startupClearPending flag in maintenanceMode.ts
 // prevents blocking messages while this async operation runs.
 // ---------------------------------------------------------------------------
-import { setMaintenanceMode } from '../bot/maintenanceMode.js';
+import { setMaintenanceMode, getMaintenanceModeFromCosmos, markStartupClearComplete } from '../bot/maintenanceMode.js';
 import { sendStartupNotice, sendShutdownNotice } from '../bot/lifecycleNotices.js';
 
 async function clearMaintenanceWithRetry(attempts = 3, delayMs = 2000): Promise<void> {
   for (let i = 0; i < attempts; i++) {
     try {
+      // Read the actual Cosmos doc (bypasses in-memory override) to check
+      // whether an active emergency-stop is in place.
+      const current = await getMaintenanceModeFromCosmos();
+      if (current.enabled && current.source === 'emergency-stop') {
+        // A deliberate e-stop survives deploys — do NOT clear it.
+        // Flip the in-memory flag so getMaintenanceMode() starts reading
+        // from Cosmos (which correctly says enabled=true).
+        markStartupClearComplete();
+        console.warn(
+          '[startup] Active emergency stop found — NOT clearing. Use /emergency-resume to restore service.',
+        );
+        return;
+      }
+
       await setMaintenanceMode({
         enabled: false,
         updatedBy: 'system-startup',
+        source: 'system',
         reason: 'Container started — clearing shutdown maintenance flag',
       });
       console.log('[startup] Maintenance mode cleared in Cosmos');
@@ -84,12 +99,14 @@ clearMaintenanceWithRetry().catch(() => {
   // Already logged inside the function
 });
 
-// Send startup lifecycle notice to owner (#142)
+// Send startup lifecycle notice to owner (#142, #149)
+// Delay must exceed SHUTDOWN_GRACE_MS so the startup notice arrives AFTER the
+// old container's shutdown notice during rolling updates.
 setTimeout(() => {
   sendStartupNotice().catch((err: unknown) => {
     console.warn('[startup] Failed to send startup notice:', err);
   });
-}, 5_000);
+}, 20_000);
 
 // ---------------------------------------------------------------------------
 // Graceful shutdown handler (#136, #145)

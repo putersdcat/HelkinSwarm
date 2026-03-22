@@ -1,5 +1,5 @@
 // Lifecycle Notices — startup/shutdown proactive messages to the owner.
-// Fix: #142
+// Fix: #142, #149 (Cosmos-based dedup to prevent spam during rolling deploys)
 // Spec ref: docs/ADDENDA/ADDENDA-05-Auth-Identity-Layer-OBO-Token-Minting-and-Emergency-Stop.md
 
 /* eslint-disable no-console */
@@ -12,6 +12,7 @@ import {
 import type { ConversationReference } from 'botbuilder';
 import { getEnvConfig } from '../config/envConfig.js';
 import { getConversationReference } from './conversationStore.js';
+import { getContainer } from '../memory/cosmosClient.js';
 
 // ---------------------------------------------------------------------------
 // Cold-start guard: block message processing for 3s after container start
@@ -23,6 +24,64 @@ const containerStartTime = Date.now();
 /** Returns true while the container is in its cold-start window. */
 export function isColdStarting(): boolean {
   return Date.now() - containerStartTime < COLD_START_WINDOW_MS;
+}
+
+// ---------------------------------------------------------------------------
+// Cosmos-based deduplication (#149)
+// During rolling deploys, multiple containers may try to send the same notice.
+// We store a timestamp per notice type in Cosmos and skip if a notice of the
+// same type was sent within the dedup window.
+// ---------------------------------------------------------------------------
+
+const DEDUP_WINDOW_MS = 60_000; // 60 seconds
+const LIFECYCLE_DOC_ID = 'lifecycle-notices';
+const LIFECYCLE_SCOPE = 'global';
+
+interface LifecycleNoticeDoc {
+  id: string;
+  scope: string;
+  lastStartupAt?: string;
+  lastShutdownAt?: string;
+}
+
+async function shouldSendNotice(type: 'startup' | 'shutdown'): Promise<boolean> {
+  const container = getContainer('runtimeConfig');
+  const field = type === 'startup' ? 'lastStartupAt' : 'lastShutdownAt';
+
+  try {
+    const { resource } = await container
+      .item(LIFECYCLE_DOC_ID, LIFECYCLE_SCOPE)
+      .read<LifecycleNoticeDoc>();
+
+    if (resource) {
+      const lastSent = resource[field];
+      if (lastSent) {
+        const elapsed = Date.now() - new Date(lastSent).getTime();
+        if (elapsed < DEDUP_WINDOW_MS) {
+          console.log(`[lifecycle] ${type} notice suppressed — another sent ${elapsed}ms ago`);
+          return false;
+        }
+      }
+    }
+  } catch {
+    // Doc doesn't exist yet — allow the notice.
+  }
+
+  // Record that we're sending now (upsert to handle first-run)
+  try {
+    const now = new Date().toISOString();
+    const doc: LifecycleNoticeDoc = {
+      id: LIFECYCLE_DOC_ID,
+      scope: LIFECYCLE_SCOPE,
+      [field]: now,
+    };
+    await container.items.upsert(doc);
+  } catch (err: unknown) {
+    // Best-effort — don't block the notice if Cosmos fails
+    console.warn(`[lifecycle] Failed to write dedup doc: ${err}`);
+  }
+
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,7 +142,8 @@ let startupSent = false;
 export async function sendStartupNotice(): Promise<void> {
   if (startupSent) return;
   startupSent = true;
-
+  // Cosmos-based dedup: skip if another container already sent this recently.
+  if (!(await shouldSendNotice('startup'))) return;
   const version = process.env.HELKINSWARM_VERSION ?? 'dev';
   const startTime = new Date().toISOString();
   const message = `🟢 **HelkinSwarm Online**\n\nVersion: ${version}\nStarted: ${startTime}\nReady to assist.`;
@@ -107,6 +167,9 @@ let shutdownSent = false;
 export async function sendShutdownNotice(): Promise<void> {
   if (shutdownSent) return;
   shutdownSent = true;
+
+  // Cosmos-based dedup: skip if another container already sent this recently.
+  if (!(await shouldSendNotice('shutdown'))) return;
 
   const message = '🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete.';
 

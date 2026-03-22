@@ -1,4 +1,5 @@
-// Maintenance mode store — persists global emergency-stop state in Cosmos DB.
+// Maintenance mode store — persists global emergency-stop / maintenance state in Cosmos DB.
+// Fix: #149 — separates emergency-stop from deploy-cycle maintenance.
 // Spec ref: 10-Teams-Interface.md, 04-Safety-Architecture.md
 
 import { readFile } from 'node:fs/promises';
@@ -16,13 +17,19 @@ const SCOPE = 'global';
 // the previous container's graceful shutdown.  The startup clear is async
 // and may not finish before the first message arrives.  We keep an in-memory
 // flag that short-circuits the Cosmos read until the clear succeeds.
+//
+// (#149) When an active emergency-stop is detected during startup, we flip
+// _startupClearPending=false WITHOUT clearing the doc so the Cosmos-backed
+// enabled=true blocks messages correctly.
 // ---------------------------------------------------------------------------
 let _startupClearPending = true;
 
-interface MaintenanceModeDocument {
+export interface MaintenanceModeDocument {
   id: string;
   scope: string;
   enabled: boolean;
+  /** Distinguishes a deliberate e-stop from deploy-induced maintenance. */
+  source: 'emergency-stop' | 'system';
   updatedAt: string;
   updatedBy: string;
   reason?: string;
@@ -52,6 +59,15 @@ export async function isOwnerUserId(userId: string): Promise<boolean> {
   return userId === (await loadOwnerUserId());
 }
 
+/**
+ * Signal that the startup clear logic has completed (or was intentionally skipped
+ * because an active e-stop was detected). After this call, getMaintenanceMode()
+ * reads from Cosmos instead of returning the optimistic in-memory override.
+ */
+export function markStartupClearComplete(): void {
+  _startupClearPending = false;
+}
+
 export async function getMaintenanceMode(): Promise<MaintenanceModeDocument> {
   // If we just started and haven't confirmed the clear, assume NOT in
   // maintenance so incoming messages aren't blocked (#145).
@@ -60,11 +76,20 @@ export async function getMaintenanceMode(): Promise<MaintenanceModeDocument> {
       id: DOC_ID,
       scope: SCOPE,
       enabled: false,
+      source: 'system',
       updatedAt: new Date().toISOString(),
       updatedBy: 'startup-override',
     };
   }
 
+  return getMaintenanceModeFromCosmos();
+}
+
+/**
+ * Raw Cosmos read — bypasses the in-memory startup override.
+ * Used by clearMaintenanceWithRetry() to detect active e-stops on startup.
+ */
+export async function getMaintenanceModeFromCosmos(): Promise<MaintenanceModeDocument> {
   const container = getContainer(CONTAINER_NAME);
   try {
     const { resource } = await container
@@ -72,7 +97,8 @@ export async function getMaintenanceMode(): Promise<MaintenanceModeDocument> {
       .read<MaintenanceModeDocument>();
 
     if (resource) {
-      return resource;
+      // Backfill source for pre-#149 docs that lack the field
+      return { ...resource, source: resource.source ?? 'system' };
     }
   } catch {
     // First run — create default doc below.
@@ -82,6 +108,7 @@ export async function getMaintenanceMode(): Promise<MaintenanceModeDocument> {
     id: DOC_ID,
     scope: SCOPE,
     enabled: false,
+    source: 'system',
     updatedAt: new Date().toISOString(),
     updatedBy: 'system',
   };
@@ -92,6 +119,7 @@ export async function getMaintenanceMode(): Promise<MaintenanceModeDocument> {
 export async function setMaintenanceMode(input: {
   enabled: boolean;
   updatedBy: string;
+  source?: 'emergency-stop' | 'system';
   reason?: string;
 }): Promise<MaintenanceModeDocument> {
   const container = getContainer(CONTAINER_NAME);
@@ -99,6 +127,7 @@ export async function setMaintenanceMode(input: {
     id: DOC_ID,
     scope: SCOPE,
     enabled: input.enabled,
+    source: input.source ?? 'system',
     updatedAt: new Date().toISOString(),
     updatedBy: input.updatedBy,
     reason: input.reason,

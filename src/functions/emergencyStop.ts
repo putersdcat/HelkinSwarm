@@ -64,6 +64,7 @@ app.http('emergency-stop', {
     await setMaintenanceMode({
       enabled: true,
       updatedBy: userId,
+      source: 'emergency-stop',
       reason: 'Emergency stop invoked via HTTP endpoint',
     });
 

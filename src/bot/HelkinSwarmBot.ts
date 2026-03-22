@@ -244,9 +244,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       const health = await getMaintenanceMode();
       const safe = process.env.SAFETY_MODE ?? 'confirmation-gated';
       const version = process.env.HELKINSWARM_VERSION ?? '0.1.0';
+      const modeLabel = health.enabled
+        ? (health.source === 'emergency-stop' ? 'E-STOP' : 'MAINTENANCE')
+        : 'OFF';
       await context.sendActivity(
         `HelkinSwarm ${version} — ` +
-          `maintenance: ${health.enabled ? 'ON' : 'OFF'}, ` +
+          `maintenance: ${modeLabel}, ` +
           `safety: ${safe}, ` +
           `tools: ${toolRegistry.size}`,
       );
@@ -254,7 +257,10 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
 
     if (maintenance.enabled) {
-      await context.sendActivity('I am offline for maintenance.');
+      const mode = maintenance.source === 'emergency-stop'
+        ? 'emergency stop is active. Send /emergency-resume to restore service.'
+        : 'maintenance is in progress.';
+      await context.sendActivity(`I am offline — ${mode}`);
       return;
     }
 
@@ -447,6 +453,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       await setMaintenanceMode({
         enabled: true,
         updatedBy: userId,
+        source: 'emergency-stop',
         reason: 'Emergency stop invoked via slash command',
       });
 
@@ -497,6 +504,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     await setMaintenanceMode({
       enabled: false,
       updatedBy: userId,
+      source: 'system',
       reason: 'Emergency resume invoked via slash command',
     });
 
