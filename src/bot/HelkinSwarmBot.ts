@@ -293,7 +293,8 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     if (lowerMessage === '/status') {
       const health = await getMaintenanceMode();
       const safe = process.env.SAFETY_MODE ?? 'confirmation-gated';
-      const version = process.env.HELKINSWARM_VERSION ?? '0.1.0';
+      const { APP_VERSION } = await import('../config/version.js');
+      const version = APP_VERSION;
       const modeLabel = health.enabled
         ? (health.source === 'emergency-stop' ? 'E-STOP' : 'MAINTENANCE')
         : 'OFF';

@@ -15,6 +15,7 @@ import { isOwnerUserId, getMaintenanceMode } from '../bot/maintenanceMode.js';
 import { getModelRouting } from '../llm/modelRouter.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { getLoadedCapabilitiesCount, getActiveSkills } from '../capabilities/capabilityLoader.js';
+import { APP_VERSION } from '../config/version.js';
 
 const TAB_CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': 'https://helkinswarmtabsst.z20.web.core.windows.net',
@@ -68,7 +69,7 @@ app.http('tab-dashboard', {
       jsonBody: {
         status: 'healthy',
         uptime: process.uptime(),
-        version: process.env['npm_package_version'] ?? '0.1.0',
+        version: APP_VERSION,
         activeSessions: activeSessions.length,
         totalSessions: statuses.length,
         maintenanceMode: maintenance,

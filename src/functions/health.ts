@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/fu
 import { randomUUID } from 'node:crypto';
 import { getEnvConfig } from '../config/envConfig.js';
 import { getDatabase } from '../memory/cosmosClient.js';
+import { APP_VERSION } from '../config/version.js';
 
 interface HealthResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -54,7 +55,7 @@ export async function healthHandler(
     status: memoryStatus === 'ok' ? 'healthy' : 'degraded',
     timestamp: new Date().toISOString(),
     correlationId: randomUUID(),
-    version: process.env['npm_package_version'] ?? '0.1.0',
+    version: APP_VERSION,
     components: {
       runtime: 'ok',
       overseer: 'ok',

@@ -20,7 +20,7 @@ export const helkin_health_check: ToolHandler = async (_args) => {
   return {
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    version: process.env['npm_package_version'] ?? '0.1.0',
+    version: (await import('../../src/config/version.js')).APP_VERSION,
     components: {
       runtime: 'ok',
       overseer: 'ok',

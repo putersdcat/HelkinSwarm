@@ -8,8 +8,9 @@
 
 import { trace, SpanStatusCode, type Span } from '@opentelemetry/api';
 import { recordTracePhase, type TracePhaseType } from './sessionTracer.js';
+import { APP_VERSION } from '../config/version.js';
 
-const tracer = trace.getTracer('helkinswarm', '0.1.0');
+const tracer = trace.getTracer('helkinswarm', APP_VERSION);
 
 // ---------------------------------------------------------------------------
 // Event names — consistent across the codebase

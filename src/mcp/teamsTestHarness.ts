@@ -255,7 +255,7 @@ interface GraphMessage {
 // ── MCP Server ────────────────────────────────────────────────────────────────
 
 const server = new Server(
-  { name: 'helkin-teams-test-harness', version: '0.1.0' },
+  { name: 'helkin-teams-test-harness', version: '1.0.7' },
   { capabilities: { tools: {} } },
 );
 
