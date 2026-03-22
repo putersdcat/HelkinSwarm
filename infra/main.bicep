@@ -48,6 +48,37 @@ param createOAuthConnection bool = false
 @description('Maximum TPM ceiling for AI model deployments. Quota is capped at this value. Increase for higher throughput.')
 param quotaMaxTPM int = 100000
 
+// ── LLM Model Configuration (configurable per provider) ──
+// Deployment names must match Azure AI model deployment resources when llmProvider=azure.
+// For openrouter, these are passed as model identifiers to the proxy.
+
+@description('Primary LLM model. Azure default: grok-4-1-fast-non-reasoning. OpenRouter: e.g. openai/gpt-4o')
+param llmPrimaryModel string = 'grok-4-1-fast-non-reasoning'
+
+@description('Secondary LLM model. Azure default: grok-4-1-fast-non-reasoning.')
+param llmSecondaryModel string = 'grok-4-1-fast-non-reasoning'
+
+@description('Fallback primary model.')
+param llmFallbackPrimaryModel string = 'gpt-5.4-mini'
+
+@description('Fallback secondary model.')
+param llmFallbackSecondaryModel string = 'gpt-5.1-codex-mini'
+
+@description('Coding primary model.')
+param llmCodingPrimaryModel string = 'FW-MiniMax-M2.5'
+
+@description('Coding secondary model.')
+param llmCodingSecondaryModel string = 'FW-Kimi-K2.5'
+
+@description('Embedding model.')
+param llmEmbeddingModel string = 'text-embedding-3-large'
+
+@description('OpenRouter fallback primary model (used when llmProvider=openrouter).')
+param openrouterFallbackPrimary string = 'moonshotai/kimi-k2.5'
+
+@description('OpenRouter fallback secondary model (used when llmProvider=openrouter).')
+param openrouterFallbackSecondary string = 'moonshotai/kimi-k2.5'
+
 
 // ─── Variables ──────────────────────────────────────────────────────────────
 
@@ -86,15 +117,7 @@ var stampIdentityObj = { '${uami.id}': {} }
 var routerIdentityObj = hasRouter ? { '${routerUamiId}': {} } : {}
 var allIdentityObjs = union(stampIdentityObj, routerIdentityObj)
 
-// LLM model deployment names — global frontier only (euResidencyMode param kept for compat but unused here)
-// Deployment names must match the Bicep model deployment resources below.
-var llmPrimary          = 'grok-4-1-fast-non-reasoning'
-var llmSecondary        = 'grok-4-1-fast-non-reasoning'
-var llmFallbackPrimary  = 'gpt-5.4-mini'
-var llmFallbackSecond   = 'gpt-5.1-codex-mini'
-var llmCodingPrimary    = 'FW-MiniMax-M2.5'
-var llmCodingSecondary  = 'FW-Kimi-K2.5'
-var llmEmbedding        = 'text-embedding-3-large'
+// LLM model config — see params above. Old hardcoded vars removed in #100.
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  1. LOG ANALYTICS WORKSPACE
@@ -595,20 +618,20 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'AZURE_CONTENT_SAFETY_ENDPOINT', value: aiServices.properties.endpoint }
 
         // ── LLM Config (spec 06) ──
-        { name: 'LLM_PRIMARY_MODEL',          value: llmPrimary }
-        { name: 'LLM_SECONDARY_MODEL',         value: llmSecondary }
-        { name: 'LLM_FALLBACK_PRIMARY',        value: llmFallbackPrimary }
-        { name: 'LLM_FALLBACK_SECONDARY',      value: llmFallbackSecond }
-        { name: 'LLM_CODING_PRIMARY',          value: llmCodingPrimary }
-        { name: 'LLM_CODING_SECONDARY',        value: llmCodingSecondary }
-        { name: 'LLM_EMBEDDING_MODEL',         value: llmEmbedding }
+        { name: 'LLM_PRIMARY_MODEL',          value: llmPrimaryModel }
+        { name: 'LLM_SECONDARY_MODEL',         value: llmSecondaryModel }
+        { name: 'LLM_FALLBACK_PRIMARY',        value: llmFallbackPrimaryModel }
+        { name: 'LLM_FALLBACK_SECONDARY',      value: llmFallbackSecondaryModel }
+        { name: 'LLM_CODING_PRIMARY',          value: llmCodingPrimaryModel }
+        { name: 'LLM_CODING_SECONDARY',        value: llmCodingSecondaryModel }
+        { name: 'LLM_EMBEDDING_MODEL',         value: llmEmbeddingModel }
         { name: 'EU_RESIDENCY_MODE',           value: string(euResidencyMode) }
         { name: 'LLM_PROVIDER',                value: llmProvider }
 
-        // ── BYOK: OpenRouter (spec 0c) — populated via KV after secrets are seeded ──
-        { name: 'OPENROUTER_API_KEY', value: '' }
-        { name: 'OPENROUTER_FALLBACK_PRIMARY', value: 'moonshotai/kimi-k2.5' }
-        { name: 'OPENROUTER_FALLBACK_SECONDARY', value: 'moonshotai/kimi-k2.5' }
+        // ── BYOK: OpenRouter (spec 0c) — key stored in Key Vault (#100) ──
+        { name: 'OPENROUTER_API_KEY', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=OpenRouterApiKey)' }
+        { name: 'OPENROUTER_FALLBACK_PRIMARY', value: openrouterFallbackPrimary }
+        { name: 'OPENROUTER_FALLBACK_SECONDARY', value: openrouterFallbackSecondary }
 
         // ── OBO / Delegated Identity (spec 11) ──
         { name: 'BOT_OAUTH_CONNECTION_NAME', value: 'GraphOAuth' }
