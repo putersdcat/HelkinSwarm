@@ -129,14 +129,18 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
     ? buildDevLoopSystemBlock(input.devLoopContext)
     : '';
 
+  // In DevLoop sessions, suppress user preferences and onboarding — they leak
+  // user-specific context (e.g. "Mr. Anderson" addressing) into system channels (#148).
+  const isDevLoop = !!input.devLoopContext?.isDevLoop;
+
   const systemPrompt = [
     persona,
     modelIdentity,
     buildPriorsPromptFragment(),
     devLoopBlock,
-    preferencesFragment ? `User preferences: ${preferencesFragment}` : '',
-    onboardingInstructions,
-    recalledMemory,
+    !isDevLoop && preferencesFragment ? `User preferences: ${preferencesFragment}` : '',
+    !isDevLoop ? onboardingInstructions : '',
+    !isDevLoop ? recalledMemory : '',
     state.euResidencyMode ? 'EU Residency Mode is ACTIVE — use only EU-compliant models.' : '',
     state.summary ? `Previous conversation summary:\n${state.summary}` : '',
     toolSummary,

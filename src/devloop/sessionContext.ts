@@ -25,6 +25,7 @@ export function buildDevLoopSystemBlock(parsed: DevLoopContext): string {
     '- When listing tools, include exact names and descriptions.',
     '- When reporting status, include all component states.',
     '- You may use any available tools to answer DevLoop queries.',
+    '- Do NOT use personal addressing (e.g. names, greetings, honorifics). This is a system channel, not a user conversation.',
   ];
 
   if (parsed.correlationTag) {
