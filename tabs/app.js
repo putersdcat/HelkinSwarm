@@ -445,6 +445,12 @@
         }
         microsoftTeams.app.registerOnThemeChangeHandler(applyTheme);
 
+        // Hide SPA nav when embedded in Teams — Teams provides its own tab switching
+        if (context && context.page && context.page.frameContext) {
+          var nav = document.getElementById("nav");
+          if (nav) nav.style.display = "none";
+        }
+
         window.addEventListener("hashchange", function () {
           router.render();
         });

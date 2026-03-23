@@ -66,8 +66,8 @@
     }
   ],
   "webApplicationInfo": {
-    "id": "{{BOT_APP_ID}}",
-    "resource": "api://{{TAB_HOST_DOMAIN}}/{{BOT_APP_ID}}"
+    "id": "{{TAB_SSO_APP_ID}}",
+    "resource": "api://{{TAB_HOST_DOMAIN}}/{{TAB_SSO_APP_ID}}"
   },
   "permissions": [
     "identity",
