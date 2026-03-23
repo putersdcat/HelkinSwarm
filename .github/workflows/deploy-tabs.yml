@@ -150,7 +150,13 @@ jobs:
       - name: Upload SPA assets to $web container
         run: |
           if [ -d "tabs" ] && [ "$(ls -A tabs)" ]; then
-            echo "📦 Uploading SPA assets from tabs/ directory..."
+            echo "Clearing stale blobs from \$web container..."
+            az storage blob delete-batch \
+              --account-name ${{ env.STORAGE_ACCOUNT }} \
+              --source '$web' \
+              --auth-mode login || true
+
+            echo "Uploading SPA assets from tabs/ directory..."
             az storage blob upload-batch \
               --account-name ${{ env.STORAGE_ACCOUNT }} \
               --destination '$web' \
