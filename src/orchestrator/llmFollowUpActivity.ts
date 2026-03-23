@@ -7,7 +7,6 @@ import { FoundryClient, textContent } from '../llm/foundryClient.js';
 import { getModelRouting } from '../llm/modelRouter.js';
 import type { ChatMessage, ChatCompletionResponse } from '../llm/foundryClient.js';
 import type { LlmResult } from './llmActivity.js';
-import { getEnvConfig } from '../config/envConfig.js';
 
 export interface LlmFollowUpInput {
   /** Original conversation messages (system + user). */
@@ -34,10 +33,11 @@ df.app.activity('llmFollowUpActivity', {
     const routing = getModelRouting();
     const correlationId = input.correlationId ?? crypto.randomUUID();
 
+    // Use reasoning model for /heavy, fast model for /light, else default (#185)
     const deploymentName = input.modelOverride === 'secondary'
-      ? (getEnvConfig().llmSecondaryModel)
+      ? routing.lane.secondary
       : input.modelOverride === 'primary'
-        ? (getEnvConfig().llmPrimaryModel)
+        ? (routing.lane.reasoning ?? routing.lane.primary)
         : routing.deploymentName;
 
     const client = new FoundryClient({ ...routing, deploymentName });

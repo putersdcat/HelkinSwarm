@@ -8,7 +8,6 @@ import { toolRegistry } from '../tools/toolRegistry.js';
 import type { PromptResult } from './buildPromptActivity.js';
 import type { ChatCompletionResponse, ChatMessage, ContentPart } from '../llm/foundryClient.js';
 import { textContent } from '../llm/foundryClient.js';
-import { getEnvConfig } from '../config/envConfig.js';
 import { trackEvent } from '../observability/telemetry.js';
 
 export interface LlmResult {
@@ -27,13 +26,14 @@ df.app.activity('llmActivity', {
     const correlationId = input.correlationId ?? crypto.randomUUID();
     const hasImages = input.imageUrls && input.imageUrls.length > 0;
 
-    // Apply model override for /heavy (force primary) or /light (force secondary) commands
+    // Apply model override for /heavy (force reasoning) or /light (force fast) commands
     // If images are present and no explicit override, use the vision-capable model (#130)
     let deploymentName: string;
     if (input.modelOverride === 'secondary') {
-      deploymentName = getEnvConfig().llmSecondaryModel;
+      deploymentName = routing.lane.secondary;
     } else if (input.modelOverride === 'primary') {
-      deploymentName = getEnvConfig().llmPrimaryModel;
+      // /heavy → use the reasoning model from the active lane (#185)
+      deploymentName = routing.lane.reasoning ?? routing.lane.primary;
     } else if (hasImages) {
       deploymentName = getModelForTask('vision');
     } else {
