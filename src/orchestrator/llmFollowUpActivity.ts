@@ -34,13 +34,19 @@ df.app.activity('llmFollowUpActivity', {
     const correlationId = input.correlationId ?? crypto.randomUUID();
 
     // Use reasoning model for /heavy, fast model for /light, else default (#185)
-    const deploymentName = input.modelOverride === 'secondary'
-      ? routing.lane.secondary
-      : input.modelOverride === 'primary'
-        ? (routing.lane.reasoning ?? routing.lane.primary)
-        : routing.deploymentName;
+    let deploymentName: string;
+    let isReasoning = routing.isReasoning;
+    if (input.modelOverride === 'secondary') {
+      deploymentName = routing.lane.secondary;
+      isReasoning = false;
+    } else if (input.modelOverride === 'primary') {
+      deploymentName = routing.lane.reasoning ?? routing.lane.primary;
+      isReasoning = true;
+    } else {
+      deploymentName = routing.deploymentName;
+    }
 
-    const client = new FoundryClient({ ...routing, deploymentName });
+    const client = new FoundryClient({ ...routing, deploymentName, isReasoning });
 
     // Build the full conversation: original messages + assistant tool_calls + tool results
     const messages: ChatMessage[] = [

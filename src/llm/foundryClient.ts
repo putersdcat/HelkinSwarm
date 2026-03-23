@@ -111,6 +111,12 @@ export class FoundryClient {
     // Get the full fallback chain; the first entry is always the configured primary.
     const chain = getFallbackChain();
 
+    // If the constructor was given an override deployment (e.g. /heavy → o4-mini),
+    // prepend it so the override is tried first before falling through (#185).
+    if (this.routing.deploymentName !== chain[0]?.deploymentName) {
+      chain.unshift(this.routing);
+    }
+
     // Filter out currently degraded models — but keep at least the last resort.
     const available = chain.filter((r) => !isModelDegraded(r.deploymentName));
     const candidates = available.length > 0 ? available : [chain[chain.length - 1]];

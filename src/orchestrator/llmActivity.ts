@@ -29,18 +29,21 @@ df.app.activity('llmActivity', {
     // Apply model override for /heavy (force reasoning) or /light (force fast) commands
     // If images are present and no explicit override, use the vision-capable model (#130)
     let deploymentName: string;
+    let isReasoning = routing.isReasoning;
     if (input.modelOverride === 'secondary') {
       deploymentName = routing.lane.secondary;
+      isReasoning = false;
     } else if (input.modelOverride === 'primary') {
       // /heavy → use the reasoning model from the active lane (#185)
       deploymentName = routing.lane.reasoning ?? routing.lane.primary;
+      isReasoning = true;
     } else if (hasImages) {
       deploymentName = getModelForTask('vision');
     } else {
       deploymentName = routing.deploymentName;
     }
 
-    const client = new FoundryClient({ ...routing, deploymentName });
+    const client = new FoundryClient({ ...routing, deploymentName, isReasoning });
 
     // Convert PromptResult messages to ChatMessage format
     // If images are present, convert the last user message to multimodal content parts (#130)
