@@ -45,6 +45,13 @@ param routerUamiId string = ''
 @description('Create/update the GraphOAuth Bot Service connection. Set true only on first stamp deploy or when OAuth scopes change. Leave false on all re-deploys to avoid ARM error 715-123420.')
 param createOAuthConnection bool = false
 
+@description('Client ID of the HelkinSwarm-DelegatedAuth Entra app used for user-delegated Graph access (OAuth card + OBO flows). Global resource — same across all stamps.')
+param delegatedAuthClientId string = 'd4e5cf74-9f99-4504-b4ab-d4516dd10577'
+
+@secure()
+@description('Client secret for the DelegatedAuth Entra app. Retrieved from Key Vault during pipeline deploy. Only required when createOAuthConnection=true.')
+param delegatedAuthClientSecret string = ''
+
 @description('Maximum TPM ceiling for AI model deployments. Quota is capped at this value. Increase for higher throughput.')
 param quotaMaxTPM int = 100000
 
@@ -635,7 +642,8 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
 
         // ── OBO / Delegated Identity (spec 11) ──
         { name: 'BOT_OAUTH_CONNECTION_NAME', value: 'GraphOAuth' }
-        { name: 'ENTRA_OBO_CLIENT_SECRET', value: '' }
+        { name: 'ENTRA_DELEGATED_AUTH_CLIENT_ID', value: delegatedAuthClientId }
+        { name: 'ENTRA_OBO_CLIENT_SECRET', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=DelegatedAuthClientSecret)' }
 
         // ── GitHub App auth — KV references resolved by UAMI at runtime ──
         { name: 'GITHUB_APP_ID',              value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=GitHubAppId)' }
@@ -700,8 +708,8 @@ resource oauthConnection 'Microsoft.BotService/botServices/connections@2022-09-1
   properties: {
     serviceProviderDisplayName: 'Azure Active Directory v2'
     serviceProviderId: '30dd229c-58e3-4a48-bdfd-91ec48eb906c'
-    clientId: uami.properties.clientId
-    clientSecret: 'configure-via-portal'
+    clientId: delegatedAuthClientId
+    clientSecret: delegatedAuthClientSecret
     scopes: 'User.Read Mail.ReadWrite Calendars.ReadWrite Files.ReadWrite offline_access'
     parameters: [
       { key: 'tenantID', value: subscription().tenantId }

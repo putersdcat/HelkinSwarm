@@ -4,6 +4,7 @@ docs/Archive/
 # Local Only Scratch Files
 LocalOnly/
 tmpJunk/
+infra/graph-permissions.json
 
 # Dependencies
 node_modules/

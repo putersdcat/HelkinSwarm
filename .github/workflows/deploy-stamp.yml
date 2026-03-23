@@ -32,6 +32,11 @@ on:
         required: false
         type: boolean
         default: false
+      CREATE_OAUTH_CONNECTION:
+        description: "Create/update the GraphOAuth Bot Service connection. Use on first deploy or when OAuth scopes change."
+        required: false
+        type: boolean
+        default: false
 
 # Only one stamp deployment at a time per alias
 concurrency:
@@ -170,6 +175,12 @@ jobs:
         run: |
           set +e
           echo "🚀 Deploying Bicep for stamp '${{ env.USER_ALIAS }}'..."
+
+          # Fetch delegated auth client secret from KV for OAuth connection deploy
+          KV_NAME="helkinswarm-kv-${{ env.USER_ALIAS }}"
+          DELEGATED_SECRET=$(az keyvault secret show --vault-name "$KV_NAME" \
+            --name "DelegatedAuthClientSecret" --query "value" -o tsv 2>/dev/null || echo "")
+
           DEPLOY_OUT=$(az deployment group create \
             --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
@@ -181,6 +192,8 @@ jobs:
               euResidencyMode=${{ github.event.inputs.EU_RESIDENCY_MODE || 'false' }} \
               routerBotId="${{ vars.BOT_APP_ID }}" \
               routerUamiId="${{ vars.ROUTER_UAMI_ID }}" \
+              createOAuthConnection=${{ github.event.inputs.CREATE_OAUTH_CONNECTION || 'false' }} \
+              delegatedAuthClientSecret="$DELEGATED_SECRET" \
             --output json 2>&1)
           DEPLOY_EXIT=$?
 

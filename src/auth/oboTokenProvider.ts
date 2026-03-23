@@ -12,7 +12,6 @@ import { ConfidentialClientApplication } from '@azure/msal-node';
 import type { AuthenticationResult, Configuration } from '@azure/msal-node';
 import { createCosmosCachePlugin } from './msalCachePlugin.js';
 import { getEnvConfig } from '../config/envConfig.js';
-import { getBearerToken } from './identity.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,20 +44,19 @@ function getMsalClient(userId: string): ConfidentialClientApplication {
 
   const env = getEnvConfig();
 
-  // The OBO app registration must have:
-  // - A client credential (certificate or federated via UAMI — no client secrets)
-  // - API permissions for Microsoft Graph with admin consent
+  // The OBO app registration is the DelegatedAuth Entra app, NOT the UAMI bot identity.
+  // It has Graph delegated permissions + client secret stored in Key Vault.
+  const delegatedClientId = env.entraDelegatedAuthClientId;
+  if (!delegatedClientId) {
+    throw new Error('ENTRA_DELEGATED_AUTH_CLIENT_ID not configured — OBO flow unavailable');
+  }
+
   const config: Configuration = {
     auth: {
-      clientId: env.microsoftAppId,
+      clientId: delegatedClientId,
       authority: `https://login.microsoftonline.com/${env.microsoftAppTenantId}`,
-      // Use client assertion callback for certificate-based auth via UAMI
-      // This avoids storing any client secret — the UAMI can fetch the cert from KV.
-      clientAssertion: async () => {
-        // Mint a client assertion using the UAMI's managed identity credential
-        // against the AAD token endpoint. This is the zero-secrets pattern.
-        return getBearerToken('api://AzureADTokenExchange/.default');
-      },
+      // Use client secret for OBO auth (retrieved from KV via env var)
+      clientSecret: env.entraOboClientSecret,
     },
     cache: {
       cachePlugin: createCosmosCachePlugin(userId),

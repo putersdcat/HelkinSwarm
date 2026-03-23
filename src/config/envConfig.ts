@@ -41,6 +41,10 @@ const EnvConfigSchema = z.object({
   // Bot OAuth (#31)
   botOAuthConnectionName: z.string().default('GraphOAuth'),
 
+  // Delegated Auth — Entra app for user-delegated Graph access (OBO + OAuth card)
+  entraDelegatedAuthClientId: z.string().optional(),
+  entraOboClientSecret: z.string().optional(),
+
   // Owner
   ownerUserId: z.string().optional(),
 
@@ -77,6 +81,8 @@ function loadFromEnv(): EnvConfig {
     skillforgeEnabled: process.env['SKILLFORGE_ENABLED']?.toLowerCase() === 'true',
     devLoopEnabled: process.env['DEVLOOP_ENABLED']?.toLowerCase() === 'true',
     botOAuthConnectionName: process.env['BOT_OAUTH_CONNECTION_NAME'] || undefined,
+    entraDelegatedAuthClientId: process.env['ENTRA_DELEGATED_AUTH_CLIENT_ID'] || undefined,
+    entraOboClientSecret: process.env['ENTRA_OBO_CLIENT_SECRET'] || undefined,
     ownerUserId: process.env['OWNER_USER_ID'] || undefined,
     llmProvider: process.env['LLM_PROVIDER'] || undefined,
     openrouterFallbackPrimary: process.env['OPENROUTER_FALLBACK_PRIMARY'] || undefined,
