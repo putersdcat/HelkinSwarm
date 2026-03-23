@@ -13,6 +13,7 @@ import {
   getPendingAckId,
   clearPendingAckId,
 } from '../bot/conversationStore.js';
+import { cacheSentMessage } from '../bot/sentMessageCache.js';
 import { getEnvConfig } from '../config/envConfig.js';
 
 export interface SendReplyInput {
@@ -73,11 +74,16 @@ async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
             id: ackActivityId,
             text: messageText,
           });
+          // Cache under ack ID so reply-with-quote can resolve full text (#166)
+          cacheSentMessage(ackActivityId, messageText);
           const conversationId = (conversationReference as ConversationReference).conversation?.id ?? input.userId;
           await clearPendingAckId(input.userId, conversationId);
         } else {
           // No ack stored (e.g. first reply after container restart) — fall back to new message
-          await turnContext.sendActivity(messageText);
+          const response = await turnContext.sendActivity(messageText);
+          if (response?.id) {
+            cacheSentMessage(response.id, messageText);
+          }
         }
       },
     );

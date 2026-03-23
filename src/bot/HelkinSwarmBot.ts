@@ -15,6 +15,7 @@ import type { DurableClient } from 'durable-functions';
 import { OrchestrationRuntimeStatus } from 'durable-functions';
 import type { NewMessageEvent } from '../orchestrator/overseer.js';
 import { saveConversationReference, savePendingAckId } from './conversationStore.js';
+import { getSentMessage } from './sentMessageCache.js';
 import {
   getMaintenanceMode,
   isOwnerUserId,
@@ -189,11 +190,11 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     const correlationId = crypto.randomUUID();
 
     // Extract quoted reply context from Teams reply-with-quote (#129, #166)
-    const quotedText = this.extractQuotedReply(context);
-    if (quotedText) {
-      // Teams may truncate the preview — note this for the LLM
-      const truncNote = quotedText.length > 180 ? '' : ' (may be truncated by Teams)';
-      messageText = `[Quoted context${truncNote}: "${quotedText}"]\n\n${messageText}`;
+    const quoted = this.extractQuotedReply(context);
+    if (quoted) {
+      // Only warn about truncation when text was NOT resolved from our sent-message cache
+      const truncNote = quoted.fromCache || quoted.text.length > 180 ? '' : ' (may be truncated by Teams)';
+      messageText = `[Quoted context${truncNote}: "${quoted.text}"]\n\n${messageText}`;
     }
 
     if (!userId) {
@@ -637,37 +638,50 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
   /**
    * Extract quoted reply text from Teams reply-with-quote messages (#129, #166).
-   * Teams embeds the quoted content in the activity's HTML or as a blockquote.
-   * Note: Teams may truncate the quoted preview. Full text retrieval requires
-   * Graph API Chat.Read permission (not yet configured — see #166).
+   * Resolution order:
+   *   1. Sent-message cache lookup via replyToId (full text, no API call)
+   *   2. Entities with type 'quote' (Teams SDK structured quote)
+   *   3. channelData.quotedMessageContent
+   *   4. HTML blockquote extraction (Teams truncated preview fallback)
+   *
+   * Returns { text, fromCache } so callers know whether truncation warning is needed.
    */
-  private extractQuotedReply(context: TurnContext): string | undefined {
+  private extractQuotedReply(context: TurnContext): { text: string; fromCache: boolean } | undefined {
     const activity = context.activity;
 
-    // 1. Check entities for 'quote' type (Teams SDK-provided structured quote)
+    // 1. Cache lookup — if we sent the quoted message, we have the full text
+    const replyToId = activity.replyToId;
+    if (replyToId) {
+      const cached = getSentMessage(replyToId);
+      if (cached) {
+        return { text: cached, fromCache: true };
+      }
+    }
+
+    // 2. Check entities for 'quote' type (Teams SDK-provided structured quote)
     const entities = activity.entities;
     if (entities) {
       for (const entity of entities) {
         if (entity.type === 'quote' && typeof entity.text === 'string') {
-          return entity.text.trim();
+          return { text: entity.text.trim(), fromCache: false };
         }
       }
     }
 
-    // 2. Check channelData for quoted message content (Teams may include it here)
+    // 3. Check channelData for quoted message content (Teams may include it here)
     const channelData = activity.channelData as Record<string, unknown> | undefined;
     if (channelData?.quotedMessageContent && typeof channelData.quotedMessageContent === 'string') {
-      return channelData.quotedMessageContent.trim();
+      return { text: channelData.quotedMessageContent.trim(), fromCache: false };
     }
 
-    // 3. Fallback: extract from HTML body if textFormat is 'html'
+    // 4. Fallback: extract from HTML body if textFormat is 'html'
     if (activity.textFormat === 'html' && activity.text) {
       const blockquoteMatch = /<blockquote[^>]*>([\s\S]*?)<\/blockquote>/i.exec(
         activity.text,
       );
       if (blockquoteMatch?.[1]) {
         // Strip HTML tags from the quoted content
-        return blockquoteMatch[1].replace(/<[^>]+>/g, '').trim();
+        return { text: blockquoteMatch[1].replace(/<[^>]+>/g, '').trim(), fromCache: false };
       }
     }
 
