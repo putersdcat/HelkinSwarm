@@ -1,11 +1,14 @@
 // LLM Follow-Up activity — second LLM call after tool execution.
 // Sends tool results back to the model so it can generate a natural language response.
+// When enableRetry is set, tools are passed to the LLM so it can request corrective
+// tool calls (e.g., retry after a 422 error with fixed params). The orchestrator
+// handles the actual dispatch loop. (#182, #186)
 // Spec ref: 06-Tool-Dispatch-LLM-Layer.md
 
 import * as df from 'durable-functions';
 import { FoundryClient, textContent } from '../llm/foundryClient.js';
 import { getModelRouting } from '../llm/modelRouter.js';
-import type { ChatMessage, ChatCompletionResponse } from '../llm/foundryClient.js';
+import type { ChatMessage, ChatCompletionResponse, ToolDefinition } from '../llm/foundryClient.js';
 import type { LlmResult } from './llmActivity.js';
 
 export interface LlmFollowUpInput {
@@ -26,6 +29,22 @@ export interface LlmFollowUpInput {
   }>;
   correlationId: string;
   modelOverride?: 'primary' | 'secondary';
+  /** When true, pass tools to the LLM so it can request retry calls (#182). */
+  enableRetry?: boolean;
+  /** Tool definitions to pass when enableRetry is true. */
+  tools?: ToolDefinition[];
+  /** Additional assistant+tool turn pairs from retry iterations (#182). */
+  additionalTurns?: Array<{
+    assistantContent: string;
+    assistantToolCalls: Array<{ id: string; name: string; arguments: string }>;
+    toolResults: Array<{
+      toolCallId: string;
+      toolName: string;
+      success: boolean;
+      result?: unknown;
+      error?: string;
+    }>;
+  }>;
 }
 
 df.app.activity('llmFollowUpActivity', {
@@ -48,25 +67,9 @@ df.app.activity('llmFollowUpActivity', {
 
     const client = new FoundryClient({ ...routing, deploymentName, isReasoning });
 
-    // Build the full conversation: original messages + assistant tool_calls + tool results
-    const messages: ChatMessage[] = [
-      // Original system + user messages
-      ...input.originalMessages.map((m) => ({
-        role: m.role as 'system' | 'user' | 'assistant' | 'tool',
-        content: m.content,
-      })),
-      // Assistant message that requested tool calls
-      {
-        role: 'assistant' as const,
-        content: input.assistantToolCallMessage.content || '',
-        toolCalls: input.assistantToolCallMessage.toolCalls.map((tc) => ({
-          id: tc.id,
-          type: 'function' as const,
-          function: { name: tc.name, arguments: tc.arguments },
-        })),
-      },
-      // Tool result messages — cap each result to prevent context window blowout (#184)
-      ...input.toolResults.map((tr) => {
+    // Helper to format tool results as chat messages
+    const formatToolResults = (results: LlmFollowUpInput['toolResults']): ChatMessage[] =>
+      results.map((tr) => {
         let content: string;
         if (!tr.success) {
           content = `Error: ${tr.error}`;
@@ -76,17 +79,50 @@ df.app.activity('llmFollowUpActivity', {
             content = content.slice(0, 7950) + '…" (truncated — full result was ' + content.length + ' chars)';
           }
         }
-        return {
-          role: 'tool' as const,
-          content,
-          toolCallId: tr.toolCallId,
-        };
-      }),
+        return { role: 'tool' as const, content, toolCallId: tr.toolCallId };
+      });
+
+    // Build the full conversation: original messages + assistant tool_calls + tool results
+    const messages: ChatMessage[] = [
+      // Original system + user messages
+      ...input.originalMessages.map((m) => ({
+        role: m.role as 'system' | 'user' | 'assistant' | 'tool',
+        content: m.content,
+      })),
+      // First assistant message that requested tool calls
+      {
+        role: 'assistant' as const,
+        content: input.assistantToolCallMessage.content || '',
+        toolCalls: input.assistantToolCallMessage.toolCalls.map((tc) => ({
+          id: tc.id,
+          type: 'function' as const,
+          function: { name: tc.name, arguments: tc.arguments },
+        })),
+      },
+      // First round of tool results — cap each to prevent context window blowout (#184)
+      ...formatToolResults(input.toolResults),
+      // Additional turns from retry iterations (#182)
+      ...(input.additionalTurns ?? []).flatMap((turn) => [
+        {
+          role: 'assistant' as const,
+          content: turn.assistantContent || '',
+          toolCalls: turn.assistantToolCalls.map((tc) => ({
+            id: tc.id,
+            type: 'function' as const,
+            function: { name: tc.name, arguments: tc.arguments },
+          })),
+        },
+        ...formatToolResults(turn.toolResults),
+      ]),
     ];
 
     try {
+      // When enableRetry is set, pass tools so the LLM can request corrective calls (#182).
+      const retryTools = input.enableRetry && input.tools?.length ? input.tools : undefined;
       const response: ChatCompletionResponse = await client.chatCompletion({
         messages,
+        tools: retryTools,
+        toolChoice: retryTools ? 'auto' : undefined,
         maxTokens: 4096,
         temperature: 0.7,
         correlationId,
@@ -95,8 +131,28 @@ df.app.activity('llmFollowUpActivity', {
       const choice = response.choices[0];
       let llmContent = textContent(choice.message.content);
 
-      // If the LLM returned empty content (usually because it requested more tool_calls
-      // that we don't support in single-turn), retry WITHOUT tools to force text (#186).
+      // If tools were provided and LLM wants to retry with corrected params,
+      // return the tool calls to the orchestrator for dispatch (#182).
+      const retryToolCalls = choice.message.toolCalls?.map((tc) => ({
+        id: tc.id,
+        name: tc.function.name,
+        arguments: tc.function.arguments,
+      })) ?? [];
+
+      if (!llmContent && retryToolCalls.length > 0 && retryTools) {
+        console.log(`[llmFollowUpActivity] LLM requested ${retryToolCalls.length} retry tool call(s) (#182).`);
+        return {
+          content: llmContent ?? '',
+          model: response.model,
+          tokensUsed: response.usage.totalTokens,
+          promptTokens: response.usage.promptTokens,
+          toolCalls: retryToolCalls,
+          finishReason: choice.finishReason,
+        };
+      }
+
+      // If the LLM returned empty content without retry tools (usually because it requested
+      // more tool_calls that we don't support), retry WITHOUT tools to force text (#186).
       if (!llmContent && choice.finishReason === 'tool_calls') {
         console.log(`[llmFollowUpActivity] LLM requested more tools (single-turn limit). Retrying without tools.`);
         const retryResponse: ChatCompletionResponse = await client.chatCompletion({
@@ -134,7 +190,7 @@ df.app.activity('llmFollowUpActivity', {
         model: response.model,
         tokensUsed: response.usage.totalTokens,
         promptTokens: response.usage.promptTokens,
-        toolCalls: [], // Follow-up should not request more tools (single-turn tool use)
+        toolCalls: [],
         finishReason: choice.finishReason,
       };
     } catch (err) {

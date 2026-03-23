@@ -269,7 +269,14 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         totalCalls: mergedResults.length,
       };
 
-      // 3b. Call LLM again with tool results for natural language response
+      // 3b. Call LLM again with tool results for natural language response.
+      // If any tools failed, enable retry so the LLM can correct and re-call (#182).
+      const hasFailures = mergedResults.some(
+        (r: { success: boolean }) => !r.success,
+      );
+      const tools = hasFailures ? toolRegistry.toFunctionSchemas() : undefined;
+      const initialResultCount = mergedResults.length;
+
       const followUpInput: LlmFollowUpInput = {
         originalMessages: prompt.messages,
         assistantToolCallMessage: {
@@ -279,8 +286,83 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         toolResults: toolResults?.results ?? [],
         correlationId,
         modelOverride: input.modelOverride,
+        enableRetry: hasFailures,
+        tools,
       };
-      const followUp: LlmResult = yield context.df.callActivity('llmFollowUpActivity', followUpInput);
+      let followUp: LlmResult = yield context.df.callActivity('llmFollowUpActivity', followUpInput);
+
+      // 3c. Retry loop — if the follow-up LLM requested corrective tool calls,
+      // dispatch them and call follow-up again. Max 2 retry iterations. (#182)
+      const MAX_RETRY_ITERATIONS = 2;
+      let retryIteration = 0;
+      const additionalTurns: LlmFollowUpInput['additionalTurns'] = [];
+
+      while (
+        followUp.toolCalls &&
+        followUp.toolCalls.length > 0 &&
+        retryIteration < MAX_RETRY_ITERATIONS
+      ) {
+        retryIteration++;
+        console.log(
+          `[sessionOrchestrator] Retry iteration ${retryIteration}: ` +
+          `dispatching ${followUp.toolCalls.length} corrective tool call(s) (#182)`,
+        );
+
+        // Only allow low-risk direct tools in retries (no executor, no sub-agent)
+        const retryCallsForDispatch = followUp.toolCalls.filter(
+          (tc: { name: string }) => {
+            const def = toolRegistry.get(tc.name);
+            return def && def.risk === 'low' && !def.requiresSubAgent;
+          },
+        );
+
+        if (retryCallsForDispatch.length === 0) break;
+
+        // Dispatch retry tools
+        const retryDispatchInput: ToolDispatchInput = {
+          toolCalls: retryCallsForDispatch,
+          correlationId,
+          sessionId: input.state.userId,
+          userId: input.state.userId,
+        };
+        const retryResults: ToolDispatchResult = yield context.df.callActivity(
+          'toolDispatchActivity',
+          retryDispatchInput,
+        );
+
+        // Accumulate this turn for conversation history
+        additionalTurns.push({
+          assistantContent: followUp.content,
+          assistantToolCalls: retryCallsForDispatch,
+          toolResults: retryResults.results,
+        });
+
+        // Also accumulate into overall tool results for telemetry
+        toolResults.results.push(...retryResults.results);
+        toolResults.totalCalls += retryResults.results.length;
+
+        // Determine if there are still failures — if not, no need for more retries
+        const retryHasFailures = retryResults.results.some(
+          (r: { success: boolean }) => !r.success,
+        );
+
+        // Call follow-up again with full conversation history
+        const retryFollowUpInput: LlmFollowUpInput = {
+          originalMessages: prompt.messages,
+          assistantToolCallMessage: {
+            content: llmResult.content,
+            toolCalls: toolCallsForDispatch,
+          },
+          toolResults: toolResults?.results.slice(0, initialResultCount) ?? [],
+          correlationId,
+          modelOverride: input.modelOverride,
+          enableRetry: retryHasFailures && retryIteration < MAX_RETRY_ITERATIONS,
+          tools: retryHasFailures && retryIteration < MAX_RETRY_ITERATIONS ? tools : undefined,
+          additionalTurns,
+        };
+        followUp = yield context.df.callActivity('llmFollowUpActivity', retryFollowUpInput);
+      }
+
       responseContent = followUp.content;
     }
   }
