@@ -88,6 +88,7 @@ export function isTelemetryEnabled(config: Pick<EnvConfig, 'devTelemetryMode'>):
 function abbreviateModel(model: string): string {
   // Common abbreviations
   return model
+    .replace(/o4-mini[-\d]*/g, 'o4m')
     .replace('grok-4-1-fast-non-reasoning', 'grok-4.1f')
     .replace('grok-4-1-non-reasoning', 'grok-4.1')
     .replace('gpt-4.1-mini', 'gpt-4.1m')
