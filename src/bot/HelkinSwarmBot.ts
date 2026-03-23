@@ -28,6 +28,7 @@ import { loadCapabilities } from '../capabilities/capabilityLoader.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { parseDevLoopMessage } from '../devloop/radioProtocol.js';
 import { createPendingIntent } from '../orchestrator/pendingIntentStore.js';
+import { getBearerToken } from '../auth/identity.js';
 
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
@@ -355,8 +356,8 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       await savePendingAckId(userId, conversationId, ackResponse.id);
     }
 
-    // Extract image URLs from Teams inline attachments (#130)
-    const imageUrls = this.extractImageUrls(context);
+    // Extract and download image attachments as base64 data URLs (#130, #165)
+    const imageUrls = await this.extractImageDataUrls(context);
 
     const devLoopCtx = devLoopParsed.isDevLoop ? {
       isDevLoop: devLoopParsed.isDevLoop,
@@ -674,22 +675,53 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
   }
 
   /**
-   * Extract image URLs from Teams inline image attachments (#130).
-   * Teams sends inline images as contentUrl attachments with image/* contentType.
+   * Download Teams inline image attachments and convert to base64 data URLs (#130, #165).
+   * Teams contentUrls are authenticated — the LLM API cannot access them directly.
+   * We download here (where Bot Framework auth is available) and inline as data URLs.
    */
-  private extractImageUrls(context: TurnContext): string[] {
+  private async extractImageDataUrls(context: TurnContext): Promise<string[]> {
     const attachments = context.activity.attachments;
     if (!attachments) return [];
 
-    const urls: string[] = [];
+    const MAX_IMAGE_BYTES = 4 * 1024 * 1024; // 4 MB per image
+    const dataUrls: string[] = [];
+
     for (const attachment of attachments) {
-      if (
-        attachment.contentType?.startsWith('image/') &&
-        attachment.contentUrl
-      ) {
-        urls.push(attachment.contentUrl);
+      if (!attachment.contentType?.startsWith('image/') || !attachment.contentUrl) {
+        continue;
+      }
+
+      try {
+        // Teams image URLs require Bot Framework auth to download
+        const token = await getBearerToken('https://api.botframework.com/.default');
+        const response = await fetch(attachment.contentUrl, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: AbortSignal.timeout(15_000),
+        });
+
+        if (!response.ok) {
+          console.warn(
+            `[HelkinSwarmBot] Image download failed: ${response.status} ${response.statusText} url=${attachment.contentUrl}`,
+          );
+          continue;
+        }
+
+        const buffer = Buffer.from(await response.arrayBuffer());
+        if (buffer.byteLength > MAX_IMAGE_BYTES) {
+          console.warn(
+            `[HelkinSwarmBot] Image too large (${buffer.byteLength} bytes), skipping`,
+          );
+          continue;
+        }
+
+        dataUrls.push(`data:${attachment.contentType};base64,${buffer.toString('base64')}`);
+      } catch (err) {
+        console.warn(
+          `[HelkinSwarmBot] Failed to download image: ${err instanceof Error ? err.message : err}`,
+        );
       }
     }
-    return urls;
+
+    return dataUrls;
   }
 }
