@@ -1,0 +1,32 @@
+{
+  "domain": "weather",
+  "version": "1.0",
+  "tools": [
+    {
+      "name": "weather_get",
+      "description": "Get current weather and forecast for a location. Supports city names, coordinates, or general place descriptions. Returns temperature, humidity, wind, precipitation, and weather condition. No API key required.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "location": {
+            "type": "string",
+            "description": "City name, place description, or 'lat,lon' coordinates (e.g. 'Berlin', 'New York', '52.52,13.41')"
+          },
+          "period": {
+            "type": "string",
+            "enum": ["current", "today", "3day", "7day"],
+            "description": "Forecast period: 'current' for now, 'today' for today's hourly, '3day' or '7day' for multi-day forecast (default: current)"
+          }
+        },
+        "required": ["location"]
+      }
+    }
+  ]
+}
