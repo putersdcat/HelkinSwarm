@@ -20,6 +20,9 @@ import { toolRegistry } from '../tools/toolRegistry.js';
 import { canonicalizeInput } from './inputCanonicalizer.js';
 import { computeToolBudget } from './toolBudgetScaler.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
+import { formatTelemetryFooter, isTelemetryEnabled } from './turnTelemetry.js';
+import type { TurnTelemetryData, TelemetrySpan } from './turnTelemetry.js';
+import { getEnvConfig } from '../config/envConfig.js';
 
 export interface SessionInput {
   state: OverseerState;
@@ -49,6 +52,7 @@ export interface SessionResult {
 df.app.orchestration('sessionOrchestrator', function* (context) {
   const input: SessionInput = context.df.getInput() as SessionInput;
   const correlationId = input.correlationId ?? crypto.randomUUID();
+  const turnStartTime = context.df.currentUtcDateTime.getTime();
 
   // 0. Canonicalize user input (#138)
   const { text: canonicalizedMessage } = canonicalizeInput(input.userMessage);
@@ -289,6 +293,29 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // 5. Send reply to Teams (proactive)
   // For DevLoop sessions, wrap the response in protocol format (#147, #92)
   let replyMessage = responseContent;
+
+  // 5a. Append debug telemetry footer if enabled (#174, spec: 0n)
+  const envConfig = getEnvConfig();
+  if (isTelemetryEnabled(envConfig)) {
+    const turnEndTime = context.df.currentUtcDateTime.getTime();
+    const spans: TelemetrySpan[] = [];
+    const toolNames: string[] = toolResults?.results?.map(
+      (r: { toolName: string }) => r.toolName,
+    ) ?? [];
+
+    const telemetryData: TurnTelemetryData = {
+      correlationId,
+      totalMs: turnEndTime - turnStartTime,
+      model: llmResult.model,
+      promptTokens: llmResult.promptTokens,
+      completionTokens: llmResult.tokensUsed - llmResult.promptTokens,
+      spans,
+      toolCalls: toolNames,
+      safetyPassed,
+    };
+    replyMessage += formatTelemetryFooter(envConfig.devTelemetryMode, telemetryData);
+  }
+
   if (input.devLoopContext?.isDevLoop) {
     const tag = input.devLoopContext.correlationTag ? ` ${input.devLoopContext.correlationTag}` : '';
     // Use HELKIN-REPLY for interrogation queries, SWARM for steering messages (#92)

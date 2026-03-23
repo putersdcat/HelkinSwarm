@@ -86,6 +86,10 @@ param openrouterFallbackPrimary string = 'moonshotai/kimi-k2.5'
 @description('OpenRouter fallback secondary model (used when llmProvider=openrouter).')
 param openrouterFallbackSecondary string = 'moonshotai/kimi-k2.5'
 
+@description('Dev telemetry mode appended to bot replies. off|minimal|standard|verbose (#174)')
+@allowed(['off', 'minimal', 'standard', 'verbose'])
+param devTelemetryMode string = 'verbose'
+
 
 // ─── Variables ──────────────────────────────────────────────────────────────
 
@@ -663,6 +667,9 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'AZURE_SUBSCRIPTION_ID', value: subscription().subscriptionId }
         { name: 'AZURE_RESOURCE_GROUP', value: resourceGroup().name }
         { name: 'MAINTENANCE_MODE', value: 'false' }
+
+        // ── Dev telemetry (spec 0n, #174) ──
+        { name: 'DEV_TELEMETRY_MODE', value: devTelemetryMode }
       ]
     }
   }
