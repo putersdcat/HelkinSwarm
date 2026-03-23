@@ -85,25 +85,32 @@
     }
   }
 
-  // Cached AAD token from Teams SDK
+  // User OID from Teams context (set during init)
+  var _userOid = null;
+
+  // Cached AAD token from Teams SDK (may be null if SSO not configured)
   var _cachedToken = null;
+  var _ssoAttempted = false;
 
   function getAadToken() {
     if (_cachedToken) return Promise.resolve(_cachedToken);
+    if (_ssoAttempted) return Promise.resolve(null);
+    _ssoAttempted = true;
     return microsoftTeams.authentication.getAuthToken().then(function (token) {
       _cachedToken = token;
       return token;
+    }).catch(function () {
+      // SSO not configured (missing Entra app registration) — fall back to context-only auth
+      return null;
     });
   }
 
   function apiCall(endpoint) {
+    if (!_userOid) return Promise.reject(new Error("Not authenticated — Teams context unavailable."));
     return getAadToken().then(function (token) {
-      return fetch(TAB_API_BASE + "/" + endpoint, {
-        headers: {
-          "x-helkinswarm-user-id": token,
-          "Authorization": "Bearer " + token,
-        },
-      });
+      var headers = { "x-helkinswarm-user-id": _userOid };
+      if (token) headers["Authorization"] = "Bearer " + token;
+      return fetch(TAB_API_BASE + "/" + endpoint, { headers: headers });
     }).then(function (resp) {
       if (resp.status === 503) {
         return resp.json().then(function (body) {
@@ -116,14 +123,11 @@
   }
 
   function apiPost(endpoint) {
+    if (!_userOid) return Promise.reject(new Error("Not authenticated — Teams context unavailable."));
     return getAadToken().then(function (token) {
-      return fetch(TAB_API_BASE + "/" + endpoint, {
-        method: "POST",
-        headers: {
-          "x-helkinswarm-user-id": token,
-          "Authorization": "Bearer " + token,
-        },
-      });
+      var headers = { "x-helkinswarm-user-id": _userOid };
+      if (token) headers["Authorization"] = "Bearer " + token;
+      return fetch(TAB_API_BASE + "/" + endpoint, { method: "POST", headers: headers });
     }).then(function (resp) {
       if (!resp.ok) throw new Error("Tab API error: " + resp.status);
       return resp.json();
@@ -431,6 +435,11 @@
         return microsoftTeams.app.getContext();
       })
       .then(function (context) {
+        // Store user OID for API auth (context.user.id is AAD Object ID in TeamsJS v2)
+        if (context && context.user && context.user.id) {
+          _userOid = context.user.id;
+        }
+
         if (context && context.app && context.app.theme) {
           applyTheme(context.app.theme);
         }

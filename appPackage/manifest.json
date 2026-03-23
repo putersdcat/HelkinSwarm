@@ -63,15 +63,12 @@
       "contentUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/index.html#control-center",
       "websiteUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/index.html#control-center",
       "scopes": ["personal"]
-    },
-    {
-      "entityId": "dev-console",
-      "name": "Dev Console",
-      "contentUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/index.html#dev-console",
-      "websiteUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/index.html#dev-console",
-      "scopes": ["personal"]
     }
   ],
+  "webApplicationInfo": {
+    "id": "{{BOT_APP_ID}}",
+    "resource": "api://{{TAB_HOST_DOMAIN}}/{{BOT_APP_ID}}"
+  },
   "permissions": [
     "identity",
     "messageTeamMembers"
