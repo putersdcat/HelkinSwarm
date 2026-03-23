@@ -93,10 +93,25 @@ df.app.activity('llmFollowUpActivity', {
       });
 
       const choice = response.choices[0];
+      let llmContent = textContent(choice.message.content);
 
-      const llmContent = textContent(choice.message.content);
+      // If the LLM returned empty content (usually because it requested more tool_calls
+      // that we don't support in single-turn), retry WITHOUT tools to force text (#186).
+      if (!llmContent && choice.finishReason === 'tool_calls') {
+        console.log(`[llmFollowUpActivity] LLM requested more tools (single-turn limit). Retrying without tools.`);
+        const retryResponse: ChatCompletionResponse = await client.chatCompletion({
+          messages: [
+            ...messages,
+            { role: 'assistant' as const, content: 'I have all the data I need from the tools. Let me summarize.' },
+          ],
+          maxTokens: 4096,
+          temperature: 0.7,
+          correlationId,
+        });
+        llmContent = textContent(retryResponse.choices[0].message.content);
+      }
 
-      // If the LLM returned empty content, build a concise summary from tool results
+      // If the LLM still returned empty content, build a concise summary from tool results
       // rather than dumping raw JSON that may exceed Teams message limits (#184).
       let content: string;
       if (llmContent) {
