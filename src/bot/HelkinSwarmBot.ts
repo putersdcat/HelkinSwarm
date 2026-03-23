@@ -187,10 +187,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     let messageText = (context.activity.text ?? '').trim();
     const correlationId = crypto.randomUUID();
 
-    // Extract quoted reply context from Teams reply-with-quote (#129)
+    // Extract quoted reply context from Teams reply-with-quote (#129, #166)
     const quotedText = this.extractQuotedReply(context);
     if (quotedText) {
-      messageText = `[Quoted context: "${quotedText}"]\n\n${messageText}`;
+      // Teams may truncate the preview — note this for the LLM
+      const truncNote = quotedText.length > 180 ? '' : ' (may be truncated by Teams)';
+      messageText = `[Quoted context${truncNote}: "${quotedText}"]\n\n${messageText}`;
     }
 
     if (!userId) {
@@ -633,13 +635,16 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
   }
 
   /**
-   * Extract quoted reply text from Teams reply-with-quote messages (#129).
+   * Extract quoted reply text from Teams reply-with-quote messages (#129, #166).
    * Teams embeds the quoted content in the activity's HTML or as a blockquote.
+   * Note: Teams may truncate the quoted preview. Full text retrieval requires
+   * Graph API Chat.Read permission (not yet configured — see #166).
    */
   private extractQuotedReply(context: TurnContext): string | undefined {
-    // Teams reply-with-quote: the parent message reference is in activity.value
-    // or in the HTML body as a <blockquote>. Check entities for 'quote' type first.
-    const entities = context.activity.entities;
+    const activity = context.activity;
+
+    // 1. Check entities for 'quote' type (Teams SDK-provided structured quote)
+    const entities = activity.entities;
     if (entities) {
       for (const entity of entities) {
         if (entity.type === 'quote' && typeof entity.text === 'string') {
@@ -648,10 +653,16 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       }
     }
 
-    // Fallback: extract from HTML body if textFormat is 'html'
-    if (context.activity.textFormat === 'html' && context.activity.text) {
+    // 2. Check channelData for quoted message content (Teams may include it here)
+    const channelData = activity.channelData as Record<string, unknown> | undefined;
+    if (channelData?.quotedMessageContent && typeof channelData.quotedMessageContent === 'string') {
+      return channelData.quotedMessageContent.trim();
+    }
+
+    // 3. Fallback: extract from HTML body if textFormat is 'html'
+    if (activity.textFormat === 'html' && activity.text) {
       const blockquoteMatch = /<blockquote[^>]*>([\s\S]*?)<\/blockquote>/i.exec(
-        context.activity.text,
+        activity.text,
       );
       if (blockquoteMatch?.[1]) {
         // Strip HTML tags from the quoted content
