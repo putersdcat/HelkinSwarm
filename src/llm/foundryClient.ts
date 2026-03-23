@@ -173,7 +173,9 @@ export class FoundryClient {
     correlationId: string,
   ): Promise<ChatCompletionResponse> {
     const base = routing.apiBase.replace(/\/+$/, '');
-    const url = `${base}/openai/deployments/${routing.deploymentName}/chat/completions?api-version=2024-06-01`;
+    // o4-mini and newer models require 2024-12-01-preview or later (#185)
+    const apiVersion = routing.isReasoning ? '2024-12-01-preview' : '2024-06-01';
+    const url = `${base}/openai/deployments/${routing.deploymentName}/chat/completions?api-version=${apiVersion}`;
 
     // Reasoning models need longer timeouts (#128)
     const timeoutMs = routing.isReasoning ? 120_000 : 55_000;
@@ -181,10 +183,16 @@ export class FoundryClient {
     const body: Record<string, unknown> = {
       model: routing.deploymentName,
       messages: options.messages.map(mapOutgoingMessage),
-      max_tokens: options.maxTokens ?? 4096,
-      temperature: options.temperature ?? 0.7,
       stream: false,
     };
+
+    // Reasoning models (o4-mini etc.) use max_completion_tokens and don't support temperature (#185)
+    if (routing.isReasoning) {
+      body.max_completion_tokens = options.maxTokens ?? 4096;
+    } else {
+      body.max_tokens = options.maxTokens ?? 4096;
+      body.temperature = options.temperature ?? 0.7;
+    }
 
     if (options.tools && options.tools.length > 0) {
       body.tools = options.tools;
