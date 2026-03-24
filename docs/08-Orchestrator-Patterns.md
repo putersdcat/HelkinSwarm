@@ -34,7 +34,7 @@ The overseer is the only permanent Durable instance. It never ends — it proces
 - Token budget tracking (80% threshold triggers summarization)
 - Session state management across restarts
 - External event handling (`NewMessage`, `ConfirmationResponse`, durable hook callbacks)
-- Graceful `ContinueAsNew` with summary + relevant skill memory injection (0i)
+- Graceful `ContinueAsNew` with summary + `recentHistory` + relevant skill memory injection (0i)
 - Coordination of long-running durable hooks (0h)
 
 ### Session Sub-Orchestrator (`src/orchestrator/sessionOrchestrator.ts`)
@@ -52,7 +52,11 @@ Handles one complete turn:
 ### Critical Patterns & Rules
 
 **ContinueAsNew**  
-Called automatically when token budget hits 80%. The summary + selected skill memory chunks are injected into the new session so context is preserved without bloating history.
+Called automatically when token budget hits 80%. Two mechanisms preserve context across restarts:
+1. **Summary** — compressed long-term context from the current session
+2. **`recentHistory`** — the last 10 raw conversation turns (user + assistant pairs), stored in `OverseerState.recentHistory` and injected by `buildPromptActivity.ts` for immediate multi-turn coherence
+
+Both are carried through `ContinueAsNew` so the LLM always has both long-term summary and recent conversation context.
 
 **External Events**  
 All communication from the bot, DevLoop relay (0g), and durable hooks uses Durable external events. This allows non-blocking, asynchronous awakening.
@@ -77,7 +81,7 @@ The overseer can register persistent hooks for long-running workflows. These sur
 | `src/orchestrator/toolDispatchActivity.ts` | Routes tool_calls to handlers |
 | `src/orchestrator/sendReplyActivity.ts` | Proactive Teams replies |
 | `src/orchestrator/tokenBudget.ts` | 80% context threshold logic |
-| `src/orchestrator/stateManager.ts` | Loads session context from Cosmos |
+| `src/orchestrator/stateManager.ts` | Loads session context from Cosmos (includes `recentHistory`, model, safetyMode) |
 | `src/orchestrator/durableHookActivity.ts` | Registers and manages long-running hooks (0h) |
 
 ### What NOT to Do

@@ -31,14 +31,22 @@ HelkinSwarm/
 
 Skills are discovered automatically at startup. Each folder contains its own `manifest.json` plus implementation files.
 
-### Capability Manifest Format (v1)
+### Capability Manifest Format (v2)
 
-Every manifest follows this exact schema (validated by Zod at load time):
+Every manifest follows this schema, validated by Zod at load time (`src/capabilities/manifestSchema.ts`):
 
 ```json
 {
   "domain": "outlook",
   "version": "1.0",
+  "shortName": "outlook",
+  "displayName": "Outlook",
+  "shortDescription": "Email and calendar management via Microsoft Graph",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/outlook.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "post-install-link",
+  "lifecycleRules": "keep-credentials",
+  "requiredPermissions": ["User.Read", "Mail.Read", "Mail.Send"],
   "tools": [
     {
       "name": "outlook_list_emails",
@@ -47,6 +55,8 @@ Every manifest follows this exact schema (validated by Zod at load time):
       "dataSensitivity": "pii",
       "allowedModelLane": "any",
       "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
       "externalAutomationCapabilities": [
         { "type": "exchangeRule", "action": "createRule" }
       ],
@@ -54,18 +64,46 @@ Every manifest follows this exact schema (validated by Zod at load time):
       "inputSchema": { ... },
       "outputSchema": { ... }
     }
-  ]
+  ],
+  "linkConfig": {
+    "connectionName": "OutlookOAuth",
+    "displayName": "Microsoft Outlook",
+    "description": "Connect your Microsoft account for email and calendar"
+  }
 }
 ```
 
-### Key Fields Explained
+### Top-Level Manifest Fields
+
+| Field | Required | Type | Role |
+|-------|----------|------|------|
+| `domain` | Yes | string | Internal identifier, matches folder name |
+| `version` | Yes | string | Manifest version (`"1.0"`, `"RC-2026-03"`) |
+| `shortName` | Yes | string | Short identifier for dependency references |
+| `displayName` | Yes | string | UI-friendly name for Skills Library tab |
+| `shortDescription` | Yes | string | One-line description shown on skill card |
+| `iconUrl` | Yes | URL | Blob storage icon for Skills Library tab |
+| `deploymentScenario` | Yes | enum | `personal-user-centric` or `enterprise-commercial` |
+| `onboardingMethod` | Yes | enum | `automatic-agentic`, `post-install-link`, or `both` |
+| `lifecycleRules` | Yes | enum | `keep-credentials`, `close-external-account`, or `ask-user` |
+| `tools` | Yes | array | Tool definitions (see below) |
+| `linkConfig` | No | object | SSO connection config for OAuth-based skills |
+| `dependencies` | No | string[] | Required skill shortNames (install blocked if missing) |
+| `requiredPermissions` | No | string[] | Entra/Graph delegated permissions needed |
+| `externalAccountsNeeded` | No | string[] | Third-party accounts required |
+| `softOnboarding` | No | object | First-run personality preferences |
+| `maintenanceTasks` | No | array | Scheduled/event-driven maintenance tasks |
+
+### Tool-Level Fields
 
 | Field                        | Values                          | Role |
 |------------------------------|---------------------------------|------|
-| `risk`                       | low / medium / high             | Drives human confirmation (0e) |
+| `risk`                       | low / medium / high             | Drives human confirmation (0e) and safety-mode filtering |
 | `dataSensitivity`            | pii / non-pii / mixed           | Routes to correct LLM lane |
 | `allowedModelLane`           | any / global / eu-only          | Enforces residency rules |
 | `requiresConfirmation`       | true / false                    | Forces Adaptive Card even in full-destructive mode |
+| `requiresExecutor`           | true / false                    | Routes through executor pipeline (no LLM, direct execution) |
+| `requiresSubAgent`           | true / false                    | Routes through isolated sub-agent LLM session |
 | `externalAutomationCapabilities` | array of native features     | Enables durable hooks & delegation (0h) |
 | `longTermMemorySchema`       | array of vault fields           | Declares skill-specific memory (0i) |
 
@@ -86,7 +124,15 @@ All tools (JSON + MCP + custom) are registered here with:
 - Handler function reference
 - Risk, safety metadata, and memory schema
 
-The LLM only ever sees the **safe, filtered subset** that the current safety mode, model lane, and active profile allow.
+Key methods:
+- `getSafetyFiltered()` — returns tools allowed by current safety mode (read-only → low risk only; confirmation-gated/full-destructive → all tools)
+- `toFunctionSchemas()` — converts safety-filtered tools to OpenAI function schemas for LLM presentation
+- `getUpToRisk(maxRisk)` — returns tools up to a given risk ceiling
+- `isAllowedBySafetyMode(toolName)` — runtime check used by dispatch activities for defense-in-depth
+
+The LLM only ever sees the **safe, filtered subset** that the current safety mode, model lane, and active profile allow. This filtering happens at two independent layers:
+1. **Prompt-time** — `getSafetyFiltered()` removes tools before they're shown to the LLM
+2. **Dispatch-time** — `isAllowedBySafetyMode()` rejects tool calls at execution time (defense-in-depth)
 
 ### Integration with Safety Pipeline (0e)
 

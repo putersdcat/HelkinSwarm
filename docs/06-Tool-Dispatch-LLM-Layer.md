@@ -31,20 +31,22 @@ const routing = {
 
 1. **Capability Loader** scans the modular `skills/` library (0a) at startup and on hot-reload.  
 2. **Tool Registry** builds OpenAI-compatible function schemas, applying the active **model-specific profile** (0b).  
-3. **Safety Filter** removes any tool that violates the current safety mode or model lane.  
-4. **Prompt Builder** injects the filtered, masked tool list + just-in-time skill memory (0i) + Hydra-Net embeddings if present (0k).  
+3. **Safety Filter** — `toolRegistry.getSafetyFiltered()` removes any tool that violates the current safety mode. In read-only mode, `getUpToRisk('low')` returns only low-risk tools. In confirmation-gated/full-destructive, all tools are returned.
+4. **Prompt Builder** — `buildPromptActivity.ts` calls `getSafetyFiltered()` for the tool summary and `toFunctionSchemas()` for the LLM's function schemas. Also injects just-in-time skill memory (0i) + Hydra-Net embeddings if present (0k).
 5. **LLM returns tool_calls**.  
-6. **Tool Dispatch Activity** routes each call to the correct handler.  
-7. **Executor Agent** takes over for high-risk operations (the LLM itself never executes destructive actions).  
-8. **Full Verification Pipeline** (0e) runs after execution.
+6. **Tool Dispatch Activity** — `toolDispatchActivity.ts` routes each call to the correct handler. Before execution, `isAllowedBySafetyMode()` provides a defense-in-depth check that rejects tool calls violating the current safety mode, even if the LLM fabricates a tool name.
+7. **Sub-Agent Activity** — `subAgentActivity.ts` handles tools marked `requiresSubAgent: true`. Also applies `isAllowedBySafetyMode()` before execution.
+8. **Executor Agent** takes over for tools marked `requiresExecutor: true` (the LLM itself never executes destructive actions).
+9. **Full Verification Pipeline** (0e) runs after execution.
 
 ### Sub-Agent Isolation
 
-Every tool call runs in a **fresh, isolated LLM session** (`subAgentActivity.ts`):
+Every tool call routed through `requiresSubAgent: true` runs in a **fresh, isolated LLM session** (`subAgentActivity.ts`):
 - No shared conversation history with the main overseer.
 - Uses the secondary (faster) model by default.
 - Receives only the minimal context needed for that specific tool.
 - Cannot call other tools recursively.
+- Safety mode compliance checked independently via `isAllowedBySafetyMode()`.
 
 This prevents prompt injection bleed and keeps context windows small.
 

@@ -52,9 +52,21 @@ It enforces, in strict order:
 
 All steps are mandatory. Failure at any step aborts the turn and notifies the user.
 
+### Layered Defense-in-Depth
+
+Safety is not a single checkpoint — it is enforced at **every layer** of the stack by heuristic code, never by prompt instructions:
+
+| Layer | Mechanism | Location |
+|-------|-----------|----------|
+| **1. Prompt-time filtering** | `toolRegistry.getSafetyFiltered()` removes tools that violate the current safety mode before the LLM sees them. In read-only mode, only low-risk tools are presented. | `buildPromptActivity.ts`, `llmActivity.ts` |
+| **2. Verification pipeline** | The 5-step 0e pipeline blocks medium/high risk in read-only, requires confirmation in gated mode. | `verificationPipeline.ts` |
+| **3. Dispatch-time blocking** | `toolRegistry.isAllowedBySafetyMode()` rejects tool calls at execution time, even if the LLM fabricates a tool name not in the filtered set. | `toolDispatchActivity.ts`, `subAgentActivity.ts` |
+| **4. Scoped token refusal** | `scopedTokenMinter.ts` refuses to mint write/delete tokens in read-only mode. | `scopedTokenMinter.ts` |
+| **5. Executor isolation** | High-risk actions are handed off to a pure code executor that cannot reason or call the LLM. | `executorActivity.ts` |
+
 ### Scoped Tokens & Executor Agents
 
-- **Scoped Token Minter** (`src/auth/scopedTokenMinter.ts`): Issues 5-minute delegated tokens with the **exact minimum privileges** needed for that tool call.  
+- **Scoped Token Minter** (`src/auth/scopedTokenMinter.ts`): Issues 5-minute delegated tokens with the **exact minimum privileges** needed for that tool call. Refuses write/delete tokens in read-only safety mode.
 - **Executor Agents** (`src/orchestrator/executorActivity.ts`): High-risk actions are **never** executed by any LLM-bearing sub-agent. They are handed off to a pure code executor that cannot reason or call the LLM.
 
 Delete-only tokens are never given to any LLM session.
