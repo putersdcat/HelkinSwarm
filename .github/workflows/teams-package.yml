@@ -21,7 +21,7 @@ on:
       auto_version_bump:
         description: "Auto-increment patch version on each build"
         type: boolean
-        default: false
+        default: true
 
   push:  # Triggered automatically when appPackage/ files change — version bump IS the push
     paths:
@@ -46,7 +46,7 @@ jobs:
 
       # ── Auto-increment patch version ───────────────────────────────────
       - name: Bump patch version
-        if: ${{ github.event.inputs.auto_version_bump == 'true' }}
+        if: ${{ github.event_name == 'push' || github.event.inputs.auto_version_bump == 'true' }}
         id: bump
         run: |
           MANIFEST="appPackage/manifest.json"
@@ -58,8 +58,9 @@ jobs:
           NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
 
           echo "📦 Version bump: $CURRENT → $NEW_VERSION"
-          jq --arg v "$NEW_VERSION" '.version = $v' "$MANIFEST" > /tmp/manifest.jsonappPackage
-          mv /tmp/manifest.json "$MANIFEST"
+          TMP_MANIFEST=$(mktemp)
+          jq --arg v "$NEW_VERSION" '.version = $v' "$MANIFEST" > "$TMP_MANIFEST"
+          mv "$TMP_MANIFEST" "$MANIFEST"
 
           echo "bumped-version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
           echo "previous-version=$CURRENT"   >> "$GITHUB_OUTPUT"
@@ -196,7 +197,7 @@ jobs:
 
       # ── Commit version bump back to main ──────────────────────────────
       - name: Commit version bump
-        if: ${{ github.event.inputs.auto_version_bump == 'true' && steps.bump.outputs.bumped-version != '' }}
+        if: ${{ (github.event_name == 'push' || github.event.inputs.auto_version_bump == 'true') && steps.bump.outputs.bumped-version != '' }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
