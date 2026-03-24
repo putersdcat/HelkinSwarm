@@ -22,6 +22,20 @@ export type ToolHandler = (
 
 const handlerRegistry = new Map<string, ToolHandler>();
 
+// ---------------------------------------------------------------------------
+// Manifest registry — stores loaded manifests by domain for runtime lookups
+// ---------------------------------------------------------------------------
+
+const manifestRegistry = new Map<string, CapabilityManifest>();
+
+export function getManifest(domain: string): CapabilityManifest | undefined {
+  return manifestRegistry.get(domain);
+}
+
+export function getLinkableSkills(): CapabilityManifest[] {
+  return [...manifestRegistry.values()].filter((m) => m.linkConfig);
+}
+
 export function registerHandler(toolName: string, handler: ToolHandler): void {
   handlerRegistry.set(toolName, handler);
 }
@@ -48,6 +62,7 @@ export async function loadCapabilities(
   skillsRoots: string[] = [join(process.cwd(), 'skills')],
 ): Promise<LoadResult> {
   const result: LoadResult = { skillsLoaded: 0, toolsRegistered: 0, errors: [] };
+  manifestRegistry.clear();
 
   for (const root of skillsRoots) {
     let entries: string[];
@@ -69,6 +84,9 @@ export async function loadCapabilities(
         const raw = await readFile(manifestPath, 'utf-8');
         const parsed = JSON.parse(raw) as unknown;
         const manifest: CapabilityManifest = CapabilityManifestSchema.parse(parsed);
+
+        // Store manifest for runtime lookups (e.g., linkConfig for /link commands)
+        manifestRegistry.set(manifest.domain, manifest);
 
         // Register tools from manifest
         for (const tool of manifest.tools) {

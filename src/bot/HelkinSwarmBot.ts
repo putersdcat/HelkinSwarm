@@ -25,7 +25,7 @@ import { promptShields } from '../llm/promptShields.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { getAckVariant } from './ackVariants.js';
 import { isColdStarting } from './lifecycleNotices.js';
-import { loadCapabilities } from '../capabilities/capabilityLoader.js';
+import { loadCapabilities, getManifest, getLinkableSkills } from '../capabilities/capabilityLoader.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { parseDevLoopMessage } from '../devloop/radioProtocol.js';
 import { createPendingIntent } from '../orchestrator/pendingIntentStore.js';
@@ -264,15 +264,21 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return;
     }
 
-    // /link — trigger Graph OAuth consent flow (#31)
-    if (lowerMessage === '/link') {
-      await this.handleLink(context);
+    // /link [skill] [status] — generic skill linking framework (#183)
+    if (lowerMessage.startsWith('/link')) {
+      await this.handleLinkCommand(context, messageText);
       return;
     }
 
-    // /unlink — revoke Graph OAuth connection (#31)
-    if (lowerMessage === '/unlink') {
-      await this.handleUnlink(context, userId);
+    // /unlink [skill] — disconnect a specific skill (#183)
+    if (lowerMessage.startsWith('/unlink')) {
+      await this.handleUnlinkCommand(context, userId, messageText);
+      return;
+    }
+
+    // /relink [skill] — unlink + relink a skill (#183)
+    if (lowerMessage.startsWith('/relink')) {
+      await this.handleRelinkCommand(context, userId, messageText);
       return;
     }
 
@@ -586,54 +592,159 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
   }
 
   /**
-   * /link — trigger Graph OAuth consent flow (#31).
-   * Sends an OAuthCard that opens the Entra consent screen.
-   * On successful sign-in, the Bot Framework caches the token in the configured connection.
+   * /link [skill] [status] — generic skill linking framework (#183).
+   * No args: list all linkable skills.
+   * /link <skill>: initiate OAuth for that skill.
+   * /link <skill> status: check link status.
    */
-  private async handleLink(context: TurnContext): Promise<void> {
-    const connectionName = getEnvConfig().botOAuthConnectionName;
-    if (!connectionName) {
-      await context.sendActivity('⚠️ OAuth connection not configured (BOT_OAUTH_CONNECTION_NAME).');
+  private async handleLinkCommand(context: TurnContext, messageText: string): Promise<void> {
+    const args = messageText.slice('/link'.length).trim().split(/\s+/).filter(Boolean);
+    const skillDomain = args[0];
+    const subcommand = args[1]?.toLowerCase();
+
+    // No args — list all linkable skills
+    if (!skillDomain) {
+      const linkable = getLinkableSkills();
+      if (linkable.length === 0) {
+        await context.sendActivity('No skills require linking.');
+        return;
+      }
+      const list = linkable
+        .map((m) => `• **${m.domain}** — ${m.linkConfig!.description}`)
+        .join('\n');
+      await context.sendActivity(
+        `Available skills to link:\n${list}\n\nUse \`/link <skill>\` to connect.`,
+      );
       return;
     }
 
-    // Try to get an existing token first (user may already be linked)
-    const tokenResponse = await (context.adapter as { getUserToken?(c: TurnContext, cn: string): Promise<{ token: string } | undefined> })
-      .getUserToken?.(context, connectionName);
+    const manifest = getManifest(skillDomain);
+    if (!manifest?.linkConfig) {
+      await context.sendActivity(
+        `⚠️ Skill "${skillDomain}" not found or doesn't require linking.`,
+      );
+      return;
+    }
+
+    const { connectionName, displayName, description } = manifest.linkConfig;
+
+    // /link <skill> status — check link status
+    if (subcommand === 'status') {
+      const tokenResponse = await (
+        context.adapter as {
+          getUserToken?(c: TurnContext, cn: string): Promise<{ token: string } | undefined>;
+        }
+      ).getUserToken?.(context, connectionName);
+      if (tokenResponse?.token) {
+        await context.sendActivity(`✅ **${manifest.domain}** is linked.`);
+      } else {
+        await context.sendActivity(
+          `❌ **${manifest.domain}** is not linked. Use \`/link ${manifest.domain}\` to connect.`,
+        );
+      }
+      return;
+    }
+
+    // /link <skill> — initiate OAuth
+    const tokenResponse = await (
+      context.adapter as {
+        getUserToken?(c: TurnContext, cn: string): Promise<{ token: string } | undefined>;
+      }
+    ).getUserToken?.(context, connectionName);
 
     if (tokenResponse?.token) {
-      await context.sendActivity('✅ You are already linked! Your Graph credentials are active.');
+      await context.sendActivity(
+        `✅ **${manifest.domain}** is already linked! Your credentials are active.`,
+      );
       return;
     }
 
-    // Send an OAuthCard to trigger the consent flow
     const card = CardFactory.oauthCard(
       connectionName,
-      '🔗 Link your Microsoft account',
-      'Sign in to grant HelkinSwarm access to your personal data (email, calendar, files).',
+      `🔗 Link ${displayName}`,
+      description,
     );
     await context.sendActivity({ attachments: [card] });
   }
 
   /**
-   * /unlink — revoke Graph OAuth tokens (#31).
+   * /unlink [skill] — revoke OAuth tokens for a skill (#183).
+   * No args: list linked skills. With arg: unlink that skill.
    */
-  private async handleUnlink(context: TurnContext, userId: string): Promise<void> {
-    const connectionName = getEnvConfig().botOAuthConnectionName;
-    if (!connectionName) {
-      await context.sendActivity('⚠️ OAuth connection not configured.');
+  private async handleUnlinkCommand(
+    context: TurnContext,
+    userId: string,
+    messageText: string,
+  ): Promise<void> {
+    const skillDomain = messageText.slice('/unlink'.length).trim().split(/\s+/)[0];
+
+    if (!skillDomain) {
+      await context.sendActivity('Usage: `/unlink <skill>` — e.g., `/unlink outlook`');
+      return;
+    }
+
+    const manifest = getManifest(skillDomain);
+    if (!manifest?.linkConfig) {
+      await context.sendActivity(
+        `⚠️ Skill "${skillDomain}" not found or doesn't require linking.`,
+      );
       return;
     }
 
     try {
-      await (context.adapter as { signOutUser?(c: TurnContext, cn: string): Promise<void> })
-        .signOutUser?.(context, connectionName);
-      await context.sendActivity('✅ Unlinked. Your Graph credentials have been revoked.');
-      console.error(`[HelkinSwarmBot] User unlinked: userId=${userId}`);
+      await (
+        context.adapter as { signOutUser?(c: TurnContext, cn: string): Promise<void> }
+      ).signOutUser?.(context, manifest.linkConfig.connectionName);
+      await context.sendActivity(`✅ **${manifest.domain}** unlinked. Credentials revoked.`);
+      console.error(`[HelkinSwarmBot] User unlinked skill=${manifest.domain} userId=${userId}`);
     } catch (err) {
       console.error('[HelkinSwarmBot] signOutUser failed:', err);
-      await context.sendActivity('⚠️ Failed to unlink. Please try again or remove consent from https://myapps.microsoft.com');
+      await context.sendActivity(
+        '⚠️ Failed to unlink. Please try again or remove consent from https://myapps.microsoft.com',
+      );
     }
+  }
+
+  /**
+   * /relink [skill] — unlink + relink a skill in one step (#183).
+   */
+  private async handleRelinkCommand(
+    context: TurnContext,
+    userId: string,
+    messageText: string,
+  ): Promise<void> {
+    const skillDomain = messageText.slice('/relink'.length).trim().split(/\s+/)[0];
+
+    if (!skillDomain) {
+      await context.sendActivity('Usage: `/relink <skill>` — e.g., `/relink outlook`');
+      return;
+    }
+
+    const manifest = getManifest(skillDomain);
+    if (!manifest?.linkConfig) {
+      await context.sendActivity(
+        `⚠️ Skill "${skillDomain}" not found or doesn't require linking.`,
+      );
+      return;
+    }
+
+    // Unlink first (silently)
+    try {
+      await (
+        context.adapter as { signOutUser?(c: TurnContext, cn: string): Promise<void> }
+      ).signOutUser?.(context, manifest.linkConfig.connectionName);
+      console.error(`[HelkinSwarmBot] Relink: unlinked skill=${manifest.domain} userId=${userId}`);
+    } catch {
+      // Ignore unlink failure — proceed to link anyway
+    }
+
+    // Then initiate the linking flow
+    const card = CardFactory.oauthCard(
+      manifest.linkConfig.connectionName,
+      `🔗 Relink ${manifest.linkConfig.displayName}`,
+      manifest.linkConfig.description,
+    );
+    await context.sendActivity({ attachments: [card] });
   }
 
   /**

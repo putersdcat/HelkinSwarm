@@ -1,6 +1,11 @@
 {
   "domain": "outlook",
   "version": "1.0",
+  "linkConfig": {
+    "connectionName": "GraphOAuth",
+    "displayName": "Microsoft Account",
+    "description": "Sign in to grant HelkinSwarm access to your email, calendar, and files"
+  },
   "tools": [
     {
       "name": "outlook_list_emails",

@@ -36,10 +36,19 @@ export const ToolManifestEntry = z.object({
 
 export type ToolManifestEntry = z.infer<typeof ToolManifestEntry>;
 
+export const LinkConfigSchema = z.object({
+  connectionName: z.string().min(1),
+  displayName: z.string().min(1),
+  description: z.string().min(1),
+});
+
+export type LinkConfig = z.infer<typeof LinkConfigSchema>;
+
 export const CapabilityManifestSchema = z.object({
   domain: z.string().min(1),
   version: z.string().min(1),
   tools: z.array(ToolManifestEntry).min(1),
+  linkConfig: LinkConfigSchema.optional(),
 });
 
 export type CapabilityManifest = z.infer<typeof CapabilityManifestSchema>;
