@@ -52,7 +52,7 @@
   "staticTabs": [
     {
       "entityId": "getting-started",
-      "name": "Getting Started",
+      "name": "Get Started",
       "contentUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/index.html#get-started",
       "websiteUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/index.html#get-started",
       "scopes": ["personal"]
