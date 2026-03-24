@@ -28,7 +28,7 @@ export interface LlmFollowUpInput {
     error?: string;
   }>;
   correlationId: string;
-  modelOverride?: 'primary' | 'secondary';
+  modelOverride?: string;
   /** When true, pass tools to the LLM so it can request retry calls (#182). */
   enableRetry?: boolean;
   /** Tool definitions to pass when enableRetry is true. */
@@ -61,6 +61,10 @@ df.app.activity('llmFollowUpActivity', {
     } else if (input.modelOverride === 'primary') {
       deploymentName = routing.lane.reasoning ?? routing.lane.primary;
       isReasoning = true;
+    } else if (input.modelOverride && input.modelOverride !== 'primary' && input.modelOverride !== 'secondary') {
+      // Direct deployment name override via /model command (#217)
+      deploymentName = input.modelOverride;
+      isReasoning = deploymentName.includes('reasoning') || deploymentName.startsWith('o');
     } else {
       deploymentName = routing.deploymentName;
     }

@@ -253,6 +253,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return;
     }
 
+    // /model <deployment-name> <prompt> — force a specific deployment for this turn (owner-only, #217)
+    if (lowerMessage.startsWith('/model')) {
+      await this.handleDirectModelOverride(context, userId, userAlias, messageText);
+      return;
+    }
+
     // /preferences — update communication preferences
     if (lowerMessage === '/preferences') {
       await this.raiseToOverseer(
@@ -407,7 +413,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     userId: string,
     userAlias: string,
     userMessage: string,
-    modelOverride?: 'primary' | 'secondary',
+    modelOverride?: string,
     imageUrls?: string[],
     devLoopContext?: NewMessageEvent['devLoopContext'],
   ): Promise<void> {
@@ -513,6 +519,39 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     const label = modelOverride === 'primary' ? '🔥 frontier model' : '⚡ fast model';
     await context.sendActivity(`⌛ Working on it... (${label})`);
     await this.raiseToOverseer(context, userId, userAlias, prompt, modelOverride);
+  }
+
+  /** /model <deployment-name> <prompt> — force a specific Azure AI Foundry deployment for one turn (owner-only, #217). */
+  private async handleDirectModelOverride(
+    context: TurnContext,
+    userId: string,
+    userAlias: string,
+    messageText: string,
+  ): Promise<void> {
+    if (!this.durableClient) return;
+
+    if (!(await isOwnerUserId(userId))) {
+      await context.sendActivity('⛔ Owner-only command.');
+      return;
+    }
+
+    // Parse: /model <deployment-name> <prompt>
+    const parts = messageText.slice(6).trim().split(/\s+/);
+    if (parts.length < 2 || !parts[0]) {
+      const available = [
+        'grok-4-1-fast-non-reasoning', 'grok-4-1-fast-reasoning',
+        'gpt-5.4-mini', 'gpt-5.1-codex-mini', 'o4-mini',
+        'DeepSeek-V3.2', 'FW-MiniMax-M2.5', 'FW-Kimi-K2.5',
+      ];
+      await context.sendActivity(`Usage: /model <deployment-name> <prompt>\n\nAvailable: ${available.join(', ')}`);
+      return;
+    }
+
+    const deploymentName = parts[0]!;
+    const prompt = parts.slice(1).join(' ');
+
+    await context.sendActivity(`⌛ Working on it... (🎯 ${deploymentName})`);
+    await this.raiseToOverseer(context, userId, userAlias, prompt, deploymentName);
   }
 
   private async handleEmergencyStop(

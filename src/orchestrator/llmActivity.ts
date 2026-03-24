@@ -21,7 +21,7 @@ export interface LlmResult {
 }
 
 df.app.activity('llmActivity', {
-  handler: async (input: PromptResult & { correlationId?: string; modelOverride?: 'primary' | 'secondary'; imageUrls?: string[] }): Promise<LlmResult> => {
+  handler: async (input: PromptResult & { correlationId?: string; modelOverride?: string; imageUrls?: string[] }): Promise<LlmResult> => {
     const routing = getModelRouting();
     const correlationId = input.correlationId ?? crypto.randomUUID();
     const hasImages = input.imageUrls && input.imageUrls.length > 0;
@@ -37,6 +37,10 @@ df.app.activity('llmActivity', {
       // /heavy → use the reasoning model from the active lane (#185)
       deploymentName = routing.lane.reasoning ?? routing.lane.primary;
       isReasoning = true;
+    } else if (input.modelOverride && input.modelOverride !== 'primary' && input.modelOverride !== 'secondary') {
+      // Direct deployment name override via /model command (#217)
+      deploymentName = input.modelOverride;
+      isReasoning = deploymentName.includes('reasoning') || deploymentName.startsWith('o');
     } else if (hasImages) {
       deploymentName = getModelForTask('vision');
     } else {

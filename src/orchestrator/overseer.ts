@@ -27,8 +27,8 @@ export interface NewMessageEvent {
   conversationReference: Partial<ConversationReference>;
   userId: string;
   userAlias: string;
-  /** Optional model override for /heavy and /light slash commands. */
-  modelOverride?: 'primary' | 'secondary';
+  /** Optional model override: 'primary', 'secondary', or a direct deployment name (e.g. 'o4-mini'). */
+  modelOverride?: string;
   /** Image URLs extracted from Teams attachments (#130) */
   imageUrls?: string[];
   /** Parsed DevLoop protocol context when message has protocol markers (#147) */

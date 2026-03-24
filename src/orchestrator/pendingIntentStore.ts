@@ -45,8 +45,8 @@ export const PendingIntentSchema = z.object({
   processedAt: z.string().optional(),
   /** Conversation reference for proactive reply */
   conversationReferenceJson: z.string().optional(),
-  /** Model override if /heavy or /light was used */
-  modelOverride: z.enum(['primary', 'secondary']).optional(),
+  /** Model override: 'primary', 'secondary', or direct deployment name (#217) */
+  modelOverride: z.string().optional(),
   /** DevLoop context if protocol message */
   devLoopContextJson: z.string().optional(),
   /** Image URLs from attachments */
@@ -66,7 +66,7 @@ export async function createPendingIntent(input: {
   userId: string;
   messageText: string;
   conversationReferenceJson?: string;
-  modelOverride?: 'primary' | 'secondary';
+  modelOverride?: string;
   devLoopContextJson?: string;
   imageUrls?: string[];
 }): Promise<{ trackingId: string; id: string }> {

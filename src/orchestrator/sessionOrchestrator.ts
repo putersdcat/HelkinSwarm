@@ -29,8 +29,8 @@ export interface SessionInput {
   userMessage: string;
   conversationReference: Partial<ConversationReference>;
   correlationId: string;
-  /** Optional model override for /heavy and /light slash commands. */
-  modelOverride?: 'primary' | 'secondary';
+  /** Optional model override: 'primary', 'secondary', or a direct deployment name (#217). */
+  modelOverride?: string;
   /** Image URLs extracted from Teams attachments (#130) */
   imageUrls?: string[];
   /** Parsed DevLoop protocol context (#147) */
