@@ -342,6 +342,14 @@ jobs:
             EXPECTED_BOT_MSI_RESOURCE_ID="$MI_RESOURCE_ID"
           fi
 
+          # Normalise case to prevent ARM duplicate property errors by getting exact upstream IDs
+          if [ -n "$MI_RESOURCE_ID" ]; then
+            MI_RESOURCE_ID=$(az identity show --ids "$MI_RESOURCE_ID" --query id -o tsv 2>/dev/null || echo "$MI_RESOURCE_ID")
+          fi
+          if [ -n "$EXPECTED_BOT_MSI_RESOURCE_ID" ]; then
+            EXPECTED_BOT_MSI_RESOURCE_ID=$(az identity show --ids "$EXPECTED_BOT_MSI_RESOURCE_ID" --query id -o tsv 2>/dev/null || echo "$EXPECTED_BOT_MSI_RESOURCE_ID")
+          fi
+
           # Set ACR URL
           az functionapp config appsettings set \
             --name "${FUNC_NAME}" \
@@ -437,6 +445,11 @@ jobs:
 
           if [ -z "$EXPECTED_BOT_MSI_RESOURCE_ID" ]; then
             EXPECTED_BOT_MSI_RESOURCE_ID="${{ needs.deploy-infra.outputs.managed-identity-resource-id }}"
+          fi
+
+          # Normalise case to prevent ARM duplicate property errors
+          if [ -n "$EXPECTED_BOT_MSI_RESOURCE_ID" ]; then
+            EXPECTED_BOT_MSI_RESOURCE_ID=$(az identity show --ids "$EXPECTED_BOT_MSI_RESOURCE_ID" --query id -o tsv 2>/dev/null || echo "$EXPECTED_BOT_MSI_RESOURCE_ID")
           fi
 
           BOT_NAME=$(az resource list \
