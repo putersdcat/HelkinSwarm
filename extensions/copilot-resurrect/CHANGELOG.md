@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.4.0] - 2026-03-17
+
+### Changed
+- **Retry-in-place for error triggers**: Rate-limit, server error, content-filtered, and unknown-error triggers now invoke `workbench.action.chat.retry` (the "Try Again" button) in the **existing** session instead of starting a new session. This preserves the full conversation history and lets the model resume interrupted work.
+- Error-based triggers no longer require an ignition prompt — they simply retry the last request.
+- If the retry command fails (e.g., no prior response to retry), gracefully falls back to ignition-prompt resurrection.
+- Silence and manual triggers continue to use the existing ignition-prompt injection workflow (new session or focus existing, based on `startNewSession` setting).
+- Updated `startNewSession` setting description to reflect that error triggers always retry in-place.
+- Resurrection engine refactored into two clear paths: `_retryInPlace()` for error triggers and `_ignitionPromptResurrect()` for silence/manual triggers.
+
 ## [1.3.0] - 2026-03-17
 
 ### Added
@@ -39,6 +49,7 @@
 - Dynamic path discovery for Copilot Chat session files (workspaceStorage + globalStorage + OS fallbacks).
 - Dedicated Output Channel "Copilot Resurrection Watcher" for all telemetry.
 
+[1.4.0]: https://github.com/putersdcat/copilot-resurrect/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/putersdcat/copilot-resurrect/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/putersdcat/copilot-resurrect/compare/v1.0.0...v1.2.0
 [1.0.0]: https://github.com/putersdcat/copilot-resurrect/releases/tag/v1.0.0

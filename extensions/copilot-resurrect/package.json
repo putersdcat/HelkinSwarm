@@ -2,7 +2,7 @@
   "name": "copilot-resurrect",
   "displayName": "Copilot Resurrect",
   "description": "Automatically resurrects a dead GitHub Copilot Chat session by re-injecting your configured ignition prompt — keep autonomous coding loops alive overnight.",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "publisher": "EricAnderson",
   "repository": {
     "type": "git",
@@ -106,7 +106,7 @@
         "copilot-resurrect.startNewSession": {
           "type": "boolean",
           "default": true,
-          "description": "Start a new chat session when resurrecting (vs. retrying in the existing session). Rate-limit triggers always start a new session regardless of this setting."
+          "description": "Start a new chat session when resurrecting from silence (vs. retrying in the existing session). Error-based triggers (rate-limit, server errors) always retry in-place to preserve in-progress work."
         },
         "copilot-resurrect.contentCheckEnabled": {
           "type": "boolean",

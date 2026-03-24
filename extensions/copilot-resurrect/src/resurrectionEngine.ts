@@ -81,6 +81,13 @@ export class ResurrectionEngine {
    * Attempt to resurrect the Copilot Chat session.
    * Returns true on success, false if blocked (rate-limit, no prompt, etc.)
    *
+   * For error-based triggers (rate_limit, server_error, content_filtered):
+   *   Uses `workbench.action.chat.retry` to hit the "Try Again" button
+   *   in the existing session, preserving in-progress work context.
+   *
+   * For silence/manual triggers:
+   *   Injects the ignition prompt into a new or existing session.
+   *
    * @param config Current extension configuration.
    * @param dryRun If true, logs all steps but does NOT execute commands.
    * @param trigger What caused the resurrection (silence, rate_limit, etc.)
@@ -100,18 +107,24 @@ export class ResurrectionEngine {
       return false;
     }
 
-    const fullPrompt = buildFullPrompt(config);
-    if (!fullPrompt) {
-      Logger.warn('ignitionPrompt is empty. Cannot resurrect. Please configure copilot-resurrect.ignitionPrompt.');
-      vscode.window.showWarningMessage(
-        'Copilot Resurrect: ignitionPrompt is not set. Open Settings to configure it.',
-        'Open Settings'
-      ).then((sel: string | undefined) => {
-        if (sel === 'Open Settings') {
-          vscode.commands.executeCommand('workbench.action.openSettings', 'copilot-resurrect.ignitionPrompt');
-        }
-      });
-      return false;
+    // Error-based triggers use retry-in-place — no ignition prompt needed.
+    // Silence/manual triggers require a prompt to restart the loop.
+    const isErrorTrigger = trigger === 'rate_limit' || trigger === 'server_error' || trigger === 'content_filtered' || trigger === 'unknown_error';
+
+    if (!isErrorTrigger) {
+      const fullPrompt = buildFullPrompt(config);
+      if (!fullPrompt) {
+        Logger.warn('ignitionPrompt is empty. Cannot resurrect. Please configure copilot-resurrect.ignitionPrompt.');
+        vscode.window.showWarningMessage(
+          'Copilot Resurrect: ignitionPrompt is not set. Open Settings to configure it.',
+          'Open Settings'
+        ).then((sel: string | undefined) => {
+          if (sel === 'Open Settings') {
+            vscode.commands.executeCommand('workbench.action.openSettings', 'copilot-resurrect.ignitionPrompt');
+          }
+        });
+        return false;
+      }
     }
 
     // ── Daily rate-limit check ─────────────────────────────────────────────
@@ -133,18 +146,18 @@ export class ResurrectionEngine {
       return false;
     }
 
-    // ── Exponential backoff cooldown for rate-limit triggers ───────────────
-    if (trigger === 'rate_limit' && !dryRun) {
+    // ── Exponential backoff cooldown for error triggers ────────────────────
+    if (isErrorTrigger && !dryRun) {
       this._consecutiveRateLimits++;
       this._context.globalState.update(CONSECUTIVE_RL_KEY, this._consecutiveRateLimits);
 
       const cooldownSeconds = this.calculateCooldown(config);
       Logger.info(
-        `Rate-limit detected (consecutive: ${this._consecutiveRateLimits}). ` +
-        `Exponential backoff: waiting ${cooldownSeconds}s before resurrection…`
+        `Error trigger [${trigger}] (consecutive: ${this._consecutiveRateLimits}). ` +
+        `Exponential backoff: waiting ${cooldownSeconds}s before retry…`
       );
       vscode.window.showInformationMessage(
-        `Copilot Resurrect: Rate-limited. Backoff cooldown: ${cooldownSeconds}s ` +
+        `Copilot Resurrect: ${trigger}. Backoff cooldown: ${cooldownSeconds}s ` +
         `(attempt ${this._consecutiveRateLimits})`
       );
       await this._cooldown(cooldownSeconds);
@@ -155,98 +168,27 @@ export class ResurrectionEngine {
     Logger.separator();
     Logger.info(
       `Resurrection attempt #${state.count + 1} (today). ` +
-      `Trigger: ${trigger}. DryRun: ${dryRun}. ` +
+      `Trigger: ${trigger}. Strategy: ${isErrorTrigger ? 'RETRY in-place' : 'NEW session'}. ` +
+      `DryRun: ${dryRun}. ` +
       `Model: ${config.preferredModel || '(default)'}. ` +
       `Participant: ${config.chatParticipant || '(none)'}. ` +
       `AgentMode: ${config.agentMode || '(default)'}. ` +
       `Approvals: ${config.approvalsMode}. ` +
       `NewSession: ${config.startNewSession}`
     );
-    Logger.info(`Prompt: ${fullPrompt.substring(0, 120)}${fullPrompt.length > 120 ? '…' : ''}`);
 
     try {
-      if (dryRun) {
-        Logger.info('[DRY RUN] Would execute: workbench.action.chat.newChat (if startNewSession)');
-        await sleep(200);
-        if (config.agentMode) {
-          Logger.info(`[DRY RUN] Would switch agent mode to: ${config.agentMode}`);
-          await sleep(200);
-        }
-        Logger.info(`[DRY RUN] Would execute: workbench.action.chat.open with query (${fullPrompt.length} chars)`);
-        await sleep(200);
-        Logger.info('[DRY RUN] Would execute: workbench.action.chat.submit');
-        Logger.info('[DRY RUN] Resurrection simulation complete.');
-        return true;
+      // ═══════════════════════════════════════════════════════════════════════
+      // PATH A: Error-based triggers → retry in the existing session
+      // ═══════════════════════════════════════════════════════════════════════
+      if (isErrorTrigger) {
+        return await this._retryInPlace(config, dryRun, trigger, state);
       }
 
-      // ── Step 1: Optionally start new chat session  ──────────────────────
-      if (config.startNewSession || trigger === 'rate_limit') {
-        Logger.info('Starting new chat session…');
-        await vscode.commands.executeCommand('workbench.action.chat.newChat');
-        await sleep(600);
-
-        // Switch to configured agent mode
-        if (config.agentMode) {
-          Logger.info(`Switching to agent mode: ${config.agentMode}…`);
-          try {
-            await vscode.commands.executeCommand(
-              'workbench.action.chat.switchChatMode',
-              config.agentMode
-            );
-            await sleep(400);
-          } catch (err) {
-            Logger.warn(`Could not switch chat mode to "${config.agentMode}": ${err}`);
-          }
-        }
-
-        // Approvals mode reminder for new sessions
-        if (config.approvalsMode !== 'default') {
-          const modeLabel = config.approvalsMode === 'bypass'
-            ? 'Bypass Approvals'
-            : 'Autopilot (Preview)';
-          Logger.info(`Approvals mode preference: ${modeLabel}. User may need to confirm in the chat UI.`);
-          vscode.window.showInformationMessage(
-            `Copilot Resurrect: New session started. Set approvals to "${modeLabel}" in the chat dropdown if needed.`,
-            'Dismiss'
-          );
-        }
-      } else {
-        // ── Focus existing chat  ──────────────────────────────────────────
-        Logger.info('Focusing existing Copilot Chat panel…');
-        await vscode.commands.executeCommand('workbench.action.chat.focus');
-        await sleep(400);
-      }
-
-      // ── Step 2: Inject prompt via chat open command (no clipboard)  ──────
-      Logger.info('Injecting prompt via workbench.action.chat.open…');
-      await vscode.commands.executeCommand('workbench.action.chat.open', {
-        query: fullPrompt,
-        isPartialQuery: true,
-      });
-      await sleep(400);
-
-      // ── Step 3: Submit  ─────────────────────────────────────────────────
-      Logger.info('Submitting prompt…');
-      await vscode.commands.executeCommand('workbench.action.chat.submit');
-      await sleep(300);
-
-      // ── Reset error detection cache so new session gets a fresh baseline ─
-      resetScanCache();
-
-      // ── Reset backoff on successful non-rate-limit triggers  ────────────
-      if (trigger !== 'rate_limit') {
-        this.resetBackoff();
-      }
-
-      // ── Increment counter  ───────────────────────────────────────────────
-      this._incrementDailyState();
-      Logger.info(`Resurrection complete. Today's count: ${this.todayCount}/${config.maxRestartsPerDay}.`);
-
-      vscode.window.showInformationMessage(
-        `Copilot Resurrect: Session restarted [${trigger}] (${this.todayCount}/${config.maxRestartsPerDay} today).`
-      );
-
-      return true;
+      // ═══════════════════════════════════════════════════════════════════════
+      // PATH B: Silence / manual → inject ignition prompt
+      // ═══════════════════════════════════════════════════════════════════════
+      return await this._ignitionPromptResurrect(config, dryRun, trigger, state);
     } catch (err) {
       Logger.error('Resurrection failed', err);
       vscode.window.showErrorMessage(`Copilot Resurrect: Resurrection failed — ${err}`);
@@ -256,8 +198,165 @@ export class ResurrectionEngine {
     }
   }
 
+  /**
+   * Retry the last request in the existing chat session ("Try Again" button).
+   * Preserves in-progress work context — the model sees the full conversation
+   * history and can resume where it left off.
+   */
+  private async _retryInPlace(
+    config: ResurrectConfig,
+    dryRun: boolean,
+    trigger: ResurrectionTrigger,
+    state: DailyState,
+  ): Promise<boolean> {
+    if (dryRun) {
+      Logger.info(`[DRY RUN] Error trigger [${trigger}] — would focus chat panel`);
+      await sleep(200);
+      Logger.info('[DRY RUN] Would execute: workbench.action.chat.retry ("Try Again")');
+      Logger.info('[DRY RUN] Retry simulation complete.');
+      return true;
+    }
+
+    // Focus the existing chat panel
+    Logger.info('Focusing existing Copilot Chat panel for retry…');
+    await vscode.commands.executeCommand('workbench.action.chat.focus');
+    await sleep(500);
+
+    // Hit "Try Again" — resends the last request in the current session
+    Logger.info(`Executing workbench.action.chat.retry (trigger: ${trigger})…`);
+    try {
+      await vscode.commands.executeCommand('workbench.action.chat.retry');
+      await sleep(400);
+    } catch (retryErr) {
+      // If retry fails (e.g., no last response to retry), fall back to ignition prompt
+      Logger.warn(`chat.retry failed: ${retryErr}. Falling back to ignition prompt resurrection.`);
+      return await this._ignitionPromptResurrect(config, false, trigger, state);
+    }
+
+    // Reset error detection cache so the retried response gets a fresh baseline
+    resetScanCache();
+
+    this._incrementDailyState();
+    Logger.info(
+      `Retry complete [${trigger}]. Today's count: ${this.todayCount}/${config.maxRestartsPerDay}.`
+    );
+
+    vscode.window.showInformationMessage(
+      `Copilot Resurrect: Retried in-place [${trigger}] (${this.todayCount}/${config.maxRestartsPerDay} today).`
+    );
+
+    return true;
+  }
+
+  /**
+   * Classic resurrection: inject the ignition prompt into a new or existing session.
+   * Used for silence-based detection and as a fallback when retry-in-place fails.
+   */
+  private async _ignitionPromptResurrect(
+    config: ResurrectConfig,
+    dryRun: boolean,
+    trigger: ResurrectionTrigger,
+    state: DailyState,
+  ): Promise<boolean> {
+    const fullPrompt = buildFullPrompt(config);
+    if (!fullPrompt) {
+      Logger.warn('ignitionPrompt is empty. Cannot resurrect via ignition prompt.');
+      return false;
+    }
+
+    Logger.info(`Prompt: ${fullPrompt.substring(0, 120)}${fullPrompt.length > 120 ? '…' : ''}`);
+
+    if (dryRun) {
+      Logger.info('[DRY RUN] Would execute: workbench.action.chat.newChat (if startNewSession)');
+      await sleep(200);
+      if (config.agentMode) {
+        Logger.info(`[DRY RUN] Would switch agent mode to: ${config.agentMode}`);
+        await sleep(200);
+      }
+      Logger.info(`[DRY RUN] Would execute: workbench.action.chat.open with query (${fullPrompt.length} chars)`);
+      await sleep(200);
+      Logger.info('[DRY RUN] Would execute: workbench.action.chat.submit');
+      Logger.info('[DRY RUN] Resurrection simulation complete.');
+      return true;
+    }
+
+    // ── Step 1: Optionally start new chat session  ──────────────────────
+    if (config.startNewSession) {
+      Logger.info('Starting new chat session…');
+      await vscode.commands.executeCommand('workbench.action.chat.newChat');
+      await sleep(600);
+
+      // Switch to configured agent mode
+      if (config.agentMode) {
+        Logger.info(`Switching to agent mode: ${config.agentMode}…`);
+        try {
+          await vscode.commands.executeCommand(
+            'workbench.action.chat.switchChatMode',
+            config.agentMode
+          );
+          await sleep(400);
+        } catch (err) {
+          Logger.warn(`Could not switch chat mode to "${config.agentMode}": ${err}`);
+        }
+      }
+
+      // Approvals mode reminder for new sessions
+      if (config.approvalsMode !== 'default') {
+        const modeLabel = config.approvalsMode === 'bypass'
+          ? 'Bypass Approvals'
+          : 'Autopilot (Preview)';
+        Logger.info(`Approvals mode preference: ${modeLabel}. User may need to confirm in the chat UI.`);
+        vscode.window.showInformationMessage(
+          `Copilot Resurrect: New session started. Set approvals to "${modeLabel}" in the chat dropdown if needed.`,
+          'Dismiss'
+        );
+      }
+    } else {
+      // ── Focus existing chat  ──────────────────────────────────────────
+      Logger.info('Focusing existing Copilot Chat panel…');
+      await vscode.commands.executeCommand('workbench.action.chat.focus');
+      await sleep(400);
+    }
+
+    // ── Step 2: Inject prompt via chat open command (no clipboard)  ──────
+    Logger.info('Injecting prompt via workbench.action.chat.open…');
+    await vscode.commands.executeCommand('workbench.action.chat.open', {
+      query: fullPrompt,
+      isPartialQuery: true,
+    });
+    await sleep(400);
+
+    // ── Step 3: Submit  ─────────────────────────────────────────────────
+    Logger.info('Submitting prompt…');
+    await vscode.commands.executeCommand('workbench.action.chat.submit');
+    await sleep(300);
+
+    // ── Reset error detection cache so new session gets a fresh baseline ─
+    resetScanCache();
+
+    // ── Reset backoff on successful non-error triggers  ───────────────
+    if (!this._isErrorTrigger(trigger)) {
+      this.resetBackoff();
+    }
+
+    // ── Increment counter  ───────────────────────────────────────────────
+    this._incrementDailyState();
+    Logger.info(`Resurrection complete. Today's count: ${this.todayCount}/${config.maxRestartsPerDay}.`);
+
+    vscode.window.showInformationMessage(
+      `Copilot Resurrect: Session restarted [${trigger}] (${this.todayCount}/${config.maxRestartsPerDay} today).`
+    );
+
+    return true;
+  }
+
+  private _isErrorTrigger(trigger: ResurrectionTrigger): boolean {
+    return trigger === 'rate_limit' || trigger === 'server_error' || trigger === 'content_filtered' || trigger === 'unknown_error';
+  }
+
   // ── Private helpers ────────────────────────────────────────────────────────
 
+  /** Exposed for _retryInPlace / _ignitionPromptResurrect which receive state as a param. */
   private _getDailyState(): DailyState {
     const stored = this._context.globalState.get<DailyState>(DAILY_STATE_KEY);
     const today = todayString();
