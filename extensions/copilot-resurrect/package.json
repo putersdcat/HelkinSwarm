@@ -8,6 +8,7 @@
     "type": "git",
     "url": "https://github.com/putersdcat/HelkinSwarm"
   },
+  "icon": "ICON-200x200.png",
   "engines": {
     "vscode": "^1.85.0"
   },
