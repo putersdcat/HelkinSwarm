@@ -108,3 +108,19 @@ export async function clearPendingAckId(
     // Already gone — safe to ignore
   }
 }
+
+/**
+ * Get all pending ack documents older than maxAgeMs.
+ * Used by startup recovery to detect dangling acks from crashed sessions (#191).
+ */
+export async function getStaleAcks(maxAgeMs: number): Promise<PendingAckDocument[]> {
+  const container = getContainer(CONTAINER_NAME);
+  const cutoff = new Date(Date.now() - maxAgeMs).toISOString();
+  const { resources } = await container.items
+    .query<PendingAckDocument>({
+      query: `SELECT * FROM c WHERE STARTSWITH(c.id, 'ack-') AND c.createdAt < @cutoff`,
+      parameters: [{ name: '@cutoff', value: cutoff }],
+    })
+    .fetchAll();
+  return resources;
+}

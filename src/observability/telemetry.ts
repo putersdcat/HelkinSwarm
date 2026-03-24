@@ -43,6 +43,7 @@ export type TelemetryEventName =
   | 'GraphSubscriptionRenewed'
   | 'PendingIntentCreated'
   | 'PendingIntentRecovered'
+  | 'StaleAckRecovered'
   | 'StateLoaded'
   | 'StateSaved';
 

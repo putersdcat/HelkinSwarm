@@ -65,6 +65,7 @@ loadCapabilities().then((result) => {
 // ---------------------------------------------------------------------------
 import { setMaintenanceMode, getMaintenanceModeFromCosmos, markStartupClearComplete } from '../bot/maintenanceMode.js';
 import { sendStartupNotice, sendShutdownNotice } from '../bot/lifecycleNotices.js';
+import { runStartupRecovery } from '../bot/startupRecovery.js';
 
 async function clearMaintenanceWithRetry(attempts = 3, delayMs = 2000): Promise<void> {
   for (let i = 0; i < attempts; i++) {
@@ -113,6 +114,14 @@ setTimeout(() => {
     console.warn('[startup] Failed to send startup notice:', err);
   });
 }, 20_000);
+
+// Startup recovery: clean up dangling acks + replay pending intents (#191, #116)
+// Delayed 25s to run after startup notice and after adapter/Cosmos are ready.
+setTimeout(() => {
+  runStartupRecovery().catch((err: unknown) => {
+    console.warn('[startup] Startup recovery failed:', err);
+  });
+}, 25_000);
 
 // ---------------------------------------------------------------------------
 // Graceful shutdown handler (#136, #145)
