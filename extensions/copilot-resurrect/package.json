@@ -2,7 +2,7 @@
   "name": "copilot-resurrect",
   "displayName": "Copilot Resurrect",
   "description": "Automatically resurrects a dead GitHub Copilot Chat session by re-injecting your configured ignition prompt — keep autonomous coding loops alive overnight.",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "publisher": "EricAnderson",
   "repository": {
     "type": "git",
@@ -72,6 +72,11 @@
           "type": "string",
           "default": "",
           "description": "Chat participant to prefix the ignition prompt with (e.g. 'copilot', 'workspace'). Leave blank for no prefix. Select via command 'Select Chat Participant'."
+        },
+        "copilot-resurrect.agentMode": {
+          "type": "string",
+          "default": "",
+          "description": "Agent mode to activate when resurrecting a session. Discovers custom agents from .github/agents/*.agent.md in the workspace. Select via command 'Select Agent Mode'."
         },
         "copilot-resurrect.approvalsMode": {
           "type": "string",
@@ -180,6 +185,11 @@
         "category": "Copilot Resurrect"
       },
       {
+        "command": "copilot-resurrect.selectAgentMode",
+        "title": "Copilot Resurrect: Select Agent Mode",
+        "category": "Copilot Resurrect"
+      },
+      {
         "command": "copilot-resurrect.selectApprovalsMode",
         "title": "Copilot Resurrect: Select Approvals Mode",
         "category": "Copilot Resurrect"
@@ -199,6 +209,7 @@
         { "command": "copilot-resurrect.selectModel", "when": "true" },
         { "command": "copilot-resurrect.selectFallbackModel", "when": "true" },
         { "command": "copilot-resurrect.selectParticipant", "when": "true" },
+        { "command": "copilot-resurrect.selectAgentMode", "when": "true" },
         { "command": "copilot-resurrect.selectApprovalsMode", "when": "true" }
       ]
     }

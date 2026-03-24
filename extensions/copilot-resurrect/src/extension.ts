@@ -7,7 +7,7 @@
  */
 import * as vscode from 'vscode';
 import { Logger } from './logger';
-import { getConfig, setEnabled, getAvailableModels, EXT_ID, ApprovalsMode } from './config';
+import { getConfig, setEnabled, getAvailableModels, discoverAgentModes, EXT_ID, ApprovalsMode } from './config';
 import { SessionWatcher } from './sessionWatcher';
 import { ResurrectionEngine } from './resurrectionEngine';
 import { ResurrectStatusBar } from './statusBar';
@@ -17,7 +17,7 @@ let _watcher: SessionWatcher | undefined;
 let _engine: ResurrectionEngine | undefined;
 let _statusBar: ResurrectStatusBar | undefined;
 
-const EXT_VERSION = '1.2.0';
+const EXT_VERSION = '1.3.0';
 
 // ── Activate ──────────────────────────────────────────────────────────────────
 export function activate(context: vscode.ExtensionContext): void {
@@ -95,6 +95,7 @@ export function activate(context: vscode.ExtensionContext): void {
         `  Model: ${cfg.preferredModel || '(default)'}`,
         `  Fallback model: ${cfg.fallbackModel || '(none)'}`,
         `  Participant: ${cfg.chatParticipant || '(none)'}`,
+        `  Agent mode: ${cfg.agentMode || '(default)'}`,
         `  Approvals: ${cfg.approvalsMode}`,
         `  New session on resurrect: ${cfg.startNewSession}`,
         `  Prompt configured: ${!!cfg.ignitionPrompt}`,
@@ -173,6 +174,39 @@ export function activate(context: vscode.ExtensionContext): void {
         Logger.info(`Chat participant set to: ${value || '(none)'}`);
         vscode.window.showInformationMessage(
           `Copilot Resurrect: Participant set to ${value || '(none)'}.`
+        );
+      }
+    }),
+
+    // ── Agent mode picker ─────────────────────────────────────────────
+    vscode.commands.registerCommand('copilot-resurrect.selectAgentMode', async () => {
+      const modes = await discoverAgentModes();
+      const cfg = getConfig();
+      const items: vscode.QuickPickItem[] = modes.map(m => ({
+        label: m.name,
+        description: m.source === 'builtin' ? '(built-in)' : '(workspace)',
+        detail: m.description,
+        picked: m.name === cfg.agentMode,
+      }));
+      // Add "none" option at top
+      items.unshift({
+        label: '(none)',
+        description: 'No agent mode — use whatever mode the chat opens in',
+      });
+      const picked = await vscode.window.showQuickPick(items, {
+        placeHolder: 'Select agent mode for resurrected sessions',
+        title: 'Copilot Resurrect: Agent Mode',
+        matchOnDescription: true,
+        matchOnDetail: true,
+      });
+      if (picked) {
+        const value = picked.label === '(none)' ? '' : picked.label;
+        await vscode.workspace
+          .getConfiguration(EXT_ID)
+          .update('agentMode', value, vscode.ConfigurationTarget.Global);
+        Logger.info(`Agent mode set to: ${value || '(none)'}`);
+        vscode.window.showInformationMessage(
+          `Copilot Resurrect: Agent mode set to "${value || '(none)'}".`
         );
       }
     }),

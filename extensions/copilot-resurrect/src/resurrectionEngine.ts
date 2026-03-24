@@ -158,6 +158,7 @@ export class ResurrectionEngine {
       `Trigger: ${trigger}. DryRun: ${dryRun}. ` +
       `Model: ${config.preferredModel || '(default)'}. ` +
       `Participant: ${config.chatParticipant || '(none)'}. ` +
+      `AgentMode: ${config.agentMode || '(default)'}. ` +
       `Approvals: ${config.approvalsMode}. ` +
       `NewSession: ${config.startNewSession}`
     );
@@ -167,6 +168,10 @@ export class ResurrectionEngine {
       if (dryRun) {
         Logger.info('[DRY RUN] Would execute: workbench.action.chat.newChat (if startNewSession)');
         await sleep(200);
+        if (config.agentMode) {
+          Logger.info(`[DRY RUN] Would switch agent mode to: ${config.agentMode}`);
+          await sleep(200);
+        }
         Logger.info(`[DRY RUN] Would execute: workbench.action.chat.open with query (${fullPrompt.length} chars)`);
         await sleep(200);
         Logger.info('[DRY RUN] Would execute: workbench.action.chat.submit');
@@ -179,6 +184,20 @@ export class ResurrectionEngine {
         Logger.info('Starting new chat session…');
         await vscode.commands.executeCommand('workbench.action.chat.newChat');
         await sleep(600);
+
+        // Switch to configured agent mode
+        if (config.agentMode) {
+          Logger.info(`Switching to agent mode: ${config.agentMode}…`);
+          try {
+            await vscode.commands.executeCommand(
+              'workbench.action.chat.switchChatMode',
+              config.agentMode
+            );
+            await sleep(400);
+          } catch (err) {
+            Logger.warn(`Could not switch chat mode to "${config.agentMode}": ${err}`);
+          }
+        }
 
         // Approvals mode reminder for new sessions
         if (config.approvalsMode !== 'default') {
