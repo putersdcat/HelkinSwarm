@@ -1,0 +1,163 @@
+{
+  "name": "copilot-resurrect",
+  "displayName": "Copilot Resurrect",
+  "description": "Automatically resurrects a dead GitHub Copilot Chat session by re-injecting your configured ignition prompt — keep autonomous coding loops alive overnight.",
+  "version": "1.1.0",
+  "publisher": "EricAnderson",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/putersdcat/HelkinSwarm"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "AI"
+  ],
+  "keywords": [
+    "copilot",
+    "chat",
+    "resurrect",
+    "watchdog",
+    "autonomous",
+    "agent",
+    "rate-limit"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Copilot Resurrect",
+      "properties": {
+        "copilot-resurrect.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable/disable the Copilot session resurrection watcher. When enabled, the watcher will automatically restart a dead Copilot Chat session using your ignition prompt."
+        },
+        "copilot-resurrect.ignitionPrompt": {
+          "type": "string",
+          "default": "",
+          "editPresentation": "multilineText",
+          "description": "The prompt to inject when resurrecting a dead Copilot Chat session. This should be your autonomous loop ignition prompt."
+        },
+        "copilot-resurrect.silenceTimeoutSeconds": {
+          "type": "number",
+          "default": 180,
+          "minimum": 60,
+          "maximum": 600,
+          "description": "How many seconds of silence before declaring the Copilot Chat session dead and triggering resurrection. Default: 180s (3 minutes)."
+        },
+        "copilot-resurrect.maxRestartsPerDay": {
+          "type": "number",
+          "default": 50,
+          "minimum": 1,
+          "maximum": 200,
+          "description": "Maximum number of automatic session resurrections allowed per calendar day. Prevents infinite-loop storms. Default: 50."
+        },
+        "copilot-resurrect.modelHint": {
+          "type": "string",
+          "default": "",
+          "description": "Optional model hint prepended to the ignition prompt (e.g. '@gpt-4o'). Leave blank to use whatever model Copilot Chat selects by default."
+        },
+        "copilot-resurrect.fallbackModelHint": {
+          "type": "string",
+          "default": "",
+          "description": "Model hint to use when resurecting after a rate-limit error on the primary model. If empty, uses modelHint."
+        },
+        "copilot-resurrect.rateLimitCooldownSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 10,
+          "maximum": 600,
+          "description": "How many seconds to wait before resurrection when a rate-limit error is detected. Gives the API quota time to recover. Default: 60s."
+        },
+        "copilot-resurrect.contentCheckEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable content-based error detection. Reads Copilot Chat session files to detect rate-limit and server error messages. If disabled, only silence-based detection is used."
+        },
+        "copilot-resurrect.watchPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Override the list of file-system paths the watcher monitors for Copilot Chat activity. Leave empty for automatic discovery (recommended)."
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "copilot-resurrect.enable",
+        "title": "Copilot Resurrect: Enable Watcher",
+        "category": "Copilot Resurrect"
+      },
+      {
+        "command": "copilot-resurrect.disable",
+        "title": "Copilot Resurrect: Disable Watcher",
+        "category": "Copilot Resurrect"
+      },
+      {
+        "command": "copilot-resurrect.toggle",
+        "title": "Copilot Resurrect: Toggle Watcher",
+        "category": "Copilot Resurrect"
+      },
+      {
+        "command": "copilot-resurrect.testResurrection",
+        "title": "Copilot Resurrect: Test Resurrection (dry run)",
+        "category": "Copilot Resurrect"
+      },
+      {
+        "command": "copilot-resurrect.status",
+        "title": "Copilot Resurrect: Show Status",
+        "category": "Copilot Resurrect"
+      },
+      {
+        "command": "copilot-resurrect.resetDailyCounter",
+        "title": "Copilot Resurrect: Reset Daily Restart Counter",
+        "category": "Copilot Resurrect"
+      },
+      {
+        "command": "copilot-resurrect.showLog",
+        "title": "Copilot Resurrect: Show Output Log",
+        "category": "Copilot Resurrect"
+      },
+      {
+        "command": "copilot-resurrect.configurePrompt",
+        "title": "Copilot Resurrect: Configure Ignition Prompt",
+        "category": "Copilot Resurrect"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        { "command": "copilot-resurrect.enable", "when": "true" },
+        { "command": "copilot-resurrect.disable", "when": "true" },
+        { "command": "copilot-resurrect.toggle", "when": "true" },
+        { "command": "copilot-resurrect.testResurrection", "when": "true" },
+        { "command": "copilot-resurrect.status", "when": "true" },
+        { "command": "copilot-resurrect.resetDailyCounter", "when": "true" },
+        { "command": "copilot-resurrect.showLog", "when": "true" },
+        { "command": "copilot-resurrect.configurePrompt", "when": "true" }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package --no-dependencies --allow-missing-repository"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^7.0.0",
+    "@typescript-eslint/parser": "^7.0.0",
+    "@vscode/vsce": "^3.0.0",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.0"
+  }
+}
