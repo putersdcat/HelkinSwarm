@@ -540,7 +540,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     if (parts.length < 2 || !parts[0]) {
       const available = [
         'grok-4-1-fast-non-reasoning', 'grok-4-1-fast-reasoning',
-        'gpt-5.4-mini', 'gpt-5.1-codex-mini', 'o4-mini',
+        'gpt-5.4-mini', 'o4-mini', 'o3',
         'DeepSeek-V3.2', 'FW-MiniMax-M2.5', 'FW-Kimi-K2.5',
       ];
       await context.sendActivity(`Usage: /model <deployment-name> <prompt>\n\nAvailable: ${available.join(', ')}`);

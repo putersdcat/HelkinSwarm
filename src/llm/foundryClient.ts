@@ -173,8 +173,9 @@ export class FoundryClient {
     correlationId: string,
   ): Promise<ChatCompletionResponse> {
     const base = routing.apiBase.replace(/\/+$/, '');
-    // o4-mini and newer models require 2024-12-01-preview or later (#185)
-    const apiVersion = routing.isReasoning ? '2024-12-01-preview' : '2024-06-01';
+    // GPT-5, GPT-4o, and o-series models require 2024-12-01-preview or later (#185, #219)
+    const needsPreview = routing.isReasoning || needsNewTokenParam(routing.deploymentName);
+    const apiVersion = needsPreview ? '2024-12-01-preview' : '2024-06-01';
     const url = `${base}/openai/deployments/${routing.deploymentName}/chat/completions?api-version=${apiVersion}`;
 
     // Reasoning models need longer timeouts (#128)
@@ -186,9 +187,12 @@ export class FoundryClient {
       stream: false,
     };
 
-    // Reasoning models (o4-mini etc.) use max_completion_tokens and don't support temperature (#185)
+    // GPT-5, GPT-4o, and o-series use max_completion_tokens; reasoning models also skip temperature (#185, #219)
     if (routing.isReasoning) {
       body.max_completion_tokens = options.maxTokens ?? 4096;
+    } else if (needsNewTokenParam(routing.deploymentName)) {
+      body.max_completion_tokens = options.maxTokens ?? 4096;
+      body.temperature = options.temperature ?? 0.7;
     } else {
       body.max_tokens = options.maxTokens ?? 4096;
       body.temperature = options.temperature ?? 0.7;
@@ -296,6 +300,16 @@ export class FoundryError extends Error {
     super(message);
     this.name = 'FoundryError';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Model capability detection (#219)
+// ---------------------------------------------------------------------------
+
+/** Models that require `max_completion_tokens` instead of `max_tokens` (GPT-5, GPT-4o, o-series). */
+function needsNewTokenParam(deploymentName: string): boolean {
+  const d = deploymentName.toLowerCase();
+  return d.startsWith('gpt-5') || d.startsWith('gpt-4o') || d.startsWith('o');
 }
 
 // ---------------------------------------------------------------------------
