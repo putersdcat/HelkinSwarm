@@ -23,6 +23,16 @@ param location string = 'eastus2'
 #disable-next-line no-unused-params
 param userPrincipalId string
 
+@description('Create/update the GraphOAuth Bot Service connection. Set true only on first deploy or when scopes change.')
+param createOAuthConnection bool = false
+
+@description('Client ID of the HelkinSwarm-DelegatedAuth Entra app for user-delegated Graph access.')
+param delegatedAuthClientId string = 'd4e5cf74-9f99-4504-b4ab-d4516dd10577'
+
+@secure()
+@description('Client secret for the DelegatedAuth Entra app. Only required when createOAuthConnection=true.')
+param delegatedAuthClientSecret string = ''
+
 // ─── Variables ──────────────────────────────────────────────────────────────
 
 var routerUamiName = 'helkinswarm-id-router'
@@ -233,6 +243,22 @@ resource teamsChannel 'Microsoft.BotService/botServices/channels@2022-09-15' = {
     properties: {
       isEnabled: true
     }
+  }
+}
+
+resource oauthConnection 'Microsoft.BotService/botServices/connections@2022-09-15' = if (createOAuthConnection) {
+  parent: routerBot
+  name: 'GraphOAuth'
+  location: 'global'
+  properties: {
+    serviceProviderDisplayName: 'Azure Active Directory v2'
+    serviceProviderId: '30dd229c-58e3-4a48-bdfd-91ec48eb906c'
+    clientId: delegatedAuthClientId
+    clientSecret: delegatedAuthClientSecret
+    scopes: 'User.Read Mail.ReadWrite Calendars.ReadWrite Files.ReadWrite offline_access'
+    parameters: [
+      { key: 'tenantID', value: subscription().tenantId }
+    ]
   }
 }
 

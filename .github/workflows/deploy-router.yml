@@ -11,6 +11,15 @@ name: Deploy Router
 
 on:
   workflow_dispatch:
+    inputs:
+      CREATE_OAUTH_CONNECTION:
+        description: 'Create/update the GraphOAuth Bot Service connection on the router bot'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 concurrency:
   group: deploy-router
@@ -61,11 +70,18 @@ jobs:
       - name: Deploy Bicep
         id: deploy
         run: |
+          # Read DelegatedAuth client secret from stamp KV if creating OAuth connection
+          OAUTH_SECRET=""
+          if [ "${{ github.event.inputs.CREATE_OAUTH_CONNECTION }}" = "true" ]; then
+            OAUTH_SECRET=$(az keyvault secret show --vault-name helkinswarm-kv-a7f2 --name DelegatedAuthClientSecret --query value -o tsv)
+          fi
           RESULT=$(az deployment group create \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --template-file infra/main-router.bicep \
             --parameters \
               userPrincipalId=${{ vars.USER_PRINCIPAL_ID }} \
+              createOAuthConnection=${{ github.event.inputs.CREATE_OAUTH_CONNECTION || 'false' }} \
+              delegatedAuthClientSecret="$OAUTH_SECRET" \
             --query 'properties.outputs' -o json)
           echo "routerEndpoint=$(echo $RESULT | jq -r '.routerEndpoint.value')" >> "$GITHUB_OUTPUT"
           echo "routerHostName=$(echo $RESULT | jq -r '.routerHostName.value')" >> "$GITHUB_OUTPUT"
