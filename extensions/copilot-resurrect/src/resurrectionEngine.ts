@@ -5,6 +5,8 @@ import { resetScanCache } from './errorDetector';
 
 /** Key used to save daily restart records in globalState. */
 const DAILY_STATE_KEY = 'copilot-resurrect.dailyRestarts';
+/** Key for tracking consecutive rate-limit failures for exponential backoff. */
+const CONSECUTIVE_RL_KEY = 'copilot-resurrect.consecutiveRateLimits';
 
 interface DailyState {
   date: string; // YYYY-MM-DD
@@ -16,17 +18,19 @@ export type ResurrectionTrigger = 'silence' | 'rate_limit' | 'server_error' | 'c
 /**
  * ResurrectionEngine handles:
  *  - Rate-limiting via the daily restart counter (persisted in globalState).
- *  - Cooldown delays when rate-limit errors are detected.
- *  - The actual resurrection sequence: focus -> inject prompt -> submit.
+ *  - Exponential backoff cooldown when rate-limit errors are detected.
+ *  - The actual resurrection sequence using VS Code chat commands (no clipboard).
  */
 export class ResurrectionEngine {
   private _context: vscode.ExtensionContext;
   private _isResurrecting = false;
   private _cooldownTimer: ReturnType<typeof setTimeout> | undefined;
   private _onCooldownTick: ((secondsRemaining: number) => void) | undefined;
+  private _consecutiveRateLimits = 0;
 
   constructor(context: vscode.ExtensionContext) {
     this._context = context;
+    this._consecutiveRateLimits = context.globalState.get<number>(CONSECUTIVE_RL_KEY, 0);
   }
 
   get isResurrecting(): boolean {
@@ -55,12 +59,30 @@ export class ResurrectionEngine {
     Logger.info('Daily restart counter reset to 0.');
   }
 
+  /** Reset the exponential backoff counter (e.g., after successful session). */
+  resetBackoff(): void {
+    this._consecutiveRateLimits = 0;
+    this._context.globalState.update(CONSECUTIVE_RL_KEY, 0);
+    Logger.info('Exponential backoff counter reset.');
+  }
+
+  /**
+   * Calculate the current cooldown duration using exponential backoff.
+   * Formula: min(base * 2^consecutive, max)
+   */
+  calculateCooldown(config: ResurrectConfig): number {
+    const base = config.rateLimitCooldownBaseSeconds;
+    const max = config.rateLimitCooldownMaxSeconds;
+    const cooldown = Math.min(base * Math.pow(2, this._consecutiveRateLimits), max);
+    return Math.round(cooldown);
+  }
+
   /**
    * Attempt to resurrect the Copilot Chat session.
    * Returns true on success, false if blocked (rate-limit, no prompt, etc.)
    *
    * @param config Current extension configuration.
-   * @param dryRun If true, logs all steps but does NOT execute clipboard/submit commands.
+   * @param dryRun If true, logs all steps but does NOT execute commands.
    * @param trigger What caused the resurrection (silence, rate_limit, etc.)
    */
   async resurrect(
@@ -78,8 +100,7 @@ export class ResurrectionEngine {
       return false;
     }
 
-    const useRateLimitFallback = trigger === 'rate_limit';
-    const fullPrompt = buildFullPrompt(config, useRateLimitFallback);
+    const fullPrompt = buildFullPrompt(config);
     if (!fullPrompt) {
       Logger.warn('ignitionPrompt is empty. Cannot resurrect. Please configure copilot-resurrect.ignitionPrompt.');
       vscode.window.showWarningMessage(
@@ -112,16 +133,21 @@ export class ResurrectionEngine {
       return false;
     }
 
-    // ── Cooldown for rate-limit triggers ───────────────────────────────────
-    if (trigger === 'rate_limit' && config.rateLimitCooldownSeconds > 0 && !dryRun) {
+    // ── Exponential backoff cooldown for rate-limit triggers ───────────────
+    if (trigger === 'rate_limit' && !dryRun) {
+      this._consecutiveRateLimits++;
+      this._context.globalState.update(CONSECUTIVE_RL_KEY, this._consecutiveRateLimits);
+
+      const cooldownSeconds = this.calculateCooldown(config);
       Logger.info(
-        `Rate-limit detected. Waiting ${config.rateLimitCooldownSeconds}s cooldown ` +
-        `before resurrection…`
+        `Rate-limit detected (consecutive: ${this._consecutiveRateLimits}). ` +
+        `Exponential backoff: waiting ${cooldownSeconds}s before resurrection…`
       );
       vscode.window.showInformationMessage(
-        `Copilot Resurrect: Rate-limited. Cooling down for ${config.rateLimitCooldownSeconds}s before retry.`
+        `Copilot Resurrect: Rate-limited. Backoff cooldown: ${cooldownSeconds}s ` +
+        `(attempt ${this._consecutiveRateLimits})`
       );
-      await this._cooldown(config.rateLimitCooldownSeconds);
+      await this._cooldown(cooldownSeconds);
       Logger.info('Cooldown complete. Proceeding with resurrection.');
     }
 
@@ -130,53 +156,68 @@ export class ResurrectionEngine {
     Logger.info(
       `Resurrection attempt #${state.count + 1} (today). ` +
       `Trigger: ${trigger}. DryRun: ${dryRun}. ` +
-      `FallbackModel: ${useRateLimitFallback && config.fallbackModelHint ? config.fallbackModelHint : 'N/A'}`
+      `Model: ${config.preferredModel || '(default)'}. ` +
+      `Participant: ${config.chatParticipant || '(none)'}. ` +
+      `Approvals: ${config.approvalsMode}. ` +
+      `NewSession: ${config.startNewSession}`
     );
     Logger.info(`Prompt: ${fullPrompt.substring(0, 120)}${fullPrompt.length > 120 ? '…' : ''}`);
 
     try {
       if (dryRun) {
-        Logger.info('[DRY RUN] Would execute: workbench.action.chat.focus');
-        await sleep(300);
-        Logger.info('[DRY RUN] Would write prompt to clipboard');
-        await sleep(300);
-        Logger.info('[DRY RUN] Would execute: editor.action.clipboardPasteAction');
-        await sleep(300);
+        Logger.info('[DRY RUN] Would execute: workbench.action.chat.newChat (if startNewSession)');
+        await sleep(200);
+        Logger.info(`[DRY RUN] Would execute: workbench.action.chat.open with query (${fullPrompt.length} chars)`);
+        await sleep(200);
         Logger.info('[DRY RUN] Would execute: workbench.action.chat.submit');
         Logger.info('[DRY RUN] Resurrection simulation complete.');
         return true;
       }
 
-      // ── Step 1: Save clipboard  ──────────────────────────────────────────
-      const previousClipboard = await vscode.env.clipboard.readText();
-      Logger.debug('Clipboard saved.');
+      // ── Step 1: Optionally start new chat session  ──────────────────────
+      if (config.startNewSession || trigger === 'rate_limit') {
+        Logger.info('Starting new chat session…');
+        await vscode.commands.executeCommand('workbench.action.chat.newChat');
+        await sleep(600);
 
-      // ── Step 2: Focus Copilot Chat  ──────────────────────────────────────
-      Logger.info('Focusing Copilot Chat panel…');
-      await vscode.commands.executeCommand('workbench.action.chat.focus');
-      await sleep(500);
+        // Approvals mode reminder for new sessions
+        if (config.approvalsMode !== 'default') {
+          const modeLabel = config.approvalsMode === 'bypass'
+            ? 'Bypass Approvals'
+            : 'Autopilot (Preview)';
+          Logger.info(`Approvals mode preference: ${modeLabel}. User may need to confirm in the chat UI.`);
+          vscode.window.showInformationMessage(
+            `Copilot Resurrect: New session started. Set approvals to "${modeLabel}" in the chat dropdown if needed.`,
+            'Dismiss'
+          );
+        }
+      } else {
+        // ── Focus existing chat  ──────────────────────────────────────────
+        Logger.info('Focusing existing Copilot Chat panel…');
+        await vscode.commands.executeCommand('workbench.action.chat.focus');
+        await sleep(400);
+      }
 
-      // ── Step 3: Write prompt to clipboard  ──────────────────────────────
-      await vscode.env.clipboard.writeText(fullPrompt);
-      Logger.debug('Prompt written to clipboard.');
-      await sleep(200);
-
-      // ── Step 4: Paste into the chat input  ──────────────────────────────
-      Logger.info('Pasting prompt into chat input…');
-      await vscode.commands.executeCommand('editor.action.clipboardPasteAction');
+      // ── Step 2: Inject prompt via chat open command (no clipboard)  ──────
+      Logger.info('Injecting prompt via workbench.action.chat.open…');
+      await vscode.commands.executeCommand('workbench.action.chat.open', {
+        query: fullPrompt,
+        isPartialQuery: true,
+      });
       await sleep(400);
 
-      // ── Step 5: Submit  ─────────────────────────────────────────────────
+      // ── Step 3: Submit  ─────────────────────────────────────────────────
       Logger.info('Submitting prompt…');
       await vscode.commands.executeCommand('workbench.action.chat.submit');
       await sleep(300);
 
-      // ── Step 6: Restore clipboard  ──────────────────────────────────────
-      await vscode.env.clipboard.writeText(previousClipboard);
-      Logger.debug('Clipboard restored.');
-
       // ── Reset error detection cache so new session gets a fresh baseline ─
       resetScanCache();
+
+      // ── Reset backoff on successful non-rate-limit triggers  ────────────
+      if (trigger !== 'rate_limit') {
+        this.resetBackoff();
+      }
 
       // ── Increment counter  ───────────────────────────────────────────────
       this._incrementDailyState();

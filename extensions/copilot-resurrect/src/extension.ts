@@ -7,7 +7,7 @@
  */
 import * as vscode from 'vscode';
 import { Logger } from './logger';
-import { getConfig, setEnabled, EXT_ID } from './config';
+import { getConfig, setEnabled, getAvailableModels, EXT_ID, ApprovalsMode } from './config';
 import { SessionWatcher } from './sessionWatcher';
 import { ResurrectionEngine } from './resurrectionEngine';
 import { ResurrectStatusBar } from './statusBar';
@@ -17,11 +17,13 @@ let _watcher: SessionWatcher | undefined;
 let _engine: ResurrectionEngine | undefined;
 let _statusBar: ResurrectStatusBar | undefined;
 
+const EXT_VERSION = '1.2.0';
+
 // ── Activate ──────────────────────────────────────────────────────────────────
 export function activate(context: vscode.ExtensionContext): void {
   Logger.init();
   Logger.separator();
-  Logger.info('Copilot Resurrect v1.1.0 activating…');
+  Logger.info(`Copilot Resurrect v${EXT_VERSION} activating…`);
 
   _engine = new ResurrectionEngine(context);
   _statusBar = new ResurrectStatusBar();
@@ -78,6 +80,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const watching = _watcher?.active ?? false;
       const elapsed = _watcher?.secondsSinceActivity ?? 0;
       const cooling = _engine?.isCoolingDown ?? false;
+      const nextCooldown = _engine?.calculateCooldown(cfg) ?? 0;
 
       const message = [
         `Copilot Resurrect Status:`,
@@ -85,11 +88,15 @@ export function activate(context: vscode.ExtensionContext): void {
         `  Watcher active: ${watching}`,
         `  Content check: ${cfg.contentCheckEnabled ? 'ON' : 'OFF'}`,
         `  Silence timeout: ${cfg.silenceTimeoutSeconds}s`,
-        `  Rate-limit cooldown: ${cfg.rateLimitCooldownSeconds}s`,
+        `  Backoff cooldown (next): ${nextCooldown}s`,
+        `  Backoff base: ${cfg.rateLimitCooldownBaseSeconds}s / max: ${cfg.rateLimitCooldownMaxSeconds}s`,
         `  Seconds since last activity: ${elapsed}s`,
         `  Restarts today: ${count} / ${cfg.maxRestartsPerDay}`,
-        `  Model hint: ${cfg.modelHint || '(none)'}`,
-        `  Fallback model: ${cfg.fallbackModelHint || '(none)'}`,
+        `  Model: ${cfg.preferredModel || '(default)'}`,
+        `  Fallback model: ${cfg.fallbackModel || '(none)'}`,
+        `  Participant: ${cfg.chatParticipant || '(none)'}`,
+        `  Approvals: ${cfg.approvalsMode}`,
+        `  New session on resurrect: ${cfg.startNewSession}`,
         `  Prompt configured: ${!!cfg.ignitionPrompt}`,
         `  Cooling down: ${cooling}`,
       ].join('\n');
@@ -110,6 +117,11 @@ export function activate(context: vscode.ExtensionContext): void {
       vscode.window.showInformationMessage('Copilot Resurrect: Daily restart counter reset.');
     }),
 
+    vscode.commands.registerCommand('copilot-resurrect.resetBackoff', () => {
+      _engine?.resetBackoff();
+      vscode.window.showInformationMessage('Copilot Resurrect: Exponential backoff counter reset.');
+    }),
+
     vscode.commands.registerCommand('copilot-resurrect.showLog', () => {
       Logger.show();
     }),
@@ -128,6 +140,80 @@ export function activate(context: vscode.ExtensionContext): void {
           .update('ignitionPrompt', input, vscode.ConfigurationTarget.Global);
         vscode.window.showInformationMessage('Copilot Resurrect: Ignition prompt saved.');
         Logger.info(`Ignition prompt updated (${input.length} chars).`);
+      }
+    }),
+
+    // ── Model picker commands ─────────────────────────────────────────────
+    vscode.commands.registerCommand('copilot-resurrect.selectModel', async () => {
+      await pickModelAndSave('preferredModel', 'Select preferred model for Copilot Chat');
+    }),
+
+    vscode.commands.registerCommand('copilot-resurrect.selectFallbackModel', async () => {
+      await pickModelAndSave('fallbackModel', 'Select fallback model (used after rate-limit)');
+    }),
+
+    // ── Participant picker ───────────────────────────────────────────────
+    vscode.commands.registerCommand('copilot-resurrect.selectParticipant', async () => {
+      const items: vscode.QuickPickItem[] = [
+        { label: '(none)', description: 'No participant prefix — use default Copilot' },
+        { label: '@copilot', description: 'Explicit Copilot participant' },
+        { label: '@workspace', description: 'Workspace-aware participant' },
+        { label: '@vscode', description: 'VS Code help participant' },
+        { label: '@terminal', description: 'Terminal participant' },
+      ];
+      const picked = await vscode.window.showQuickPick(items, {
+        placeHolder: 'Select chat participant to prefix ignition prompt',
+        title: 'Copilot Resurrect: Chat Participant',
+      });
+      if (picked) {
+        const value = picked.label === '(none)' ? '' : picked.label.replace('@', '');
+        await vscode.workspace
+          .getConfiguration(EXT_ID)
+          .update('chatParticipant', value, vscode.ConfigurationTarget.Global);
+        Logger.info(`Chat participant set to: ${value || '(none)'}`);
+        vscode.window.showInformationMessage(
+          `Copilot Resurrect: Participant set to ${value || '(none)'}.`
+        );
+      }
+    }),
+
+    // ── Approvals mode picker ────────────────────────────────────────────
+    vscode.commands.registerCommand('copilot-resurrect.selectApprovalsMode', async () => {
+      const items: vscode.QuickPickItem[] = [
+        {
+          label: 'Default Approvals',
+          description: 'Standard safety checks (recommended)',
+          detail: 'Copilot will ask for confirmation before running commands or making changes.',
+        },
+        {
+          label: 'Bypass Approvals',
+          description: 'Skip confirmation prompts',
+          detail: 'New sessions may show an "Enable" confirmation popup.',
+        },
+        {
+          label: 'Autopilot (Preview)',
+          description: 'Full autonomous mode',
+          detail: 'New sessions may show an "Enable" confirmation popup.',
+        },
+      ];
+      const picked = await vscode.window.showQuickPick(items, {
+        placeHolder: 'Select approvals mode for resurrected sessions',
+        title: 'Copilot Resurrect: Approvals Mode',
+      });
+      if (picked) {
+        let mode: ApprovalsMode = 'default';
+        if (picked.label.startsWith('Bypass')) {
+          mode = 'bypass';
+        } else if (picked.label.startsWith('Autopilot')) {
+          mode = 'autopilot';
+        }
+        await vscode.workspace
+          .getConfiguration(EXT_ID)
+          .update('approvalsMode', mode, vscode.ConfigurationTarget.Global);
+        Logger.info(`Approvals mode set to: ${mode}`);
+        vscode.window.showInformationMessage(
+          `Copilot Resurrect: Approvals mode set to "${picked.label}".`
+        );
       }
     }),
   );
@@ -160,7 +246,7 @@ export function activate(context: vscode.ExtensionContext): void {
     Logger.info('Watcher is disabled. Enable it via the command palette or Settings.');
   }
 
-  Logger.info('Copilot Resurrect v1.1.0 activated.');
+  Logger.info(`Copilot Resurrect v${EXT_VERSION} activated.`);
 }
 
 // ── Deactivate ────────────────────────────────────────────────────────────────
@@ -225,4 +311,42 @@ async function handleError(error: DetectedError): Promise<void> {
   }
 
   updateStatusBar();
+}
+
+/** Show a QuickPick of available Copilot models and save the selection. */
+async function pickModelAndSave(setting: string, title: string): Promise<void> {
+  const models = await getAvailableModels();
+  if (models.length === 0) {
+    vscode.window.showWarningMessage(
+      'No Copilot language models found. Ensure GitHub Copilot is installed and authenticated.'
+    );
+    return;
+  }
+
+  const items: vscode.QuickPickItem[] = [
+    { label: '(none)', description: 'Use the default model selected in Copilot Chat' },
+    ...models.map(m => ({
+      label: m.name || m.id,
+      description: `Family: ${m.family} | Max tokens: ${m.maxInputTokens}`,
+      detail: `ID: ${m.id}`,
+    })),
+  ];
+
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: title,
+    title: `Copilot Resurrect: ${title}`,
+    matchOnDescription: true,
+    matchOnDetail: true,
+  });
+
+  if (picked) {
+    const value = picked.label === '(none)' ? '' : picked.label;
+    await vscode.workspace
+      .getConfiguration(EXT_ID)
+      .update(setting, value, vscode.ConfigurationTarget.Global);
+    Logger.info(`${setting} set to: ${value || '(none)'}`);
+    vscode.window.showInformationMessage(
+      `Copilot Resurrect: ${setting} set to "${value || '(none)'}".`
+    );
+  }
 }
