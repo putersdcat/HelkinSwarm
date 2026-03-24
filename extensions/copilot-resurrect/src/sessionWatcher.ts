@@ -16,7 +16,9 @@ export type ErrorCallback = (error: DetectedError) => void;
  */
 export class SessionWatcher implements vscode.Disposable {
   private _fsWatchers: vscode.FileSystemWatcher[] = [];
+  private _workspaceListeners: vscode.Disposable[] = [];
   private _lastActivityAt: Date = new Date();
+  private _lastWorkspaceLogAt = 0;
   private _pollInterval: ReturnType<typeof setInterval> | undefined;
   private _onSilenceDetected: SilenceCallback;
   private _onErrorDetected: ErrorCallback;
@@ -111,6 +113,31 @@ export class SessionWatcher implements vscode.Disposable {
       Logger.info(`${watchersCreated} file-system watcher(s) active.`);
     }
 
+    // ── Workspace activity detection (catches sub-agent file edits) ───────
+    // When Copilot delegates to a sub-agent, the agent edits workspace files,
+    // runs terminal commands, etc. These trigger document change events that
+    // should reset the silence timer to prevent false resurrection triggers.
+    const bumpFromWorkspace = (uri: vscode.Uri, source: string) => {
+      if (uri.scheme !== 'file') { return; }
+      this._bumpActivity();
+      // Throttle logging — at most once per 30s to avoid spam during rapid edits
+      const now = Date.now();
+      if (now - this._lastWorkspaceLogAt > 30_000) {
+        Logger.debug(`Workspace activity (${source}): ${uri.fsPath}`);
+        this._lastWorkspaceLogAt = now;
+      }
+    };
+
+    this._workspaceListeners.push(
+      vscode.workspace.onDidChangeTextDocument(e => {
+        bumpFromWorkspace(e.document.uri, 'doc-change');
+      }),
+      vscode.workspace.onDidSaveTextDocument(doc => {
+        bumpFromWorkspace(doc.uri, 'doc-save');
+      }),
+    );
+    Logger.info('Workspace activity listeners active (sub-agent detection).');
+
     // ── Polling heartbeat – checks silence threshold every 15s ────────────
     this._pollInterval = setInterval(() => {
       const elapsed = this.secondsSinceActivity;
@@ -137,6 +164,11 @@ export class SessionWatcher implements vscode.Disposable {
       w.dispose();
     }
     this._fsWatchers = [];
+
+    for (const l of this._workspaceListeners) {
+      l.dispose();
+    }
+    this._workspaceListeners = [];
 
     if (this._pollInterval) {
       clearInterval(this._pollInterval);

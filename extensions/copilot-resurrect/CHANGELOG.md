@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.4.1] - 2026-03-24
+
+### Fixed
+- **`workbench.action.chat.focus` command not found**: Replaced with `workbench.action.chat.open` (which is known to work) for focusing the chat panel in both retry-in-place and ignition-prompt paths.
+- **Sub-agent activity not detected by heartbeat**: Added workspace-level activity listeners (`onDidChangeTextDocument`, `onDidSaveTextDocument`). When a sub-agent edits workspace files or runs terminal commands, those document changes now reset the silence timer, preventing false resurrection triggers during active sub-agent sessions.
+
 ## [1.4.0] - 2026-03-17
 
 ### Changed

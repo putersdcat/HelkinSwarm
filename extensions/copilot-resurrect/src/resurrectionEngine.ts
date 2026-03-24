@@ -217,9 +217,9 @@ export class ResurrectionEngine {
       return true;
     }
 
-    // Focus the existing chat panel
+    // Focus the existing chat panel (chat.open with no query just focuses)
     Logger.info('Focusing existing Copilot Chat panel for retry…');
-    await vscode.commands.executeCommand('workbench.action.chat.focus');
+    await vscode.commands.executeCommand('workbench.action.chat.open', {});
     await sleep(500);
 
     // Hit "Try Again" — resends the last request in the current session
@@ -312,9 +312,9 @@ export class ResurrectionEngine {
         );
       }
     } else {
-      // ── Focus existing chat  ──────────────────────────────────────────
+      // ── Focus existing chat (chat.open with no query just focuses) ────
       Logger.info('Focusing existing Copilot Chat panel…');
-      await vscode.commands.executeCommand('workbench.action.chat.focus');
+      await vscode.commands.executeCommand('workbench.action.chat.open', {});
       await sleep(400);
     }
 

@@ -2,7 +2,7 @@
   "name": "copilot-resurrect",
   "displayName": "Copilot Resurrect",
   "description": "Automatically resurrects a dead GitHub Copilot Chat session by re-injecting your configured ignition prompt — keep autonomous coding loops alive overnight.",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "publisher": "EricAnderson",
   "repository": {
     "type": "git",
