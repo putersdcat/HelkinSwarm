@@ -299,10 +299,10 @@ export class FoundryError extends Error {
 }
 
 // ---------------------------------------------------------------------------
-// Retryable error detection (#152)
+// Retryable error detection (#152, #218)
 // ---------------------------------------------------------------------------
 
-const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+const RETRYABLE_STATUS_CODES = new Set([404, 429, 500, 502, 503, 504]);
 
 /** Determine if an error is retryable (throttle, timeout, server error). */
 function isRetryableError(err: unknown): boolean {
