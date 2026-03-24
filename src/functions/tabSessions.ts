@@ -19,6 +19,14 @@ const TAB_CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
 };
 
+function toIsoString(value: Date | string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  return typeof value === 'string' ? value : value.toISOString();
+}
+
 app.http('tab-sessions', {
   methods: ['GET', 'OPTIONS'],
   authLevel: 'anonymous',
@@ -41,8 +49,8 @@ app.http('tab-sessions', {
       instanceId: s.instanceId,
       name: s.name,
       runtimeStatus: s.runtimeStatus,
-      createdAt: s.createdTime?.toISOString() ?? null,
-      lastUpdated: s.lastUpdatedTime?.toISOString() ?? null,
+      createdAt: toIsoString(s.createdTime),
+      lastUpdated: toIsoString(s.lastUpdatedTime),
       isRunning: s.runtimeStatus === OrchestrationRuntimeStatus.Running ||
                  s.runtimeStatus === OrchestrationRuntimeStatus.Pending ||
                  s.runtimeStatus === OrchestrationRuntimeStatus.ContinuedAsNew,

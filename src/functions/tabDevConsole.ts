@@ -22,6 +22,14 @@ const TAB_CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
+function toIsoString(value: Date | string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  return typeof value === 'string' ? value : value.toISOString();
+}
+
 // ---------------------------------------------------------------------------
 // GET /api/tab/dev-console — aggregated deep inspection data
 // ---------------------------------------------------------------------------
@@ -54,8 +62,8 @@ app.http('tab-dev-console', {
       instanceId: s.instanceId,
       name: s.name,
       runtimeStatus: s.runtimeStatus,
-      createdAt: s.createdTime?.toISOString() ?? null,
-      lastUpdated: s.lastUpdatedTime?.toISOString() ?? null,
+      createdAt: toIsoString(s.createdTime),
+      lastUpdated: toIsoString(s.lastUpdatedTime),
       isRunning: s.runtimeStatus != null && activeSet.has(s.runtimeStatus),
     }));
     sessions.sort((a, b) => {
