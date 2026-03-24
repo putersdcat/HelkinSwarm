@@ -1,10 +1,21 @@
 # Changelog
 
+## [1.4.2] - 2026-03-24
+
+### Fixed
+- **Sub-agent activity detection overhaul**: The v1.4.1 listeners (`onDidChangeTextDocument`, `onDidSaveTextDocument`) only fired for files already open in editor tabs — useless when sub-agents write to disk without opening editors. Now uses five detection channels:
+  1. **Workspace-root FileSystemWatcher** (`**/*`) — catches ALL file creates/edits/deletes in the workspace, even for files not open in tabs. This is the primary sub-agent signal.
+  2. **Editor document events** — fires when open documents change in tabs (retained from v1.4.1).
+  3. **File lifecycle events** (`onDidCreateFiles`, `onDidDeleteFiles`, `onDidRenameFiles`) — fires when extensions create/delete/rename files via the workspace API.
+  4. **Terminal events** (`onDidOpenTerminal`, `onDidChangeActiveTerminal`) — fires when sub-agents spawn or switch terminals via `run_in_terminal`.
+  5. **Terminal shell execution events** (VS Code 1.93+) — `onDidStartTerminalShellExecution` / `onDidEndTerminalShellExecution` for precise command-level detection.
+- **`workbench.action.chat.retry` does not exist in VS Code 1.112.0**: The "Try Again" button in Copilot Chat is handled internally via webview `postMessage` and is not exposed as a registered VS Code command. Error-based triggers (rate_limit, server_error, etc.) now fall through to ignition-prompt resurrection — identical to silence triggers — rather than trying and failing the non-existent `chat.retry` command. The ignition prompt re-starts the conversation cleanly, which is functionally equivalent to what "Try Again" would do.
+
 ## [1.4.1] - 2026-03-24
 
 ### Fixed
 - **`workbench.action.chat.focus` command not found**: Replaced with `workbench.action.chat.open` (which is known to work) for focusing the chat panel in both retry-in-place and ignition-prompt paths.
-- **Sub-agent activity not detected by heartbeat**: Added workspace-level activity listeners (`onDidChangeTextDocument`, `onDidSaveTextDocument`). When a sub-agent edits workspace files or runs terminal commands, those document changes now reset the silence timer, preventing false resurrection triggers during active sub-agent sessions.
+- **Sub-agent activity not detected by heartbeat**: Initial attempt at workspace-level activity listeners. Superseded by v1.4.2.
 
 ## [1.4.0] - 2026-03-17
 

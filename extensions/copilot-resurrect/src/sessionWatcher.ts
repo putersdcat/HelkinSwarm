@@ -113,30 +113,88 @@ export class SessionWatcher implements vscode.Disposable {
       Logger.info(`${watchersCreated} file-system watcher(s) active.`);
     }
 
-    // ── Workspace activity detection (catches sub-agent file edits) ───────
-    // When Copilot delegates to a sub-agent, the agent edits workspace files,
-    // runs terminal commands, etc. These trigger document change events that
-    // should reset the silence timer to prevent false resurrection triggers.
-    const bumpFromWorkspace = (uri: vscode.Uri, source: string) => {
-      if (uri.scheme !== 'file') { return; }
+    // ── Workspace + terminal activity detection (sub-agent awareness) ────
+    // Sub-agents interact via multiple channels that the Copilot Chat storage
+    // watchers can't see:
+    //   - File edits (create_file, replace_string_in_file) → workspace FS events
+    //   - Terminal commands (run_in_terminal) → terminal open/change events
+    //   - File reads are invisible but always paired with edits/terminals
+    //
+    // We cast a wide net: workspace FileSystemWatcher on all workspace folders,
+    // VS Code editor document events, terminal events, and file lifecycle events.
+
+    const bumpWithThrottledLog = (source: string, detail?: string) => {
       this._bumpActivity();
-      // Throttle logging — at most once per 30s to avoid spam during rapid edits
       const now = Date.now();
       if (now - this._lastWorkspaceLogAt > 30_000) {
-        Logger.debug(`Workspace activity (${source}): ${uri.fsPath}`);
+        Logger.debug(`Activity signal (${source})${detail ? ': ' + detail : ''}`);
         this._lastWorkspaceLogAt = now;
       }
     };
 
+    // 1. Workspace-root FileSystemWatcher — catches ALL file creates/edits/deletes
+    //    in the workspace, even for files NOT open in editor tabs.
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      try {
+        const wsWatcher = vscode.workspace.createFileSystemWatcher(
+          new vscode.RelativePattern(folder, '**/*'),
+        );
+        wsWatcher.onDidChange(uri => bumpWithThrottledLog('ws-file-change', uri.fsPath));
+        wsWatcher.onDidCreate(uri => bumpWithThrottledLog('ws-file-create', uri.fsPath));
+        wsWatcher.onDidDelete(uri => bumpWithThrottledLog('ws-file-delete', uri.fsPath));
+        this._workspaceListeners.push(wsWatcher);
+      } catch (err) {
+        Logger.warn(`Could not create workspace root watcher for ${folder.uri.fsPath}: ${err}`);
+      }
+    }
+
+    // 2. Editor document events — fires when open documents change in tabs
     this._workspaceListeners.push(
       vscode.workspace.onDidChangeTextDocument(e => {
-        bumpFromWorkspace(e.document.uri, 'doc-change');
+        if (e.document.uri.scheme === 'file') {
+          bumpWithThrottledLog('doc-change', e.document.uri.fsPath);
+        }
       }),
       vscode.workspace.onDidSaveTextDocument(doc => {
-        bumpFromWorkspace(doc.uri, 'doc-save');
+        if (doc.uri.scheme === 'file') {
+          bumpWithThrottledLog('doc-save', doc.uri.fsPath);
+        }
       }),
     );
-    Logger.info('Workspace activity listeners active (sub-agent detection).');
+
+    // 3. File lifecycle events — fires when extensions create/delete files
+    this._workspaceListeners.push(
+      vscode.workspace.onDidCreateFiles(e => {
+        for (const f of e.files) { bumpWithThrottledLog('files-created', f.fsPath); }
+      }),
+      vscode.workspace.onDidDeleteFiles(e => {
+        for (const f of e.files) { bumpWithThrottledLog('files-deleted', f.fsPath); }
+      }),
+      vscode.workspace.onDidRenameFiles(e => {
+        for (const f of e.files) { bumpWithThrottledLog('files-renamed', f.newUri.fsPath); }
+      }),
+    );
+
+    // 4. Terminal events — sub-agents spawn terminals via run_in_terminal
+    this._workspaceListeners.push(
+      vscode.window.onDidOpenTerminal(() => bumpWithThrottledLog('terminal-open')),
+      vscode.window.onDidChangeActiveTerminal(() => bumpWithThrottledLog('terminal-active')),
+    );
+
+    // 5. Terminal shell execution events (VS Code 1.93+) — most precise signal
+    //    that a sub-agent just ran a terminal command.
+    if ('onDidStartTerminalShellExecution' in vscode.window) {
+      this._workspaceListeners.push(
+        (vscode.window as any).onDidStartTerminalShellExecution(() =>
+          bumpWithThrottledLog('shell-exec-start')
+        ),
+        (vscode.window as any).onDidEndTerminalShellExecution(() =>
+          bumpWithThrottledLog('shell-exec-end')
+        ),
+      );
+    }
+
+    Logger.info('Activity listeners active (workspace FS, editor, terminal, file lifecycle).');
 
     // ── Polling heartbeat – checks silence threshold every 15s ────────────
     this._pollInterval = setInterval(() => {

@@ -200,8 +200,16 @@ export class ResurrectionEngine {
 
   /**
    * Retry the last request in the existing chat session ("Try Again" button).
-   * Preserves in-progress work context — the model sees the full conversation
-   * history and can resume where it left off.
+   *
+   * NOTE: `workbench.action.chat.retry` does NOT exist in VS Code 1.112.0.
+   * The "Try Again" button in Copilot Chat is handled internally via webview
+   * postMessage and is not accessible via a registered VS Code command.
+   *
+   * Therefore, error-based triggers fall through to _ignitionPromptResurrect —
+   * the ignition prompt re-starts the conversation cleanly, which is equivalent
+   * to what "Try Again" would do (the session context is already dead/halted
+   * when the error state is shown). The user's configured model, agent mode,
+   * and approvals settings are still applied from config.
    */
   private async _retryInPlace(
     config: ResurrectConfig,
@@ -210,42 +218,15 @@ export class ResurrectionEngine {
     state: DailyState,
   ): Promise<boolean> {
     if (dryRun) {
-      Logger.info(`[DRY RUN] Error trigger [${trigger}] — would focus chat panel`);
+      Logger.info(`[DRY RUN] Error trigger [${trigger}] — would use ignition prompt (workbench.action.chat.retry unavailable)`);
       await sleep(200);
-      Logger.info('[DRY RUN] Would execute: workbench.action.chat.retry ("Try Again")');
+      Logger.info('[DRY RUN] Would execute: workbench.action.chat.open + ignition prompt injection');
       Logger.info('[DRY RUN] Retry simulation complete.');
       return true;
     }
 
-    // Focus the existing chat panel (chat.open with no query just focuses)
-    Logger.info('Focusing existing Copilot Chat panel for retry…');
-    await vscode.commands.executeCommand('workbench.action.chat.open', {});
-    await sleep(500);
-
-    // Hit "Try Again" — resends the last request in the current session
-    Logger.info(`Executing workbench.action.chat.retry (trigger: ${trigger})…`);
-    try {
-      await vscode.commands.executeCommand('workbench.action.chat.retry');
-      await sleep(400);
-    } catch (retryErr) {
-      // If retry fails (e.g., no last response to retry), fall back to ignition prompt
-      Logger.warn(`chat.retry failed: ${retryErr}. Falling back to ignition prompt resurrection.`);
-      return await this._ignitionPromptResurrect(config, false, trigger, state);
-    }
-
-    // Reset error detection cache so the retried response gets a fresh baseline
-    resetScanCache();
-
-    this._incrementDailyState();
-    Logger.info(
-      `Retry complete [${trigger}]. Today's count: ${this.todayCount}/${config.maxRestartsPerDay}.`
-    );
-
-    vscode.window.showInformationMessage(
-      `Copilot Resurrect: Retried in-place [${trigger}] (${this.todayCount}/${config.maxRestartsPerDay} today).`
-    );
-
-    return true;
+    Logger.info('workbench.action.chat.retry is not available in VS Code 1.112.0. Using ignition prompt resurrection instead.');
+    return await this._ignitionPromptResurrect(config, false, trigger, state);
   }
 
   /**
