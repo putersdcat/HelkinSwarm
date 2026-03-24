@@ -44,6 +44,18 @@ df.app.activity('toolDispatchActivity', {
         continue;
       }
 
+      // Defense-in-depth: reject tools that violate current safety mode (#210)
+      if (!toolRegistry.isAllowedBySafetyMode(call.name)) {
+        results.push({
+          toolCallId: call.id,
+          toolName: call.name,
+          success: false,
+          error: `Tool ${call.name} (risk: ${tool.risk}) blocked by safety mode`,
+          requiresExecutor: false,
+        });
+        continue;
+      }
+
       if (tool.requiresExecutor) {
         // High-risk tool — mark for executor, don't execute here
         results.push({

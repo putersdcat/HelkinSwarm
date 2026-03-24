@@ -75,8 +75,8 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
     // Cosmos unavailable — proceed without profile
   }
 
-  // Build tool summary for the system prompt
-  const tools = toolRegistry.getAll();
+  // Build tool summary for the system prompt — safety-filtered (#210)
+  const tools = toolRegistry.getSafetyFiltered();
   const toolSummary = tools.length > 0
     ? `Available tools: ${tools.map((t) => `${t.name} (${t.description})`).join('; ')}`
     : '';
@@ -97,7 +97,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
     // Skill-scoped JIT injection: detect active skill domains from tool registry
     // and pull skill-specific memories for relevant domains
     const skillDomains = [...new Set(
-      toolRegistry.getAll()
+      toolRegistry.getSafetyFiltered()
         .map((t) => t.handlerModule)
         .filter(Boolean)
         .map((m) => m!.replace('skills/', '')),

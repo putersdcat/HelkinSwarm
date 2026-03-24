@@ -2,6 +2,7 @@
 // Spec ref: 06-Tool-Dispatch-LLM-Layer.md, 04-Safety-Architecture.md
 
 import { z } from 'zod';
+import { isReadOnly } from '../config/safetyConfig.js';
 
 // ---------------------------------------------------------------------------
 // Types — re-export from manifestSchema for backward compatibility
@@ -82,13 +83,25 @@ export class ToolRegistry {
   }
 
   /**
+   * Get tools filtered by the current safety mode.
+   * read-only → low risk only; confirmation-gated / full-destructive → all tools.
+   * Spec ref: 06 — "Safety Filter removes any tool that violates the current safety mode"
+   */
+  getSafetyFiltered(): ToolDefinition[] {
+    if (isReadOnly()) {
+      return this.getUpToRisk('low');
+    }
+    return this.getAll();
+  }
+
+  /**
    * Convert to OpenAI-compatible function schemas.
    */
   toFunctionSchemas(): Array<{
     type: 'function';
     function: { name: string; description: string; parameters: Record<string, unknown> };
   }> {
-    return this.getAll().map((tool) => ({
+    return this.getSafetyFiltered().map((tool) => ({
       type: 'function' as const,
       function: {
         name: tool.name,
@@ -96,6 +109,15 @@ export class ToolRegistry {
         parameters: tool.inputSchema ?? { type: 'object', properties: {} },
       },
     }));
+  }
+
+  /**
+   * Check if a specific tool is allowed under the current safety mode.
+   */
+  isAllowedBySafetyMode(toolName: string): boolean {
+    if (!isReadOnly()) return true;
+    const tool = this.get(toolName);
+    return !!tool && tool.risk === 'low';
   }
 
   /**

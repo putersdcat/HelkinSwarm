@@ -45,6 +45,18 @@ df.app.activity('subAgentActivity', {
 
     const tool = toolRegistry.get(input.toolName);
 
+    // Defense-in-depth: reject tools that violate current safety mode (#210)
+    if (!toolRegistry.isAllowedBySafetyMode(input.toolName)) {
+      return {
+        success: false,
+        model: secondaryModel,
+        output: null,
+        error: `Tool ${input.toolName} blocked by safety mode`,
+        tokensUsed: 0,
+        correlationId: input.correlationId,
+      };
+    }
+
     // Build minimal context — ONLY what the sub-agent needs for this one tool
     const systemPrompt = `You are a tool-use sub-agent. You have exactly one task: call the provided tool.
 Do NOT call any other tools. Do NOT attempt recursive tool calling.
