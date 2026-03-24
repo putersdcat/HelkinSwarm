@@ -602,6 +602,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
       linuxFxVersion: 'DOCKER|${acrName}.azurecr.io/helkinswarm:latest'
       acrUseManagedIdentityCreds: true
       acrUserManagedIdentityID: uami.id
+      healthCheckPath: '/api/health'
       appSettings: [
         // ── Functions runtime ──
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'node' }
