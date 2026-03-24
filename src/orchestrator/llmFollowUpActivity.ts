@@ -66,7 +66,7 @@ df.app.activity('llmFollowUpActivity', {
       const incompatibilityReason = getDirectChatModelIncompatibilityReason(input.modelOverride);
       if (incompatibilityReason) {
         return {
-          content: `Follow-up LLM call skipped: direct model override \"${input.modelOverride}\" is unsupported because it ${incompatibilityReason}.`,
+          content: `Follow-up LLM call skipped: direct model override "${input.modelOverride}" is unsupported because it ${incompatibilityReason}.`,
           model: input.modelOverride,
           tokensUsed: 0,
           promptTokens: 0,

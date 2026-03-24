@@ -45,7 +45,7 @@ df.app.activity('llmActivity', {
       // Direct deployment name override via /model command (#217)
       const incompatibilityReason = getDirectChatModelIncompatibilityReason(input.modelOverride);
       if (incompatibilityReason) {
-        const message = `LLM call skipped: direct model override \"${input.modelOverride}\" is unsupported because it ${incompatibilityReason}.`;
+        const message = `LLM call skipped: direct model override "${input.modelOverride}" is unsupported because it ${incompatibilityReason}.`;
         trackEvent({
           name: 'LlmCallFailed',
           correlationId,
