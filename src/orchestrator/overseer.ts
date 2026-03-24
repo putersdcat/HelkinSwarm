@@ -124,6 +124,15 @@ df.app.orchestration('overseer', function* (context) {
   state.turnCount++;
   state.lastActivityTimestamp = new Date().toISOString();
 
+  // Append conversation turn to recentHistory for multi-turn coherence (#203)
+  const history = state.recentHistory ?? [];
+  history.push(
+    { role: 'user' as const, content: event.userMessage },
+    { role: 'assistant' as const, content: sessionResult.response },
+  );
+  // Keep last 10 entries (5 user+assistant pairs)
+  state.recentHistory = history.slice(-10);
+
   // Check if we need to ContinueAsNew (80% context pressure) or summarize (75%)
   if (shouldContinueAsNew(tokenBudget) || shouldSummarize(tokenBudget)) {
     const summarizeInput: SummarizeInput = {
@@ -195,6 +204,14 @@ function* processTurn(
   state.model = sessionResult.model;
   state.turnCount++;
   state.lastActivityTimestamp = new Date().toISOString();
+
+  // Append conversation turn to recentHistory (#203)
+  const history = state.recentHistory ?? [];
+  history.push(
+    { role: 'user' as const, content: event.userMessage },
+    { role: 'assistant' as const, content: sessionResult.response },
+  );
+  state.recentHistory = history.slice(-10);
 
   yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
   context.df.continueAsNew(state);

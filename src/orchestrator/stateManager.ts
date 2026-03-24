@@ -26,6 +26,11 @@ export const OverseerStateSchema = z.object({
   pendingHooks: z.array(z.string()).default([]),
   safetyMode: z.string().default('confirmation-gated'),
   euResidencyMode: z.boolean().default(false),
+  /** Recent conversation turns for multi-turn coherence (#203). Max 10 entries (5 user+assistant pairs). */
+  recentHistory: z.array(z.object({
+    role: z.enum(['user', 'assistant']),
+    content: z.string(),
+  })).default([]),
 });
 
 export type OverseerState = z.infer<typeof OverseerStateSchema>;
@@ -54,6 +59,7 @@ export function stateForContinueAsNew(
     accumulatedTokens: 0,
     totalTokens: 0,
     lastActivityTimestamp: new Date().toISOString(),
+    recentHistory: [], // Cleared on summarization — history captured in summary
   };
 }
 

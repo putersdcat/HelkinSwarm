@@ -13,7 +13,7 @@ until there is literally nothing left to improve.
 ## The Prompt
 
 ```
-Use the GitHub MCP tooling to pull all the open issues for DevOps/HelkinSwarm.
+Use the GitHub MCP tooling to pull all the open issues for putersdcat/HelkinSwarm.
 After reviewing the body of each, also look at issues with long comment chains —
 read those chains to determine what's actually still open vs what's already done.
 Build a prioritised worklist based on impact to the overall project and
@@ -27,7 +27,7 @@ Now run in a Tik-Tok pattern, alternating between two beats:
 
   TIK — DELIVER: Pick the top open issue. Read code, understand things
         completely, write code, push, wait for deploy. Then validate the
-        deployed change using the Helkin-teams-test-harness MCP server —
+        deployed change using the helkinswarm-teams-test MCP server —
         send chat messages that exercise the feature via devloop_roundtrip.
         But don't just test with the default model. Talk to ALL the models
         at the party: gpt-5, o4-mini, o3, gpt-5-mini, grok-4-1-fast-reasoning,

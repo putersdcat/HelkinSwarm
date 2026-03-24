@@ -19,7 +19,7 @@ Operate in a strict TIK-TOK cycle:
 - Select the highest-priority open issue.
 - Fully understand the requirement and existing code.
 - Implement the change, commit, push, and wait for deployment.
-- Validate the deployed feature using the Helkin-teams-test-harness MCP.
+- Validate the deployed feature using the helkinswarm-teams-test MCP.
 - Test across ALL deployed models (for example, gpt-5.4, grok-4-1-fast-reasoning, grok-4-1-fast-non-reasoning).
 - If the feature passes on every model, close the issue and apply the "devloop-validated" label.
 - If it fails on any model, create a new issue with full details and evidence.

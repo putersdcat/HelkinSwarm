@@ -24,6 +24,16 @@ The Teams app manifest (`appPackage/manifest.json`) and all capability manifests
 - `manifest.json` is a template — `APP_ID` and `botId` are substituted by the teams-package workflow
 - Teams app scope: `personal` only — no team/channel/group scope in v1
 
+### Version Bumping (MANDATORY — Admin Portal Rejects Duplicates)
+The Teams Admin Center will **reject** any app package upload whose `version` matches an already-uploaded version. Every change to the manifest, tabs, bot config, or any file inside `appPackage/` **must** be accompanied by a version bump in `appPackage/manifest.json`.
+
+- Format: SemVer `MAJOR.MINOR.PATCH` (e.g. `1.0.8`)
+- Bump the **patch** for routine changes (tab URL, icon swap, permission tweak)
+- Bump the **minor** for structural changes (new static tabs, new bot commands, `webApplicationInfo` changes)
+- Bump the **major** for breaking changes (new manifest schema version, scope changes)
+- The `teams-package.yml` workflow auto-bumps the patch — but if you edit `manifest.json` directly and push, **you** must bump it manually before the next package build
+- If in doubt, bump. A redundant bump is harmless; a missing bump blocks deployment.
+
 ### App Package Generation
 - **Only** use `scripts/New-TeamsAppPackage.ps1` or the `teams-package.yml` workflow
 - Output: `HelkinSwarm-{alias}.zip` — named by stamp alias
@@ -33,7 +43,7 @@ The Teams app manifest (`appPackage/manifest.json`) and all capability manifests
 - `id` (manifest ID) must match the `TEAMS_APP_ID` Bicep output for that stamp
 - `description.short` ≤ 80 characters
 - `description.full` ≤ 4000 characters  
-- Version string must be bumped (SemVer) on every manifest change
+- `version` must be bumped on every change — see **Version Bumping** section below
 
 ## Capability Manifests (`skills/*/manifest.json`)
 See `mcp-skills.instructions.md` for the full schema rules.
@@ -47,7 +57,7 @@ For cross-manifest consistency:
 - Test with a local simulator bot against a sideloaded package version (not user-alias-stamped)
 
 ## Always
-- ✅ Bump the app manifest version (`version` field) on every schema or bot change
+- ✅ Bump the app manifest `version` field on **every** change to `appPackage/` — the Admin Portal rejects duplicate versions
 - ✅ Run `teams-package.yml` to regenerate the `.zip` — never zip manually
 - ✅ Validate the manifest with Teams Toolkit or App Studio before submitting to admin center
 - ✅ Verify `botId` matches `UAMI_CLIENT_ID` for the target stamp after each Bicep deploy
@@ -56,6 +66,6 @@ For cross-manifest consistency:
 - ❌ Do NOT Edit the `appPackage/*.zip` directly
 - ❌ Do NOT Hard-code the botId GUID in manifest — use the substitution variable
 - ❌ Do NOT Add team/channel/group scope — personal only until spec changes
-- ❌ Do NOT Modify `manifest.json` without bumping the version field
+- ❌ Do NOT Push changes to `appPackage/manifest.json` without bumping the `version` field — the Admin Portal will reject the upload
 
 *We are the bridge.*

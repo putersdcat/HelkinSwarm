@@ -150,8 +150,16 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
 
   const messages: PromptResult['messages'] = [
     { role: 'system' as const, content: systemPrompt },
-    { role: 'user' as const, content: userMessage },
   ];
+
+  // Inject recent conversation history for multi-turn coherence (#203)
+  if (state.recentHistory && state.recentHistory.length > 0) {
+    for (const turn of state.recentHistory) {
+      messages.push({ role: turn.role as 'user' | 'assistant', content: turn.content });
+    }
+  }
+
+  messages.push({ role: 'user' as const, content: userMessage });
 
   const totalText = messages.map((m) => m.content).join('');
   const estimatedTokens = estimateTokens(totalText);

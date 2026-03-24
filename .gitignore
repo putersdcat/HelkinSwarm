@@ -56,3 +56,6 @@ ArchivalResearch/
 .local/
 .vscode/mcp-settings.json
 dist-mcp/
+
+# Playwright test artifacts
+.playwright-mcp/
