@@ -329,13 +329,51 @@ jobs:
           FUNC_NAME=${{ needs.deploy-infra.outputs.function-app-name }}
           ACR_SERVER=${{ needs.deploy-infra.outputs.acr-login-server }}
           MI_RESOURCE_ID=${{ needs.deploy-infra.outputs.managed-identity-resource-id }}
+          MI_CLIENT_ID=${{ needs.deploy-infra.outputs.managed-identity-client-id }}
           IMAGE_TAG=${{ github.sha }}
+          EXPECTED_BOT_APP_ID="${{ vars.BOT_APP_ID }}"
+          EXPECTED_BOT_MSI_RESOURCE_ID="${{ vars.ROUTER_UAMI_ID }}"
+
+          if [ -z "$EXPECTED_BOT_APP_ID" ]; then
+            EXPECTED_BOT_APP_ID="$MI_CLIENT_ID"
+          fi
+
+          if [ -z "$EXPECTED_BOT_MSI_RESOURCE_ID" ]; then
+            EXPECTED_BOT_MSI_RESOURCE_ID="$MI_RESOURCE_ID"
+          fi
 
           # Set ACR URL
           az functionapp config appsettings set \
             --name "${FUNC_NAME}" \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
             --settings DOCKER_REGISTRY_SERVER_URL="${ACR_SERVER}"
+
+          # Keep identities aligned even on code-only deploys that skip Bicep.
+          # When the router is live, the Function App must retain both the stamp
+          # UAMI and the router UAMI so Bot Framework auth can use the shared
+          # router identity (#214).
+          if [ "$EXPECTED_BOT_MSI_RESOURCE_ID" != "$MI_RESOURCE_ID" ]; then
+            az functionapp identity assign \
+              --name "${FUNC_NAME}" \
+              --resource-group "${{ env.RESOURCE_GROUP }}" \
+              --identities "$MI_RESOURCE_ID" "$EXPECTED_BOT_MSI_RESOURCE_ID" >/dev/null
+          else
+            az functionapp identity assign \
+              --name "${FUNC_NAME}" \
+              --resource-group "${{ env.RESOURCE_GROUP }}" \
+              --identities "$MI_RESOURCE_ID" >/dev/null
+          fi
+
+          # Repair Bot Framework app settings drift on every deploy. The live
+          # outage in #214 was caused by MICROSOFT_APP_ID and the Bot Service
+          # registration disagreeing about which UAMI is the bot identity.
+          az functionapp config appsettings set \
+            --name "${FUNC_NAME}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --settings \
+              MICROSOFT_APP_ID="$EXPECTED_BOT_APP_ID" \
+              MICROSOFT_APP_TYPE="UserAssignedMsi" \
+              MICROSOFT_APP_TENANT_ID="${{ vars.AZURE_TENANT_ID }}"
 
           # Switch to ACR image with managed identity auth
           az rest --method PATCH \
@@ -390,6 +428,16 @@ jobs:
           EXPECTED_ENDPOINT="https://${{ steps.verify.outputs.fqdn }}/api/messages"
           RG="${{ env.RESOURCE_GROUP }}"
           SUB="${{ env.AZURE_SUBSCRIPTION_ID }}"
+          EXPECTED_BOT_APP_ID="${{ vars.BOT_APP_ID }}"
+          EXPECTED_BOT_MSI_RESOURCE_ID="${{ vars.ROUTER_UAMI_ID }}"
+
+          if [ -z "$EXPECTED_BOT_APP_ID" ]; then
+            EXPECTED_BOT_APP_ID="${{ needs.deploy-infra.outputs.managed-identity-client-id }}"
+          fi
+
+          if [ -z "$EXPECTED_BOT_MSI_RESOURCE_ID" ]; then
+            EXPECTED_BOT_MSI_RESOURCE_ID="${{ needs.deploy-infra.outputs.managed-identity-resource-id }}"
+          fi
 
           BOT_NAME=$(az resource list \
             --resource-group "$RG" --subscription "$SUB" \
@@ -401,30 +449,40 @@ jobs:
             exit 0
           fi
 
-          CURRENT_ENDPOINT=$(az bot show \
-            --name "$BOT_NAME" \
+          CURRENT_BOT=$(az resource show \
             --resource-group "$RG" \
-            --subscription "$SUB" \
-            --query "properties.endpoint" -o tsv 2>/dev/null || echo "")
+            --name "$BOT_NAME" \
+            --resource-type Microsoft.BotService/botServices \
+            --api-version 2022-09-15 -o json 2>/dev/null || echo "")
 
-          if [ -z "$CURRENT_ENDPOINT" ]; then
+          if [ -z "$CURRENT_BOT" ]; then
             echo "⚠️ Could not query Bot Service (API may be temporarily unavailable after deploy)"
             echo "   Bot endpoint is set via Bicep — skipping verification."
             exit 0
           fi
 
+          CURRENT_ENDPOINT=$(echo "$CURRENT_BOT" | jq -r '.properties.endpoint // ""')
+          CURRENT_BOT_APP_ID=$(echo "$CURRENT_BOT" | jq -r '.properties.msaAppId // ""')
+          CURRENT_BOT_MSI_RESOURCE_ID=$(echo "$CURRENT_BOT" | jq -r '(.properties.msaAppMSIResourceId // .properties.msaAppMsiResourceId // "")')
+
           echo "Expected: $EXPECTED_ENDPOINT"
           echo "Current:  $CURRENT_ENDPOINT"
+          echo "Expected Bot App ID: $EXPECTED_BOT_APP_ID"
+          echo "Current  Bot App ID: $CURRENT_BOT_APP_ID"
+          echo "Expected Bot MSI Resource ID: $EXPECTED_BOT_MSI_RESOURCE_ID"
+          echo "Current  Bot MSI Resource ID: $CURRENT_BOT_MSI_RESOURCE_ID"
 
-          if [ "$CURRENT_ENDPOINT" != "$EXPECTED_ENDPOINT" ]; then
-            echo "⚠️ Endpoint mismatch — updating..."
+          if [ "$CURRENT_ENDPOINT" != "$EXPECTED_ENDPOINT" ] || \
+             [ "$CURRENT_BOT_APP_ID" != "$EXPECTED_BOT_APP_ID" ] || \
+             [ "$CURRENT_BOT_MSI_RESOURCE_ID" != "$EXPECTED_BOT_MSI_RESOURCE_ID" ]; then
+            echo "⚠️ Bot Service drift detected — repairing endpoint and identity..."
             az rest --method PATCH \
               --url "/subscriptions/$SUB/resourceGroups/$RG/providers/Microsoft.BotService/botServices/$BOT_NAME?api-version=2022-09-15" \
-              --body "{\"properties\":{\"endpoint\":\"$EXPECTED_ENDPOINT\"}}" || \
-              echo "⚠️ Failed to update Bot endpoint — may need manual fix"
-            echo "✅ Bot Service endpoint updated"
+              --body "{\"properties\":{\"endpoint\":\"$EXPECTED_ENDPOINT\",\"msaAppId\":\"$EXPECTED_BOT_APP_ID\",\"msaAppType\":\"UserAssignedMSI\",\"msaAppMSIResourceId\":\"$EXPECTED_BOT_MSI_RESOURCE_ID\",\"msaAppTenantId\":\"${{ vars.AZURE_TENANT_ID }}\"}}" || \
+              echo "⚠️ Failed to repair Bot Service identity/endpoint — may need manual fix"
+            echo "✅ Bot Service endpoint/identity repair attempted"
           else
-            echo "✅ Bot Service endpoint is correct"
+            echo "✅ Bot Service endpoint and identity are correct"
           fi
 
   # ─────────────────────────────────────────────────────────────────────────

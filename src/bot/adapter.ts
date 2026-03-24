@@ -44,17 +44,14 @@ export function createAdapter(): HelkinSwarmAdapter {
 
   sharedAdapter = new HelkinSwarmAdapter(auth);
 
-  // Global error handler — log with correlation ID, notify user, stay alive
+  // Global error handler — log with correlation ID and fail fast.
+  // Do NOT attempt another sendActivity() here: when the outbound Bot Framework
+  // auth/send path is already broken, a secondary send can amplify the failure
+  // and keep the HTTP turn hanging (#214).
   sharedAdapter.onTurnError = async (context, error) => {
     const correlationId = crypto.randomUUID();
     console.error(`[HelkinSwarm Bot] correlationId=${correlationId} Unhandled turn error:`, error);
-    try {
-      await context.sendActivity(
-        `⚠️ An internal error occurred. Reference: ${correlationId}`,
-      );
-    } catch {
-      // ignore secondary failure — the turn is already broken
-    }
+    void context;
   };
 
   return sharedAdapter;
