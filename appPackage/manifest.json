@@ -1,7 +1,7 @@
 {
   "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
   "manifestVersion": "1.17",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "id": "0fe3ff72-40cc-43ab-85bf-a846e399be6d",
   "developer": {
     "name": "Eric Anderson",
@@ -24,7 +24,7 @@
   "accentColor": "#6C00FF",
   "bots": [
     {
-      "botId": "{{BOT_APP_ID}}",
+      "botId": "42d3359f-8757-421d-a853-fb2960cf2dac",
       "scopes": [
         "personal"
       ],
@@ -55,19 +55,23 @@
       "name": "Get Started",
       "contentUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/index.html#get-started",
       "websiteUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/index.html#get-started",
-      "scopes": ["personal"]
+      "scopes": [
+        "personal"
+      ]
     },
     {
       "entityId": "control-center",
       "name": "Control Center",
       "contentUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/index.html#control-center",
       "websiteUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/index.html#control-center",
-      "scopes": ["personal"]
+      "scopes": [
+        "personal"
+      ]
     }
   ],
   "webApplicationInfo": {
-    "id": "{{TAB_SSO_APP_ID}}",
-    "resource": "api://{{TAB_HOST_DOMAIN}}/{{TAB_SSO_APP_ID}}"
+    "id": "d4e5cf74-9f99-4504-b4ab-d4516dd10577",
+    "resource": "api://helkinswarmtabsst.z20.web.core.windows.net/d4e5cf74-9f99-4504-b4ab-d4516dd10577"
   },
   "permissions": [
     "identity",
