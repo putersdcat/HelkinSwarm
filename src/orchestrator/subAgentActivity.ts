@@ -10,6 +10,7 @@ import { toolRegistry } from '../tools/toolRegistry.js';
 import { getHandler } from '../capabilities/capabilityLoader.js';
 import { trackEvent } from '../observability/telemetry.js';
 import type { ChatMessage } from '../llm/foundryClient.js';
+import { MemoryManager } from '../memory/memoryManager.js';
 
 export interface SubAgentInput {
   toolName: string;
@@ -115,6 +116,14 @@ Description: ${input.toolDescription}`;
           userId: input.userId,
           properties: { toolName: tc.function.name, success: true, model: secondaryModel },
         });
+
+        // Store sub-agent result as skill memory for JIT injection (#203)
+        // Mirrors toolDispatchActivity to prevent cross-turn context loss.
+        if (tool?.handlerModule) {
+          const skillId = tool.handlerModule.replace('skills/', '');
+          const mm = new MemoryManager(input.userId);
+          mm.storeToolResult(skillId, tc.function.name, JSON.stringify(handlerResult)).catch(() => { /* non-fatal */ });
+        }
 
         return {
           success: true,
