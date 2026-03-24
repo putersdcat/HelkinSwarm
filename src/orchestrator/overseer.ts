@@ -92,13 +92,39 @@ df.app.orchestration('overseer', function* (context) {
     devLoopContext: event.devLoopContext,
   };
 
+  // Guard: race sub-orchestrator against a 5-minute timeout (#211)
+  // Without this, a hung LLM call blocks the overseer forever.
+  const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
+  const sessionDeadline = new Date(context.df.currentUtcDateTime.getTime() + SESSION_TIMEOUT_MS);
+  const sessionTimer = context.df.createTimer(sessionDeadline);
+  const sessionTask = context.df.callSubOrchestrator(
+    'sessionOrchestrator',
+    sessionInput,
+  );
+
   let sessionResult: SessionResult;
   try {
-    sessionResult = yield context.df.callSubOrchestrator(
-      'sessionOrchestrator',
-      sessionInput,
-    );
+    const winner: df.Task = yield context.df.Task.any([sessionTask, sessionTimer]);
+    if (winner === sessionTimer) {
+      // Session timed out — notify user and cycle the overseer
+      console.error(`[overseer] sessionOrchestrator timed out after ${SESSION_TIMEOUT_MS}ms for user=${state.userId}`);
+      try {
+        const errorReply: SendReplyInput = {
+          userId: state.userId,
+          message: `⏰ Your message took too long to process (>${SESSION_TIMEOUT_MS / 60000} min). The turn was cancelled. Please try again.`,
+        };
+        yield context.df.callActivity('sendReplyActivity', errorReply);
+      } catch (replyErr) {
+        console.error(`[overseer] Failed to send timeout reply for user=${state.userId}`, replyErr);
+      }
+      yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
+      context.df.continueAsNew(state);
+      return;
+    }
+    sessionTimer.cancel();
+    sessionResult = sessionTask.result as SessionResult;
   } catch (err) {
+    sessionTimer.cancel();
     // Session failed — send error reply to user and continue (don't crash the overseer)
     console.error(`[overseer] sessionOrchestrator failed for user=${state.userId}`, err);
     try {
@@ -165,7 +191,8 @@ function* processTurn(
   context: df.OrchestrationContext,
   state: OverseerState,
   event: NewMessageEvent,
-): Generator<df.Task, void, SessionResult> {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions runtime drives the generator with mixed types
+): Generator<df.Task, void, any> {
   const sessionInput: SessionInput = {
     state,
     userMessage: event.userMessage,
@@ -176,12 +203,35 @@ function* processTurn(
     devLoopContext: event.devLoopContext,
   };
 
+  // Guard: race sub-orchestrator against a 5-minute timeout (#211)
+  const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
+  const sessionDeadline = new Date(context.df.currentUtcDateTime.getTime() + SESSION_TIMEOUT_MS);
+  const sessionTimer = context.df.createTimer(sessionDeadline);
+  const sessionTask = context.df.callSubOrchestrator(
+    'sessionOrchestrator',
+    sessionInput,
+  );
+
   let sessionResult: SessionResult;
   try {
-    sessionResult = yield context.df.callSubOrchestrator(
-      'sessionOrchestrator',
-      sessionInput,
-    );
+    const winner = yield context.df.Task.any([sessionTask, sessionTimer]) as df.Task;
+    if (winner === sessionTimer) {
+      console.error(`[overseer] processTurn timed out after ${SESSION_TIMEOUT_MS}ms for user=${state.userId}`);
+      try {
+        const errorReply: SendReplyInput = {
+          userId: state.userId,
+          message: `⏰ Your message took too long to process (>${SESSION_TIMEOUT_MS / 60000} min). The turn was cancelled. Please try again.`,
+        };
+        yield context.df.callActivity('sendReplyActivity', errorReply);
+      } catch (replyErr) {
+        console.error(`[overseer] Failed to send timeout reply for user=${state.userId}`, replyErr);
+      }
+      yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
+      context.df.continueAsNew(state);
+      return;
+    }
+    sessionTimer.cancel();
+    sessionResult = sessionTask.result as SessionResult;
   } catch (err) {
     // Session failed — send error reply and cycle
     console.error(`[overseer] processTurn failed for user=${state.userId}`, err);
