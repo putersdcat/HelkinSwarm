@@ -22,6 +22,10 @@ import {
   setMaintenanceMode,
 } from './maintenanceMode.js';
 import { promptShields } from '../llm/promptShields.js';
+import {
+  getDirectChatModelIncompatibilityReason,
+  getSupportedDirectChatModelOverrides,
+} from '../llm/modelRouter.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { getAckVariant } from './ackVariants.js';
 import { isColdStarting } from './lifecycleNotices.js';
@@ -537,18 +541,22 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     // Parse: /model <deployment-name> <prompt>
     const parts = messageText.slice(6).trim().split(/\s+/);
+    const available = getSupportedDirectChatModelOverrides();
     if (parts.length < 2 || !parts[0]) {
-      const available = [
-        'grok-4-1-fast-non-reasoning', 'grok-4-1-fast-reasoning',
-        'gpt-5.4-mini', 'o4-mini', 'o3',
-        'DeepSeek-V3.2', 'FW-MiniMax-M2.5', 'FW-Kimi-K2.5',
-      ];
       await context.sendActivity(`Usage: /model <deployment-name> <prompt>\n\nAvailable: ${available.join(', ')}`);
       return;
     }
 
     const deploymentName = parts[0]!;
     const prompt = parts.slice(1).join(' ');
+    const incompatibilityReason = getDirectChatModelIncompatibilityReason(deploymentName);
+
+    if (incompatibilityReason) {
+      await context.sendActivity(
+        `⚠️ \`${deploymentName}\` is not available via /model because it ${incompatibilityReason}.\n\nAvailable: ${available.join(', ')}`,
+      );
+      return;
+    }
 
     await context.sendActivity(`⌛ Working on it... (🎯 ${deploymentName})`);
     await this.raiseToOverseer(context, userId, userAlias, prompt, deploymentName);

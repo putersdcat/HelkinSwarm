@@ -67,6 +67,20 @@ export interface ModelRouting {
   usesObo: boolean;
 }
 
+const DIRECT_CHAT_MODEL_OVERRIDES = [
+  'grok-4-1-fast-non-reasoning',
+  'grok-4-1-fast-reasoning',
+  'gpt-5.4-mini',
+  'o4-mini',
+  'DeepSeek-V3.2',
+  'FW-MiniMax-M2.5',
+  'FW-Kimi-K2.5',
+] as const;
+
+const CHAT_INCOMPATIBLE_MODEL_REASONS: Record<string, string> = {
+  'gpt-5.1-codex-mini': 'does not support the chat completions API (codex/completions-only deployment)',
+};
+
 /** Returns the active model routing based on current config + override */
 export function getModelRouting(llmProvider?: 'azure' | 'openrouter'): ModelRouting {
   const config = getEnvConfig();
@@ -154,4 +168,19 @@ export function getFallbackChain(): ModelRouting[] {
   }
 
   return chain;
+}
+
+/** Supported `/model` direct deployment overrides for chat-based interactive use. */
+export function getSupportedDirectChatModelOverrides(): string[] {
+  return [...DIRECT_CHAT_MODEL_OVERRIDES];
+}
+
+/** Returns a human-readable incompatibility reason when a deployment cannot be used for chat completions. */
+export function getDirectChatModelIncompatibilityReason(deploymentName: string): string | undefined {
+  return CHAT_INCOMPATIBLE_MODEL_REASONS[deploymentName];
+}
+
+/** Whether a deployment can be used safely with the chat completions path used by `/model`. */
+export function isDirectChatModelOverrideSupported(deploymentName: string): boolean {
+  return getDirectChatModelIncompatibilityReason(deploymentName) === undefined;
 }

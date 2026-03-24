@@ -3,7 +3,11 @@
 
 import * as df from 'durable-functions';
 import { FoundryClient } from '../llm/foundryClient.js';
-import { getModelRouting, getModelForTask } from '../llm/modelRouter.js';
+import {
+  getDirectChatModelIncompatibilityReason,
+  getModelRouting,
+  getModelForTask,
+} from '../llm/modelRouter.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import type { PromptResult } from './buildPromptActivity.js';
 import type { ChatCompletionResponse, ChatMessage, ContentPart } from '../llm/foundryClient.js';
@@ -39,6 +43,26 @@ df.app.activity('llmActivity', {
       isReasoning = true;
     } else if (input.modelOverride && input.modelOverride !== 'primary' && input.modelOverride !== 'secondary') {
       // Direct deployment name override via /model command (#217)
+      const incompatibilityReason = getDirectChatModelIncompatibilityReason(input.modelOverride);
+      if (incompatibilityReason) {
+        const message = `LLM call skipped: direct model override \"${input.modelOverride}\" is unsupported because it ${incompatibilityReason}.`;
+        trackEvent({
+          name: 'LlmCallFailed',
+          correlationId,
+          properties: {
+            error: message,
+            deployment: input.modelOverride,
+          },
+        });
+        return {
+          content: message,
+          model: input.modelOverride,
+          tokensUsed: 0,
+          promptTokens: 0,
+          toolCalls: [],
+          finishReason: 'error',
+        };
+      }
       deploymentName = input.modelOverride;
       isReasoning = deploymentName.includes('reasoning') || deploymentName.startsWith('o');
     } else if (hasImages) {

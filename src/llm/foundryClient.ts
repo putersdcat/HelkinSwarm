@@ -307,7 +307,7 @@ export class FoundryError extends Error {
 // ---------------------------------------------------------------------------
 
 /** Models that require `max_completion_tokens` instead of `max_tokens` (GPT-5, GPT-4o, o-series). */
-function needsNewTokenParam(deploymentName: string): boolean {
+export function needsNewTokenParam(deploymentName: string): boolean {
   const d = deploymentName.toLowerCase();
   return d.startsWith('gpt-5') || d.startsWith('gpt-4o') || d.startsWith('o');
 }

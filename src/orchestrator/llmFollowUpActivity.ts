@@ -7,7 +7,7 @@
 
 import * as df from 'durable-functions';
 import { FoundryClient, textContent } from '../llm/foundryClient.js';
-import { getModelRouting } from '../llm/modelRouter.js';
+import { getDirectChatModelIncompatibilityReason, getModelRouting } from '../llm/modelRouter.js';
 import type { ChatMessage, ChatCompletionResponse, ToolDefinition } from '../llm/foundryClient.js';
 import type { LlmResult } from './llmActivity.js';
 
@@ -63,6 +63,17 @@ df.app.activity('llmFollowUpActivity', {
       isReasoning = true;
     } else if (input.modelOverride && input.modelOverride !== 'primary' && input.modelOverride !== 'secondary') {
       // Direct deployment name override via /model command (#217)
+      const incompatibilityReason = getDirectChatModelIncompatibilityReason(input.modelOverride);
+      if (incompatibilityReason) {
+        return {
+          content: `Follow-up LLM call skipped: direct model override \"${input.modelOverride}\" is unsupported because it ${incompatibilityReason}.`,
+          model: input.modelOverride,
+          tokensUsed: 0,
+          promptTokens: 0,
+          toolCalls: [],
+          finishReason: 'error',
+        };
+      }
       deploymentName = input.modelOverride;
       isReasoning = deploymentName.includes('reasoning') || deploymentName.startsWith('o');
     } else {
