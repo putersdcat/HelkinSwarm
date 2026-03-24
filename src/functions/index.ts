@@ -14,6 +14,10 @@ import './devLoopRelay.js';
 import './graphNotificationHandler.js';
 import './subscriptionRenewalTimer.js';
 import './maintenanceSweepTimer.js';
+import './tabGetStarted.js';
+import './tabDashboard.js';
+import './tabSessions.js';
+import './tabDevConsole.js';
 
 // Orchestrator + activity registrations (Phase 2)
 import '../orchestrator/overseer.js';
