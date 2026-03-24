@@ -176,10 +176,22 @@ jobs:
           set +e
           echo "🚀 Deploying Bicep for stamp '${{ env.USER_ALIAS }}'..."
 
+          OAUTH_UPDATE_SHOULD_RUN="false"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            OAUTH_UPDATE_SHOULD_RUN="${{ github.event.inputs.CREATE_OAUTH_CONNECTION || 'false' }}"
+          else
+            OAUTH_UPDATE_SHOULD_RUN="true"
+          fi
+
+          echo "ℹ️ OAuth connection update enabled: ${OAUTH_UPDATE_SHOULD_RUN}"
+
           # Fetch delegated auth client secret from KV for OAuth connection deploy
           KV_NAME="helkinswarm-kv-${{ env.USER_ALIAS }}"
-          DELEGATED_SECRET=$(az keyvault secret show --vault-name "$KV_NAME" \
-            --name "DelegatedAuthClientSecret" --query "value" -o tsv 2>/dev/null || echo "")
+          DELEGATED_SECRET=""
+          if [ "$OAUTH_UPDATE_SHOULD_RUN" = "true" ]; then
+            DELEGATED_SECRET=$(az keyvault secret show --vault-name "$KV_NAME" \
+              --name "DelegatedAuthClientSecret" --query "value" -o tsv 2>/dev/null || echo "")
+          fi
 
           DEPLOY_OUT=$(az deployment group create \
             --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
@@ -192,7 +204,7 @@ jobs:
               euResidencyMode=${{ github.event.inputs.EU_RESIDENCY_MODE || 'false' }} \
               routerBotId="${{ vars.BOT_APP_ID }}" \
               routerUamiId="${{ vars.ROUTER_UAMI_ID }}" \
-              createOAuthConnection=${{ github.event.inputs.CREATE_OAUTH_CONNECTION || 'false' }} \
+              createOAuthConnection=${OAUTH_UPDATE_SHOULD_RUN} \
               delegatedAuthClientSecret="$DELEGATED_SECRET" \
             --output json 2>&1)
           DEPLOY_EXIT=$?
@@ -207,10 +219,13 @@ jobs:
             # Count errors excluding known benign codes — use -o to match per-occurrence
             # (the entire JSON may be on a single line)
             TOTAL_CODES=$(echo "$DEPLOY_OUT" | grep -oP '"code"\s*:\s*"[^"]*"' | wc -l)
-            # 715-123420 + InvalidTemplateDeployment: ARM validation error on BotService
-            # OAuth connection re-deploy. The connection already exists with correct config;
-            # ARM raises this intermittently and it self-heals. Treated as benign.
-            BENIGN_CODES=$(echo "$DEPLOY_OUT" | grep -oP '"code"\s*:\s*"(RoleAssignmentExists|DeploymentFailed|BadRequest|InvalidTemplateDeployment|715-123420)"' | wc -l)
+            # When we are explicitly updating the OAuth connection, BotService/OAuth deploy
+            # failures are NOT benign — they leave /link broken while the workflow goes green.
+            if [ "$OAUTH_UPDATE_SHOULD_RUN" = "true" ]; then
+              BENIGN_CODES=$(echo "$DEPLOY_OUT" | grep -oP '"code"\s*:\s*"(RoleAssignmentExists|DeploymentFailed|BadRequest)"' | wc -l)
+            else
+              BENIGN_CODES=$(echo "$DEPLOY_OUT" | grep -oP '"code"\s*:\s*"(RoleAssignmentExists|DeploymentFailed|BadRequest|InvalidTemplateDeployment|715-123420)"' | wc -l)
+            fi
             REAL_ERRORS=$((TOTAL_CODES - BENIGN_CODES))
 
             echo "  DEBUG: BOT_VALIDATION=$BOT_VALIDATION TOTAL_CODES=$TOTAL_CODES BENIGN_CODES=$BENIGN_CODES REAL_ERRORS=$REAL_ERRORS"

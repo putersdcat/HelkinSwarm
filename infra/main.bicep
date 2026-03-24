@@ -721,6 +721,9 @@ resource oauthConnection 'Microsoft.BotService/botServices/connections@2022-09-1
     scopes: 'User.Read Mail.ReadWrite Calendars.ReadWrite Files.ReadWrite offline_access'
     parameters: [
       { key: 'tenantID', value: subscription().tenantId }
+      { key: 'clientId', value: delegatedAuthClientId }
+      { key: 'clientSecret', value: delegatedAuthClientSecret }
+      { key: 'scopes', value: 'User.Read Mail.ReadWrite Calendars.ReadWrite Files.ReadWrite offline_access' }
     ]
   }
 }

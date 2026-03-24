@@ -10,6 +10,7 @@ import {
 } from 'botbuilder';
 import { ClaimsIdentity } from 'botframework-connector';
 import { getEnvConfig } from '../config/envConfig.js';
+import { getConversationReference } from '../bot/conversationStore.js';
 
 let authInstance: ConfigurationBotFrameworkAuthentication | undefined;
 
@@ -45,11 +46,14 @@ export async function getGraphTokenForUser(
     const tokenClient = await auth.createUserTokenClient(
       new ClaimsIdentity([], true),
     );
+    const conversationReference = await getConversationReference(userId);
+    const channelUserId = conversationReference?.user?.id ?? userId;
+    const channelId = conversationReference?.channelId ?? '';
 
     const result = await tokenClient.getUserToken(
-      userId,
+      channelUserId,
       connName,
-      '', // channelId — empty for proactive calls
+      channelId,
       '', // magicCode — empty for cached token retrieval
     );
 
