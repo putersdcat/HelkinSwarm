@@ -28,5 +28,12 @@
         "required": ["location"]
       }
     }
-  ]
+  ],
+  "shortName": "weather",
+  "displayName": "Weather",
+  "shortDescription": "Current weather conditions and forecasts",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/weather.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials"
 }

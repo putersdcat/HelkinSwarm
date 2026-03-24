@@ -31,5 +31,13 @@
         "required": ["query"]
       }
     }
-  ]
+  ],
+  "shortName": "web",
+  "displayName": "Web Search",
+  "shortDescription": "Perform internet searches via Bing Search API",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/web.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials",
+  "externalAccountsNeeded": ["Bing Search API key"]
 }

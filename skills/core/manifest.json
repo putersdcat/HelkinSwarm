@@ -143,5 +143,12 @@
         "required": []
       }
     }
-  ]
+  ],
+  "shortName": "core",
+  "displayName": "Core",
+  "shortDescription": "System health, skill management, cost monitoring, and user preferences",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/core.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials"
 }

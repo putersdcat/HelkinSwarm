@@ -233,5 +233,12 @@
         "required": []
       }
     }
-  ]
+  ],
+  "shortName": "github",
+  "displayName": "GitHub",
+  "shortDescription": "Issue tracking, PR management, milestones, and repository operations",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/github.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials"
 }

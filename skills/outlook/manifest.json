@@ -211,5 +211,13 @@
         "required": ["subject", "start", "end"]
       }
     }
-  ]
+  ],
+  "shortName": "outlook",
+  "displayName": "Outlook",
+  "shortDescription": "Email and calendar management via Microsoft Graph",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/outlook.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "post-install-link",
+  "lifecycleRules": "keep-credentials",
+  "requiredPermissions": ["User.Read", "Mail.Read", "Mail.Send", "Calendars.Read", "Calendars.ReadWrite"]
 }

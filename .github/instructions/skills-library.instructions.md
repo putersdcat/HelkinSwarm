@@ -13,13 +13,14 @@ Every skill **must** have a JSON manifest at `skills/<domain>/manifest.json` con
 | Field | Type | Description |
 |-------|------|-------------|
 | `domain` | string | Internal identifier (matches folder name) |
+| `shortName` | string | Short internal name (e.g. `"web-search"`) |
 | `displayName` | string | UI-friendly name for Skills Library tab |
 | `shortDescription` | string | One-line description shown on skill card |
-| `iconUrl` | string | Blob storage URL for skill icon |
+| `iconUrl` | string (URL) | Blob storage URL for skill icon |
 | `version` | string | Semver or RC tag (`"1.0"`, `"RC-2026-03"`) |
 | `deploymentScenario` | enum | `"personal-user-centric"` or `"enterprise-commercial"` |
 | `onboardingMethod` | enum | `"automatic-agentic"`, `"post-install-link"`, or `"both"` |
-| `lifecycleRules` | object | Behaviour on uninstall/reset (`"keep-credentials"`, `"close-external-account"`, `"ask-user"`) |
+| `lifecycleRules` | enum | `"keep-credentials"`, `"close-external-account"`, or `"ask-user"` |
 | `tools` | array | Tool definitions with name, description, risk, inputSchema |
 
 ## Manifest v2 Optional Fields
