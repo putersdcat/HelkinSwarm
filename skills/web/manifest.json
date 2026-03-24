@@ -1,0 +1,35 @@
+{
+  "domain": "web",
+  "version": "1.0",
+  "tools": [
+    {
+      "name": "web_search",
+      "description": "Search the web for current information. Returns titles, URLs, and text snippets for the top results. Use when the user asks about recent events, wants to look something up online, or needs information you don't already know.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search query (e.g. 'SpaceX Starship launch 2026', 'best TypeScript ORM')"
+          },
+          "count": {
+            "type": "number",
+            "description": "Number of results to return (1-10, default: 5)"
+          },
+          "market": {
+            "type": "string",
+            "description": "Market code for localized results (e.g. 'en-US', 'nl-NL'). Default: 'en-US'"
+          }
+        },
+        "required": ["query"]
+      }
+    }
+  ]
+}
