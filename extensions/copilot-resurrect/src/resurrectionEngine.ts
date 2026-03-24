@@ -168,7 +168,7 @@ export class ResurrectionEngine {
     Logger.separator();
     Logger.info(
       `Resurrection attempt #${state.count + 1} (today). ` +
-      `Trigger: ${trigger}. Strategy: ${isErrorTrigger ? 'RETRY in-place' : 'NEW session'}. ` +
+      `Trigger: ${trigger}. Strategy: ${isErrorTrigger ? 'RETRY in-place' : (config.startNewSession ? 'IGNITION prompt (new session)' : 'IGNITION prompt (existing session)')}. ` +
       `DryRun: ${dryRun}. ` +
       `Model: ${config.preferredModel || '(default)'}. ` +
       `Participant: ${config.chatParticipant || '(none)'}. ` +
