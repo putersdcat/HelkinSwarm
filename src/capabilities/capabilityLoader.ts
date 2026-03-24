@@ -5,7 +5,7 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { CapabilityManifestSchema } from './manifestSchema.js';
-import type { CapabilityManifest } from './manifestSchema.js';
+import type { CapabilityManifest, MaintenanceTask } from './manifestSchema.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 
 // ---------------------------------------------------------------------------
@@ -34,6 +34,31 @@ export function getManifest(domain: string): CapabilityManifest | undefined {
 
 export function getLinkableSkills(): CapabilityManifest[] {
   return [...manifestRegistry.values()].filter((m) => m.linkConfig);
+}
+
+/**
+ * Get all loaded manifests (for lifecycle management and maintenance sweeps).
+ */
+export function getAllManifests(): CapabilityManifest[] {
+  return [...manifestRegistry.values()];
+}
+
+/**
+ * Collect all maintenanceTasks across installed skills, tagged with domain.
+ */
+export function getAllMaintenanceTasks(): Array<{
+  domain: string;
+  task: MaintenanceTask;
+}> {
+  const tasks: Array<{ domain: string; task: MaintenanceTask }> = [];
+  for (const manifest of manifestRegistry.values()) {
+    if (manifest.maintenanceTasks) {
+      for (const task of manifest.maintenanceTasks) {
+        tasks.push({ domain: manifest.domain, task });
+      }
+    }
+  }
+  return tasks;
 }
 
 export function registerHandler(toolName: string, handler: ToolHandler): void {

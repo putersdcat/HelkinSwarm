@@ -45,7 +45,10 @@ export type TelemetryEventName =
   | 'PendingIntentRecovered'
   | 'StaleAckRecovered'
   | 'StateLoaded'
-  | 'StateSaved';
+  | 'StateSaved'
+  | 'SkillLifecycleAction'
+  | 'SkillCredentialRevoked'
+  | 'MaintenanceSweepCompleted';
 
 // ---------------------------------------------------------------------------
 // Session Tracer — maps events to trace phases for Dev Console (#140)

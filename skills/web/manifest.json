@@ -39,5 +39,13 @@
   "deploymentScenario": "personal-user-centric",
   "onboardingMethod": "automatic-agentic",
   "lifecycleRules": "keep-credentials",
-  "externalAccountsNeeded": ["Bing Search API key"]
+  "externalAccountsNeeded": ["Bing Search API key"],
+  "maintenanceTasks": [
+    {
+      "name": "verify-bing-api-key",
+      "type": "scheduled",
+      "schedule": "0 0 0 * * 1",
+      "description": "Verify Bing Search API key is valid by making a test query"
+    }
+  ]
 }

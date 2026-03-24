@@ -33,6 +33,7 @@ export const MaintenanceTask = z.object({
   schedule: z.string().optional(),
   description: z.string().min(1),
 });
+export type MaintenanceTask = z.infer<typeof MaintenanceTask>;
 
 export const SoftOnboarding = z.object({
   preferredAddress: z.string().optional(),

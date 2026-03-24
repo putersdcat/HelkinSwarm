@@ -13,6 +13,7 @@ import './hookReceiver.js';
 import './devLoopRelay.js';
 import './graphNotificationHandler.js';
 import './subscriptionRenewalTimer.js';
+import './maintenanceSweepTimer.js';
 
 // Orchestrator + activity registrations (Phase 2)
 import '../orchestrator/overseer.js';
