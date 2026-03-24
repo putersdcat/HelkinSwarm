@@ -73,6 +73,7 @@ async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
             type: ActivityTypes.Message,
             id: ackActivityId,
             text: messageText,
+            textFormat: 'markdown',
           });
           // Cache under ack ID so reply-with-quote can resolve full text (#166)
           cacheSentMessage(ackActivityId, messageText);
@@ -80,7 +81,11 @@ async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
           await clearPendingAckId(input.userId, conversationId);
         } else {
           // No ack stored (e.g. first reply after container restart) — fall back to new message
-          const response = await turnContext.sendActivity(messageText);
+          const response = await turnContext.sendActivity({
+            type: ActivityTypes.Message,
+            text: messageText,
+            textFormat: 'markdown',
+          });
           if (response?.id) {
             cacheSentMessage(response.id, messageText);
           }
