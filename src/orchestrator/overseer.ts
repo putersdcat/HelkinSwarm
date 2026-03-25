@@ -26,7 +26,9 @@ import type { DevLoopContext } from '../devloop/radioProtocol.js';
 /** Spinner starts after this many ms. Only long turns get spinner updates. */
 const SPINNER_INITIAL_DELAY_MS = 8_000;
 /** Interval between spinner frame updates once started. */
-const SPINNER_INTERVAL_MS = 5_000;
+const SPINNER_INTERVAL_MS = 8_000;
+/** Hard cap on spinner ticks to prevent quadratic replay overhead in Durable Functions. */
+const MAX_SPINNER_TICKS = 6;
 
 export interface NewMessageEvent {
   userMessage: string;
@@ -119,9 +121,14 @@ df.app.orchestration('overseer', function* (context) {
   try {
     let sessionDone = false;
     let timedOut = false;
+    let spinnerTicks = 0;
 
     while (!sessionDone && !timedOut) {
-      const winner: df.Task = yield context.df.Task.any([sessionTask, sessionTimer, spinnerTimer]);
+      // Only race spinner if we haven't hit the cap
+      const raceTasks = spinnerTicks < MAX_SPINNER_TICKS
+        ? [sessionTask, sessionTimer, spinnerTimer]
+        : [sessionTask, sessionTimer];
+      const winner: df.Task = yield context.df.Task.any(raceTasks);
 
       if (winner === sessionTimer) {
         timedOut = true;
@@ -140,13 +147,16 @@ df.app.orchestration('overseer', function* (context) {
         context.df.continueAsNew(state);
         return;
       } else if (winner === spinnerTimer) {
-        // Spinner tick — update ack in-place, then create next timer and loop (#267)
+        // Spinner tick — update ack in-place, capped to prevent replay storm (#267)
+        spinnerTicks++;
         yield context.df.callActivity('spinnerHeartbeatActivity', {
           userId: state.userId,
           correlationTag,
         } satisfies SpinnerHeartbeatInput);
-        spinnerDeadline = new Date(context.df.currentUtcDateTime.getTime() + SPINNER_INTERVAL_MS);
-        spinnerTimer = context.df.createTimer(spinnerDeadline);
+        if (spinnerTicks < MAX_SPINNER_TICKS) {
+          spinnerDeadline = new Date(context.df.currentUtcDateTime.getTime() + SPINNER_INTERVAL_MS);
+          spinnerTimer = context.df.createTimer(spinnerDeadline);
+        }
       } else {
         // Session completed
         sessionDone = true;
@@ -256,9 +266,13 @@ function* processTurn(
   try {
     let sessionDone = false;
     let timedOut = false;
+    let spinnerTicks = 0;
 
     while (!sessionDone && !timedOut) {
-      const winner = yield context.df.Task.any([sessionTask, sessionTimer, spinnerTimer]) as df.Task;
+      const raceTasks = spinnerTicks < MAX_SPINNER_TICKS
+        ? [sessionTask, sessionTimer, spinnerTimer]
+        : [sessionTask, sessionTimer];
+      const winner = yield context.df.Task.any(raceTasks) as df.Task;
 
       if (winner === sessionTimer) {
         timedOut = true;
@@ -277,12 +291,15 @@ function* processTurn(
         context.df.continueAsNew(state);
         return;
       } else if (winner === spinnerTimer) {
+        spinnerTicks++;
         yield context.df.callActivity('spinnerHeartbeatActivity', {
           userId: state.userId,
           correlationTag,
         } satisfies SpinnerHeartbeatInput);
-        spinnerDeadline = new Date(context.df.currentUtcDateTime.getTime() + SPINNER_INTERVAL_MS);
-        spinnerTimer = context.df.createTimer(spinnerDeadline);
+        if (spinnerTicks < MAX_SPINNER_TICKS) {
+          spinnerDeadline = new Date(context.df.currentUtcDateTime.getTime() + SPINNER_INTERVAL_MS);
+          spinnerTimer = context.df.createTimer(spinnerDeadline);
+        }
       } else {
         sessionDone = true;
         sessionTimer.cancel();

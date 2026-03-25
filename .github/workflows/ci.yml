@@ -8,12 +8,7 @@
 name: CI
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+  workflow_dispatch:  # CI disabled — manual trigger only to save Actions minutes
 
 # Cancel in-progress CI runs on the same branch (saves runner minutes)
 concurrency:
