@@ -65,7 +65,15 @@ jobs:
         run: |
           az group create \
             --name ${{ env.RESOURCE_GROUP }} \
-            --location eastus2
+            --location eastus2 \
+            --tags \
+              "project=HelkinSwarm" \
+              "component=router" \
+              "env=global" \
+              "repo=putersdcat/HelkinSwarm" \
+              "owner=putersdcat" \
+              "managedBy=deploy-router.yml" \
+              "deployedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
       - name: Migrate — remove legacy Microsoft.Web/sites router if it exists
         continue-on-error: true

@@ -136,7 +136,15 @@ jobs:
             --name "${{ env.RESOURCE_GROUP }}" \
             --location eastus2 \
             --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
-            --tags "project=HelkinSwarm" "userAlias=${{ env.USER_ALIAS }}" "managedBy=deploy-stamp.yml"
+            --tags \
+              "project=HelkinSwarm" \
+              "userAlias=${{ env.USER_ALIAS }}" \
+              "component=stamp" \
+              "env=productive" \
+              "repo=putersdcat/HelkinSwarm" \
+              "owner=putersdcat" \
+              "managedBy=deploy-stamp.yml" \
+              "deployedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
       - name: Reset UAMI role assignments (idempotency pre-check)
         if: steps.changes.outputs.infraChanged == 'true'

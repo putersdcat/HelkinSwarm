@@ -69,7 +69,14 @@ jobs:
           az group create \
             --name ${{ env.RESOURCE_GROUP }} \
             --location eastus2 \
-            --tags "project=helkinswarm" "component=tabs" "env=global"
+            --tags \
+              "project=HelkinSwarm" \
+              "component=tabs" \
+              "env=global" \
+              "repo=putersdcat/HelkinSwarm" \
+              "owner=putersdcat" \
+              "managedBy=deploy-tabs.yml" \
+              "deployedAt=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
       - name: Resolve CICD SP Object ID
         id: cicd-sp
