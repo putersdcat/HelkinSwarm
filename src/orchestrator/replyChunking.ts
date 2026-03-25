@@ -4,6 +4,8 @@ const MULTIPART_PREFIX_RESERVE = 32;
 const FAKE_ATTACHMENT_PATTERNS = [
   /attached as\s+[^\n.]+\.(md|markdown|txt|json)\.?/gi,
   /full (details|verbatim bodies|results?)\s+in attachment\.?/gi,
+  /full[^\n]{0,120}in attachment\.?/gi,
+  /in attachment\.?/gi,
   /see attachment\.?/gi,
 ];
 

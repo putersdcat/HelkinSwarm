@@ -31,11 +31,12 @@ describe('replyChunking', () => {
 
   it('removes false attachment claims from Teams replies', () => {
     const sanitized = sanitizeTeamsReplyText(
-      'Attached as HELM-Open-Issues-Full.md. Full details in attachment. See attachment.',
+      'Attached as HELM-Open-Issues-Full.md. Full details in attachment. See attachment. Full list + verbatim bodies in attachment.',
     );
 
     expect(sanitized).not.toContain('Attached as HELM-Open-Issues-Full.md');
     expect(sanitized).not.toContain('Full details in attachment');
+    expect(sanitized).not.toContain('verbatim bodies in attachment');
     expect(sanitized).toContain('I cannot attach files in Teams yet');
   });
 });
