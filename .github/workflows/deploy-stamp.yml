@@ -51,6 +51,7 @@ env:
   AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
   AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
   AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  AZURE_CLIENT_OBJECT_ID: ${{ vars.AZURE_CLIENT_OBJECT_ID }}
   USER_PRINCIPAL_ID: ${{ vars.USER_PRINCIPAL_ID }}
   # Prefer explicit dispatch input; fall back to repo variable for push-triggered runs
   USER_ALIAS: ${{ github.event.inputs.USER_ALIAS || vars.USER_ALIAS }}
@@ -193,7 +194,7 @@ jobs:
               --name "DelegatedAuthClientSecret" --query "value" -o tsv 2>/dev/null || echo "")
           fi
 
-          CICD_PRINCIPAL_ID=$(az ad sp show --id "${{ env.AZURE_CLIENT_ID }}" --query id -o tsv 2>/dev/null || echo "")
+          CICD_PRINCIPAL_ID="${{ env.AZURE_CLIENT_OBJECT_ID }}"
           echo "ℹ️ CICD principal object id: ${CICD_PRINCIPAL_ID}"
 
           DEPLOY_OUT=$(az deployment group create \
