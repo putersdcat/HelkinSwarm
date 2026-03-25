@@ -150,6 +150,22 @@
     }
   }
 
+  function showAuthRequired(msg) {
+    var loading = document.getElementById("loading");
+    if (loading) loading.remove();
+
+    var appRoot = document.getElementById("app");
+    if (appRoot) {
+      appRoot.innerHTML =
+        '<div class="panel active">' +
+        '<div class="card">' +
+        '<h1>Authentication required</h1>' +
+        '<p>' + esc(msg || "Open this tab inside a signed-in Teams session with SSO available.") + '</p>' +
+        '</div>' +
+        '</div>';
+    }
+  }
+
   // --- Router ---
 
   var router = {
@@ -436,9 +452,10 @@
       })
       .then(function (context) {
         // Store user OID for API auth (context.user.id is AAD Object ID in TeamsJS v2)
-        if (context && context.user && context.user.id) {
-          _userOid = context.user.id;
+        if (!(context && context.user && context.user.id)) {
+          throw new Error("Teams user context unavailable.");
         }
+        _userOid = context.user.id;
 
         if (context && context.app && context.app.theme) {
           applyTheme(context.app.theme);
@@ -451,29 +468,26 @@
           if (nav) nav.style.display = "none";
         }
 
-        window.addEventListener("hashchange", function () {
+        return getAadToken().then(function (token) {
+          if (!token) {
+            throw new Error("Teams SSO token unavailable.");
+          }
+
+          window.addEventListener("hashchange", function () {
+            router.render();
+          });
+
+          // Set initial route
+          var hash = window.location.hash.replace("#", "") || "get-started";
+          window.location.hash = hash;
+          // Remove loading panel
+          var loading = document.getElementById("loading");
+          if (loading) loading.remove();
           router.render();
         });
-
-        // Set initial route
-        var hash = window.location.hash.replace("#", "") || "get-started";
-        window.location.hash = hash;
-        // Remove loading panel
-        var loading = document.getElementById("loading");
-        if (loading) loading.remove();
-        router.render();
       })
       .catch(function (err) {
-        // Outside Teams — still render for standalone testing
-        console.warn("Teams SDK init failed (may be outside Teams):", err);
-        window.addEventListener("hashchange", function () {
-          router.render();
-        });
-        var hash = window.location.hash.replace("#", "") || "get-started";
-        window.location.hash = hash;
-        var loading = document.getElementById("loading");
-        if (loading) loading.remove();
-        router.render();
+        showAuthRequired(err && err.message ? err.message : "Teams authentication is required.");
       });
   });
 })();
