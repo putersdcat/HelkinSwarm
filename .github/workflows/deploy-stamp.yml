@@ -177,12 +177,7 @@ jobs:
           set +e
           echo "🚀 Deploying Bicep for stamp '${{ env.USER_ALIAS }}'..."
 
-          OAUTH_UPDATE_SHOULD_RUN="false"
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            OAUTH_UPDATE_SHOULD_RUN="${{ github.event.inputs.CREATE_OAUTH_CONNECTION || 'false' }}"
-          else
-            OAUTH_UPDATE_SHOULD_RUN="true"
-          fi
+          OAUTH_UPDATE_SHOULD_RUN="${{ github.event.inputs.CREATE_OAUTH_CONNECTION || 'false' }}"
 
           echo "ℹ️ OAuth connection update enabled: ${OAUTH_UPDATE_SHOULD_RUN}"
 
