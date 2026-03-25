@@ -37,6 +37,11 @@ import { toolRegistry } from '../tools/toolRegistry.js';
 import { parseDevLoopMessage } from '../devloop/radioProtocol.js';
 import { createPendingIntent } from '../orchestrator/pendingIntentStore.js';
 import { getBearerToken } from '../auth/identity.js';
+import { buildSkillLinkSigninCard, buildSkillRelinkSigninCard } from './linkCards.js';
+
+interface SignInLinkCapableAdapter {
+  getSignInLink?(context: TurnContext, connectionName: string): Promise<string>;
+}
 
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
@@ -745,11 +750,14 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return;
     }
 
-    const card = CardFactory.oauthCard(
-      connectionName,
-      `🔗 Link ${displayName}`,
-      description,
-    );
+    const signInLink = await this.getSkillSignInLink(context, connectionName);
+    const card = signInLink
+      ? buildSkillLinkSigninCard(displayName, description, signInLink)
+      : CardFactory.oauthCard(
+          connectionName,
+          `🔗 Link ${displayName}`,
+          description,
+        );
     await this.sendFreshMessage(context, { attachments: [card] });
   }
 
@@ -825,12 +833,35 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
 
     // Then initiate the linking flow
-    const card = CardFactory.oauthCard(
-      manifest.linkConfig.connectionName,
-      `🔗 Relink ${manifest.linkConfig.displayName}`,
-      manifest.linkConfig.description,
-    );
+    const signInLink = await this.getSkillSignInLink(context, manifest.linkConfig.connectionName);
+    const card = signInLink
+      ? buildSkillRelinkSigninCard(
+          manifest.linkConfig.displayName,
+          manifest.linkConfig.description,
+          signInLink,
+        )
+      : CardFactory.oauthCard(
+          manifest.linkConfig.connectionName,
+          `🔗 Relink ${manifest.linkConfig.displayName}`,
+          manifest.linkConfig.description,
+        );
     await this.sendFreshMessage(context, { attachments: [card] });
+  }
+
+  private async getSkillSignInLink(
+    context: TurnContext,
+    connectionName: string,
+  ): Promise<string | undefined> {
+    const adapter = context.adapter as SignInLinkCapableAdapter;
+    if (!adapter.getSignInLink) {
+      return undefined;
+    }
+
+    try {
+      return await adapter.getSignInLink(context, connectionName);
+    } catch {
+      return undefined;
+    }
   }
 
   /**
