@@ -22,6 +22,54 @@ export interface TurnTelemetryData {
   safetyPassed: boolean;
 }
 
+// EUR per 1M tokens (blended input/output average). (#254)
+const MODEL_COST_EUR_PER_M: Record<string, number> = {
+  'gpt-5': 18.00,
+  'gpt-5.4-mini': 1.80,
+  'o4-mini': 2.40,
+  'o3': 24.00,
+  'grok-4-1-fast-non-reasoning': 4.00,
+  'grok-4-1-fast-reasoning': 12.00,
+  'DeepSeek-V3.2': 1.00,
+  'FW-MiniMax-M2.5': 2.00,
+  'FW-Kimi-K2.5': 2.00,
+};
+
+// Container startup timestamp for uptime display. (#254)
+const STARTUP_TIME = Date.now();
+
+/**
+ * Estimate EUR cost for a given model and total token count.
+ * Returns undefined if the model is not in the cost table.
+ */
+export function estimateCostEur(model: string, totalTokens: number): number | undefined {
+  // Try exact match first, then longest-prefix match for versioned deployment names
+  let rate = MODEL_COST_EUR_PER_M[model];
+  if (rate === undefined) {
+    const lowerModel = model.toLowerCase();
+    const key = Object.keys(MODEL_COST_EUR_PER_M)
+      .filter((k) => lowerModel.startsWith(k.toLowerCase()))
+      .sort((a, b) => b.length - a.length)[0];
+    if (key) rate = MODEL_COST_EUR_PER_M[key];
+  }
+  if (rate === undefined) return undefined;
+  return (totalTokens / 1_000_000) * rate;
+}
+
+/**
+ * Format uptime since container startup as compact human-readable string.
+ */
+export function formatUptime(nowMs?: number): string {
+  const elapsed = (nowMs ?? Date.now()) - STARTUP_TIME;
+  const seconds = Math.floor(elapsed / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainMin = minutes % 60;
+  return remainMin > 0 ? `${hours}h${remainMin}m` : `${hours}h`;
+}
+
 /**
  * Returns true when the actual model satisfies the user's direct `/model` request.
  * Azure model identifiers often include a version/date suffix, so prefix matches count.
@@ -56,29 +104,37 @@ export function buildModelOverrideDisclosure(
 
 /**
  * Format a compact telemetry footer string for appending to bot replies.
- * Returns empty string if telemetry is off.
+ * In 'off' mode, still appends a minimal correlation ID suffix for traceability.
  *
  * Modes:
- *  - off:      ''
- *  - minimal:  `[E2E:1234ms|m:grok-4-1]`
- *  - standard: `[E2E:1234ms|m:grok-4-1|pt:800|ct:200|tools:2]`
- *  - verbose:  `[E2E:1234ms|m:grok-4-1|pt:800|ct:200|prompt:120ms|llm:980ms|tools:outlook_send(45ms),graph_read(32ms)|safe:✓|corr:abc123]`
+ *  - off:      `[corr:abc12345]`
+ *  - minimal:  `[E2E:1234ms|m:grok-4.1f|💰€0.02|🕐1h23m]`
+ *  - standard: `[E2E:1234ms|m:grok-4.1f|pt:800|ct:200|tools:2|💰€0.02|🕐1h23m|corr:abc12345]`
+ *  - verbose:  full breakdown with spans, tool names, safety, cost, uptime, correlation
  */
 export function formatTelemetryFooter(
   mode: TelemetryMode,
   data: TurnTelemetryData,
 ): string {
-  if (mode === 'off') return '';
+  const shortCorr = data.correlationId.slice(0, 8);
+
+  if (mode === 'off') {
+    return `\n\n\`[corr:${shortCorr}]\``;
+  }
 
   const shortModel = abbreviateModel(data.model);
+  const totalTokens = data.promptTokens + data.completionTokens;
+  const cost = estimateCostEur(data.model, totalTokens);
+  const costStr = cost !== undefined ? `€${cost.toFixed(4)}` : '€?';
+  const uptime = formatUptime();
 
   if (mode === 'minimal') {
-    const line = `[E2E:${data.totalMs}ms|m:${shortModel}]`;
+    const line = `[E2E:${data.totalMs}ms|m:${shortModel}|💰${costStr}|🕐${uptime}]`;
     return '\n\n---\n`' + line + '`';
   }
 
   if (mode === 'standard') {
-    const line = `[E2E:${data.totalMs}ms|m:${shortModel}|pt:${data.promptTokens}|ct:${data.completionTokens}|tools:${data.toolCalls.length}]`;
+    const line = `[E2E:${data.totalMs}ms|m:${shortModel}|pt:${data.promptTokens}|ct:${data.completionTokens}|tools:${data.toolCalls.length}|💰${costStr}|🕐${uptime}|corr:${shortCorr}]`;
     return '\n\n---\n`' + line + '`';
   }
 
@@ -101,7 +157,9 @@ export function formatTelemetryFooter(
   }
 
   parts.push(`safe:${data.safetyPassed ? '✓' : '✗'}`);
-  parts.push(`corr:${data.correlationId.slice(0, 8)}`);
+  parts.push(`💰${costStr}`);
+  parts.push(`🕐${uptime}`);
+  parts.push(`corr:${shortCorr}`);
 
   const line = `[${parts.join('|')}]`;
   return '\n\n---\n`' + line + '`';

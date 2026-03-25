@@ -20,7 +20,7 @@ import { toolRegistry } from '../tools/toolRegistry.js';
 import { canonicalizeInput } from './inputCanonicalizer.js';
 import { computeToolBudget } from './toolBudgetScaler.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
-import { buildModelOverrideDisclosure, formatTelemetryFooter, isTelemetryEnabled } from './turnTelemetry.js';
+import { buildModelOverrideDisclosure, formatTelemetryFooter } from './turnTelemetry.js';
 import type { TurnTelemetryData, TelemetrySpan } from './turnTelemetry.js';
 import { getEnvConfig } from '../config/envConfig.js';
 
@@ -433,9 +433,10 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     replyMessage = responseContent;
   }
 
-  // 5a. Append debug telemetry footer if enabled (#174, spec: 0n)
+  // 5a. Append debug telemetry footer (#174, #254, spec: 0n)
+  // Always appended — even in 'off' mode, a correlation ID suffix is shown.
   const envConfig = getEnvConfig();
-  if (isTelemetryEnabled(envConfig)) {
+  {
     const turnEndTime = context.df.currentUtcDateTime.getTime();
     const spans: TelemetrySpan[] = [];
     const toolNames: string[] = toolResults?.results?.map(
