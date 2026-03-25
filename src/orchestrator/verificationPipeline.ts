@@ -11,6 +11,25 @@ import type { ScopedToken } from '../auth/scopedTokenMinter.js';
 // Types
 // ---------------------------------------------------------------------------
 
+export type SpotCheckPolicy = 'disabled' | 'advisory' | 'enforced';
+
+export type SpotCheckOutcome =
+  | 'no-check-required'
+  | 'sample-verified'
+  | 'verify-all-passed'
+  | 'verifier-missing'
+  | 'threshold-exceeded'
+  | 'error';
+
+export interface SpotCheckDetails {
+  outcome: SpotCheckOutcome;
+  sampledCount: number;
+  matchedCount: number;
+  mismatchedIds: string[];
+  verifierUsed: string | null;
+  totalIds: number;
+}
+
 export interface VerificationInput {
   correlationId: string;
   sessionId: string;
@@ -27,6 +46,8 @@ export interface VerificationInput {
   confirmationResponse?: 'approved' | 'denied' | 'timeout';
   /** Scoped token for the tool call */
   scopedToken?: ScopedToken;
+  /** Spot-check policy: 'disabled' skips, 'advisory' logs only, 'enforced' hard-fails on mismatch or missing verifier */
+  spotCheckPolicy?: SpotCheckPolicy;
 }
 
 export interface VerificationResult {
@@ -43,6 +64,8 @@ export interface VerificationStepResult {
   passed: boolean;
   details?: string;
   latencyMs: number;
+  /** Structured spot-check telemetry (present only for spot-check step) */
+  spotCheckDetails?: SpotCheckDetails;
 }
 
 // ---------------------------------------------------------------------------
@@ -78,7 +101,9 @@ export async function runVerificationPipeline(input: VerificationInput): Promise
   // -------------------------------------------------------------------------
   const spotCheckResult = await runSpotCheck(input);
   steps.push(spotCheckResult);
-  // Spot-check failures don't hard-fail — they flag for user review
+  if (!spotCheckResult.passed) {
+    return makeResult(false, input.correlationId, steps, false, `Spot-check failed: ${spotCheckResult.details}`);
+  }
 
   // -------------------------------------------------------------------------
   // Step 4: Prompt shields on sub-agent output (uses minimized data)
@@ -271,57 +296,104 @@ function minimizeData(output: unknown, toolName: string): { result: Verification
   };
 }
 
+// ---------------------------------------------------------------------------
+// Fisher-Yates partial shuffle — returns a random sample of `sampleSize` items
+// ---------------------------------------------------------------------------
+
+function fisherYatesSample<T>(arr: readonly T[], sampleSize: number): T[] {
+  const copy = [...arr];
+  const n = Math.min(sampleSize, copy.length);
+  for (let i = copy.length - 1; i > copy.length - 1 - n && i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i]!, copy[j]!] = [copy[j]!, copy[i]!];
+  }
+  return copy.slice(copy.length - n);
+}
+
+function getVerifierName(toolName: string): string | null {
+  if (toolName.startsWith('github_')) return 'github';
+  if (toolName.startsWith('outlook_')) return 'outlook';
+  return null;
+}
+
 async function runSpotCheck(input: VerificationInput): Promise<VerificationStepResult> {
   const start = Date.now();
+  const policy: SpotCheckPolicy = input.spotCheckPolicy ?? 'advisory';
   const threshold = safetyConfig.spotCheckVerifyAllThreshold;
   const sampleSize = safetyConfig.spotCheckSampleSize;
 
+  if (policy === 'disabled') {
+    return {
+      step: 'spot-check',
+      passed: true,
+      details: 'Spot-check disabled by policy',
+      latencyMs: Date.now() - start,
+      spotCheckDetails: { outcome: 'no-check-required', sampledCount: 0, matchedCount: 0, mismatchedIds: [], verifierUsed: null, totalIds: 0 },
+    };
+  }
+
   if (!input.spotCheckIds || input.spotCheckIds.length === 0) {
-    return { step: 'spot-check', passed: true, details: 'No IDs to spot-check', latencyMs: Date.now() - start };
+    return {
+      step: 'spot-check',
+      passed: true,
+      details: 'No IDs to spot-check',
+      latencyMs: Date.now() - start,
+      spotCheckDetails: { outcome: 'no-check-required', sampledCount: 0, matchedCount: 0, mismatchedIds: [], verifierUsed: null, totalIds: 0 },
+    };
   }
 
   const totalIds = input.spotCheckIds.length;
-  const idsToCheck =
-    totalIds <= threshold
-      ? input.spotCheckIds
-      : input.spotCheckIds.sort(() => Math.random() - 0.5).slice(0, sampleSize);
+  const verifyAll = totalIds <= threshold;
+  const idsToCheck = verifyAll
+    ? input.spotCheckIds
+    : fisherYatesSample(input.spotCheckIds, sampleSize);
 
-  // Resolve domain verifier from tool name
   const verifier = getDomainVerifier(input.toolName);
+  const verifierName = getVerifierName(input.toolName);
+
   if (!verifier) {
-    const mode = totalIds <= threshold ? 'full' : `sampled ${idsToCheck.length}/${totalIds}`;
+    const hardFail = policy === 'enforced';
     return {
       step: 'spot-check',
-      passed: true,
-      details: `Spot-check: ${mode} IDs selected (no domain verifier for ${input.toolName})`,
+      passed: !hardFail,
+      details: `No domain verifier for ${input.toolName}${hardFail ? ' — enforced policy, failing closed' : ' — advisory, passing through'}`,
       latencyMs: Date.now() - start,
+      spotCheckDetails: { outcome: 'verifier-missing', sampledCount: 0, matchedCount: 0, mismatchedIds: [], verifierUsed: null, totalIds },
     };
   }
 
-  // Run actual domain verification
   try {
     const failures = await verifier(idsToCheck, input);
-    const mode = totalIds <= threshold ? 'full' : `sampled ${idsToCheck.length}/${totalIds}`;
+    const matched = idsToCheck.length - failures.length;
+
     if (failures.length > 0) {
+      const hardFail = policy === 'enforced';
+      const mode = verifyAll ? 'full' : `sampled ${idsToCheck.length}/${totalIds}`;
       return {
         step: 'spot-check',
-        passed: false,
-        details: `Spot-check FAILED: ${mode} verified, ${failures.length} mismatches: ${failures.join(', ')}`,
+        passed: !hardFail,
+        details: `Spot-check ${mode}: ${failures.length} mismatches [${failures.join(', ')}]${hardFail ? ' — enforced, failing pipeline' : ' — advisory'}`,
         latencyMs: Date.now() - start,
+        spotCheckDetails: { outcome: 'threshold-exceeded', sampledCount: idsToCheck.length, matchedCount: matched, mismatchedIds: failures, verifierUsed: verifierName, totalIds },
       };
     }
+
+    const outcome: SpotCheckOutcome = verifyAll ? 'verify-all-passed' : 'sample-verified';
     return {
       step: 'spot-check',
       passed: true,
-      details: `Spot-check passed: ${mode} verified via domain verifier`,
+      details: `Spot-check passed: ${verifyAll ? 'all' : `${idsToCheck.length}/${totalIds} sampled`} verified via ${verifierName}`,
       latencyMs: Date.now() - start,
+      spotCheckDetails: { outcome, sampledCount: idsToCheck.length, matchedCount: matched, mismatchedIds: [], verifierUsed: verifierName, totalIds },
     };
   } catch (err) {
+    const hardFail = policy === 'enforced';
     return {
       step: 'spot-check',
-      passed: false,
-      details: `Spot-check error: ${err instanceof Error ? err.message : String(err)}`,
+      passed: !hardFail,
+      details: `Spot-check error: ${err instanceof Error ? err.message : String(err)}${hardFail ? ' — enforced, failing pipeline' : ' — advisory'}`,
       latencyMs: Date.now() - start,
+      spotCheckDetails: { outcome: 'error', sampledCount: idsToCheck.length, matchedCount: 0, mismatchedIds: [], verifierUsed: verifierName, totalIds },
     };
   }
 }

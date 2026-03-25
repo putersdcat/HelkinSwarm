@@ -47,6 +47,9 @@ appid.txt
 # pnpm lockfile is committed, but store is local
 .pnpm-store/
 
+# Archival research (v0 analysis, local only)
+ArchivalResearch/
+
 # Compiled ARM templates (generated from Bicep)
 infra/main.json
 
