@@ -73,16 +73,21 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     userMessage: userMessageForLlm,
     devLoopContext: input.devLoopContext,
   };
+  let spanStart = context.df.currentUtcDateTime.getTime();
   const prompt: PromptResult = yield context.df.callActivity(
     'buildPromptActivity',
     promptInput,
   );
+  const spans: TelemetrySpan[] = [];
+  spans.push({ label: 'prompt', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
 
   // 2. Call LLM (global frontier model via Foundry client)
+  spanStart = context.df.currentUtcDateTime.getTime();
   const llmResult: LlmResult = yield context.df.callActivity(
     'llmActivity',
     { ...prompt, correlationId, modelOverride: input.modelOverride, imageUrls: input.imageUrls },
   );
+  spans.push({ label: 'llm', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
 
   // Cumulative token tracking across all LLM calls in this session (#253)
   let cumulativeTokensUsed = llmResult.tokensUsed;
@@ -182,6 +187,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
     if (safetyPassed) {
       // Split tool calls: sub-agent isolated vs direct dispatch (#47)
+      const toolDispatchStart = context.df.currentUtcDateTime.getTime();
       const subAgentCalls: typeof toolCallsForDispatch = [];
       const directCalls: typeof toolCallsForDispatch = [];
 
@@ -276,6 +282,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         results: mergedResults,
         totalCalls: mergedResults.length,
       };
+      spans.push({ label: 'tools', durationMs: context.df.currentUtcDateTime.getTime() - toolDispatchStart });
 
       // 3b. Multi-round tool dispatch loop (#253)
       // The LLM can request additional tool calls after seeing results,
@@ -297,6 +304,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         enableRetry: true,
         tools: allToolSchemas,
       };
+      spanStart = context.df.currentUtcDateTime.getTime();
       let followUp: LlmResult = yield context.df.callActivity('llmFollowUpActivity', followUpInput);
       cumulativeTokensUsed += followUp.tokensUsed;
       cumulativePromptTokens += followUp.promptTokens;
@@ -414,6 +422,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       }
 
       responseContent = followUp.content;
+      spans.push({ label: 'followup', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
     }
   }
 
@@ -438,7 +447,6 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   const envConfig = getEnvConfig();
   {
     const turnEndTime = context.df.currentUtcDateTime.getTime();
-    const spans: TelemetrySpan[] = [];
     const toolNames: string[] = toolResults?.results?.map(
       (r: { toolName: string }) => r.toolName,
     ) ?? [];
