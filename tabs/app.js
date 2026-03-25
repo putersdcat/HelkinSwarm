@@ -26,10 +26,16 @@
     return d > 0 ? d + "d " + h + "h " + m + "m" : h + "h " + m + "m";
   }
 
-  // Phase type icons for trace tree (#140)
+  // Phase type icons for trace tree (#140, #269)
+  // Enriched type names from sessionTracer.ts TracePhaseType enum
   var PHASE_ICONS = {
-    llm: "🤖", tool: "🔧", verification: "🛡️",
-    memory: "🧠", reply: "💬", orchestrator: "⚙️"
+    // Current enriched type names
+    "llm-call": "🤖", "tool-dispatch": "🔧", "verification": "🛡️",
+    "memory": "🧠", "reply-send": "💬", "orchestrator": "⚙️",
+    "bot-receive": "📨", "prompt-build": "📝", "subagent": "🤖",
+    "executor": "⚙️", "confirmation": "🔒",
+    // Legacy aliases (kept for backwards compatibility with old traces)
+    "llm": "🤖", "tool": "🔧", "reply": "💬"
   };
 
   /**
@@ -343,6 +349,18 @@
               : "<p>No hooks registered.</p>") +
             "</div>" +
 
+            // Recent traces list
+            '<div class="card"><h2>Recent Traces</h2>' +
+            '<div style="display:flex;gap:8px;margin-bottom:8px">' +
+            '<input id="trace-since" type="datetime-local" ' +
+            'style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px">' +
+            '<input id="trace-until" type="datetime-local" ' +
+            'style="padding:4px 8px;border:1px solid var(--border);border-radius:4px;font-size:12px">' +
+            '<button id="trace-filter-btn" class="cmd-btn">Filter</button>' +
+            '<button id="trace-clear-btn" class="cmd-btn" style="background:var(--muted)">Clear</button></div>' +
+            '<div id="recent-traces"><p>Loading...</p></div>' +
+            '</div>' +
+
             // Correlation search
             '<div class="card"><h2>Correlation Search</h2>' +
             '<div style="display:flex;gap:8px;margin-bottom:8px">' +
@@ -365,6 +383,70 @@
                 .catch(function (err) { btn.textContent = "Error: " + err.message; });
             });
           });
+
+          // Load and render recent traces
+          function loadRecentTraces(since, until) {
+            var container = document.getElementById("recent-traces");
+            if (!container) return;
+            container.innerHTML = "<p>Loading...</p>";
+            var url = "traces?limit=20";
+            if (since) url += "&since=" + encodeURIComponent(since);
+            if (until) url += "&until=" + encodeURIComponent(until);
+            apiCall(url)
+              .then(function (data) {
+                var recent = (data.recent) || [];
+                if (recent.length === 0) {
+                  container.innerHTML = "<p>No traces yet — send a message to the bot to generate one.</p>";
+                  return;
+                }
+                var rows = recent.map(function (t) {
+                  return "<tr><td><a class=\"trace-link\" data-corr=\"" + esc(t.correlationId) + "\" href=\"#\">" +
+                    esc(t.correlationId) + "</a></td>" +
+                    "<td>" + new Date(t.turnStartedAt).toLocaleString() + "</td>" +
+                    "<td>" + t.totalMs + "ms</td>" +
+                    "<td>" + t.phaseCount + "</td></tr>";
+                }).join("");
+                container.innerHTML = "<table><tr><th>Correlation ID</th><th>Started</th><th>Total</th><th>Phases</th></tr>" +
+                  rows + "</table>";
+                // Wire trace row click — fills search box and triggers search
+                container.querySelectorAll(".trace-link").forEach(function (a) {
+                  a.addEventListener("click", function (e) {
+                    e.preventDefault();
+                    var corrId = a.getAttribute("data-corr");
+                    var inp = document.getElementById("corr-input");
+                    if (inp) { inp.value = corrId; }
+                    var btn = document.getElementById("corr-search-btn");
+                    if (btn) btn.click();
+                  });
+                });
+              })
+              .catch(function (err) {
+                container.innerHTML = "<p class=\"error-msg\">" + esc(err.message) + "</p>";
+              });
+          }
+          loadRecentTraces();
+
+          // Wire time-range filter
+          var filterBtn = document.getElementById("trace-filter-btn");
+          if (filterBtn) {
+            filterBtn.addEventListener("click", function () {
+              var sinceEl = document.getElementById("trace-since");
+              var untilEl = document.getElementById("trace-until");
+              var since = sinceEl && sinceEl.value ? new Date(sinceEl.value).toISOString() : undefined;
+              var until = untilEl && untilEl.value ? new Date(untilEl.value).toISOString() : undefined;
+              loadRecentTraces(since, until);
+            });
+          }
+          var clearBtn = document.getElementById("trace-clear-btn");
+          if (clearBtn) {
+            clearBtn.addEventListener("click", function () {
+              var sinceEl = document.getElementById("trace-since");
+              var untilEl = document.getElementById("trace-until");
+              if (sinceEl) sinceEl.value = "";
+              if (untilEl) untilEl.value = "";
+              loadRecentTraces();
+            });
+          }
 
           // Wire correlation search
           var searchBtn = document.getElementById("corr-search-btn");

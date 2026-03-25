@@ -41,9 +41,109 @@ The architecture uses a **global SPA + per-stamp backends** pattern:
 │  GET /api/tab/dashboard → TabDashboard                      │
 │  GET /api/tab/dev-console → TabDevConsole                    │
 │  GET /api/tab/sessions → Running sessions list               │
-│  GET /api/tab/traces?corr={id} → Trace for correlation ID  │
+│  GET /api/tab/traces?corr={id} → Trace tree + relay msgs    │
+│  GET /api/tab/traces?limit=N&since=ISO&until=ISO → Recent   │
+│  POST /api/tab/sessions/{id}/terminate → Kill session        │
 │  GET /api/tab/health → Health status for this stamp         │
 └─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 2a. Trace Endpoint API Contract (issue #269)
+
+The `/api/tab/traces` endpoint serves two modes:
+
+### Mode A: Recent traces list (no `corr` param or `corr` < 3 chars)
+
+```
+GET /api/tab/traces?limit=20&since=2026-03-01T00:00:00Z&until=2026-03-31T23:59:59Z
+Authorization: Bearer <AAD token>  (owner-only)
+```
+
+**Response:**
+```json
+{
+  "recent": [
+    {
+      "correlationId": "DL-20260325220200-A1B2",
+      "turnStartedAt": "2026-03-25T22:02:00.000Z",
+      "totalMs": 3421,
+      "phaseCount": 12
+    }
+  ]
+}
+```
+
+Query params: `limit` (default 30, max 100), `since` (ISO timestamp), `until` (ISO timestamp).
+
+### Mode B: Trace tree for a specific correlation ID
+
+```
+GET /api/tab/traces?corr=DL-20260325220200-A1B2
+```
+
+**Response:**
+```json
+{
+  "correlationTag": "DL-20260325220200-A1B2",
+  "messages": [...],
+  "count": 4,
+  "traceTree": {
+    "correlationId": "DL-20260325220200-A1B2",
+    "userId": "aad-oid-of-user",
+    "turnStartedAt": "2026-03-25T22:02:00.000Z",
+    "totalMs": 3421,
+    "phases": [
+      {
+        "id": "BotMessageReceived-1711400520000",
+        "name": "BotMessageReceived",
+        "type": "bot-receive",
+        "startedAt": 0,
+        "durationMs": 12,
+        "status": "completed",
+        "children": [],
+        "detail": "BotMessageReceived",
+        "error": null
+      }
+    ]
+  }
+}
+```
+
+### TracePhase type values (`TracePhaseType` enum)
+
+| Type | Icon | Description |
+|------|------|-------------|
+| `bot-receive` | 📨 | Incoming message received by bot handler |
+| `prompt-build` | 📝 | Prompt assembly (context, persona, tools) |
+| `llm-call` | 🤖 | LLM API request/response |
+| `tool-dispatch` | 🔧 | Tool call dispatched to skill |
+| `subagent` | 🤖 | SubAgent tool execution |
+| `executor` | ⚙️ | Executor binding verified / scoped token |
+| `confirmation` | 🔒 | Human confirmation requested/received |
+| `reply-send` | 💬 | Final reply delivered to Teams |
+| `verification` | 🛡️ | Verification pipeline result |
+| `memory` | 🧠 | Memory read/write (Cosmos, skill vault) |
+| `orchestrator` | ⚙️ | Durable orchestrator lifecycle event |
+| `llm` | 🤖 | _(legacy alias for `llm-call`)_ |
+| `tool` | 🔧 | _(legacy alias for `tool-dispatch`)_ |
+| `reply` | 💬 | _(legacy alias for `reply-send`)_ |
+
+### TracePhase object shape
+
+```typescript
+interface TracePhase {
+  id: string;              // "${EventName}-${Date.now()}"
+  name: string;            // Telemetry event name, e.g. "LlmCallCompleted"
+  type: TracePhaseType;    // See table above
+  startedAt: number;       // Milliseconds offset from turnStartedAt
+  durationMs: number;      // Phase duration
+  status: 'running' | 'completed' | 'error' | 'skipped';
+  children: TracePhase[];  // Child phases (recursive)
+  detail?: string;         // Human-readable detail (model name, tool name, etc.)
+  error?: string;          // Error message if status === 'error'
+}
 ```
 
 ---
