@@ -38,6 +38,17 @@ FROM mcr.microsoft.com/azure-functions/node:4-node22
 ENV AzureWebJobsScriptRoot=/home/site/wwwroot \
     AzureFunctionsJobHost__Logging__Console__IsEnabled=true
 
+# The Functions host in the live router stamp has attempted to spawn Node from
+# /usr/bin/node. Ensure that path exists even if the base image only exposes
+# Node elsewhere (for example /usr/local/bin/node). Issue: #226.
+RUN if [ ! -x /usr/bin/node ]; then \
+            NODE_BIN="$(command -v node)"; \
+            if [ -z "$NODE_BIN" ]; then \
+                echo "node executable not found in base image" >&2; exit 1; \
+            fi; \
+            ln -sf "$NODE_BIN" /usr/bin/node; \
+        fi
+
 WORKDIR /home/site/wwwroot
 
 # Copy production node_modules, built output, and router config
