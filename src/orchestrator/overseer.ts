@@ -151,10 +151,11 @@ df.app.orchestration('overseer', function* (context) {
   state.lastActivityTimestamp = new Date().toISOString();
 
   // Append conversation turn to recentHistory for multi-turn coherence (#203)
+  // Use cleanResponse (pre-decoration) to avoid model-disclosure prefixes bleeding across turns
   const history = state.recentHistory ?? [];
   history.push(
     { role: 'user' as const, content: event.userMessage },
-    { role: 'assistant' as const, content: sessionResult.response },
+    { role: 'assistant' as const, content: sessionResult.cleanResponse ?? sessionResult.response },
   );
   // Keep last 10 entries (5 user+assistant pairs)
   state.recentHistory = history.slice(-10);
@@ -256,10 +257,11 @@ function* processTurn(
   state.lastActivityTimestamp = new Date().toISOString();
 
   // Append conversation turn to recentHistory (#203)
+  // Use cleanResponse (pre-decoration) to avoid model-disclosure prefixes bleeding across turns
   const history = state.recentHistory ?? [];
   history.push(
     { role: 'user' as const, content: event.userMessage },
-    { role: 'assistant' as const, content: sessionResult.response },
+    { role: 'assistant' as const, content: sessionResult.cleanResponse ?? sessionResult.response },
   );
   state.recentHistory = history.slice(-10);
 

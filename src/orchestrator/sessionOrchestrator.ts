@@ -39,6 +39,8 @@ export interface SessionInput {
 
 export interface SessionResult {
   response: string;
+  /** LLM output without model-disclosure prefix or telemetry — safe for recentHistory. */
+  cleanResponse: string;
   tokensUsed: number;
   /** Prompt tokens sent TO the model (context pressure metric). Fix: #137 */
   promptTokens: number;
@@ -374,6 +376,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
   // 5. Send reply to Teams (proactive)
   // For DevLoop sessions, wrap the response in protocol format (#147, #92)
+  const cleanResponse = responseContent; // Preserve pre-decoration LLM output for recentHistory
   let replyMessage = responseContent;
 
   const modelDisclosure = buildModelOverrideDisclosure(input.modelOverride, llmResult.model);
@@ -430,6 +433,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
   return {
     response: responseContent,
+    cleanResponse,
     tokensUsed: llmResult.tokensUsed,
     promptTokens: llmResult.promptTokens,
     model: llmResult.model,
