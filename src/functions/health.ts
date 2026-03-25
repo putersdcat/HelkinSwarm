@@ -61,7 +61,7 @@ export async function healthHandler(
 ): Promise<HttpResponseInit> {
   const env = getEnvConfig();
   const memoryStatus = await checkMemoryStatus();
-  const messagePath = getMessagePathSnapshot();
+  const messagePath = await getMessagePathSnapshot();
 
   const runtimeStatus = messagePath.status === 'error' ? 'error' : 'ok';
   const overallStatus: HealthResponse['status'] =

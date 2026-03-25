@@ -52,7 +52,7 @@ export async function routerHealthHandler(
   _context: InvocationContext,
 ): Promise<HttpResponseInit> {
   const env = getEnvConfig();
-  const messagePath = getMessagePathSnapshot();
+  const messagePath = await getMessagePathSnapshot();
   const routingConfig = await getUserMapStatus();
 
   const runtimeStatus: RouterHealthResponse['components']['runtime'] =
