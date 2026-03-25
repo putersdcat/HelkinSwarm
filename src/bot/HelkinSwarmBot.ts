@@ -48,6 +48,14 @@ interface SignInLinkCapableAdapter {
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
 
+  /**
+   * In-memory dedup cache for Teams adapter retries (#280).
+   * Maps activity.id → timestamp. Prevents the same HTTP POST from being
+   * processed twice when the adapter retries within milliseconds.
+   */
+  private readonly recentActivityIds = new Map<string, number>();
+  private static readonly DEDUP_TTL_MS = 30_000;
+
   private async sendFreshMessage(
     context: TurnContext,
     activity: { text?: string; attachments?: Attachment[]; textFormat?: string },
@@ -248,6 +256,26 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
   }
 
   private async handleIncomingMessage(context: TurnContext): Promise<void> {
+    // Dedup: Teams adapter may retry the same HTTP POST within seconds (#280).
+    // Reject duplicate activity IDs to prevent double-processing.
+    const activityId = context.activity.id;
+    if (activityId) {
+      const now = Date.now();
+      if (this.recentActivityIds.has(activityId)) {
+        console.info(`[HelkinSwarmBot] Duplicate activity ${activityId} — skipping`);
+        return;
+      }
+      this.recentActivityIds.set(activityId, now);
+      // Prune expired entries to prevent unbounded growth
+      if (this.recentActivityIds.size > 100) {
+        for (const [id, ts] of this.recentActivityIds) {
+          if (now - ts > HelkinSwarmBot.DEDUP_TTL_MS) {
+            this.recentActivityIds.delete(id);
+          }
+        }
+      }
+    }
+
     const userId = context.activity.from.aadObjectId;
     const userAlias =
       context.activity.from.name ?? context.activity.from.id ?? 'unknown';
