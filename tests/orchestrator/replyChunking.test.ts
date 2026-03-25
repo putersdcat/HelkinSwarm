@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { replyChunkingInternals, splitReplyIntoChunks } from '../../src/orchestrator/replyChunking.js';
+import {
+  replyChunkingInternals,
+  sanitizeTeamsReplyText,
+  splitReplyIntoChunks,
+} from '../../src/orchestrator/replyChunking.js';
 
 describe('replyChunking', () => {
   it('returns a single chunk for short messages', () => {
@@ -23,5 +27,15 @@ describe('replyChunking', () => {
 
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.every((chunk) => chunk.text.length <= replyChunkingInternals.MAX_REPLY_CHARS)).toBe(true);
+  });
+
+  it('removes false attachment claims from Teams replies', () => {
+    const sanitized = sanitizeTeamsReplyText(
+      'Attached as HELM-Open-Issues-Full.md. Full details in attachment. See attachment.',
+    );
+
+    expect(sanitized).not.toContain('Attached as HELM-Open-Issues-Full.md');
+    expect(sanitized).not.toContain('Full details in attachment');
+    expect(sanitized).toContain('I cannot attach files in Teams yet');
   });
 });

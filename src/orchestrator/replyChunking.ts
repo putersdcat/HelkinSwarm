@@ -1,6 +1,12 @@
 const MAX_REPLY_CHARS = 6_000;
 const MULTIPART_PREFIX_RESERVE = 32;
 
+const FAKE_ATTACHMENT_PATTERNS = [
+  /attached as\s+[^\n.]+\.(md|markdown|txt|json)\.?/gi,
+  /full (details|verbatim bodies|results?)\s+in attachment\.?/gi,
+  /see attachment\.?/gi,
+];
+
 export interface ReplyChunk {
   text: string;
   isMultipart: boolean;
@@ -9,8 +15,9 @@ export interface ReplyChunk {
 }
 
 export function splitReplyIntoChunks(message: string): ReplyChunk[] {
-  const safeMessage = message.trim()
-    ? message
+  const sanitizedMessage = sanitizeTeamsReplyText(message);
+  const safeMessage = sanitizedMessage.trim()
+    ? sanitizedMessage
     : 'I processed your request but have nothing to report back.';
 
   if (safeMessage.length <= MAX_REPLY_CHARS) {
@@ -78,3 +85,14 @@ export const replyChunkingInternals = {
   findSplitPoint,
   MAX_REPLY_CHARS,
 };
+
+export function sanitizeTeamsReplyText(message: string): string {
+  let sanitized = message;
+  for (const pattern of FAKE_ATTACHMENT_PATTERNS) {
+    sanitized = sanitized.replace(
+      pattern,
+      'I cannot attach files in Teams yet in this path — I will keep the reply inline and trimmed honestly.',
+    );
+  }
+  return sanitized;
+}
