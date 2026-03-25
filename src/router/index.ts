@@ -4,4 +4,4 @@
 // Spec ref: 0q-Multi-Instance-Architecture.md
 
 import './routerFunction.js';
-import '../functions/health.js';
+import './routerHealth.js';
