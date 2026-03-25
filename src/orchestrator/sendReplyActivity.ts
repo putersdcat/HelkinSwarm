@@ -16,11 +16,14 @@ import {
 import { cacheSentMessage } from '../bot/sentMessageCache.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { splitReplyIntoChunks } from './replyChunking.js';
+import { trackEvent } from '../observability/telemetry.js';
 
 export interface SendReplyInput {
   /** User AAD Object ID — used to look up ConversationReference from Cosmos. */
   userId: string;
   message: string;
+  /** Correlation ID for tracing (#269). */
+  correlationId?: string;
 }
 
 export interface SendReplyResult {
@@ -103,11 +106,17 @@ async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
         }
       },
     );
+    if (input.correlationId) {
+      trackEvent({ name: 'ReplySent', correlationId: input.correlationId, userId: input.userId, properties: { success: 'true', chunks: String(replyChunks.length) } });
+    }
     return { success: true };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     // Log prominently so it surfaces in Function App logs / Application Insights
     console.error('[sendReplyActivity] FATAL: Proactive reply to Teams failed:', message);
+    if (input.correlationId) {
+      trackEvent({ name: 'ReplySent', correlationId: input.correlationId, userId: input.userId, properties: { success: 'false', error: message } });
+    }
     // Throw so the Durable activity is marked failed and the failure is visible
     // in orchestration history. Let the overseer handle the failure cleanly.
     throw new Error(`Proactive reply failed: ${message}`);

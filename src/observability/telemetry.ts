@@ -50,22 +50,25 @@ export type TelemetryEventName =
   | 'SkillCredentialRevoked'
   | 'MaintenanceSweepCompleted'
   | 'ExecutorVerifiedSetBinding'
-  | 'StaleSessionCleanup';
+  | 'StaleSessionCleanup'
+  | 'BotMessageReceived'
+  | 'PromptBuilt'
+  | 'ReplySent';
 
 // ---------------------------------------------------------------------------
 // Session Tracer — maps events to trace phases for Dev Console (#140)
 // ---------------------------------------------------------------------------
 
 const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> = {
-  LlmCallStarted: 'llm',
-  LlmCallCompleted: 'llm',
-  LlmCallFailed: 'llm',
-  LlmFallbackTriggered: 'llm',
-  ToolExecuted: 'tool',
-  SubAgentToolExecuted: 'tool',
+  LlmCallStarted: 'llm-call',
+  LlmCallCompleted: 'llm-call',
+  LlmCallFailed: 'llm-call',
+  LlmFallbackTriggered: 'llm-call',
+  ToolExecuted: 'tool-dispatch',
+  SubAgentToolExecuted: 'subagent',
   VerificationPipelineResult: 'verification',
-  HumanConfirmationRequested: 'verification',
-  HumanConfirmationReceived: 'verification',
+  HumanConfirmationRequested: 'confirmation',
+  HumanConfirmationReceived: 'confirmation',
   SkillMemoryInjected: 'memory',
   StateLoaded: 'memory',
   StateSaved: 'memory',
@@ -74,6 +77,11 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   ContinueAsNewTriggered: 'orchestrator',
   DurableHookRegistered: 'orchestrator',
   DurableHookTriggered: 'orchestrator',
+  ExecutorVerifiedSetBinding: 'executor',
+  ScopedTokenMinted: 'executor',
+  BotMessageReceived: 'bot-receive',
+  PromptBuilt: 'prompt-build',
+  ReplySent: 'reply-send',
 };
 
 // ---------------------------------------------------------------------------

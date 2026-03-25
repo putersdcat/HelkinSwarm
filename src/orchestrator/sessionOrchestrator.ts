@@ -76,6 +76,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     userMessage: userMessageForLlm,
     devLoopContext: input.devLoopContext,
     quotedContext: input.quotedContext,
+    correlationId,
   };
   let spanStart = context.df.currentUtcDateTime.getTime();
   const prompt: PromptResult = yield context.df.callActivity(
@@ -489,6 +490,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   const replyInput: SendReplyInput = {
     userId: input.state.userId,
     message: replyMessage,
+    correlationId,
   };
   const replyResult: SendReplyResult = yield context.df.callActivity(
     'sendReplyActivity',

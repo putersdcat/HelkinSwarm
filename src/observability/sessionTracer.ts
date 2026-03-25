@@ -9,7 +9,22 @@
 // Types
 // ---------------------------------------------------------------------------
 
-export type TracePhaseType = 'llm' | 'tool' | 'verification' | 'memory' | 'reply' | 'orchestrator';
+export type TracePhaseType =
+  | 'bot-receive'     // Message received from Teams (#269)
+  | 'prompt-build'    // Prompt assembly (#269)
+  | 'llm-call'        // LLM request/response (#269 — replaces 'llm')
+  | 'tool-dispatch'   // Low-risk tool dispatch (#269 — replaces 'tool')
+  | 'subagent'        // Sub-agent tool execution (#269)
+  | 'executor'        // High-risk executor activity (#269)
+  | 'confirmation'    // Human confirmation gate (#269)
+  | 'reply-send'      // Reply sent to Teams (#269 — replaces 'reply')
+  | 'verification'    // Safety verification pipeline
+  | 'memory'          // Memory read/write
+  | 'orchestrator'    // Orchestrator lifecycle
+  // Legacy aliases — kept for backward compat
+  | 'llm'
+  | 'tool'
+  | 'reply';
 export type TracePhaseStatus = 'running' | 'completed' | 'error';
 
 export interface TracePhase {
@@ -150,14 +165,29 @@ export function getTraceTree(correlationId: string): TraceTree | undefined {
   return traceMap.get(correlationId);
 }
 
+export interface TraceListFilter {
+  limit?: number;
+  sinceIso?: string; // ISO timestamp — only traces after this time
+  untilIso?: string; // ISO timestamp — only traces before this time
+}
+
 /**
- * List recent trace trees (most recent first).
+ * List recent trace trees (most recent first) with optional time range filtering (#269).
  */
-export function listRecentTraces(limit = 20): Array<{ correlationId: string; turnStartedAt: string; totalMs: number; phaseCount: number }> {
+export function listRecentTraces(limitOrFilter: number | TraceListFilter = 20): Array<{ correlationId: string; turnStartedAt: string; totalMs: number; phaseCount: number }> {
+  const opts: TraceListFilter = typeof limitOrFilter === 'number'
+    ? { limit: limitOrFilter }
+    : limitOrFilter;
+  const limit = opts.limit ?? 20;
+  const sinceMs = opts.sinceIso ? new Date(opts.sinceIso).getTime() : 0;
+  const untilMs = opts.untilIso ? new Date(opts.untilIso).getTime() : Infinity;
+
   const results: Array<{ correlationId: string; turnStartedAt: string; totalMs: number; phaseCount: number }> = [];
   for (let i = traceOrder.length - 1; i >= 0 && results.length < limit; i--) {
     const tree = traceMap.get(traceOrder[i]);
     if (tree) {
+      const treeMs = new Date(tree.turnStartedAt).getTime();
+      if (treeMs < sinceMs || treeMs > untilMs) continue;
       results.push({
         correlationId: tree.correlationId,
         turnStartedAt: tree.turnStartedAt,

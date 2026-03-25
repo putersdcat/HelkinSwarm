@@ -39,6 +39,7 @@ import { createPendingIntent } from '../orchestrator/pendingIntentStore.js';
 import { getBearerToken } from '../auth/identity.js';
 import { buildSkillLinkSigninCard, buildSkillRelinkSigninCard } from './linkCards.js';
 import type { QuotedContext } from './quotedContext.js';
+import { trackEvent } from '../observability/telemetry.js';
 
 interface SignInLinkCapableAdapter {
   getSignInLink?(context: TurnContext, connectionName: string): Promise<string>;
@@ -237,6 +238,14 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       context.activity.from.name ?? context.activity.from.id ?? 'unknown';
     let messageText = (context.activity.text ?? '').trim();
     const correlationId = crypto.randomUUID();
+
+    // Emit bot-receive trace phase (#269)
+    trackEvent({
+      name: 'BotMessageReceived',
+      correlationId,
+      userId: userId ?? 'unknown',
+      properties: { userAlias, hasQuotedReply: String(!!this.extractQuotedReply(context)) },
+    });
 
     // Extract quoted reply context as structured metadata (#278)
     const quotedContext = this.extractQuotedReply(context);

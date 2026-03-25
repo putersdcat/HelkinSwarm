@@ -225,9 +225,14 @@ app.http('tab-traces', {
       const { getMessagesByCorrelation } = await import('../devloop/relayStore.js');
       const { getTraceTree, listRecentTraces } = await import('../observability/sessionTracer.js');
 
-      // If no corr param, return recent traces list
+      // If no corr param, return recent traces list with optional time range (#269)
       if (!corr || corr.length < 3) {
-        const recent = listRecentTraces(30);
+        const since = req.query.get('since') ?? undefined;
+        const until = req.query.get('until') ?? undefined;
+        const limitParam = req.query.get('limit');
+        const limit = limitParam ? Math.min(parseInt(limitParam, 10) || 30, 100) : 30;
+
+        const recent = listRecentTraces({ limit, sinceIso: since, untilIso: until });
         return {
           status: 200,
           headers: TAB_CORS_HEADERS,

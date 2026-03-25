@@ -14,6 +14,7 @@ import { buildPriorsPromptFragment } from '../persona/operatorDomainPriors.js';
 import { buildDevLoopSystemBlock } from '../devloop/sessionContext.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
+import { trackEvent } from '../observability/telemetry.js';
 
 export interface BuildPromptInput {
   state: OverseerState;
@@ -22,6 +23,8 @@ export interface BuildPromptInput {
   devLoopContext?: DevLoopContext;
   /** Structured quoted-reply context from Teams reply-with-quote (#278) */
   quotedContext?: QuotedContext;
+  /** Correlation ID for tracing (#269). */
+  correlationId?: string;
 }
 
 export interface PromptResult {
@@ -183,6 +186,10 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
 
   const totalText = messages.map((m) => m.content).join('');
   const estimatedTokens = estimateTokens(totalText);
+
+  if (input.correlationId) {
+    trackEvent({ name: 'PromptBuilt', correlationId: input.correlationId, userId: input.state.userId, properties: { estimatedTokens: String(estimatedTokens), messageCount: String(messages.length) } });
+  }
 
   return { systemPrompt, messages, estimatedTokens };
 }
