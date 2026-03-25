@@ -193,6 +193,9 @@ jobs:
               --name "DelegatedAuthClientSecret" --query "value" -o tsv 2>/dev/null || echo "")
           fi
 
+          CICD_PRINCIPAL_ID=$(az ad sp show --id "${{ env.AZURE_CLIENT_ID }}" --query id -o tsv 2>/dev/null || echo "")
+          echo "ℹ️ CICD principal object id: ${CICD_PRINCIPAL_ID}"
+
           DEPLOY_OUT=$(az deployment group create \
             --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
@@ -200,6 +203,7 @@ jobs:
             --parameters "@infra/main.parameters.json" \
               userAlias="${{ env.USER_ALIAS }}" \
               userPrincipalId="${{ vars.USER_PRINCIPAL_ID }}" \
+              cicdPrincipalId="${CICD_PRINCIPAL_ID}" \
               alertEmail="${{ vars.ALERT_EMAIL }}" \
               euResidencyMode=${{ github.event.inputs.EU_RESIDENCY_MODE || 'false' }} \
               routerBotId="${{ vars.BOT_APP_ID }}" \

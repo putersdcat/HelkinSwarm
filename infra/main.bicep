@@ -33,6 +33,9 @@ param llmProvider string = 'azure'
 @description('Object ID of the owner/operator (for Key Vault admin role)')
 param userPrincipalId string
 
+@description('Object ID of the CICD service principal used by GitHub Actions OIDC. Granted secret-read access to the stamp Key Vault for cross-pipeline OAuth connection updates.')
+param cicdPrincipalId string = ''
+
 @description('Owner email for P0 alert notifications')
 param alertEmail string = ''
 
@@ -752,6 +755,17 @@ resource roleKvUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleKvAdmin)
     principalId: userPrincipalId
     principalType: 'User'
+  }
+}
+
+// ── CICD SP → Key Vault Secrets User ──
+resource roleKvCicd 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (cicdPrincipalId != '') {
+  name: guid(cicdPrincipalId, keyVault.id, roleKvSecretsUser)
+  scope: keyVault
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleKvSecretsUser)
+    principalId: cicdPrincipalId
+    principalType: 'ServicePrincipal'
   }
 }
 
