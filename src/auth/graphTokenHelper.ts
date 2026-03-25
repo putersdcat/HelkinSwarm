@@ -44,7 +44,7 @@ export async function getGraphTokenForUser(
   try {
     const auth = getAuth();
     const tokenClient = await auth.createUserTokenClient(
-      new ClaimsIdentity([], true),
+      new ClaimsIdentity([{ type: 'appid', value: env.microsoftAppId }], true),
     );
     const conversationReference = await getConversationReference(userId);
     const channelUserId = conversationReference?.user?.id ?? userId;
