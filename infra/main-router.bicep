@@ -168,13 +168,19 @@ resource routerCae 'Microsoft.App/managedEnvironments@2024-03-01' = {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  5. FUNCTION APP (Node 22 LTS, Container Apps, router UAMI assigned)
+//  5. FUNCTION APP (Node 22 LTS, Container Apps native — Microsoft.App/containerApps)
+//
+//     Migrated from Microsoft.Web/sites to Microsoft.App/containerApps
+//     with kind='functionapp'. This gives us native Container Apps revision
+//     management (single revision mode zero-downtime rollout) instead of the
+//     in-place PATCH that caused the #226/#235 rollout outage.
+//
+//     Ref: https://learn.microsoft.com/azure/container-apps/functions-overview
 // ═══════════════════════════════════════════════════════════════════════════
 
-resource routerFunc 'Microsoft.Web/sites@2023-12-01' = {
+resource routerFunc 'Microsoft.App/containerApps@2024-03-01' = {
   name: routerFuncName
   location: location
-  kind: 'functionapp,linux,container'
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
@@ -182,36 +188,61 @@ resource routerFunc 'Microsoft.Web/sites@2023-12-01' = {
     }
   }
   properties: {
-    managedEnvironmentId: routerCae.id
-    httpsOnly: true
-    siteConfig: {
-      minimumElasticInstanceCount: 1
-      functionAppScaleLimit: 3
-      // MCR placeholder + no ACR creds on initial Bicep create.
-      // Container Apps fail with image-not-found if you reference the router ACR before
-      // the first image has been pushed.  deploy-code PATCH flips to ACR + managed-identity
-      // once build-and-push has pushed the real image.
-      linuxFxVersion: 'DOCKER|mcr.microsoft.com/azure-functions/node:4-node20-appservice'
-      ftpsState: 'Disabled'
-      minTlsVersion: '1.2'
-      appSettings: [
-        // Managed identity storage auth — no key exposure
-        { name: 'AzureWebJobsStorage__accountName', value: routerStorage.name }
-        { name: 'AzureWebJobsStorage__credential', value: 'managedidentity' }
-        { name: 'AzureWebJobsStorage__clientId', value: routerUami.properties.clientId }
-        { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
-        { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'node' }
-        { name: 'AzureWebJobsFeatureFlags', value: 'EnableWorkerIndexing' }
-        // Bot Framework auth — router UAMI is the single global Teams bot identity
-        { name: 'MicrosoftAppId', value: routerUami.properties.clientId }
-        { name: 'MicrosoftAppType', value: 'UserAssignedMSI' }
-        { name: 'MicrosoftAppTenantId', value: subscription().tenantId }
-        // Observability
-        { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: routerAppi.properties.ConnectionString }
+    environmentId: routerCae.id
+    workloadProfileName: 'Consumption'
+    configuration: {
+      // Single revision mode: platform keeps old revision serving until new one is ready.
+      // This is the primary zero-downtime guarantee for image rollouts (#235).
+      activeRevisionsMode: 'Single'
+      ingress: {
+        external: true
+        targetPort: 80
+        transport: 'auto'
+        allowInsecure: false
+      }
+      // ACR pull via UAMI — no admin credentials, no secrets
+      registries: [
+        {
+          server: routerAcr.properties.loginServer
+          identity: routerUami.id
+        }
       ]
     }
+    template: {
+      // MCR placeholder on initial Bicep create — deploy-code workflow updates the image
+      // via `az containerapp update --image` after build-and-push completes.
+      containers: [
+        {
+          name: 'helkinswarm-router'
+          image: 'mcr.microsoft.com/azure-functions/node:4-node20-appservice'
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+          env: [
+            // Managed identity storage auth — no key exposure
+            { name: 'AzureWebJobsStorage__accountName', value: routerStorage.name }
+            { name: 'AzureWebJobsStorage__credential', value: 'managedidentity' }
+            { name: 'AzureWebJobsStorage__clientId', value: routerUami.properties.clientId }
+            { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
+            { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'node' }
+            { name: 'AzureWebJobsFeatureFlags', value: 'EnableWorkerIndexing' }
+            // Bot Framework auth — router UAMI is the single global Teams bot identity
+            { name: 'MicrosoftAppId', value: routerUami.properties.clientId }
+            { name: 'MicrosoftAppType', value: 'UserAssignedMSI' }
+            { name: 'MicrosoftAppTenantId', value: subscription().tenantId }
+            // Observability
+            { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: routerAppi.properties.ConnectionString }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 1
+        maxReplicas: 3
+      }
+    }
   }
-  dependsOn: [blobRole, queueRole, tableRole]
+  dependsOn: [blobRole, queueRole, tableRole, acrPullRole]
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -226,7 +257,7 @@ resource routerBot 'Microsoft.BotService/botServices@2022-09-15' = {
   kind: 'azurebot'
   properties: {
     displayName: 'HelkinSwarm'
-    endpoint: 'https://${routerFunc.properties.defaultHostName}/api/messages'
+    endpoint: 'https://${routerFuncName}.${routerCae.properties.defaultDomain}/api/messages'
     msaAppId: routerUami.properties.clientId
     msaAppType: 'UserAssignedMSI'
     msaAppMSIResourceId: routerUami.id
@@ -269,8 +300,12 @@ resource oauthConnection 'Microsoft.BotService/botServices/connections@2022-09-1
 //  OUTPUTS
 // ═══════════════════════════════════════════════════════════════════════════
 
-output routerEndpoint string = 'https://${routerFunc.properties.defaultHostName}/api/messages'
-output routerHostName string = routerFunc.properties.defaultHostName
+// Stable ingress FQDN: {app-name}.{managed-env-default-domain}
+// latestRevisionFqdn is the per-revision URL; the stable app URL uses env defaultDomain.
+var routerFqdn = '${routerFuncName}.${routerCae.properties.defaultDomain}'
+
+output routerEndpoint string = 'https://${routerFqdn}/api/messages'
+output routerHostName string = routerFqdn
 output routerFunctionAppName string = routerFunc.name
 output routerAcrName string = routerAcr.name
 output routerAcrLoginServer string = routerAcr.properties.loginServer

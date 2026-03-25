@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "8094405297397359227"
+      "templateHash": "11761032957832101385"
     }
   },
   "parameters": {
@@ -21,6 +21,27 @@
       "metadata": {
         "description": "Object ID of the owner/operator (reserved for future RBAC assignments)"
       }
+    },
+    "createOAuthConnection": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Create/update the GraphOAuth Bot Service connection. Set true only on first deploy or when scopes change."
+      }
+    },
+    "delegatedAuthClientId": {
+      "type": "string",
+      "defaultValue": "d4e5cf74-9f99-4504-b4ab-d4516dd10577",
+      "metadata": {
+        "description": "Client ID of the HelkinSwarm-DelegatedAuth Entra app for user-delegated Graph access."
+      }
+    },
+    "delegatedAuthClientSecret": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Client secret for the DelegatedAuth Entra app. Only required when createOAuthConnection=true."
+      }
     }
   },
   "variables": {
@@ -30,6 +51,8 @@
     "routerCaeName": "helkinswarm-cae-router",
     "routerAcrName": "helkinswarmrouteracr",
     "routerBotName": "helkinswarm-router-bot",
+    "routerLawName": "helkinswarm-law-router",
+    "routerAppiName": "helkinswarm-appi-router",
     "roleStorageBlobDataOwner": "b7e6dc6d-f1e8-4753-8033-0f276bb0955b",
     "roleStorageQueueContributor": "974c5e8b-45b9-4653-ba55-5f855dd0fb88",
     "roleStorageTableContributor": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3",
@@ -41,6 +64,32 @@
       "apiVersion": "2023-01-31",
       "name": "[variables('routerUamiName')]",
       "location": "[parameters('location')]"
+    },
+    {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2023-09-01",
+      "name": "[variables('routerLawName')]",
+      "location": "[parameters('location')]",
+      "properties": {
+        "sku": {
+          "name": "PerGB2018"
+        },
+        "retentionInDays": 30
+      }
+    },
+    {
+      "type": "Microsoft.Insights/components",
+      "apiVersion": "2020-02-02",
+      "name": "[variables('routerAppiName')]",
+      "location": "[parameters('location')]",
+      "kind": "web",
+      "properties": {
+        "Application_Type": "web",
+        "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('routerLawName'))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', variables('routerLawName'))]"
+      ]
     },
     {
       "type": "Microsoft.Storage/storageAccounts",
@@ -145,11 +194,10 @@
       }
     },
     {
-      "type": "Microsoft.Web/sites",
-      "apiVersion": "2023-12-01",
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2024-03-01",
       "name": "[variables('routerFuncName')]",
       "location": "[parameters('location')]",
-      "kind": "functionapp,linux,container",
       "identity": {
         "type": "UserAssigned",
         "userAssignedIdentities": {
@@ -157,64 +205,88 @@
         }
       },
       "properties": {
-        "managedEnvironmentId": "[resourceId('Microsoft.App/managedEnvironments', variables('routerCaeName'))]",
-        "httpsOnly": true,
-        "siteConfig": {
-          "minimumElasticInstanceCount": 1,
-          "functionAppScaleLimit": 3,
-          "linuxFxVersion": "[format('DOCKER|{0}/helkinswarm-router:latest', reference(resourceId('Microsoft.ContainerRegistry/registries', variables('routerAcrName')), '2023-07-01').loginServer)]",
-          "acrUseManagedIdentityCreds": true,
-          "acrUserManagedIdentityID": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('routerUamiName'))]",
-          "ftpsState": "Disabled",
-          "minTlsVersion": "1.2",
-          "appSettings": [
+        "environmentId": "[resourceId('Microsoft.App/managedEnvironments', variables('routerCaeName'))]",
+        "workloadProfileName": "Consumption",
+        "configuration": {
+          "activeRevisionsMode": "Single",
+          "ingress": {
+            "external": true,
+            "targetPort": 80,
+            "transport": "auto",
+            "allowInsecure": false
+          },
+          "registries": [
             {
-              "name": "AzureWebJobsStorage__accountName",
-              "value": "[variables('routerStName')]"
-            },
-            {
-              "name": "AzureWebJobsStorage__credential",
-              "value": "managedidentity"
-            },
-            {
-              "name": "AzureWebJobsStorage__clientId",
-              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('routerUamiName')), '2023-01-31').clientId]"
-            },
-            {
-              "name": "FUNCTIONS_EXTENSION_VERSION",
-              "value": "~4"
-            },
-            {
-              "name": "FUNCTIONS_WORKER_RUNTIME",
-              "value": "node"
-            },
-            {
-              "name": "AzureWebJobsFeatureFlags",
-              "value": "EnableWorkerIndexing"
-            },
-            {
-              "name": "DOCKER_REGISTRY_SERVER_URL",
-              "value": "[format('https://{0}', reference(resourceId('Microsoft.ContainerRegistry/registries', variables('routerAcrName')), '2023-07-01').loginServer)]"
-            },
-            {
-              "name": "MicrosoftAppId",
-              "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('routerUamiName')), '2023-01-31').clientId]"
-            },
-            {
-              "name": "MicrosoftAppType",
-              "value": "UserAssignedMSI"
-            },
-            {
-              "name": "MicrosoftAppTenantId",
-              "value": "[subscription().tenantId]"
+              "server": "[reference(resourceId('Microsoft.ContainerRegistry/registries', variables('routerAcrName')), '2023-07-01').loginServer]",
+              "identity": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('routerUamiName'))]"
             }
           ]
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "helkinswarm-router",
+              "image": "mcr.microsoft.com/azure-functions/node:4-node20-appservice",
+              "resources": {
+                "cpu": "[json('0.5')]",
+                "memory": "1Gi"
+              },
+              "env": [
+                {
+                  "name": "AzureWebJobsStorage__accountName",
+                  "value": "[variables('routerStName')]"
+                },
+                {
+                  "name": "AzureWebJobsStorage__credential",
+                  "value": "managedidentity"
+                },
+                {
+                  "name": "AzureWebJobsStorage__clientId",
+                  "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('routerUamiName')), '2023-01-31').clientId]"
+                },
+                {
+                  "name": "FUNCTIONS_EXTENSION_VERSION",
+                  "value": "~4"
+                },
+                {
+                  "name": "FUNCTIONS_WORKER_RUNTIME",
+                  "value": "node"
+                },
+                {
+                  "name": "AzureWebJobsFeatureFlags",
+                  "value": "EnableWorkerIndexing"
+                },
+                {
+                  "name": "MicrosoftAppId",
+                  "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('routerUamiName')), '2023-01-31').clientId]"
+                },
+                {
+                  "name": "MicrosoftAppType",
+                  "value": "UserAssignedMSI"
+                },
+                {
+                  "name": "MicrosoftAppTenantId",
+                  "value": "[subscription().tenantId]"
+                },
+                {
+                  "name": "APPLICATIONINSIGHTS_CONNECTION_STRING",
+                  "value": "[reference(resourceId('Microsoft.Insights/components', variables('routerAppiName')), '2020-02-02').ConnectionString]"
+                }
+              ]
+            }
+          ],
+          "scale": {
+            "minReplicas": 1,
+            "maxReplicas": 3
+          }
         }
       },
       "dependsOn": [
+        "[extensionResourceId(resourceId('Microsoft.ContainerRegistry/registries', variables('routerAcrName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.ContainerRegistry/registries', variables('routerAcrName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('routerUamiName')), variables('roleAcrPull')))]",
         "[extensionResourceId(resourceId('Microsoft.Storage/storageAccounts', variables('routerStName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.Storage/storageAccounts', variables('routerStName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('routerUamiName')), variables('roleStorageBlobDataOwner')))]",
         "[extensionResourceId(resourceId('Microsoft.Storage/storageAccounts', variables('routerStName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.Storage/storageAccounts', variables('routerStName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('routerUamiName')), variables('roleStorageQueueContributor')))]",
         "[resourceId('Microsoft.ContainerRegistry/registries', variables('routerAcrName'))]",
+        "[resourceId('Microsoft.Insights/components', variables('routerAppiName'))]",
         "[resourceId('Microsoft.App/managedEnvironments', variables('routerCaeName'))]",
         "[resourceId('Microsoft.Storage/storageAccounts', variables('routerStName'))]",
         "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('routerUamiName'))]",
@@ -232,14 +304,14 @@
       "kind": "azurebot",
       "properties": {
         "displayName": "HelkinSwarm",
-        "endpoint": "[format('https://{0}/api/messages', reference(resourceId('Microsoft.Web/sites', variables('routerFuncName')), '2023-12-01').defaultHostName)]",
+        "endpoint": "[format('https://{0}.{1}/api/messages', variables('routerFuncName'), reference(resourceId('Microsoft.App/managedEnvironments', variables('routerCaeName')), '2024-03-01').defaultDomain)]",
         "msaAppId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('routerUamiName')), '2023-01-31').clientId]",
         "msaAppType": "UserAssignedMSI",
         "msaAppMSIResourceId": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('routerUamiName'))]",
         "msaAppTenantId": "[subscription().tenantId]"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.Web/sites', variables('routerFuncName'))]",
+        "[resourceId('Microsoft.App/managedEnvironments', variables('routerCaeName'))]",
         "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('routerUamiName'))]"
       ]
     },
@@ -257,16 +329,51 @@
       "dependsOn": [
         "[resourceId('Microsoft.BotService/botServices', variables('routerBotName'))]"
       ]
+    },
+    {
+      "condition": "[parameters('createOAuthConnection')]",
+      "type": "Microsoft.BotService/botServices/connections",
+      "apiVersion": "2022-09-15",
+      "name": "[format('{0}/{1}', variables('routerBotName'), 'GraphOAuth')]",
+      "location": "global",
+      "properties": {
+        "serviceProviderDisplayName": "Azure Active Directory v2",
+        "serviceProviderId": "30dd229c-58e3-4a48-bdfd-91ec48eb906c",
+        "clientId": "[parameters('delegatedAuthClientId')]",
+        "clientSecret": "[parameters('delegatedAuthClientSecret')]",
+        "scopes": "User.Read Mail.ReadWrite Calendars.ReadWrite Files.ReadWrite offline_access",
+        "parameters": [
+          {
+            "key": "tenantID",
+            "value": "[subscription().tenantId]"
+          },
+          {
+            "key": "clientId",
+            "value": "[parameters('delegatedAuthClientId')]"
+          },
+          {
+            "key": "clientSecret",
+            "value": "[parameters('delegatedAuthClientSecret')]"
+          },
+          {
+            "key": "scopes",
+            "value": "User.Read Mail.ReadWrite Calendars.ReadWrite Files.ReadWrite offline_access"
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.BotService/botServices', variables('routerBotName'))]"
+      ]
     }
   ],
   "outputs": {
     "routerEndpoint": {
       "type": "string",
-      "value": "[format('https://{0}/api/messages', reference(resourceId('Microsoft.Web/sites', variables('routerFuncName')), '2023-12-01').defaultHostName)]"
+      "value": "[format('https://{0}/api/messages', format('{0}.{1}', variables('routerFuncName'), reference(resourceId('Microsoft.App/managedEnvironments', variables('routerCaeName')), '2024-03-01').defaultDomain))]"
     },
     "routerHostName": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Web/sites', variables('routerFuncName')), '2023-12-01').defaultHostName]"
+      "value": "[format('{0}.{1}', variables('routerFuncName'), reference(resourceId('Microsoft.App/managedEnvironments', variables('routerCaeName')), '2024-03-01').defaultDomain)]"
     },
     "routerFunctionAppName": {
       "type": "string",

@@ -67,6 +67,27 @@ jobs:
             --name ${{ env.RESOURCE_GROUP }} \
             --location eastus2
 
+      - name: Migrate — remove legacy Microsoft.Web/sites router if it exists
+        continue-on-error: true
+        run: |
+          # One-time migration: the router was previously a Microsoft.Web/sites resource.
+          # The Bicep now uses Microsoft.App/containerApps. Both resource types use the same
+          # app name (helkinswarm-router) which would conflict in the CAE FQDN.
+          # Safely delete the old resource if it still exists. (#235)
+          LEGACY_EXISTS=$(az webapp show \
+            --name helkinswarm-router \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --query id -o tsv 2>/dev/null || echo "")
+          if [ -n "$LEGACY_EXISTS" ]; then
+            echo "🗑️  Deleting legacy Microsoft.Web/sites router: $LEGACY_EXISTS"
+            az webapp delete \
+              --name helkinswarm-router \
+              --resource-group "${{ env.RESOURCE_GROUP }}"
+            echo "✅ Legacy resource deleted. New Container App will be created by Bicep."
+          else
+            echo "✅ No legacy Microsoft.Web/sites router found. Nothing to migrate."
+          fi
+
       - name: Deploy Bicep
         id: deploy
         run: |
@@ -149,49 +170,75 @@ jobs:
         run: |
           FUNC_NAME=${{ needs.deploy-infra.outputs.function-app-name }}
           ACR_SERVER=${{ needs.deploy-infra.outputs.acr-login-server }}
-          UAMI_RESOURCE_ID=${{ needs.deploy-infra.outputs.router-uami-resource-id }}
           IMAGE_TAG=${{ github.sha }}
+          REVISION_SUFFIX="r${IMAGE_TAG:0:8}"
 
-          az functionapp config appsettings set \
+          # Log current revision for rollback reference
+          CURRENT=$(az containerapp show \
             --name "${FUNC_NAME}" \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --settings DOCKER_REGISTRY_SERVER_URL="${ACR_SERVER}"
+            --query "properties.latestRevisionName" -o tsv 2>/dev/null || echo "unknown")
+          echo "Current revision: $CURRENT"
+          echo "New revision suffix: $REVISION_SUFFIX"
 
-          az rest --method PATCH \
-            --url "/subscriptions/${{ env.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ env.RESOURCE_GROUP }}/providers/Microsoft.Web/sites/${FUNC_NAME}?api-version=2023-12-01" \
-            --body "{\"properties\":{\"siteConfig\":{\"linuxFxVersion\":\"DOCKER|${ACR_SERVER}/helkinswarm-router:${IMAGE_TAG}\",\"acrUseManagedIdentityCreds\":true,\"acrUserManagedIdentityID\":\"${UAMI_RESOURCE_ID}\"}}}"
+          # Deploy new revision via Container Apps native revision management.
+          # Single-revision mode: platform keeps old revision serving until new one is ready.
+          # This replaces the az rest PATCH approach that caused downtime (#235).
+          az containerapp update \
+            --name "${FUNC_NAME}" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --image "${ACR_SERVER}/helkinswarm-router:${IMAGE_TAG}" \
+            --revision-suffix "${REVISION_SUFFIX}"
+
+          echo "✅ Revision ${FUNC_NAME}--${REVISION_SUFFIX} submitted. Platform will manage traffic cutover."
 
       - name: Verify health
         run: |
-          echo "⏳ Waiting for container to start..."
-          sleep 45
+          echo "⏳ Waiting for new revision to start (90s — Container Apps revision warmup)..."
+          sleep 90
 
-          HOSTNAME=$(az functionapp show \
+          # Get stable ingress FQDN from Container Apps (not az functionapp — resource type changed to Microsoft.App)
+          HOSTNAME=$(az containerapp show \
             --name ${{ needs.deploy-infra.outputs.function-app-name }} \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --query defaultHostName -o tsv 2>/dev/null || echo "")
+            --query "properties.configuration.ingress.fqdn" -o tsv 2>/dev/null || echo "")
 
           if [ -z "$HOSTNAME" ]; then
-            CAE_DOMAIN=$(az containerapp env list \
-              --resource-group "${{ env.RESOURCE_GROUP }}" \
-              --query "[0].properties.defaultDomain" -o tsv 2>/dev/null || echo "")
-            HOSTNAME="${{ needs.deploy-infra.outputs.function-app-name }}.${CAE_DOMAIN}"
+            echo "⚠️  Could not resolve hostname from Container App ingress. Using deploy-infra output hostname."
+            HOSTNAME="${{ needs.deploy-infra.outputs.router-hostname }}"
           fi
 
           echo "🏥 Router health: https://${HOSTNAME}/api/health"
 
-          MAX_RETRIES=6
+          MAX_RETRIES=8
           RETRY=0
+          HEALTHY=false
           while [ $RETRY -lt $MAX_RETRIES ]; do
             HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$HOSTNAME/api/health" 2>/dev/null || echo "000")
             if [ "$HTTP_CODE" = "200" ]; then
               echo "✅ Router health OK (HTTP $HTTP_CODE)"
+              HEALTHY=true
               break
             fi
             RETRY=$((RETRY + 1))
             echo "⏳ Attempt $RETRY/$MAX_RETRIES: HTTP $HTTP_CODE — retrying in 30s..."
             sleep 30
           done
+
+          if [ "$HEALTHY" != "true" ]; then
+            echo "❌ Router health check failed after $((90 + MAX_RETRIES * 30))s"
+            echo "⚠️  Router may be experiencing downtime. Check Application Insights for errors."
+            exit 1
+          fi
+
+          # Additional warmup: do a second health request 10s later to confirm stability
+          sleep 10
+          HTTP_CODE2=$(curl -s -o /dev/null -w "%{http_code}" "https://$HOSTNAME/api/health" 2>/dev/null || echo "000")
+          if [ "$HTTP_CODE2" != "200" ]; then
+            echo "⚠️  Router health unstable after warmup (HTTP $HTTP_CODE2)"
+            exit 1
+          fi
+          echo "✅ Router warmup confirmed stable"
 
   # ─────────────────────────────────────────────────────────────────────────
   # 3. Deployment Report
