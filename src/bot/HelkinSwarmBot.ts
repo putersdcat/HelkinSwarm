@@ -10,6 +10,9 @@ import {
   type AdaptiveCardInvokeValue,
   StatusCodes,
   CardFactory,
+  ActivityTypes,
+  type Attachment,
+  type ConversationReference,
 } from 'botbuilder';
 import type { DurableClient } from 'durable-functions';
 import { OrchestrationRuntimeStatus } from 'durable-functions';
@@ -37,6 +40,42 @@ import { getBearerToken } from '../auth/identity.js';
 
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
+
+  private async sendFreshMessage(
+    context: TurnContext,
+    activity: { text?: string; attachments?: Attachment[]; textFormat?: string },
+  ): Promise<void> {
+    const adapter = context.adapter as {
+      continueConversationAsync?: (
+        botAppId: string,
+        reference: Partial<ConversationReference>,
+        logic: (turnContext: TurnContext) => Promise<void>,
+      ) => Promise<void>;
+    };
+
+    if (!adapter.continueConversationAsync) {
+      await context.sendActivity(activity);
+      return;
+    }
+
+    const freshReference = {
+      ...TurnContextClass.getConversationReference(context.activity),
+      activityId: undefined,
+    } satisfies Partial<ConversationReference>;
+
+    await adapter.continueConversationAsync(
+      getEnvConfig().microsoftAppId,
+      freshReference,
+      async (turnContext) => {
+        await turnContext.sendActivity({
+          type: ActivityTypes.Message,
+          text: activity.text,
+          textFormat: activity.textFormat,
+          attachments: activity.attachments,
+        });
+      },
+    );
+  }
 
   /** Inject the Durable client from the Azure Functions HTTP trigger. */
   setDurableClient(client: DurableClient): void {
@@ -711,7 +750,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       `🔗 Link ${displayName}`,
       description,
     );
-    await context.sendActivity({ attachments: [card] });
+    await this.sendFreshMessage(context, { attachments: [card] });
   }
 
   /**
@@ -791,7 +830,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       `🔗 Relink ${manifest.linkConfig.displayName}`,
       manifest.linkConfig.description,
     );
-    await context.sendActivity({ attachments: [card] });
+    await this.sendFreshMessage(context, { attachments: [card] });
   }
 
   /**
