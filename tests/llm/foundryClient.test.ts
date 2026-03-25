@@ -38,4 +38,14 @@ describe('direct chat model override compatibility', () => {
     expect(isDirectChatModelOverrideSupported('gpt-5.4-mini')).toBe(true);
     expect(getDirectChatModelIncompatibilityReason('gpt-5.4-mini')).toBeUndefined();
   });
+
+  it('rejects friendly aliases that are not real direct /model deployment names', () => {
+    expect(isDirectChatModelOverrideSupported('gpt-5')).toBe(false);
+    expect(isDirectChatModelOverrideSupported('o3')).toBe(false);
+    expect(isDirectChatModelOverrideSupported('gpt-5-mini')).toBe(false);
+
+    expect(getDirectChatModelIncompatibilityReason('gpt-5')).toContain('supported /model deployment name');
+    expect(getDirectChatModelIncompatibilityReason('o3')).toContain('supported /model deployment name');
+    expect(getDirectChatModelIncompatibilityReason('gpt-5-mini')).toContain('supported /model deployment name');
+  });
 });

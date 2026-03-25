@@ -77,6 +77,8 @@ const DIRECT_CHAT_MODEL_OVERRIDES = [
   'FW-Kimi-K2.5',
 ] as const;
 
+const DIRECT_CHAT_MODEL_OVERRIDE_SET = new Set<string>(DIRECT_CHAT_MODEL_OVERRIDES);
+
 const CHAT_INCOMPATIBLE_MODEL_REASONS: Record<string, string> = {
   'gpt-5.1-codex-mini': 'does not support the chat completions API (codex/completions-only deployment)',
 };
@@ -177,7 +179,15 @@ export function getSupportedDirectChatModelOverrides(): string[] {
 
 /** Returns a human-readable incompatibility reason when a deployment cannot be used for chat completions. */
 export function getDirectChatModelIncompatibilityReason(deploymentName: string): string | undefined {
-  return CHAT_INCOMPATIBLE_MODEL_REASONS[deploymentName];
+  if (CHAT_INCOMPATIBLE_MODEL_REASONS[deploymentName]) {
+    return CHAT_INCOMPATIBLE_MODEL_REASONS[deploymentName];
+  }
+
+  if (!DIRECT_CHAT_MODEL_OVERRIDE_SET.has(deploymentName)) {
+    return 'is not a supported /model deployment name; use one of the advertised deployment names exactly';
+  }
+
+  return undefined;
 }
 
 /** Whether a deployment can be used safely with the chat completions path used by `/model`. */
