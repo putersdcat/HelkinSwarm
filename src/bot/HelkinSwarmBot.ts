@@ -565,7 +565,11 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
 
     const label = modelOverride === 'primary' ? '🔥 frontier model' : '⚡ fast model';
-    await context.sendActivity(`⌛ Working on it... (${label})`);
+    const ackResponse = await context.sendActivity(`⌛ Working on it... (${label})`);
+    if (ackResponse?.id) {
+      const conversationId = context.activity.conversation?.id ?? userId;
+      await savePendingAckId(userId, conversationId, ackResponse.id);
+    }
     await this.raiseToOverseer(context, userId, userAlias, prompt, modelOverride);
   }
 
@@ -602,7 +606,11 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return;
     }
 
-    await context.sendActivity(`⌛ Working on it... (🎯 ${deploymentName})`);
+    const ackResponse = await context.sendActivity(`⌛ Working on it... (🎯 ${deploymentName})`);
+    if (ackResponse?.id) {
+      const conversationId = context.activity.conversation?.id ?? userId;
+      await savePendingAckId(userId, conversationId, ackResponse.id);
+    }
     await this.raiseToOverseer(context, userId, userAlias, prompt, deploymentName);
   }
 
