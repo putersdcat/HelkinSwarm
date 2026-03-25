@@ -14,6 +14,7 @@ import './devLoopRelay.js';
 import './graphNotificationHandler.js';
 import './subscriptionRenewalTimer.js';
 import './maintenanceSweepTimer.js';
+import './staleSessionCleanupTimer.js';
 import './tabGetStarted.js';
 import './tabDashboard.js';
 import './tabSessions.js';
