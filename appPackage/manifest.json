@@ -1,7 +1,7 @@
 {
   "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
   "manifestVersion": "1.17",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "id": "0fe3ff72-40cc-43ab-85bf-a846e399be6d",
   "developer": {
     "name": "Eric Anderson",
@@ -78,6 +78,7 @@
     "messageTeamMembers"
   ],
   "validDomains": [
+    "token.botframework.com",
     "helkinswarm-router.salmonbeach-d4db91b5.eastus2.azurecontainerapps.io",
     "helkinswarm-func-a7f2.purplepebble-508e1162.eastus2.azurecontainerapps.io",
     "helkinswarmtabsst.z20.web.core.windows.net"
