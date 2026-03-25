@@ -22,8 +22,8 @@ export interface TurnTelemetryData {
   safetyPassed: boolean;
 }
 
-// EUR per 1M tokens (blended input/output average). (#254)
-const MODEL_COST_EUR_PER_M: Record<string, number> = {
+// USD per 1M tokens (blended input/output average). (#254, #260)
+const MODEL_COST_USD_PER_M: Record<string, number> = {
   'gpt-5': 18.00,
   'gpt-5.4-mini': 1.80,
   'o4-mini': 2.40,
@@ -35,6 +35,18 @@ const MODEL_COST_EUR_PER_M: Record<string, number> = {
   'FW-Kimi-K2.5': 2.00,
 };
 
+// Approved money emoji rotation set. (#260)
+const MONEY_EMOJIS = ['💲', '💵', '💸', '🤑', '🪙'] as const;
+
+/**
+ * Pick a deterministic money emoji from the approved set based on the correlation ID.
+ * This keeps the same turn's footer consistent while rotating across turns.
+ */
+function getMoneyEmoji(correlationId: string): string {
+  const idx = correlationId.charCodeAt(0) % MONEY_EMOJIS.length;
+  return MONEY_EMOJIS[idx] ?? '💵';
+}
+
 // Container startup timestamp for uptime display. (#254)
 const STARTUP_TIME = Date.now();
 
@@ -42,19 +54,22 @@ const STARTUP_TIME = Date.now();
  * Estimate EUR cost for a given model and total token count.
  * Returns undefined if the model is not in the cost table.
  */
-export function estimateCostEur(model: string, totalTokens: number): number | undefined {
+export function estimateCostUsd(model: string, totalTokens: number): number | undefined {
   // Try exact match first, then longest-prefix match for versioned deployment names
-  let rate = MODEL_COST_EUR_PER_M[model];
+  let rate = MODEL_COST_USD_PER_M[model];
   if (rate === undefined) {
     const lowerModel = model.toLowerCase();
-    const key = Object.keys(MODEL_COST_EUR_PER_M)
+    const key = Object.keys(MODEL_COST_USD_PER_M)
       .filter((k) => lowerModel.startsWith(k.toLowerCase()))
       .sort((a, b) => b.length - a.length)[0];
-    if (key) rate = MODEL_COST_EUR_PER_M[key];
+    if (key) rate = MODEL_COST_USD_PER_M[key];
   }
   if (rate === undefined) return undefined;
   return (totalTokens / 1_000_000) * rate;
 }
+
+/** @deprecated Use estimateCostUsd instead */
+export const estimateCostEur = estimateCostUsd;
 
 /**
  * Format uptime since container startup as compact human-readable string.
@@ -124,17 +139,18 @@ export function formatTelemetryFooter(
 
   const shortModel = abbreviateModel(data.model);
   const totalTokens = data.promptTokens + data.completionTokens;
-  const cost = estimateCostEur(data.model, totalTokens);
-  const costStr = cost !== undefined ? `€${cost.toFixed(4)}` : '€?';
+  const cost = estimateCostUsd(data.model, totalTokens);
+  const costStr = cost !== undefined ? `$${cost.toFixed(4)}` : '$?';
+  const moneyEmoji = getMoneyEmoji(data.correlationId);
   const uptime = formatUptime();
 
   if (mode === 'minimal') {
-    const line = `[E2E:${data.totalMs}ms|m:${shortModel}|💰${costStr}|🕐${uptime}]`;
+    const line = `[E2E:${data.totalMs}ms|m:${shortModel}|${moneyEmoji}${costStr}|🕐${uptime}]`;
     return '\n\n---\n`' + line + '`';
   }
 
   if (mode === 'standard') {
-    const line = `[E2E:${data.totalMs}ms|m:${shortModel}|pt:${data.promptTokens}|ct:${data.completionTokens}|tools:${data.toolCalls.length}|💰${costStr}|🕐${uptime}|corr:${shortCorr}]`;
+    const line = `[E2E:${data.totalMs}ms|m:${shortModel}|pt:${data.promptTokens}|ct:${data.completionTokens}|tools:${data.toolCalls.length}|${moneyEmoji}${costStr}|🕐${uptime}|corr:${shortCorr}]`;
     return '\n\n---\n`' + line + '`';
   }
 
@@ -157,7 +173,7 @@ export function formatTelemetryFooter(
   }
 
   parts.push(`safe:${data.safetyPassed ? '✓' : '✗'}`);
-  parts.push(`💰${costStr}`);
+  parts.push(`${moneyEmoji}${costStr}`);
   parts.push(`🕐${uptime}`);
   parts.push(`corr:${shortCorr}`);
 

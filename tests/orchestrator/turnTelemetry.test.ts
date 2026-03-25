@@ -72,7 +72,7 @@ describe('formatTelemetryFooter', () => {
     const result = formatTelemetryFooter('minimal', baseTelemetry);
     expect(result).toContain('E2E:2300ms');
     expect(result).toContain('m:grok-4.1f');
-    expect(result).toContain('💰€');
+    expect(result).toContain('$');
     expect(result).toContain('🕐');
   });
 
@@ -81,7 +81,7 @@ describe('formatTelemetryFooter', () => {
     expect(result).toContain('pt:1820');
     expect(result).toContain('ct:512');
     expect(result).toContain('tools:0');
-    expect(result).toContain('💰€');
+    expect(result).toContain('$');
     expect(result).toContain('corr:abcdef12');
   });
 
@@ -94,7 +94,7 @@ describe('formatTelemetryFooter', () => {
     expect(result).toContain('safe:✓');
     expect(result).toContain('outlook_list_messages');
     expect(result).toContain('github_search_repos');
-    expect(result).toContain('💰€');
+    expect(result).toContain('$');
     expect(result).toContain('corr:abcdef12');
   });
 });
