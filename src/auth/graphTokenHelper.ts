@@ -50,12 +50,22 @@ export async function getGraphTokenForUser(
     const channelUserId = conversationReference?.user?.id ?? userId;
     const channelId = conversationReference?.channelId ?? '';
 
+    console.error(
+      `[graphTokenHelper] Attempting getUserToken: userId=${userId}, channelUserId=${channelUserId}, channelId=${channelId}, connection=${connName}, hasConvRef=${!!conversationReference}`,
+    );
+
     const result = await tokenClient.getUserToken(
       channelUserId,
       connName,
       channelId,
       '', // magicCode — empty for cached token retrieval
     );
+
+    if (!result?.token) {
+      console.error(
+        `[graphTokenHelper] getUserToken returned no token for userId=${userId} (channelUserId=${channelUserId}). Token Service may not have a cached token for connection '${connName}'.`,
+      );
+    }
 
     return result?.token;
   } catch (err) {

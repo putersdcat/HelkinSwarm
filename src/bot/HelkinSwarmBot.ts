@@ -227,9 +227,24 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     _query: unknown,
   ): Promise<void> {
     const userId = context.activity.from.aadObjectId ?? 'unknown';
-    console.error(`[HelkinSwarmBot] SSO token exchange for userId=${userId}`);
-    // Token is automatically cached by the Bot Framework in the configured connection.
-    // MSAL Cosmos cache plugin (#30) handles persistence.
+    const connectionName = (context.activity.value as Record<string, unknown>)?.connectionName;
+    const hasToken = !!(context.activity.value as Record<string, unknown>)?.token;
+    console.error(
+      `[HelkinSwarmBot] SSO token exchange for userId=${userId}, connection=${String(connectionName)}, hasToken=${hasToken}`,
+    );
+
+    // Verify the exchange succeeded by immediately attempting to retrieve the token (#252)
+    try {
+      const { getGraphTokenForUser } = await import('../auth/graphTokenHelper.js');
+      const token = await getGraphTokenForUser(userId, typeof connectionName === 'string' ? connectionName : undefined);
+      if (token) {
+        console.error(`[HelkinSwarmBot] Token exchange verified — token retrieved for userId=${userId}`);
+      } else {
+        console.error(`[HelkinSwarmBot] WARNING: Token exchange callback fired but getUserToken returned undefined for userId=${userId}`);
+      }
+    } catch (err) {
+      console.error(`[HelkinSwarmBot] ERROR during token exchange verification for userId=${userId}:`, err);
+    }
   }
 
   private async handleIncomingMessage(context: TurnContext): Promise<void> {
