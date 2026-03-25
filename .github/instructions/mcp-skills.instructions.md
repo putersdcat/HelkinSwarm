@@ -29,7 +29,14 @@ Each domain folder has exactly one `manifest.json` and a `tools/` subfolder.
 ```json
 {
   "domain": "outlook",
+  "shortName": "outlook",
+  "displayName": "Outlook Email",
+  "shortDescription": "Access and manage Outlook email, calendar, and contacts",
+  "iconUrl": "https://storage.example.com/skills/outlook.png",
   "version": "1.0",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "post-install-link",
+  "lifecycleRules": "keep-credentials",
   "tools": [
     {
       "name": "outlook_list_emails",
@@ -49,7 +56,33 @@ Each domain folder has exactly one `manifest.json` and a `tools/` subfolder.
 }
 ```
 
-## Key Fields
+## Manifest v2 Required Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `domain` | string | Internal identifier matching folder name |
+| `shortName` | string | Short internal name (e.g. `"web-search"`) |
+| `displayName` | string | UI-friendly name for Skills Library tab |
+| `shortDescription` | string | One-line description shown on skill card |
+| `iconUrl` | string (URL) | Blob storage URL for skill icon |
+| `version` | string | Semver or RC tag |
+| `deploymentScenario` | enum | `"personal-user-centric"` or `"enterprise-commercial"` |
+| `onboardingMethod` | enum | `"automatic-agentic"`, `"post-install-link"`, or `"both"` |
+| `lifecycleRules` | enum | `"keep-credentials"`, `"close-external-account"`, or `"ask-user"` |
+| `tools` | array | Tool definitions (see below) |
+
+## Manifest v2 Optional Fields
+
+| Field | Type | Description |
+|---|---|---|
+| `linkConfig` | object | OAuth connection config (connectionName, displayName, description) |
+| `dependencies` | string[] | Required skills (install blocked if missing) |
+| `requiredPermissions` | string[] | Entra/Graph delegated permissions needed |
+| `externalAccountsNeeded` | string[] | Third-party accounts required |
+| `softOnboarding` | object | First-run personality prefs (preferredAddress, responseStyle) |
+| `maintenanceTasks` | array | Scheduled/event-driven tasks (key rotation, credential refresh) |
+
+## Tool-Level Key Fields
 
 | Field | Values | Role |
 |---|---|---|
