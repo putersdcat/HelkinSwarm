@@ -3,6 +3,8 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
   getAckVariant,
+  getCorrelatedAck,
+  getCorrelatedSpinnerAck,
   nextSpinnerFrame,
   resetSpinner,
   getSpinnerAck,
@@ -50,5 +52,40 @@ describe('spinner', () => {
   it('getSpinnerAck defaults to Processing...', () => {
     const ack = getSpinnerAck();
     expect(ack).toBe('⠋ Processing...');
+  });
+});
+
+describe('getCorrelatedAck', () => {
+  it('includes the correlation tag in backticks', () => {
+    const result = getCorrelatedAck('abcd1234');
+    expect(result).toContain('`[corr:abcd1234]`');
+  });
+
+  it('starts with the ⌛ ack variant', () => {
+    const result = getCorrelatedAck('deadbeef');
+    expect(result).toMatch(/^⌛/);
+  });
+});
+
+describe('getCorrelatedSpinnerAck', () => {
+  beforeEach(() => {
+    resetSpinner();
+  });
+
+  it('includes spinner frame, message, and correlation tag', () => {
+    const result = getCorrelatedSpinnerAck('abcd1234');
+    expect(result).toBe('⠋ Still thinking... `[corr:abcd1234]`');
+  });
+
+  it('accepts a custom base message', () => {
+    const result = getCorrelatedSpinnerAck('abcd1234', 'Working hard...');
+    expect(result).toBe('⠋ Working hard... `[corr:abcd1234]`');
+  });
+
+  it('advances spinner frame on each call', () => {
+    const first = getCorrelatedSpinnerAck('tag1');
+    const second = getCorrelatedSpinnerAck('tag1');
+    expect(first).toMatch(/^⠋/);
+    expect(second).toMatch(/^⠙/);
   });
 });

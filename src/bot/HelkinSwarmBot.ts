@@ -30,7 +30,7 @@ import {
   getSupportedDirectChatModelOverrides,
 } from '../llm/modelRouter.js';
 import { getEnvConfig } from '../config/envConfig.js';
-import { getAckVariant } from './ackVariants.js';
+import { getCorrelatedAck } from './ackVariants.js';
 import { isColdStarting } from './lifecycleNotices.js';
 import { loadCapabilities, getManifest, getLinkableSkills } from '../capabilities/capabilityLoader.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
@@ -411,7 +411,9 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     // Immediate ack before orchestration work begins (#143 — rotating variants).
     // Store the activityId so sendReplyActivity can replace it in-place
     // rather than sending a second message (spec: 10-Teams-Interface.md §Message Flow).
-    const ackResponse = await context.sendActivity(getAckVariant());
+    // Include compact correlation tag so the user can trace the turn (#267).
+    const correlationTag = correlationId.slice(0, 8);
+    const ackResponse = await context.sendActivity(getCorrelatedAck(correlationTag));
     if (ackResponse?.id) {
       const conversationId = context.activity.conversation?.id ?? userId;
       await savePendingAckId(userId, conversationId, ackResponse.id);
@@ -437,6 +439,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         undefined,
         imageUrls,
         devLoopCtx,
+        correlationTag,
       );
     } catch (err) {
       // Overseer unreachable — persist as pending intent for startup recovery (#116)
@@ -464,6 +467,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     modelOverride?: string,
     imageUrls?: string[],
     devLoopContext?: NewMessageEvent['devLoopContext'],
+    correlationTag?: string,
   ): Promise<void> {
     const client = this.durableClient!;
     const instanceId = `overseer-${userId}`;
@@ -507,6 +511,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       ...(modelOverride !== undefined ? { modelOverride } : {}),
       ...(imageUrls && imageUrls.length > 0 ? { imageUrls } : {}),
       ...(devLoopContext !== undefined ? { devLoopContext } : {}),
+      ...(correlationTag !== undefined ? { correlationTag } : {}),
     };
 
     await client.raiseEvent(instanceId, 'NewMessage', event);

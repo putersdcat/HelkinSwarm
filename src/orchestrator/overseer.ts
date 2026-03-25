@@ -20,7 +20,13 @@ import type { SummarizeInput, SummarizeResult } from './summarizeActivity.js';
 import type { SaveStateInput } from './saveStateActivity.js';
 import type { LoadStateInput } from './loadStateActivity.js';
 import type { SendReplyInput } from './sendReplyActivity.js';
+import type { SpinnerHeartbeatInput } from './spinnerHeartbeatActivity.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
+
+/** Spinner starts after this many ms. Only long turns get spinner updates. */
+const SPINNER_INITIAL_DELAY_MS = 8_000;
+/** Interval between spinner frame updates once started. */
+const SPINNER_INTERVAL_MS = 5_000;
 
 export interface NewMessageEvent {
   userMessage: string;
@@ -33,6 +39,8 @@ export interface NewMessageEvent {
   imageUrls?: string[];
   /** Parsed DevLoop protocol context when message has protocol markers (#147) */
   devLoopContext?: DevLoopContext;
+  /** Short correlation tag (first 8 chars of correlationId) for ack/spinner tracing (#267) */
+  correlationTag?: string;
 }
 
 df.app.orchestration('overseer', function* (context) {
@@ -102,29 +110,55 @@ df.app.orchestration('overseer', function* (context) {
     sessionInput,
   );
 
+  // Spinner heartbeat: update the ack in-place with Braille frames for long turns (#267)
+  const correlationTag = event.correlationTag ?? sessionInput.correlationId.slice(0, 8);
+  let spinnerDeadline = new Date(context.df.currentUtcDateTime.getTime() + SPINNER_INITIAL_DELAY_MS);
+  let spinnerTimer: df.TimerTask = context.df.createTimer(spinnerDeadline);
+
   let sessionResult: SessionResult;
   try {
-    const winner: df.Task = yield context.df.Task.any([sessionTask, sessionTimer]);
-    if (winner === sessionTimer) {
-      // Session timed out — notify user and cycle the overseer
-      console.error(`[overseer] sessionOrchestrator timed out after ${SESSION_TIMEOUT_MS}ms for user=${state.userId}`);
-      try {
-        const errorReply: SendReplyInput = {
+    let sessionDone = false;
+    let timedOut = false;
+
+    while (!sessionDone && !timedOut) {
+      const winner: df.Task = yield context.df.Task.any([sessionTask, sessionTimer, spinnerTimer]);
+
+      if (winner === sessionTimer) {
+        timedOut = true;
+        spinnerTimer.cancel();
+        console.error(`[overseer] sessionOrchestrator timed out after ${SESSION_TIMEOUT_MS}ms for user=${state.userId}`);
+        try {
+          const errorReply: SendReplyInput = {
+            userId: state.userId,
+            message: `⏰ Your message took too long to process (>${SESSION_TIMEOUT_MS / 60000} min). The turn was cancelled. Please try again.`,
+          };
+          yield context.df.callActivity('sendReplyActivity', errorReply);
+        } catch (replyErr) {
+          console.error(`[overseer] Failed to send timeout reply for user=${state.userId}`, replyErr);
+        }
+        yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
+        context.df.continueAsNew(state);
+        return;
+      } else if (winner === spinnerTimer) {
+        // Spinner tick — update ack in-place, then create next timer and loop (#267)
+        yield context.df.callActivity('spinnerHeartbeatActivity', {
           userId: state.userId,
-          message: `⏰ Your message took too long to process (>${SESSION_TIMEOUT_MS / 60000} min). The turn was cancelled. Please try again.`,
-        };
-        yield context.df.callActivity('sendReplyActivity', errorReply);
-      } catch (replyErr) {
-        console.error(`[overseer] Failed to send timeout reply for user=${state.userId}`, replyErr);
+          correlationTag,
+        } satisfies SpinnerHeartbeatInput);
+        spinnerDeadline = new Date(context.df.currentUtcDateTime.getTime() + SPINNER_INTERVAL_MS);
+        spinnerTimer = context.df.createTimer(spinnerDeadline);
+      } else {
+        // Session completed
+        sessionDone = true;
+        sessionTimer.cancel();
+        spinnerTimer.cancel();
       }
-      yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
-      context.df.continueAsNew(state);
-      return;
     }
-    sessionTimer.cancel();
+
     sessionResult = sessionTask.result as SessionResult;
   } catch (err) {
     sessionTimer.cancel();
+    spinnerTimer.cancel();
     // Session failed — send error reply to user and continue (don't crash the overseer)
     console.error(`[overseer] sessionOrchestrator failed for user=${state.userId}`, err);
     try {
@@ -213,28 +247,54 @@ function* processTurn(
     sessionInput,
   );
 
+  // Spinner heartbeat for first-message path (#267)
+  const correlationTag = event.correlationTag ?? sessionInput.correlationId.slice(0, 8);
+  let spinnerDeadline = new Date(context.df.currentUtcDateTime.getTime() + SPINNER_INITIAL_DELAY_MS);
+  let spinnerTimer: df.TimerTask = context.df.createTimer(spinnerDeadline);
+
   let sessionResult: SessionResult;
   try {
-    const winner = yield context.df.Task.any([sessionTask, sessionTimer]) as df.Task;
-    if (winner === sessionTimer) {
-      console.error(`[overseer] processTurn timed out after ${SESSION_TIMEOUT_MS}ms for user=${state.userId}`);
-      try {
-        const errorReply: SendReplyInput = {
+    let sessionDone = false;
+    let timedOut = false;
+
+    while (!sessionDone && !timedOut) {
+      const winner = yield context.df.Task.any([sessionTask, sessionTimer, spinnerTimer]) as df.Task;
+
+      if (winner === sessionTimer) {
+        timedOut = true;
+        spinnerTimer.cancel();
+        console.error(`[overseer] processTurn timed out after ${SESSION_TIMEOUT_MS}ms for user=${state.userId}`);
+        try {
+          const errorReply: SendReplyInput = {
+            userId: state.userId,
+            message: `⏰ Your message took too long to process (>${SESSION_TIMEOUT_MS / 60000} min). The turn was cancelled. Please try again.`,
+          };
+          yield context.df.callActivity('sendReplyActivity', errorReply);
+        } catch (replyErr) {
+          console.error(`[overseer] Failed to send timeout reply for user=${state.userId}`, replyErr);
+        }
+        yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
+        context.df.continueAsNew(state);
+        return;
+      } else if (winner === spinnerTimer) {
+        yield context.df.callActivity('spinnerHeartbeatActivity', {
           userId: state.userId,
-          message: `⏰ Your message took too long to process (>${SESSION_TIMEOUT_MS / 60000} min). The turn was cancelled. Please try again.`,
-        };
-        yield context.df.callActivity('sendReplyActivity', errorReply);
-      } catch (replyErr) {
-        console.error(`[overseer] Failed to send timeout reply for user=${state.userId}`, replyErr);
+          correlationTag,
+        } satisfies SpinnerHeartbeatInput);
+        spinnerDeadline = new Date(context.df.currentUtcDateTime.getTime() + SPINNER_INTERVAL_MS);
+        spinnerTimer = context.df.createTimer(spinnerDeadline);
+      } else {
+        sessionDone = true;
+        sessionTimer.cancel();
+        spinnerTimer.cancel();
       }
-      yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
-      context.df.continueAsNew(state);
-      return;
     }
-    sessionTimer.cancel();
+
     sessionResult = sessionTask.result as SessionResult;
   } catch (err) {
     // Session failed — send error reply and cycle
+    sessionTimer.cancel();
+    spinnerTimer.cancel();
     console.error(`[overseer] processTurn failed for user=${state.userId}`, err);
     try {
       const errorReply: SendReplyInput = {

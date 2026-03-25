@@ -26,6 +26,7 @@ import '../orchestrator/buildPromptActivity.js';
 import '../orchestrator/llmActivity.js';
 import '../orchestrator/llmFollowUpActivity.js';
 import '../orchestrator/sendReplyActivity.js';
+import '../orchestrator/spinnerHeartbeatActivity.js';
 import '../orchestrator/summarizeActivity.js';
 import '../orchestrator/durableHookActivity.js';
 

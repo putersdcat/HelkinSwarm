@@ -29,7 +29,12 @@ export function getAckVariant(): string {
     nextIndex = Math.floor(Math.random() * ACK_VARIANTS.length);
   } while (nextIndex === lastIndex && ACK_VARIANTS.length > 1);
   lastIndex = nextIndex;
-  return ACK_VARIANTS[nextIndex];
+  return ACK_VARIANTS[nextIndex]!;
+}
+
+/** Returns a correlated ack: rotating variant + compact correlation tag. */
+export function getCorrelatedAck(correlationTag: string): string {
+  return `${getAckVariant()} \`[corr:${correlationTag}]\``;
 }
 
 // ---------------------------------------------------------------------------
@@ -56,4 +61,10 @@ export function resetSpinner(): void {
 export function getSpinnerAck(baseMessage?: string): string {
   const frame = nextSpinnerFrame();
   return `${frame} ${baseMessage ?? 'Processing...'}`;
+}
+
+/** Builds a correlated spinner update: "⠋ Still thinking... `[corr:abcd1234]`" */
+export function getCorrelatedSpinnerAck(correlationTag: string, baseMessage?: string): string {
+  const frame = nextSpinnerFrame();
+  return `${frame} ${baseMessage ?? 'Still thinking...'} \`[corr:${correlationTag}]\``;
 }
