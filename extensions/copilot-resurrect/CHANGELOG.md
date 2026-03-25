@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.3] - 2026-03-25
+
+### Added
+- **`watchIgnorePatterns` setting**: New array setting (default `["**/.git/**"]`) for glob patterns that are excluded from workspace activity detection. Useful for silencing noise from git internals (e.g. `.git\FETCH_HEAD` being polled by `git fetch`), `node_modules`, build output dirs, or any other non-Copilot file changes. Supports `**` (any depth), `*` (within segment), and `?` (single char). The workspace FileSystemWatcher remains fully automatic — this setting only filters which signals are counted as activity.
+
+### Fixed
+- **`.git\FETCH_HEAD` false activity detection**: The workspace-root `FileSystemWatcher` (`**/*`) was resetting the silence timer every time git performed a background fetch, preventing resurrection. The default `watchIgnorePatterns` now excludes all `.git/` internals out of the box.
+
 ## [1.4.2] - 2026-03-24
 
 ### Fixed

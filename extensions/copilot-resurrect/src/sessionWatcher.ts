@@ -8,6 +8,26 @@ export type SilenceCallback = () => void;
 export type ErrorCallback = (error: DetectedError) => void;
 
 /**
+ * Returns true if the given file-system path matches any of the provided glob patterns.
+ * Supports `**` (any path depth), `*` (within a single segment), and `?` (single char).
+ * Path separators are normalised to `/` before matching.
+ */
+function matchesAnyIgnorePattern(fsPath: string, patterns: string[]): boolean {
+  if (!patterns.length) { return false; }
+  const normalised = fsPath.replace(/\\/g, '/');
+  return patterns.some(pattern => {
+    const re = pattern
+      .replace(/\\/g, '/')
+      .replace(/[.+^${}()|[\]]/g, '\\$&')  // escape regex special chars (not * or ?)
+      .replace(/\*\*\//g, '(?:.*/)?')       // **/ = zero or more path components
+      .replace(/\*\*/g, '.*')               // ** = anything
+      .replace(/\*/g, '[^/]*')              // * = within single segment
+      .replace(/\?/g, '[^/]');              // ? = single char
+    return new RegExp(re, 'i').test(normalised);
+  });
+}
+
+/**
  * SessionWatcher monitors Copilot Chat session files for activity.
  * Dual detection modes:
  *  1. Silence detection — no filesystem changes for N seconds → presumed dead
@@ -124,6 +144,10 @@ export class SessionWatcher implements vscode.Disposable {
     // VS Code editor document events, terminal events, and file lifecycle events.
 
     const bumpWithThrottledLog = (source: string, detail?: string) => {
+      // Skip paths that match the configured ignore patterns
+      if (detail && matchesAnyIgnorePattern(detail, this._config.watchIgnorePatterns)) {
+        return;
+      }
       this._bumpActivity();
       const now = Date.now();
       if (now - this._lastWorkspaceLogAt > 30_000) {

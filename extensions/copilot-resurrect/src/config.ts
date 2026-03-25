@@ -19,6 +19,7 @@ export interface ResurrectConfig {
   startNewSession: boolean;
   contentCheckEnabled: boolean;
   watchPaths: string[];
+  watchIgnorePatterns: string[];
 }
 
 export function getConfig(): ResurrectConfig {
@@ -38,6 +39,7 @@ export function getConfig(): ResurrectConfig {
     startNewSession: cfg.get<boolean>('startNewSession', true),
     contentCheckEnabled: cfg.get<boolean>('contentCheckEnabled', true),
     watchPaths: cfg.get<string[]>('watchPaths', []),
+    watchIgnorePatterns: cfg.get<string[]>('watchIgnorePatterns', ['**/.git/**']),
   };
 }
 
