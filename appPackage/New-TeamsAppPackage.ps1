@@ -126,10 +126,7 @@ if (-not $SkipValidation) {
     }
 }
 
-# Validate botId matches id (Teams requirement)
-if ($manifest.bots[0].botId -ne $manifest.id) {
-    $errors += "botId ($($manifest.bots[0].botId)) must match manifest id ($($manifest.id))"
-}
+# Note: bots[].botId is the Azure Bot Service registration ID — intentionally different from manifest.id (Teams app UUID)
 
 # Validate validDomains is not empty
 if ($manifest.validDomains.Count -eq 0) {
