@@ -291,6 +291,29 @@ jobs:
           echo "managedIdentityClientId=$MI_CLIENT_ID"   >> "$GITHUB_OUTPUT"
           echo "managedIdentityResourceId=$MI_RESOURCE_ID" >> "$GITHUB_OUTPUT"
 
+      - name: Ensure CICD can read DelegatedAuth secret from stamp Key Vault
+        if: steps.changes.outputs.infraChanged == 'true'
+        run: |
+          KV_SCOPE="/subscriptions/${{ env.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ env.RESOURCE_GROUP }}/providers/Microsoft.KeyVault/vaults/helkinswarm-kv-${{ env.USER_ALIAS }}"
+
+          EXISTING=$(az role assignment list \
+            --assignee-object-id "${{ env.AZURE_CLIENT_OBJECT_ID }}" \
+            --scope "$KV_SCOPE" \
+            --query "[?roleDefinitionName=='Key Vault Secrets User'] | length(@)" \
+            -o tsv 2>/dev/null || echo "0")
+
+          if [ "$EXISTING" = "0" ]; then
+            az role assignment create \
+              --assignee-object-id "${{ env.AZURE_CLIENT_OBJECT_ID }}" \
+              --assignee-principal-type ServicePrincipal \
+              --role "Key Vault Secrets User" \
+              --scope "$KV_SCOPE" \
+              --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}"
+            echo "✅ Granted CICD Key Vault Secrets User on stamp vault"
+          else
+            echo "ℹ️ CICD already has Key Vault Secrets User on stamp vault"
+          fi
+
   # ─────────────────────────────────────────────────────────────────────────
   # 3. Build & Push Container Image
   # ─────────────────────────────────────────────────────────────────────────
