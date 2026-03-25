@@ -51,7 +51,7 @@ export function createAdapter(): HelkinSwarmAdapter {
   // and keep the HTTP turn hanging (#214).
   sharedAdapter.onTurnError = async (context, error) => {
     const correlationId = crypto.randomUUID();
-    recordMessagePathGlobalFailure(
+    await recordMessagePathGlobalFailure(
       error instanceof Error ? error.message : String(error),
     );
     console.error(`[HelkinSwarm Bot] correlationId=${correlationId} Unhandled turn error:`, error);

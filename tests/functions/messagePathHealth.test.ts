@@ -16,7 +16,7 @@ describe('messagePathHealth', () => {
 
   it('reports ok after a successful turn', async () => {
     recordMessagePathStart('turn-1', 1_000);
-    recordMessagePathSuccess('turn-1', 2_000);
+    await recordMessagePathSuccess('turn-1', 2_000);
 
     await expect(getMessagePathSnapshot(2_500)).resolves.toMatchObject({
       status: 'ok',
@@ -27,7 +27,7 @@ describe('messagePathHealth', () => {
   });
 
   it('reports degraded after a recent failure until a later success clears it', async () => {
-    recordMessagePathFailure('turn-1', 'send path failed', 10_000);
+    await recordMessagePathFailure('turn-1', 'send path failed', 10_000);
 
     await expect(getMessagePathSnapshot(20_000)).resolves.toMatchObject({
       status: 'degraded',
@@ -35,7 +35,7 @@ describe('messagePathHealth', () => {
     });
 
     recordMessagePathStart('turn-2', 21_000);
-    recordMessagePathSuccess('turn-2', 22_000);
+    await recordMessagePathSuccess('turn-2', 22_000);
 
     await expect(getMessagePathSnapshot(23_000)).resolves.toMatchObject({
       status: 'ok',
@@ -55,7 +55,7 @@ describe('messagePathHealth', () => {
   });
 
   it('records global adapter failures as degraded health', async () => {
-    recordMessagePathGlobalFailure('adapter blew up', 50_000);
+    await recordMessagePathGlobalFailure('adapter blew up', 50_000);
 
     await expect(getMessagePathSnapshot(55_000)).resolves.toMatchObject({
       status: 'degraded',

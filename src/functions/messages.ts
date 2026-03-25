@@ -59,7 +59,7 @@ app.http('messages', {
       );
 
       if (invokeResponse) {
-        recordMessagePathSuccess(turnId);
+        await recordMessagePathSuccess(turnId);
         return {
           status: invokeResponse.status,
           body: JSON.stringify(invokeResponse.body),
@@ -67,11 +67,11 @@ app.http('messages', {
         };
       }
 
-      recordMessagePathSuccess(turnId);
+      await recordMessagePathSuccess(turnId);
       return { status: 200 };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      recordMessagePathFailure(turnId, message);
+      await recordMessagePathFailure(turnId, message);
       context.error('Bot processing error:', message);
       return { status: 500, body: JSON.stringify({ error: message }) };
     }

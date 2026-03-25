@@ -54,7 +54,10 @@ export function recordMessagePathStart(turnId: string, startedAtMs = Date.now())
   pendingTurns.set(turnId, { startedAtMs });
 }
 
-export function recordMessagePathSuccess(turnId: string, completedAtMs = Date.now()): void {
+export async function recordMessagePathSuccess(
+  turnId: string,
+  completedAtMs = Date.now(),
+): Promise<void> {
   pendingTurns.delete(turnId);
   lastSuccessAtMs = completedAtMs;
 
@@ -63,26 +66,29 @@ export function recordMessagePathSuccess(turnId: string, completedAtMs = Date.no
     lastFailureReason = null;
   }
 
-  void persistSharedEvent('success', { timestampMs: completedAtMs });
+  await persistSharedEvent('success', { timestampMs: completedAtMs });
 }
 
-export function recordMessagePathFailure(
+export async function recordMessagePathFailure(
   turnId: string,
   reason: string,
   failedAtMs = Date.now(),
-): void {
+): Promise<void> {
   pendingTurns.delete(turnId);
   lastFailureAtMs = failedAtMs;
   lastFailureReason = reason;
 
-  void persistSharedEvent('failure', { timestampMs: failedAtMs, reason });
+  await persistSharedEvent('failure', { timestampMs: failedAtMs, reason });
 }
 
-export function recordMessagePathGlobalFailure(reason: string, failedAtMs = Date.now()): void {
+export async function recordMessagePathGlobalFailure(
+  reason: string,
+  failedAtMs = Date.now(),
+): Promise<void> {
   lastFailureAtMs = failedAtMs;
   lastFailureReason = reason;
 
-  void persistSharedEvent('failure', { timestampMs: failedAtMs, reason });
+  await persistSharedEvent('failure', { timestampMs: failedAtMs, reason });
 }
 
 export function buildMessagePathSnapshot(input: {

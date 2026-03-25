@@ -41,14 +41,14 @@ app.http('router', {
     try {
       activityBody = await req.json();
     } catch {
-      recordMessagePathFailure(turnId, 'Invalid JSON body');
+      await recordMessagePathFailure(turnId, 'Invalid JSON body');
       return { status: 400, body: JSON.stringify({ error: 'Invalid JSON body' }) };
     }
 
     // Extract routing key
     const parsed = ActivityRoutingSchema.safeParse(activityBody);
     if (!parsed.success) {
-      recordMessagePathFailure(turnId, 'Missing activity.from fields');
+      await recordMessagePathFailure(turnId, 'Missing activity.from fields');
       context.warn('Activity missing routing fields:', parsed.error.message);
       return {
         status: 400,
@@ -58,7 +58,7 @@ app.http('router', {
 
     const aadObjectId = parsed.data.from.aadObjectId;
     if (!aadObjectId) {
-      recordMessagePathFailure(turnId, 'No aadObjectId on activity');
+      await recordMessagePathFailure(turnId, 'No aadObjectId on activity');
       context.warn('Activity has no aadObjectId — cannot route');
       return {
         status: 403,
@@ -74,14 +74,14 @@ app.http('router', {
       userMap = await loadUserMap();
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      recordMessagePathFailure(turnId, message);
+      await recordMessagePathFailure(turnId, message);
       context.error('Failed to load user-map:', message);
       return { status: 500, body: JSON.stringify({ error: 'Router config error' }) };
     }
 
     const userEntry = userMap.users[aadObjectId];
     if (!userEntry) {
-      recordMessagePathFailure(turnId, `Unknown user: ${aadObjectId}`);
+      await recordMessagePathFailure(turnId, `Unknown user: ${aadObjectId}`);
       context.warn(`Unknown user: ${aadObjectId}`);
       return {
         status: 403,
@@ -92,7 +92,7 @@ app.http('router', {
     }
 
     if (!userEntry.enabled) {
-      recordMessagePathFailure(turnId, `User ${aadObjectId} is disabled`);
+      await recordMessagePathFailure(turnId, `User ${aadObjectId} is disabled`);
       context.warn(`User ${aadObjectId} is disabled`);
       return {
         status: 403,
@@ -123,9 +123,9 @@ app.http('router', {
 
       const responseBody = await response.text();
       if (response.ok) {
-        recordMessagePathSuccess(turnId);
+        await recordMessagePathSuccess(turnId);
       } else {
-        recordMessagePathFailure(turnId, `Stamp returned ${response.status}`);
+        await recordMessagePathFailure(turnId, `Stamp returned ${response.status}`);
       }
       return {
         status: response.status,
@@ -134,7 +134,7 @@ app.http('router', {
       };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
-      recordMessagePathFailure(turnId, message);
+      await recordMessagePathFailure(turnId, message);
       context.error(`Proxy to ${userEntry.endpoint} failed:`, message);
       return {
         status: 502,
