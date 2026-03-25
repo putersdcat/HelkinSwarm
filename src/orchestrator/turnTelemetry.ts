@@ -123,8 +123,8 @@ export function buildModelOverrideDisclosure(
  *
  * Modes:
  *  - off:      `[corr:abc12345]`
- *  - minimal:  `[E2E:1234ms|m:grok-4.1f|💰€0.02|🕐1h23m]`
- *  - standard: `[E2E:1234ms|m:grok-4.1f|pt:800|ct:200|tools:2|💰€0.02|🕐1h23m|corr:abc12345]`
+ *  - minimal:  `[E2E:1234ms|m:grok-4.1f|�$0.02|🕐1h23m]`
+ *  - standard: `[E2E:1234ms|m:grok-4.1f|pt:800|ct:200|tools:2|💵$0.02|🕐1h23m|corr:abc12345]`
  *  - verbose:  full breakdown with spans, tool names, safety, cost, uptime, correlation
  */
 export function formatTelemetryFooter(
