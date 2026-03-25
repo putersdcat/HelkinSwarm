@@ -2,7 +2,7 @@
 // Scans all installed skill manifests for declared maintenanceTasks, checks schedules,
 // and executes due tasks via appropriate handlers.
 // Spec ref: skills-system-enhancement-2026-03-24v2.md §5
-// Issue: #199
+// Issue: #199, #272
 
 import {
   app,
@@ -11,39 +11,82 @@ import {
 } from '@azure/functions';
 import { getAllMaintenanceTasks } from '../capabilities/capabilityLoader.js';
 import { trackEvent } from '../observability/telemetry.js';
+import { getContainer } from '../memory/cosmosClient.js';
 
 // ---------------------------------------------------------------------------
-// Last-run tracking — in-memory for now, Cosmos-backed when multi-instance
+// Cosmos-backed last-run state (#272) — survives restarts and scale-out
 // ---------------------------------------------------------------------------
 
-const lastRunMap = new Map<string, number>();
+const CONTAINER_NAME = 'maintenanceState';
+
+interface MaintenanceRunDoc {
+  id: string;        // domain:taskName
+  domain: string;
+  taskName: string;
+  lastRunAt: string;  // ISO 8601
+  lastResult: 'success' | 'failure' | 'no-handler';
+  lastError?: string;
+}
 
 function taskKey(domain: string, taskName: string): string {
   return `${domain}:${taskName}`;
 }
 
-/**
- * Parse a cron-like schedule string and determine if the task is due.
- * Compares against last run time — if more than one interval has passed, it's due.
- * For weekly schedules (day-of-week based), checks once per week.
- * For now, treats any scheduled task as due if >24h since last run.
- */
-function isTaskDue(
-  domain: string,
-  taskName: string,
-  _schedule: string | undefined,
-): boolean {
-  const key = taskKey(domain, taskName);
-  const lastRun = lastRunMap.get(key);
-  if (!lastRun) return true; // Never run before
-
-  // Default: run once per 24 hours for scheduled tasks
-  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-  return Date.now() - lastRun >= ONE_DAY_MS;
+async function getLastRun(domain: string, taskName: string): Promise<MaintenanceRunDoc | null> {
+  try {
+    const container = getContainer(CONTAINER_NAME);
+    const { resource } = await container.item(taskKey(domain, taskName), taskKey(domain, taskName)).read<MaintenanceRunDoc>();
+    return resource ?? null;
+  } catch (err) {
+    const statusCode = (err as { code?: number })?.code;
+    if (statusCode === 404) return null;
+    throw err;
+  }
 }
 
-function markRun(domain: string, taskName: string): void {
-  lastRunMap.set(taskKey(domain, taskName), Date.now());
+async function saveLastRun(doc: MaintenanceRunDoc): Promise<void> {
+  const container = getContainer(CONTAINER_NAME);
+  await container.items.upsert(doc);
+}
+
+/**
+ * Parse schedule and determine if the task is due based on last-run state.
+ * Supports: "daily", "weekly", "every Xh", "every Xm", or cron-style interval.
+ */
+function isTaskDue(
+  schedule: string | undefined,
+  lastRunAt: string | null,
+): boolean {
+  if (!lastRunAt) return true; // Never run before
+
+  const lastRunMs = new Date(lastRunAt).getTime();
+  const elapsedMs = Date.now() - lastRunMs;
+
+  if (!schedule) {
+    // No schedule specified — default to 24h
+    return elapsedMs >= 24 * 60 * 60 * 1000;
+  }
+
+  const lower = schedule.toLowerCase().trim();
+
+  if (lower === 'daily') {
+    return elapsedMs >= 24 * 60 * 60 * 1000;
+  }
+  if (lower === 'weekly') {
+    return elapsedMs >= 7 * 24 * 60 * 60 * 1000;
+  }
+
+  // "every Xh" or "every Xm" pattern
+  const everyMatch = /^every\s+(\d+)\s*(h|m)$/i.exec(lower);
+  if (everyMatch) {
+    const value = parseInt(everyMatch[1], 10);
+    const unit = everyMatch[2].toLowerCase();
+    const intervalMs = unit === 'h' ? value * 60 * 60 * 1000 : value * 60 * 1000;
+    return elapsedMs >= intervalMs;
+  }
+
+  // Default fallback: 24h
+  return elapsedMs >= 24 * 60 * 60 * 1000;
 }
 
 // ---------------------------------------------------------------------------
@@ -73,7 +116,9 @@ app.timer('maintenanceSweepTimer', {
         continue;
       }
 
-      if (!isTaskDue(domain, task.name, task.schedule)) {
+      // Check Cosmos-backed last-run state (#272)
+      const lastRun = await getLastRun(domain, task.name);
+      if (!isTaskDue(task.schedule, lastRun?.lastRunAt ?? null)) {
         skipped++;
         continue;
       }
@@ -83,19 +128,42 @@ app.timer('maintenanceSweepTimer', {
           `[MaintenanceSweep] Executing: ${domain}/${task.name} — ${task.description}`,
         );
 
-        // Execute the maintenance task via skill handler convention:
-        // The skill's handlers.js should export a function named `maintenance_<taskName>`
-        // For now, log execution — real dispatch requires handler wiring per skill
-        await executeMaintenanceTask(domain, task.name, context);
+        const result = await executeMaintenanceTask(domain, task.name, context);
 
-        markRun(domain, task.name);
-        executed++;
+        // Persist run state to Cosmos (#272) — survives restarts and scale-out
+        await saveLastRun({
+          id: taskKey(domain, task.name),
+          domain,
+          taskName: task.name,
+          lastRunAt: new Date().toISOString(),
+          lastResult: result,
+        });
+
+        if (result === 'no-handler') {
+          skipped++;
+        } else {
+          executed++;
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         errors.push(`${domain}/${task.name}: ${msg}`);
         context.error(
           `[MaintenanceSweep] Failed: ${domain}/${task.name} — ${msg}`,
         );
+
+        // Persist failure state too
+        try {
+          await saveLastRun({
+            id: taskKey(domain, task.name),
+            domain,
+            taskName: task.name,
+            lastRunAt: new Date().toISOString(),
+            lastResult: 'failure',
+            lastError: msg,
+          });
+        } catch {
+          // Best-effort — don't fail the sweep if state save fails
+        }
       }
     }
 
@@ -124,7 +192,7 @@ async function executeMaintenanceTask(
   domain: string,
   taskName: string,
   context: InvocationContext,
-): Promise<void> {
+): Promise<'success' | 'no-handler'> {
   // Convention: skill handlers can export maintenance_<task-name-kebab-to-snake>
   // e.g., verify-bing-api-key → maintenance_verify_bing_api_key
   const handlerName = `maintenance_${taskName.replace(/-/g, '_')}`;
@@ -136,14 +204,15 @@ async function executeMaintenanceTask(
 
     if (typeof handler === 'function') {
       await (handler as () => Promise<void>)();
-      return;
+      return 'success';
     }
   } catch {
-    // No handlers module or handler not found — fall through to log
+    // No handlers module or handler not found — fall through
   }
 
-  // No handler found — log the intent for future implementation
+  // No handler found — typed outcome (#272)
   context.log(
     `[MaintenanceSweep] No handler "${handlerName}" in skills/${domain}/handlers — task logged only`,
   );
+  return 'no-handler';
 }
