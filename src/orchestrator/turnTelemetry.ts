@@ -23,6 +23,38 @@ export interface TurnTelemetryData {
 }
 
 /**
+ * Returns true when the actual model satisfies the user's direct `/model` request.
+ * Azure model identifiers often include a version/date suffix, so prefix matches count.
+ */
+export function doesActualModelSatisfyRequestedOverride(
+  requestedModel: string,
+  actualModel: string,
+): boolean {
+  const requested = requestedModel.trim().toLowerCase();
+  const actual = actualModel.trim().toLowerCase();
+
+  return actual === requested || actual.startsWith(`${requested}-`);
+}
+
+/**
+ * Build a user-visible disclosure when a direct `/model` request silently fell back.
+ */
+export function buildModelOverrideDisclosure(
+  requestedModel: string | undefined,
+  actualModel: string,
+): string {
+  if (!requestedModel || requestedModel === 'primary' || requestedModel === 'secondary') {
+    return '';
+  }
+
+  if (doesActualModelSatisfyRequestedOverride(requestedModel, actualModel)) {
+    return '';
+  }
+
+  return `⚠️ Requested \`${requestedModel}\`, but this turn completed on \`${actualModel}\` after fallback.`;
+}
+
+/**
  * Format a compact telemetry footer string for appending to bot replies.
  * Returns empty string if telemetry is off.
  *

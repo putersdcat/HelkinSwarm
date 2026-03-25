@@ -20,7 +20,7 @@ import { toolRegistry } from '../tools/toolRegistry.js';
 import { canonicalizeInput } from './inputCanonicalizer.js';
 import { computeToolBudget } from './toolBudgetScaler.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
-import { formatTelemetryFooter, isTelemetryEnabled } from './turnTelemetry.js';
+import { buildModelOverrideDisclosure, formatTelemetryFooter, isTelemetryEnabled } from './turnTelemetry.js';
 import type { TurnTelemetryData, TelemetrySpan } from './turnTelemetry.js';
 import { getEnvConfig } from '../config/envConfig.js';
 
@@ -375,6 +375,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // 5. Send reply to Teams (proactive)
   // For DevLoop sessions, wrap the response in protocol format (#147, #92)
   let replyMessage = responseContent;
+
+  const modelDisclosure = buildModelOverrideDisclosure(input.modelOverride, llmResult.model);
+  if (modelDisclosure) {
+    responseContent = `${modelDisclosure}\n\n${responseContent}`;
+    replyMessage = responseContent;
+  }
 
   // 5a. Append debug telemetry footer if enabled (#174, spec: 0n)
   const envConfig = getEnvConfig();
