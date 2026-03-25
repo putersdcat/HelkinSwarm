@@ -18,13 +18,13 @@
 name: Deploy Tab Host
 
 on:
-  workflow_dispatch:
-  push:
-    paths:
-      - 'tabs/**'
-      - 'infra/main-tabs.bicep'
-    branches:
-      - main
+  workflow_dispatch:  # push trigger disabled to save Actions quota (#279)
+  # push:
+  #   paths:
+  #     - 'tabs/**'
+  #     - 'infra/main-tabs.bicep'
+  #   branches:
+  #     - main
 
 concurrency:
   group: deploy-tabs

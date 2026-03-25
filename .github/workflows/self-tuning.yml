@@ -1,12 +1,13 @@
 name: Self-Tuning Eval
 on:
-  push:
-    paths:
-      - 'model-profiles/**'
-      - 'skills/**/capabilities.json'
-      - 'src/llm/selfTuning/**'
-  schedule:
-    - cron: '0 6 * * 1' # Weekly Monday 06:00 UTC
+  # push/schedule triggers disabled to save Actions quota (#279)
+  # push:
+  #   paths:
+  #     - 'model-profiles/**'
+  #     - 'skills/**/capabilities.json'
+  #     - 'src/llm/selfTuning/**'
+  # schedule:
+  #   - cron: '0 6 * * 1' # Weekly Monday 06:00 UTC
   repository_dispatch:
     types: [eval-trigger]
   workflow_dispatch:
