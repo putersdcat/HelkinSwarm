@@ -47,10 +47,8 @@ export interface NewMessageEvent {
 
 df.app.orchestration('overseer', function* (context) {
   // Each instance handles exactly one message, then completes.
-  // raiseToOverseer purges + starts a fresh instance for the next message.
-  const msg: NewMessageEvent = yield context.df.waitForExternalEvent(
-    'NewMessage',
-  );
+  // raiseToOverseer provides the NewMessageEvent as input.
+  const msg = context.df.getInput() as NewMessageEvent;
 
   // Restore state from Cosmos (survives orchestrator purge / container restart)
   const restoredState: OverseerState | null = yield context.df.callActivity(

@@ -9,7 +9,6 @@ import {
   type Timer,
 } from '@azure/functions';
 import * as df from 'durable-functions';
-import { OrchestrationRuntimeStatus } from 'durable-functions';
 import type { ConversationReference } from 'botbuilder';
 import {
   getUnprocessedIntents,
@@ -92,30 +91,10 @@ app.timer('pendingIntentReplayTimer', {
           ? JSON.parse(intent.devLoopContextJson) as DevLoopContext
           : undefined;
 
-        const instanceId = `overseer-${intent.userId}`;
+        const turnId = crypto.randomUUID().slice(0, 8);
+        const instanceId = `overseer-${intent.userId}-${turnId}`;
 
-        // Ensure overseer exists
-        let statusRuntimeStatus: df.OrchestrationRuntimeStatus | undefined;
-        try {
-          const status = await client.getStatus(instanceId);
-          statusRuntimeStatus = status?.runtimeStatus;
-        } catch {
-          statusRuntimeStatus = undefined;
-        }
-
-        if (
-          statusRuntimeStatus === undefined ||
-          statusRuntimeStatus === OrchestrationRuntimeStatus.Completed ||
-          statusRuntimeStatus === OrchestrationRuntimeStatus.Failed ||
-          statusRuntimeStatus === OrchestrationRuntimeStatus.Terminated
-        ) {
-          if (statusRuntimeStatus !== undefined) {
-            try { await client.purgeInstanceHistory(instanceId); } catch { /* safe to ignore */ }
-          }
-          await client.startNew('overseer', { instanceId });
-        }
-
-        // Raise the event — this is the actual replay into the overseer
+        // The event is exactly the same shape as the live bot path
         const event: NewMessageEvent = {
           userMessage: intent.messageText,
           conversationReference,
@@ -126,7 +105,7 @@ app.timer('pendingIntentReplayTimer', {
           ...(devLoopContext ? { devLoopContext } : {}),
         };
 
-        await client.raiseEvent(instanceId, 'NewMessage', event);
+        await client.startNew('overseer', { instanceId, input: event });
 
         // Only mark processed AFTER successful delivery
         await markIntentProcessed(intent.id, intent.userId);

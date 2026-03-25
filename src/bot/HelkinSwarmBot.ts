@@ -52,8 +52,9 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
    * In-memory dedup cache for Teams adapter retries (#280).
    * Maps activity.id → timestamp. Prevents the same HTTP POST from being
    * processed twice when the adapter retries within milliseconds.
+   * Static: survives across per-request HelkinSwarmBot instances within the same container.
    */
-  private readonly recentActivityIds = new Map<string, number>();
+  private static readonly recentActivityIds = new Map<string, number>();
   private static readonly DEDUP_TTL_MS = 30_000;
 
   private async sendFreshMessage(
@@ -261,16 +262,16 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     const activityId = context.activity.id;
     if (activityId) {
       const now = Date.now();
-      if (this.recentActivityIds.has(activityId)) {
+      if (HelkinSwarmBot.recentActivityIds.has(activityId)) {
         console.info(`[HelkinSwarmBot] Duplicate activity ${activityId} — skipping`);
         return;
       }
-      this.recentActivityIds.set(activityId, now);
+      HelkinSwarmBot.recentActivityIds.set(activityId, now);
       // Prune expired entries to prevent unbounded growth
-      if (this.recentActivityIds.size > 100) {
-        for (const [id, ts] of this.recentActivityIds) {
+      if (HelkinSwarmBot.recentActivityIds.size > 100) {
+        for (const [id, ts] of HelkinSwarmBot.recentActivityIds) {
           if (now - ts > HelkinSwarmBot.DEDUP_TTL_MS) {
-            this.recentActivityIds.delete(id);
+            HelkinSwarmBot.recentActivityIds.delete(id);
           }
         }
       }
@@ -507,7 +508,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
   }
 
-  /** Route a user message to the eternal overseer, starting it if needed. */
+  /** Route a user message to a fresh one-shot overseer instance (#280). */
   private async raiseToOverseer(
     context: TurnContext,
     userId: string,
@@ -520,33 +521,13 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     quotedContext?: QuotedContext,
   ): Promise<void> {
     const client = this.durableClient!;
-    const instanceId = `overseer-${userId}`;
 
-    let statusRuntimeStatus: OrchestrationRuntimeStatus | undefined;
-    try {
-      const status = await client.getStatus(instanceId);
-      statusRuntimeStatus = status?.runtimeStatus;
-    } catch {
-      // 404 — orchestrator has never been started or was purged; treat as "not running"
-      statusRuntimeStatus = undefined;
-    }
-
-    if (
-      statusRuntimeStatus === undefined ||
-      statusRuntimeStatus === OrchestrationRuntimeStatus.Completed ||
-      statusRuntimeStatus === OrchestrationRuntimeStatus.Failed ||
-      statusRuntimeStatus === OrchestrationRuntimeStatus.Terminated
-    ) {
-      // Purge the old instance if it exists in a terminal state — required before startNew
-      if (statusRuntimeStatus !== undefined) {
-        try {
-          await client.purgeInstanceHistory(instanceId);
-        } catch {
-          // Purge may fail if instance was already cleaned up — safe to ignore
-        }
-      }
-      await client.startNew('overseer', { instanceId });
-    }
+    // One-shot pattern: each message gets a unique overseer instance.
+    // This avoids Azure Storage history accumulation (#280) — purgeInstanceHistory
+    // does NOT delete history events from the History table, so reusing the same
+    // instanceId causes unbounded replay growth.
+    const turnId = crypto.randomUUID().slice(0, 8);
+    const instanceId = `overseer-${userId}-${turnId}`;
 
     const conversationReference = TurnContextClass.getConversationReference(
       context.activity,
@@ -565,7 +546,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       ...(quotedContext !== undefined ? { quotedContext } : {}),
     };
 
-    await client.raiseEvent(instanceId, 'NewMessage', event);
+    await client.startNew('overseer', { instanceId, input: event });
   }
 
   /** /forge <idea> — SkillForge entry point (owner-only). */

@@ -236,17 +236,14 @@ app.http('devloopResurrect', {
           },
         };
       }
-      // Terminal or not found — proceed with resurrection
-      if (status) {
-        wasTerminal = true;
-        await client.purgeInstanceHistory(instanceId);
-      }
+      // Resurrect is technically obsolete #280 as overseer is a one-shot orchestrator now
+      wasTerminal = true;
     } catch {
-      // Instance not found — fine, we'll start fresh
+      // expected
     }
 
-    // 2. Start new overseer
-    await client.startNew('overseer', { instanceId });
+    const turnId = crypto.randomUUID().slice(0, 8);
+    let startInstanceId = `overseer-${targetUserId}-${turnId}`;
 
     // 3. If an initial message was provided and we have a conversation reference, inject it
     if (body.initialMessage) {
@@ -265,10 +262,12 @@ app.http('devloopResurrect', {
             hasOver: false,
           },
         };
-        // Small delay to let the orchestrator reach its waitForExternalEvent
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        await client.raiseEvent(instanceId, 'NewMessage', event);
+        await client.startNew('overseer', { instanceId: startInstanceId, input: event });
       }
+    } else {
+      // Not actually starting anything if there is no message, because overseer 
+      // now requires a message input (one-shot). But we'll return 200 for back-compat.
+      startInstanceId = "skipped-no-message";
     }
 
     context.log(`[devloopRelay] Resurrect: user=${targetUserId} wasTerminal=${wasTerminal} reason=${body.reason ?? 'none'}`);
