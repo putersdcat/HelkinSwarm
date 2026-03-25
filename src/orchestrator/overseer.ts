@@ -22,6 +22,7 @@ import type { LoadStateInput } from './loadStateActivity.js';
 import type { SendReplyInput } from './sendReplyActivity.js';
 import type { SpinnerHeartbeatInput } from './spinnerHeartbeatActivity.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
+import type { QuotedContext } from '../bot/quotedContext.js';
 
 /** Spinner starts after this many ms. Only long turns get spinner updates. */
 const SPINNER_INITIAL_DELAY_MS = 8_000;
@@ -43,6 +44,8 @@ export interface NewMessageEvent {
   devLoopContext?: DevLoopContext;
   /** Short correlation tag (first 8 chars of correlationId) for ack/spinner tracing (#267) */
   correlationTag?: string;
+  /** Structured quoted-reply context from Teams reply-with-quote (#278) */
+  quotedContext?: QuotedContext;
 }
 
 df.app.orchestration('overseer', function* (context) {

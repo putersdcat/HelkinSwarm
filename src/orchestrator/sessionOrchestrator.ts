@@ -20,6 +20,7 @@ import { toolRegistry } from '../tools/toolRegistry.js';
 import { canonicalizeInput } from './inputCanonicalizer.js';
 import { computeToolBudget } from './toolBudgetScaler.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
+import type { QuotedContext } from '../bot/quotedContext.js';
 import { buildModelOverrideDisclosure, formatTelemetryFooter } from './turnTelemetry.js';
 import type { TurnTelemetryData, TelemetrySpan } from './turnTelemetry.js';
 import { getEnvConfig } from '../config/envConfig.js';
@@ -35,6 +36,8 @@ export interface SessionInput {
   imageUrls?: string[];
   /** Parsed DevLoop protocol context (#147) */
   devLoopContext?: DevLoopContext;
+  /** Structured quoted-reply context from Teams reply-with-quote (#278) */
+  quotedContext?: QuotedContext;
   /** Override for multi-round tool dispatch limit. Defaults to 5, max 10. (#253) */
   toolBudget?: number;
 }
@@ -72,6 +75,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     state: input.state,
     userMessage: userMessageForLlm,
     devLoopContext: input.devLoopContext,
+    quotedContext: input.quotedContext,
   };
   let spanStart = context.df.currentUtcDateTime.getTime();
   const prompt: PromptResult = yield context.df.callActivity(

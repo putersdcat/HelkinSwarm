@@ -38,6 +38,7 @@ import { parseDevLoopMessage } from '../devloop/radioProtocol.js';
 import { createPendingIntent } from '../orchestrator/pendingIntentStore.js';
 import { getBearerToken } from '../auth/identity.js';
 import { buildSkillLinkSigninCard, buildSkillRelinkSigninCard } from './linkCards.js';
+import type { QuotedContext } from './quotedContext.js';
 
 interface SignInLinkCapableAdapter {
   getSignInLink?(context: TurnContext, connectionName: string): Promise<string>;
@@ -237,13 +238,8 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     let messageText = (context.activity.text ?? '').trim();
     const correlationId = crypto.randomUUID();
 
-    // Extract quoted reply context from Teams reply-with-quote (#129, #166)
-    const quoted = this.extractQuotedReply(context);
-    if (quoted) {
-      // Only warn about truncation when text was NOT resolved from our sent-message cache
-      const truncNote = quoted.fromCache || quoted.text.length > 180 ? '' : ' (may be truncated by Teams)';
-      messageText = `[Quoted context${truncNote}: "${quoted.text}"]\n\n${messageText}`;
-    }
+    // Extract quoted reply context as structured metadata (#278)
+    const quotedContext = this.extractQuotedReply(context);
 
     if (!userId) {
       await context.sendActivity(
@@ -440,6 +436,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         imageUrls,
         devLoopCtx,
         correlationTag,
+        quotedContext,
       );
     } catch (err) {
       // Overseer unreachable — persist as pending intent for startup recovery (#116)
@@ -468,6 +465,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     imageUrls?: string[],
     devLoopContext?: NewMessageEvent['devLoopContext'],
     correlationTag?: string,
+    quotedContext?: QuotedContext,
   ): Promise<void> {
     const client = this.durableClient!;
     const instanceId = `overseer-${userId}`;
@@ -512,6 +510,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       ...(imageUrls && imageUrls.length > 0 ? { imageUrls } : {}),
       ...(devLoopContext !== undefined ? { devLoopContext } : {}),
       ...(correlationTag !== undefined ? { correlationTag } : {}),
+      ...(quotedContext !== undefined ? { quotedContext } : {}),
     };
 
     await client.raiseEvent(instanceId, 'NewMessage', event);
@@ -887,15 +886,15 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
    *
    * Returns { text, fromCache } so callers know whether truncation warning is needed.
    */
-  private extractQuotedReply(context: TurnContext): { text: string; fromCache: boolean } | undefined {
+  private extractQuotedReply(context: TurnContext): QuotedContext | undefined {
     const activity = context.activity;
+    const replyToId = activity.replyToId;
 
     // 1. Cache lookup — if we sent the quoted message, we have the full text
-    const replyToId = activity.replyToId;
     if (replyToId) {
       const cached = getSentMessage(replyToId);
       if (cached) {
-        return { text: cached, fromCache: true };
+        return { text: cached, replyToId, source: 'cache', mayBeTruncated: false };
       }
     }
 
@@ -904,7 +903,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     if (entities) {
       for (const entity of entities) {
         if (entity.type === 'quote' && typeof entity.text === 'string') {
-          return { text: entity.text.trim(), fromCache: false };
+          return { text: entity.text.trim(), replyToId, source: 'entity', mayBeTruncated: entity.text.length < 180 };
         }
       }
     }
@@ -912,7 +911,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     // 3. Check channelData for quoted message content (Teams may include it here)
     const channelData = activity.channelData as Record<string, unknown> | undefined;
     if (channelData?.quotedMessageContent && typeof channelData.quotedMessageContent === 'string') {
-      return { text: channelData.quotedMessageContent.trim(), fromCache: false };
+      return { text: channelData.quotedMessageContent.trim(), replyToId, source: 'channelData', mayBeTruncated: channelData.quotedMessageContent.length < 180 };
     }
 
     // 4. Fallback: extract from HTML body if textFormat is 'html'
@@ -921,8 +920,8 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         activity.text,
       );
       if (blockquoteMatch?.[1]) {
-        // Strip HTML tags from the quoted content
-        return { text: blockquoteMatch[1].replace(/<[^>]+>/g, '').trim(), fromCache: false };
+        const stripped = blockquoteMatch[1].replace(/<[^>]+>/g, '').trim();
+        return { text: stripped, replyToId, source: 'blockquote', mayBeTruncated: true };
       }
     }
 

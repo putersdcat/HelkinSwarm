@@ -13,12 +13,15 @@ import { MemoryManager } from '../memory/memoryManager.js';
 import { buildPriorsPromptFragment } from '../persona/operatorDomainPriors.js';
 import { buildDevLoopSystemBlock } from '../devloop/sessionContext.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
+import type { QuotedContext } from '../bot/quotedContext.js';
 
 export interface BuildPromptInput {
   state: OverseerState;
   userMessage: string;
   /** Parsed DevLoop protocol context (#147) */
   devLoopContext?: DevLoopContext;
+  /** Structured quoted-reply context from Teams reply-with-quote (#278) */
+  quotedContext?: QuotedContext;
 }
 
 export interface PromptResult {
@@ -166,6 +169,14 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
     if (skippedCount > 0) {
       console.warn(`[buildPrompt] Skipped ${skippedCount} recentHistory entries with empty content`);
     }
+  }
+
+  // Inject structured quoted context before the user message (#278)
+  if (input.quotedContext) {
+    const q = input.quotedContext;
+    const confidence = q.mayBeTruncated ? ' (may be truncated)' : '';
+    const quoteBlock = `[Replying to a previous message${confidence}]\n"${q.text}"`;
+    messages.push({ role: 'user' as const, content: quoteBlock });
   }
 
   messages.push({ role: 'user' as const, content: userMessage });
