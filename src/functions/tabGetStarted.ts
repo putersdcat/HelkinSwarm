@@ -11,6 +11,7 @@ import {
 import { isOwnerUserId } from '../bot/maintenanceMode.js';
 import { getLoadedCapabilitiesCount, getActiveSkills } from '../capabilities/capabilityLoader.js';
 import { getEnvConfig } from '../config/envConfig.js';
+import { validateTabTokenFromRequest } from '../auth/tabTokenValidator.js';
 
 const TAB_CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': 'https://helkinswarmtabsst.z20.web.core.windows.net',
@@ -27,8 +28,18 @@ app.http('tab-get-started', {
       return { status: 204, headers: TAB_CORS_HEADERS };
     }
 
-    const userId = req.headers.get('x-helkinswarm-user-id');
-    if (!userId || !(await isOwnerUserId(userId))) {
+    let userId: string;
+    try {
+      userId = (await validateTabTokenFromRequest(req)).oid;
+    } catch (err) {
+      return {
+        status: 401,
+        headers: TAB_CORS_HEADERS,
+        jsonBody: { error: err instanceof Error ? err.message : 'Authentication required.' },
+      };
+    }
+
+    if (!(await isOwnerUserId(userId))) {
       return { status: 403, headers: TAB_CORS_HEADERS, jsonBody: { error: 'Owner-only endpoint.' } };
     }
 

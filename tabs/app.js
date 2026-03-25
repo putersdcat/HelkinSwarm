@@ -108,8 +108,8 @@
   function apiCall(endpoint) {
     if (!_userOid) return Promise.reject(new Error("Not authenticated — Teams context unavailable."));
     return getAadToken().then(function (token) {
-      var headers = { "x-helkinswarm-user-id": _userOid };
-      if (token) headers["Authorization"] = "Bearer " + token;
+      if (!token) throw new Error("Authentication required — Teams SSO token unavailable.");
+      var headers = { "x-helkinswarm-user-id": _userOid, "Authorization": "Bearer " + token };
       return fetch(TAB_API_BASE + "/" + endpoint, { headers: headers });
     }).then(function (resp) {
       if (resp.status === 503) {
@@ -125,8 +125,8 @@
   function apiPost(endpoint) {
     if (!_userOid) return Promise.reject(new Error("Not authenticated — Teams context unavailable."));
     return getAadToken().then(function (token) {
-      var headers = { "x-helkinswarm-user-id": _userOid };
-      if (token) headers["Authorization"] = "Bearer " + token;
+      if (!token) throw new Error("Authentication required — Teams SSO token unavailable.");
+      var headers = { "x-helkinswarm-user-id": _userOid, "Authorization": "Bearer " + token };
       return fetch(TAB_API_BASE + "/" + endpoint, { method: "POST", headers: headers });
     }).then(function (resp) {
       if (!resp.ok) throw new Error("Tab API error: " + resp.status);
