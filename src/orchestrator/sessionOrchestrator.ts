@@ -127,11 +127,16 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       return def?.risk === 'low';
     });
 
+    // Any tool with declarative requiresConfirmation must trigger the pipeline regardless of risk (#247)
+    const anyDeclarativeConfirmation = toolCallsForDispatch.some((tc: { name: string }) =>
+      toolRegistry.get(tc.name)?.requiresConfirmation === true,
+    );
+
     // Capture verified-set data from the safety pipeline for executor binding (#266)
     let verifiedSetHash: string | undefined;
     let verifiedAt: string | undefined;
 
-    if (!isLowRiskOnly) {
+    if (!isLowRiskOnly || anyDeclarativeConfirmation) {
       // Determine the highest risk level among requested tools
       const highestRisk = toolCallsForDispatch.some((tc: { name: string }) =>
         toolRegistry.get(tc.name)?.risk === 'high') ? 'high' as const : 'medium' as const;

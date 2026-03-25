@@ -25,6 +25,8 @@ export const ToolDefinitionSchema = z.object({
   requiresExecutor: z.boolean().default(false),
   /** Route through subAgentActivity for fresh isolated LLM session (#47) */
   requiresSubAgent: z.boolean().default(false),
+  /** Tool declares explicit human confirmation requirement regardless of risk level (#247) */
+  requiresConfirmation: z.boolean().default(false),
 });
 
 export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;
