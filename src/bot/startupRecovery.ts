@@ -1,5 +1,6 @@
-// Startup Recovery — cleans up dangling acks and replays pending intents on container start.
-// Spec ref: ADDENDA-06, Issue #116, #191
+// Startup Recovery — cleans up dangling acks and notifies users about pending intents.
+// Actual intent replay is handled by pendingIntentReplayTimer (#273).
+// Spec ref: ADDENDA-06, Issue #116, #191, #273
 /* eslint-disable no-console */
 
 import {
@@ -15,9 +16,6 @@ import {
 } from './conversationStore.js';
 import {
   getUnprocessedIntents,
-  markIntentProcessing,
-  markIntentProcessed,
-  markIntentFailed,
   hasIdempotencyKey,
 } from '../orchestrator/pendingIntentStore.js';
 import { getEnvConfig } from '../config/envConfig.js';
@@ -111,7 +109,9 @@ export async function runStartupRecovery(): Promise<void> {
     console.warn('[startupRecovery] Stale ack query failed:', err);
   }
 
-  // --- Phase 2: Replay pending intents (#116) ---
+  // --- Phase 2: Notify users about pending intents (#116, #273) ---
+  // Actual replay into the overseer is handled by pendingIntentReplayTimer,
+  // which has DurableClient access. This phase only sends user notifications.
   try {
     const intents = await getUnprocessedIntents();
 
@@ -136,9 +136,7 @@ export async function runStartupRecovery(): Promise<void> {
       }
 
       try {
-        await markIntentProcessing(intent.id, intent.userId);
-
-        // Notify user that their queued message is being processed
+        // Notify user that their queued message will be replayed
         const conversationReference = intent.conversationReferenceJson
           ? JSON.parse(intent.conversationReferenceJson) as ConversationReference
           : await getConversationReference(intent.userId);
@@ -153,28 +151,17 @@ export async function runStartupRecovery(): Promise<void> {
             async (turnContext) => {
               await turnContext.sendActivity({
                 type: ActivityTypes.Message,
-                text: `🔄 Processing your queued message (tracking: ${intent.trackingId}): "${intent.messageText.slice(0, 100)}${intent.messageText.length > 100 ? '...' : ''}"`,
+                text: `🔄 Replaying your queued message (tracking: ${intent.trackingId}): "${intent.messageText.slice(0, 100)}${intent.messageText.length > 100 ? '...' : ''}"`,
                 textFormat: 'markdown',
               });
             },
           );
         }
 
-        // TODO: Route to overseer via raiseEvent once startup orchestrator wiring is in place.
-        // For now, we notify the user and mark as processed.
-        await markIntentProcessed(intent.id, intent.userId);
         stats.intentsProcessed++;
-
-        trackEvent({
-          name: 'PendingIntentRecovered',
-          correlationId: intent.id,
-          userId: intent.userId,
-          properties: { trackingId: intent.trackingId },
-        });
       } catch (err) {
-        const reason = err instanceof Error ? err.message : 'Unknown error';
-        await markIntentFailed(intent.id, intent.userId, reason).catch(() => {});
-        stats.intentsFailed++;
+        // Notification failure is non-fatal — the timer will still replay the intent
+        console.warn(`[startupRecovery] Failed to notify user about intent ${intent.trackingId}:`, err);
       }
     }
   } catch (err) {

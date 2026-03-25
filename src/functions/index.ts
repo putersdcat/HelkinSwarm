@@ -15,6 +15,7 @@ import './graphNotificationHandler.js';
 import './subscriptionRenewalTimer.js';
 import './maintenanceSweepTimer.js';
 import './staleSessionCleanupTimer.js';
+import './pendingIntentReplayTimer.js';
 import './tabGetStarted.js';
 import './tabDashboard.js';
 import './tabSessions.js';
