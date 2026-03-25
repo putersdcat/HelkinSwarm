@@ -83,6 +83,10 @@ const CHAT_INCOMPATIBLE_MODEL_REASONS: Record<string, string> = {
   'gpt-5.1-codex-mini': 'does not support the chat completions API (codex/completions-only deployment)',
 };
 
+function isEuResidencyModeEnabledForDirectOverrides(): boolean {
+  return process.env['EU_RESIDENCY_MODE']?.toLowerCase() === 'true';
+}
+
 /** Returns the active model routing based on current config + override */
 export function getModelRouting(llmProvider?: 'azure' | 'openrouter'): ModelRouting {
   const config = getEnvConfig();
@@ -174,7 +178,9 @@ export function getFallbackChain(): ModelRouting[] {
 
 /** Supported `/model` direct deployment overrides for chat-based interactive use. */
 export function getSupportedDirectChatModelOverrides(): string[] {
-  return [...DIRECT_CHAT_MODEL_OVERRIDES];
+  return DIRECT_CHAT_MODEL_OVERRIDES.filter(
+    (deploymentName) => getDirectChatModelIncompatibilityReason(deploymentName) === undefined,
+  );
 }
 
 /** Returns a human-readable incompatibility reason when a deployment cannot be used for chat completions. */
@@ -185,6 +191,13 @@ export function getDirectChatModelIncompatibilityReason(deploymentName: string):
 
   if (!DIRECT_CHAT_MODEL_OVERRIDE_SET.has(deploymentName)) {
     return 'is not a supported /model deployment name; use one of the advertised deployment names exactly';
+  }
+
+  if (deploymentName === 'grok-4-1-fast-reasoning') {
+    if (isEuResidencyModeEnabledForDirectOverrides()) {
+      return undefined;
+    }
+    return 'is disabled in the global lane because this deployment has been timing out in live /model validation; use `o4-mini` for reasoning or enable EU residency mode';
   }
 
   return undefined;
