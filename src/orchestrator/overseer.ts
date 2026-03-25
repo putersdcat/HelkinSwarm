@@ -155,7 +155,7 @@ df.app.orchestration('overseer', function* (context) {
   const history = state.recentHistory ?? [];
   history.push(
     { role: 'user' as const, content: event.userMessage },
-    { role: 'assistant' as const, content: sessionResult.cleanResponse ?? sessionResult.response },
+    { role: 'assistant' as const, content: sessionResult.cleanResponse || sessionResult.response || '(no response)' },
   );
   // Keep last 10 entries (5 user+assistant pairs)
   state.recentHistory = history.slice(-10);
@@ -261,7 +261,7 @@ function* processTurn(
   const history = state.recentHistory ?? [];
   history.push(
     { role: 'user' as const, content: event.userMessage },
-    { role: 'assistant' as const, content: sessionResult.cleanResponse ?? sessionResult.response },
+    { role: 'assistant' as const, content: sessionResult.cleanResponse || sessionResult.response || '(no response)' },
   );
   state.recentHistory = history.slice(-10);
 

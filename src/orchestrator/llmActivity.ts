@@ -73,10 +73,20 @@ df.app.activity('llmActivity', {
 
     const client = new FoundryClient({ ...routing, deploymentName, isReasoning });
 
+    // Pre-flight: reject messages with empty content — LLM APIs return 400 for these
+    const validMessages = input.messages.filter((m) => {
+      const c = typeof m.content === 'string' ? m.content.trim() : '';
+      if (c.length === 0) {
+        console.warn(`[llmActivity] Dropping message with empty content: role=${m.role}`);
+        return false;
+      }
+      return true;
+    });
+
     // Convert PromptResult messages to ChatMessage format
     // If images are present, convert the last user message to multimodal content parts (#130)
-    const messages: ChatMessage[] = input.messages.map((m, idx) => {
-      if (hasImages && m.role === 'user' && idx === input.messages.length - 1) {
+    const messages: ChatMessage[] = validMessages.map((m, idx) => {
+      if (hasImages && m.role === 'user' && idx === validMessages.length - 1) {
         const parts: ContentPart[] = [{ type: 'text', text: m.content }];
         for (const url of input.imageUrls!) {
           parts.push({ type: 'image_url', image_url: { url, detail: 'auto' } });

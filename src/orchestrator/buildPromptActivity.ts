@@ -154,8 +154,17 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
 
   // Inject recent conversation history for multi-turn coherence (#203)
   if (state.recentHistory && state.recentHistory.length > 0) {
+    let skippedCount = 0;
     for (const turn of state.recentHistory) {
+      const c = typeof turn.content === 'string' ? turn.content.trim() : '';
+      if (c.length === 0) {
+        skippedCount++;
+        continue; // Skip entries with empty/null/undefined content — LLM APIs reject them
+      }
       messages.push({ role: turn.role as 'user' | 'assistant', content: turn.content });
+    }
+    if (skippedCount > 0) {
+      console.warn(`[buildPrompt] Skipped ${skippedCount} recentHistory entries with empty content`);
     }
   }
 
