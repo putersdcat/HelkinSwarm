@@ -227,7 +227,9 @@ export class FoundryClient {
     });
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => 'unknown');
+      const rawErrorText = await response.text().catch(() => 'unknown');
+      // Strip HTML tags and cap length to prevent HTML injection into Teams messages (#234)
+      const errorText = rawErrorText.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 500);
       throw new FoundryError(
         `Chat completion failed: ${response.status} ${response.statusText} — ${errorText}`,
         response.status,

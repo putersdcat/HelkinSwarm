@@ -1,0 +1,559 @@
+- application [ref=e1]:
+  - generic [ref=e6]:
+    - generic [ref=e10]:
+      - generic [ref=e12]:
+        - button "Open office app launcher" [ref=e13]:
+          - img [ref=e15]
+        - img [ref=e17]
+      - search [ref=e38]:
+        - button [ref=e39]:
+          - img [ref=e40]
+        - combobox "Search (Ctrl+Alt+E)" [ref=e46]
+      - generic [ref=e48]:
+        - button "Settings and more, new activity" [ref=e50]:
+          - img [ref=e54]
+        - button "Your profile, status Away" [ref=e3309]:
+          - img "Profile picture of Eric Anderson." [ref=e59]:
+            - generic [ref=e60]: EA
+            - img [ref=e61]
+            - img "away" [ref=e3310]:
+              - img [ref=e3311]
+    - group [ref=e527]:
+      - img [ref=e529]
+      - generic [ref=e531]: Download the new Teams desktop app for improved speed and performance
+      - button "Download now" [ref=e533]
+      - button "Close" [ref=e535]:
+        - img [ref=e537]
+    - generic [ref=e69]:
+      - generic [ref=e71]:
+        - navigation "Apps" [ref=e73]:
+          - generic "Activity (Ctrl+Shift+1)" [ref=e75]:
+            - button "Activity (Ctrl+Shift+1)" [ref=e76]:
+              - generic [ref=e77]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Activity
+          - generic "Chat (Ctrl+Shift+2)" [ref=e79]:
+            - button "Chat (Ctrl+Shift+2)" [ref=e80]:
+              - generic [ref=e81]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Chat
+            - generic: "1"
+            - generic [ref=e3313]: 1 new notification
+          - generic "Calendar (Ctrl+Shift+3)" [ref=e84]:
+            - button "Calendar (Ctrl+Shift+3)" [ref=e85]:
+              - generic [ref=e86]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Calendar
+          - generic "Calls (Ctrl+Shift+4)" [ref=e88]:
+            - button "Calls (Ctrl+Shift+4)" [ref=e89]:
+              - generic [ref=e90]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Calls
+          - generic "OneDrive (Ctrl+Shift+5)" [ref=e92]:
+            - button "OneDrive (Ctrl+Shift+5)" [ref=e93]:
+              - generic [ref=e94]:
+                - generic:
+                  - generic:
+                    - img "OneDrive"
+                    - img
+                  - generic: OneDrive
+          - generic "Copilot (Ctrl+Shift+6)" [ref=e96]:
+            - button "Copilot (Ctrl+Shift+6)" [ref=e97]:
+              - generic [ref=e98]:
+                - generic:
+                  - generic:
+                    - img "Copilot"
+                    - img
+                  - generic: Copilot
+          - separator [ref=e2274]
+          - generic "HelkinSwarm (Ctrl+Shift+8)" [ref=e2277]:
+            - button "HelkinSwarm (Ctrl+Shift+8)" [pressed] [ref=e2278]:
+              - generic [ref=e2279]:
+                - generic:
+                  - generic:
+                    - img "HelkinSwarm"
+                    - img
+                  - generic: HelkinSwarm
+            - generic: "1"
+            - generic [ref=e3438]: 1 new notification
+        - generic [ref=e103]:
+          - generic "View more apps" [ref=e104]:
+            - button "View more apps" [ref=e105]:
+              - generic [ref=e106]:
+                - generic:
+                  - generic:
+                    - img
+          - generic "Apps" [ref=e108]:
+            - button "Apps" [ref=e109]:
+              - generic [ref=e110]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Apps
+      - generic [ref=e113]: Has context menu
+    - generic [ref=e2285]:
+      - generic "HelkinSwarm Bot Away" [ref=e3315]:
+        - generic [ref=e2289]:
+          - img [ref=e2291]
+          - heading "HelkinSwarm" [level=2] [ref=e2292]
+      - generic [ref=e2295]:
+        - tablist [ref=e2296]:
+          - tab "Chat" [selected] [ref=e2298] [cursor=pointer]:
+            - generic [ref=e2301]: Chat
+          - tab "Get Started" [ref=e2302] [cursor=pointer]:
+            - generic [ref=e2305]: Get Started
+          - tab "Control Center" [ref=e2306] [cursor=pointer]:
+            - generic [ref=e2309]: Control Center
+        - generic [ref=e2311]: Has context menu
+      - button "More HelkinSwarm actions" [ref=e2313]:
+        - img "More HelkinSwarm actions" [ref=e2315]
+    - main [ref=e2559]:
+      - generic [ref=e2560]:
+        - generic [ref=e2563]:
+          - generic [ref=e2570]:
+            - generic [ref=e2888]:
+              - heading "/model grok-4-1-fast-non-reasoning Reply wi... by Eric Anderson" [level=4] [ref=e2889]
+              - generic [ref=e2891]:
+                - generic [ref=e2892]:
+                  - time [ref=e2893]: 12:23 AM
+                  - generic [ref=e2897]: Eric Anderson
+                - group "/model grok-4-1-fast-non-reasoning Reply with exactly HELM219-GROK-NR OK Eric Anderson Today at 12:23 AM." [ref=e2900]:
+                  - button "More message options" [ref=e2901]
+                  - generic "/model grok-4-1-fast-non-reasoning Reply with exactly HELM219-GROK-NR OK" [ref=e2902]:
+                    - generic [ref=e2903]: /model grok-4-1-fast-non-reasoning Reply with exactly HELM219-GROK-NR OK
+            - generic [ref=e2907]:
+              - heading "⌛ Working on it... (🎯 grok-4-1-fast-non-re... by HelkinSwarm" [level=4] [ref=e2908]
+              - generic [ref=e2910]:
+                - generic [ref=e2911]:
+                  - generic [ref=e2915]: HelkinSwarm
+                  - time [ref=e2916]: 12:23 AM
+                - generic [ref=e2917]:
+                  - button "HelkinSwarm Bot Away" [ref=e3321]:
+                    - img [ref=e2920]
+                  - group "⌛ Working on it... (🎯 grok-4-1-fast-non-reasoning) HelkinSwarm Today at 12:23 AM." [ref=e2922]:
+                    - button "More message options" [ref=e2923]
+                    - generic "⌛ Working on it... (🎯 grok-4-1-fast-non-reasoning)" [ref=e2924]:
+                      - paragraph [ref=e2925]: ⌛ Working on it... (🎯 grok-4-1-fast-non-reasoning)
+            - generic [ref=e2929]:
+              - heading "HELM219-GROK-R OK [E2E:122630ms|m:grok-4.1f... by HelkinSwarm" [level=4] [ref=e2930]
+              - generic [ref=e2932]:
+                - generic:
+                  - generic [ref=e2936]: HelkinSwarm
+                  - time [ref=e2937]: 12:23 AM
+                - group "HELM219-GROK-R OK [E2E:122630ms|m:grok-4.1f|pt:3841|ct:8|safe:✓|corr:c512c80b] HelkinSwarm Today at 12:23 AM." [ref=e2940]:
+                  - button "More message options" [ref=e2941]
+                  - generic "HELM219-GROK-R OK [E2E:122630ms|m:grok-4.1f|pt:3841|ct:8|safe:✓|corr:c512c80b]" [ref=e2942]:
+                    - paragraph [ref=e2943]: HELM219-GROK-R OK
+                    - separator [ref=e2944]
+                    - paragraph [ref=e2945]:
+                      - code [ref=e2946]: "[E2E:122630ms|m:grok-4.1f|pt:3841|ct:8|safe:✓|corr:c512c80b]"
+            - generic [ref=e2950]:
+              - heading "/model gpt-5.1-codex-mini Reply with exactl... by Eric Anderson" [level=4] [ref=e2951]
+              - generic [ref=e2953]:
+                - generic [ref=e2954]:
+                  - time [ref=e2955]: 12:36 AM
+                  - generic [ref=e2959]: Eric Anderson
+                - group "/model gpt-5.1-codex-mini Reply with exactly HELM219-CODEX OK Eric Anderson Today at 12:36 AM." [ref=e2962]:
+                  - button "More message options" [ref=e2963]
+                  - generic "/model gpt-5.1-codex-mini Reply with exactly HELM219-CODEX OK" [ref=e2964]:
+                    - generic [ref=e2965]: /model gpt-5.1-codex-mini Reply with exactly HELM219-CODEX OK
+            - generic [ref=e2969]:
+              - heading "/model gpt-5 Reply with exactly HELM219-GPT... by Eric Anderson" [level=4] [ref=e2970]
+              - generic [ref=e2972]:
+                - generic:
+                  - time [ref=e2973]: 12:36 AM
+                  - generic [ref=e2977]: Eric Anderson
+                - group "/model gpt-5 Reply with exactly HELM219-GPT5 OK Eric Anderson Today at 12:36 AM." [ref=e2980]:
+                  - button "More message options" [ref=e2981]
+                  - generic "/model gpt-5 Reply with exactly HELM219-GPT5 OK" [ref=e2982]:
+                    - generic [ref=e2983]: /model gpt-5 Reply with exactly HELM219-GPT5 OK
+            - generic [ref=e2987]:
+              - heading "⌛ Working on it... (🎯 gpt-5) by HelkinSwarm" [level=4] [ref=e2988]
+              - generic [ref=e2990]:
+                - generic [ref=e2991]:
+                  - generic [ref=e2995]: HelkinSwarm
+                  - time [ref=e2996]: 12:36 AM
+                - generic [ref=e2997]:
+                  - button "HelkinSwarm Bot Away" [ref=e3322]:
+                    - img [ref=e3000]
+                  - group "⌛ Working on it... (🎯 gpt-5) HelkinSwarm Today at 12:36 AM." [ref=e3002]:
+                    - button "More message options" [ref=e3003]
+                    - generic "⌛ Working on it... (🎯 gpt-5)" [ref=e3004]:
+                      - paragraph [ref=e3005]: ⌛ Working on it... (🎯 gpt-5)
+            - generic [ref=e3009]:
+              - heading "⚠️ gpt-5.1-codex-mini is not available vi... by HelkinSwarm" [level=4] [ref=e3010]
+              - generic [ref=e3012]:
+                - generic:
+                  - generic [ref=e3016]: HelkinSwarm
+                  - time [ref=e3017]: 12:36 AM
+                - 'group "⚠️ gpt-5.1-codex-mini is not available via /model because it does not support the chat completions API (codex/completions-only deployment). Available: grok-4-1-fast-non-reasoning, grok-4-1-fast-reasoning, gpt-5.4-mini, o4-mini, DeepSeek-V3.2, FW-MiniMax-M2.5, FW-Kimi-K2.5 HelkinSwarm Today at 12:36 AM." [ref=e3020]':
+                  - button "More message options" [ref=e3021]
+                  - 'generic "⚠️ gpt-5.1-codex-mini is not available via /model because it does not support the chat completions API (codex/completions-only deployment). Available: grok-4-1-fast-non-reasoning, grok-4-1-fast-reasoning, gpt-5.4-mini, o4-mini, DeepSeek-V3.2, FW-MiniMax-M2.5, FW-Kimi-K2.5" [ref=e3022]':
+                    - paragraph [ref=e3023]:
+                      - text: ⚠️
+                      - code [ref=e3024]: gpt-5.1-codex-mini
+                      - text: is not available via /model because it does not support the chat completions API (codex/completions-only deployment).
+                    - paragraph [ref=e3025]: "Available: grok-4-1-fast-non-reasoning, grok-4-1-fast-reasoning, gpt-5.4-mini, o4-mini, DeepSeek-V3.2, FW-MiniMax-M2.5, FW-Kimi-K2.5"
+            - generic [ref=e3029]:
+              - heading "HELM219-GPT5 OK [E2E:1678ms|m:grok-4.1f|pt:... by HelkinSwarm" [level=4] [ref=e3030]
+              - generic [ref=e3032]:
+                - generic:
+                  - generic [ref=e3036]: HelkinSwarm
+                  - time [ref=e3037]: 12:36 AM
+                - group "HELM219-GPT5 OK [E2E:1678ms|m:grok-4.1f|pt:3841|ct:7|safe:✓|corr:432c5c94] HelkinSwarm Today at 12:36 AM." [ref=e3040]:
+                  - button "More message options" [ref=e3041]
+                  - generic "HELM219-GPT5 OK [E2E:1678ms|m:grok-4.1f|pt:3841|ct:7|safe:✓|corr:432c5c94]" [ref=e3042]:
+                    - paragraph [ref=e3043]: HELM219-GPT5 OK
+                    - separator [ref=e3044]
+                    - paragraph [ref=e3045]:
+                      - code [ref=e3046]: "[E2E:1678ms|m:grok-4.1f|pt:3841|ct:7|safe:✓|corr:432c5c94]"
+            - generic [ref=e3050]:
+              - heading "/model gpt-5-mini Reply with exactly HELM21... by Eric Anderson" [level=4] [ref=e3051]
+              - generic [ref=e3053]:
+                - generic [ref=e3054]:
+                  - time [ref=e3055]: 12:37 AM
+                  - generic [ref=e3059]: Eric Anderson
+                - group "/model gpt-5-mini Reply with exactly HELM219-GPT5MINI OK Eric Anderson Today at 12:37 AM." [ref=e3062]:
+                  - button "More message options" [ref=e3063]
+                  - generic "/model gpt-5-mini Reply with exactly HELM219-GPT5MINI OK" [ref=e3064]:
+                    - generic [ref=e3065]: /model gpt-5-mini Reply with exactly HELM219-GPT5MINI OK
+            - generic [ref=e3069]:
+              - heading "/model o3 Reply with exactly HELM219-O3 OK by Eric Anderson" [level=4] [ref=e3070]
+              - generic [ref=e3072]:
+                - generic:
+                  - time [ref=e3073]: 12:37 AM
+                  - generic [ref=e3077]: Eric Anderson
+                - group "/model o3 Reply with exactly HELM219-O3 OK Eric Anderson Today at 12:37 AM." [ref=e3080]:
+                  - button "More message options" [ref=e3081]
+                  - generic "/model o3 Reply with exactly HELM219-O3 OK" [ref=e3082]:
+                    - generic [ref=e3083]: /model o3 Reply with exactly HELM219-O3 OK
+            - generic [ref=e3087]:
+              - heading "⌛ Working on it... (🎯 o3) by HelkinSwarm" [level=4] [ref=e3088]
+              - generic [ref=e3090]:
+                - generic [ref=e3091]:
+                  - generic [ref=e3095]: HelkinSwarm
+                  - time [ref=e3096]: 12:37 AM
+                - generic [ref=e3097]:
+                  - button "HelkinSwarm Bot Away" [ref=e3323]:
+                    - img [ref=e3100]
+                  - group "⌛ Working on it... (🎯 o3) HelkinSwarm Today at 12:37 AM." [ref=e3102]:
+                    - button "More message options" [ref=e3103]
+                    - generic "⌛ Working on it... (🎯 o3)" [ref=e3104]:
+                      - paragraph [ref=e3105]: ⌛ Working on it... (🎯 o3)
+            - generic [ref=e3109]:
+              - heading "⌛ Working on it... (🎯 gpt-5-mini) by HelkinSwarm" [level=4] [ref=e3110]
+              - generic [ref=e3112]:
+                - generic:
+                  - generic [ref=e3116]: HelkinSwarm
+                  - time [ref=e3117]: 12:37 AM
+                - group "⌛ Working on it... (🎯 gpt-5-mini) HelkinSwarm Today at 12:37 AM." [ref=e3120]:
+                  - button "More message options" [ref=e3121]
+                  - generic "⌛ Working on it... (🎯 gpt-5-mini)" [ref=e3122]:
+                    - paragraph [ref=e3123]: ⌛ Working on it... (🎯 gpt-5-mini)
+            - generic [ref=e3127]:
+              - heading "HELM219-O3 OK [E2E:2218ms|m:grok-4.1f|pt:37... by HelkinSwarm" [level=4] [ref=e3128]
+              - generic [ref=e3130]:
+                - generic:
+                  - generic [ref=e3134]: HelkinSwarm
+                  - time [ref=e3135]: 12:37 AM
+                - group "HELM219-O3 OK [E2E:2218ms|m:grok-4.1f|pt:3773|ct:6|safe:✓|corr:42a0c1e7] HelkinSwarm Today at 12:37 AM." [ref=e3138]:
+                  - button "More message options" [ref=e3139]
+                  - generic "HELM219-O3 OK [E2E:2218ms|m:grok-4.1f|pt:3773|ct:6|safe:✓|corr:42a0c1e7]" [ref=e3140]:
+                    - paragraph [ref=e3141]: HELM219-O3 OK
+                    - separator [ref=e3142]
+                    - paragraph [ref=e3143]:
+                      - code [ref=e3144]: "[E2E:2218ms|m:grok-4.1f|pt:3773|ct:6|safe:✓|corr:42a0c1e7]"
+            - generic [ref=e3148]:
+              - heading "/link outlook by Eric Anderson" [level=4] [ref=e3149]
+              - generic [ref=e3151]:
+                - generic [ref=e3152]:
+                  - time [ref=e3153]: 12:43 AM
+                  - generic [ref=e3157]: Eric Anderson
+                - group "/link outlook Eric Anderson Today at 12:43 AM." [ref=e3439]:
+                  - button "More message options" [ref=e3161]
+                  - generic "/link outlook" [ref=e3162]:
+                    - generic [ref=e3163]: /link outlook
+            - generic [ref=e3170]:
+              - 'heading "Card text content: Sign in to grant HelkinS... by HelkinSwarm" [level=4] [ref=e3171]'
+              - generic [ref=e3173]:
+                - generic [ref=e3174]:
+                  - generic [ref=e3178]: HelkinSwarm
+                  - time [ref=e3179]: 12:43 AM
+                - generic [ref=e3180]:
+                  - button "HelkinSwarm Bot Away" [ref=e3324]:
+                    - img [ref=e3183]
+                  - 'group "Card text content: Sign in to grant HelkinSwarm access to your email, calendar, and files. Button 1: Button title: 🔗 Link Microsoft Account. HelkinSwarm Today at 12:43 AM." [ref=e3185]':
+                    - button "More message options" [ref=e3186]
+                    - 'generic "Card text content: Sign in to grant HelkinSwarm access to your email, calendar, and files. Button 1: Button title: 🔗 Link Microsoft Account." [ref=e3187]':
+                      - list [ref=e3189]:
+                        - listitem [ref=e3190]:
+                          - 'group "Press Enter to explore message content, then use Escape to shift focus back to the message. Card text content: Sign in to grant HelkinSwarm access to your email, calendar, and files." [ref=e3198]':
+                            - generic [ref=e3200]:
+                              - generic [ref=e3202]: Sign in to grant HelkinSwarm access to your email, calendar, and files
+                              - button "🔗 Link Microsoft Account" [ref=e3204]:
+                                - generic [ref=e3205]: 🔗 Link Microsoft Account
+            - heading "Last read" [level=3] [ref=e3366]:
+              - generic [ref=e3367]: Last read
+            - generic [ref=e3370]:
+              - 'heading "🟢 HelkinSwarm Online Version: 1.0.7 Start... by HelkinSwarm" [level=4] [ref=e3371]'
+              - generic [ref=e3373]:
+                - generic [ref=e3374]:
+                  - generic [ref=e3378]: HelkinSwarm
+                  - time [ref=e3379]: 12:57 AM
+                - generic [ref=e3380]:
+                  - button "HelkinSwarm Bot Away" [ref=e3382]:
+                    - img [ref=e3383]
+                  - 'group "🟢 HelkinSwarm Online Version: 1.0.7 Started: 2026-03-24T23:57:09.869Z Ready to assist. HelkinSwarm Today at 12:57 AM." [ref=e3385]':
+                    - button "More message options" [ref=e3386]
+                    - 'generic "🟢 HelkinSwarm Online Version: 1.0.7 Started: 2026-03-24T23:57:09.869Z Ready to assist." [ref=e3387]':
+                      - paragraph [ref=e3388]:
+                        - text: 🟢
+                        - strong [ref=e3389]: HelkinSwarm Online
+                      - paragraph [ref=e3390]: "Version: 1.0.7 Started: 2026-03-24T23:57:09.869Z Ready to assist."
+            - generic [ref=e3394]:
+              - heading "🔴 HelkinSwarm shutting down — a new versio... by HelkinSwarm" [level=4] [ref=e3395]
+              - generic [ref=e3397]:
+                - generic:
+                  - generic [ref=e3401]: HelkinSwarm
+                  - time [ref=e3402]: 12:57 AM
+                - group "🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete. HelkinSwarm Today at 12:57 AM." [ref=e3405]:
+                  - button "More message options" [ref=e3406]
+                  - generic "🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete." [ref=e3407]:
+                    - paragraph [ref=e3408]: 🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete.
+            - generic [ref=e3412]:
+              - 'heading "🟢 HelkinSwarm Online Version: 1.0.7 Start... by HelkinSwarm" [level=4] [ref=e3413]'
+              - generic [ref=e3415]:
+                - generic:
+                  - generic [ref=e3419]: HelkinSwarm
+                  - time [ref=e3420]: 12:57 AM
+                - 'group "🟢 HelkinSwarm Online Version: 1.0.7 Started: 2026-03-24T23:57:49.756Z Ready to assist. HelkinSwarm Today at 12:57 AM." [ref=e3423]':
+                  - button "More message options" [ref=e3424]
+                  - 'generic "🟢 HelkinSwarm Online Version: 1.0.7 Started: 2026-03-24T23:57:49.756Z Ready to assist." [ref=e3425]':
+                    - paragraph [ref=e3426]:
+                      - text: 🟢
+                      - strong [ref=e3427]: HelkinSwarm Online
+                    - paragraph [ref=e3428]: "Version: 1.0.7 Started: 2026-03-24T23:57:49.756Z Ready to assist."
+            - generic [ref=e3442]:
+              - 'heading "🟢 HelkinSwarm Online Version: 1.0.7 Start... by HelkinSwarm" [level=4] [ref=e3443]'
+              - generic [ref=e3445]:
+                - generic:
+                  - generic [ref=e3449]: HelkinSwarm
+                  - time [ref=e3450]: 1:00 AM
+                - 'group "🟢 HelkinSwarm Online Version: 1.0.7 Started: 2026-03-25T00:00:12.626Z Ready to assist. HelkinSwarm Today at 1:00 AM." [ref=e3453]':
+                  - button "More message options" [ref=e3454]
+                  - 'generic "🟢 HelkinSwarm Online Version: 1.0.7 Started: 2026-03-25T00:00:12.626Z Ready to assist." [ref=e3455]':
+                    - paragraph [ref=e3456]:
+                      - text: 🟢
+                      - strong [ref=e3457]: HelkinSwarm Online
+                    - paragraph [ref=e3458]: "Version: 1.0.7 Started: 2026-03-25T00:00:12.626Z Ready to assist."
+            - generic [ref=e3462]:
+              - heading "🔴 HelkinSwarm shutting down — a new versio... by HelkinSwarm" [level=4] [ref=e3463]
+              - generic [ref=e3465]:
+                - generic:
+                  - generic [ref=e3469]: HelkinSwarm
+                  - time [ref=e3470]: 1:00 AM
+                - group "🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete. HelkinSwarm Today at 1:00 AM." [ref=e3473]:
+                  - button "More message options" [ref=e3474]
+                  - generic "🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete." [ref=e3475]:
+                    - paragraph [ref=e3476]: 🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete.
+            - generic [ref=e3480]:
+              - 'heading "🟢 HelkinSwarm Online Version: 1.0.7 Start... by HelkinSwarm" [level=4] [ref=e3481]'
+              - generic [ref=e3483]:
+                - generic:
+                  - generic [ref=e3487]: HelkinSwarm
+                  - time [ref=e3488]: 1:00 AM
+                - 'group "🟢 HelkinSwarm Online Version: 1.0.7 Started: 2026-03-25T00:00:25.958Z Ready to assist. HelkinSwarm Today at 1:00 AM." [ref=e3491]':
+                  - button "More message options" [ref=e3492]
+                  - 'generic "🟢 HelkinSwarm Online Version: 1.0.7 Started: 2026-03-25T00:00:25.958Z Ready to assist." [ref=e3493]':
+                    - paragraph [ref=e3494]:
+                      - text: 🟢
+                      - strong [ref=e3495]: HelkinSwarm Online
+                    - paragraph [ref=e3496]: "Version: 1.0.7 Started: 2026-03-25T00:00:25.958Z Ready to assist."
+            - generic [ref=e3500]:
+              - heading "🔴 HelkinSwarm shutting down — a new versio... by HelkinSwarm" [level=4] [ref=e3501]
+              - generic [ref=e3503]:
+                - generic:
+                  - generic [ref=e3507]: HelkinSwarm
+                  - time [ref=e3508]: 1:00 AM
+                - group "🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete. HelkinSwarm Today at 1:00 AM." [ref=e3511]:
+                  - button "More message options" [ref=e3512]
+                  - generic "🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete." [ref=e3513]:
+                    - paragraph [ref=e3514]: 🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete.
+            - generic [ref=e3518]:
+              - 'heading "🟢 HelkinSwarm Online Version: 1.0.7 Start... by HelkinSwarm" [level=4] [ref=e3519]'
+              - generic [ref=e3521]:
+                - generic:
+                  - generic [ref=e3525]: HelkinSwarm
+                  - time [ref=e3526]: 1:01 AM
+                - 'group "🟢 HelkinSwarm Online Version: 1.0.7 Started: 2026-03-25T00:01:04.875Z Ready to assist. HelkinSwarm Today at 1:01 AM." [ref=e3529]':
+                  - button "More message options" [ref=e3530]
+                  - 'generic "🟢 HelkinSwarm Online Version: 1.0.7 Started: 2026-03-25T00:01:04.875Z Ready to assist." [ref=e3531]':
+                    - paragraph [ref=e3532]:
+                      - text: 🟢
+                      - strong [ref=e3533]: HelkinSwarm Online
+                    - paragraph [ref=e3534]: "Version: 1.0.7 Started: 2026-03-25T00:01:04.875Z Ready to assist."
+            - generic [ref=e3538]:
+              - heading "🔴 HelkinSwarm shutting down — a new versio... by HelkinSwarm" [level=4] [ref=e3539]
+              - generic [ref=e3541]:
+                - generic:
+                  - generic [ref=e3545]: HelkinSwarm
+                  - time [ref=e3546]: 1:01 AM
+                - group "🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete. HelkinSwarm Today at 1:01 AM." [ref=e3549]:
+                  - button "More message options" [ref=e3550]
+                  - generic "🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete." [ref=e3551]:
+                    - paragraph [ref=e3552]: 🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete.
+            - generic [ref=e3556]:
+              - 'heading "🟢 HelkinSwarm Online Version: 1.0.7 Start... by HelkinSwarm" [level=4] [ref=e3557]'
+              - generic [ref=e3559]:
+                - generic:
+                  - generic [ref=e3563]: HelkinSwarm
+                  - time [ref=e3564]: 1:01 AM
+                - 'group "🟢 HelkinSwarm Online Version: 1.0.7 Started: 2026-03-25T00:01:35.482Z Ready to assist. HelkinSwarm Today at 1:01 AM." [ref=e3567]':
+                  - button "More message options" [ref=e3568]
+                  - 'generic "🟢 HelkinSwarm Online Version: 1.0.7 Started: 2026-03-25T00:01:35.482Z Ready to assist." [ref=e3569]':
+                    - paragraph [ref=e3570]:
+                      - text: 🟢
+                      - strong [ref=e3571]: HelkinSwarm Online
+                    - paragraph [ref=e3572]: "Version: 1.0.7 Started: 2026-03-25T00:01:35.482Z Ready to assist."
+            - generic [ref=e3576]:
+              - heading "🔴 HelkinSwarm shutting down — a new versio... by HelkinSwarm" [level=4] [ref=e3577]
+              - generic [ref=e3579]:
+                - generic:
+                  - generic [ref=e3583]: HelkinSwarm
+                  - time [ref=e3584]: 1:01 AM
+                - group "🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete. HelkinSwarm Today at 1:01 AM." [ref=e3587]:
+                  - button "More message options" [ref=e3588]
+                  - generic "🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete." [ref=e3589]:
+                    - paragraph [ref=e3590]: 🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete.
+            - generic [ref=e3594]:
+              - heading "🔴 HelkinSwarm shutting down — a new versio... by HelkinSwarm" [level=4] [ref=e3595]
+              - generic [ref=e3597]:
+                - generic:
+                  - generic [ref=e3601]: HelkinSwarm
+                  - time [ref=e3602]: 1:03 AM
+                - group "🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete. HelkinSwarm Today at 1:03 AM." [ref=e3605]:
+                  - button "More message options" [ref=e3606]
+                  - generic "🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete." [ref=e3607]:
+                    - paragraph [ref=e3608]: 🔴 HelkinSwarm shutting down — a new version is deploying. In-flight work will complete.
+            - generic [ref=e3612]:
+              - 'heading "🟢 HelkinSwarm Online Version: 1.0.7 Start... by HelkinSwarm" [level=4] [ref=e3613]'
+              - generic [ref=e3615]:
+                - generic:
+                  - generic [ref=e3619]: HelkinSwarm
+                  - time [ref=e3620]: 1:03 AM
+                - 'group "🟢 HelkinSwarm Online Version: 1.0.7 Started: 2026-03-25T00:03:20.100Z Ready to assist. HelkinSwarm Today at 1:03 AM." [ref=e3623]':
+                  - button "More message options" [ref=e3624]
+                  - 'generic "🟢 HelkinSwarm Online Version: 1.0.7 Started: 2026-03-25T00:03:20.100Z Ready to assist." [ref=e3625]':
+                    - paragraph [ref=e3626]:
+                      - text: 🟢
+                      - strong [ref=e3627]: HelkinSwarm Online
+                    - paragraph [ref=e3628]: "Version: 1.0.7 Started: 2026-03-25T00:03:20.100Z Ready to assist."
+                  - group [ref=e3629]:
+                    - toolbar "Reactions and message actions" [ref=e3632]:
+                      - generic [ref=e3634]:
+                        - button "Like" [ref=e3635]:
+                          - img "👍" [ref=e3638]
+                        - button "Heart" [ref=e3639]:
+                          - img "❤️" [ref=e3642]
+                        - button "Laugh" [ref=e3643]:
+                          - img "😆" [ref=e3646]
+                        - button "Surprised" [ref=e3647]:
+                          - img "😮" [ref=e3650]
+                        - button "More reactions" [ref=e3651]:
+                          - img [ref=e3653]
+                        - separator [ref=e3655]
+                      - generic "Reply with quote" [ref=e3657]:
+                        - button "Reply with quote" [ref=e3658]:
+                          - img [ref=e3660]
+                      - button "More options" [ref=e3662]:
+                        - img [ref=e3664]
+            - generic [ref=e3671]:
+              - heading "/link outlook by Eric Anderson" [level=4] [ref=e3672]
+              - generic [ref=e3674]:
+                - generic [ref=e3675]:
+                  - time [ref=e3676]: 1:11 AM
+                  - generic [ref=e3680]: Eric Anderson
+                - generic [ref=e3681]:
+                  - group "Sent /link outlook Eric Anderson Today at 1:11 AM." [ref=e3683]:
+                    - button "More message options" [ref=e3684]
+                    - generic "/link outlook" [ref=e3685]:
+                      - generic [ref=e3686]: /link outlook
+                  - img "Sent" [ref=e3688]:
+                    - img [ref=e3689]
+            - generic [ref=e3693]:
+              - 'heading "Card text content: Sign in to grant HelkinS... by HelkinSwarm" [level=4] [ref=e3694]'
+              - generic [ref=e3696]:
+                - generic [ref=e3697]:
+                  - generic [ref=e3701]: HelkinSwarm
+                  - time [ref=e3702]: 1:11 AM
+                - generic [ref=e3703]:
+                  - button "HelkinSwarm Bot Away" [ref=e3705]:
+                    - img [ref=e3706]
+                  - 'group "Card text content: Sign in to grant HelkinSwarm access to your email, calendar, and files. Button 1: Button title: 🔗 Link Microsoft Account. HelkinSwarm Today at 1:11 AM." [active] [ref=e3708]':
+                    - button "More message options" [ref=e3709]
+                    - 'generic "Card text content: Sign in to grant HelkinSwarm access to your email, calendar, and files. Button 1: Button title: 🔗 Link Microsoft Account." [ref=e3710]':
+                      - list [ref=e3712]:
+                        - listitem [ref=e3713]:
+                          - 'group "Press Enter to explore message content, then use Escape to shift focus back to the message. Card text content: Sign in to grant HelkinSwarm access to your email, calendar, and files." [ref=e3721]':
+                            - generic [ref=e3723]:
+                              - generic [ref=e3725]: Sign in to grant HelkinSwarm access to your email, calendar, and files
+                              - button "🔗 Link Microsoft Account" [ref=e3727]:
+                                - generic [ref=e3728]: 🔗 Link Microsoft Account
+                    - group [ref=e3729]:
+                      - toolbar "Reactions and message actions" [ref=e3731]:
+                        - generic [ref=e3732]:
+                          - button "Like" [ref=e3733]:
+                            - generic [ref=e3735]:
+                              - img "👍"
+                          - button "Heart" [ref=e3736]:
+                            - generic [ref=e3738]:
+                              - img "❤️"
+                          - button "Laugh" [ref=e3739]:
+                            - generic [ref=e3741]:
+                              - img "😆"
+                          - button "Surprised" [ref=e3742]:
+                            - generic [ref=e3744]:
+                              - img "😮"
+                          - button "More reactions" [ref=e3745]:
+                            - img [ref=e3747]
+                          - separator [ref=e3749]
+                        - generic "Reply with quote" [ref=e3751]:
+                          - button "Reply with quote (Alt+R)" [ref=e3752]:
+                            - img [ref=e3754]
+                        - button "More options" [ref=e3756]:
+                          - img [ref=e3758]
+          - generic [ref=e3208]: has context menu
+        - generic [ref=e3210]:
+          - button "View prompts" [ref=e3763]:
+            - img [ref=e3765]
+            - generic [ref=e3767]: View prompts
+          - generic [ref=e3223]:
+            - generic [ref=e3224]:
+              - textbox "Type a message" [ref=e3225]:
+                - paragraph [ref=e3226]: Type a message
+              - generic:
+                - log
+                - log
+            - generic [ref=e3227]:
+              - toolbar [ref=e3228]:
+                - button "Show Formatting options (Ctrl+Shift+X)" [ref=e3229] [cursor=pointer]:
+                  - img [ref=e3231]
+                - button "Emoji, GIFs and Stickers" [ref=e3234] [cursor=pointer]:
+                  - img [ref=e3236]
+                - button "Loop components (Ctrl+Alt+L)" [ref=e3238] [cursor=pointer]:
+                  - img [ref=e3240]
+                - button "Actions and apps" [ref=e3243] [cursor=pointer]:
+                  - img [ref=e3245]
+              - toolbar "Actions for new message" [ref=e3247]:
+                - generic [ref=e3249]:
+                  - button "Send (Ctrl+Enter)" [ref=e3250] [cursor=pointer]:
+                    - img [ref=e3252]
+                  - generic [ref=e3255]: has context menu

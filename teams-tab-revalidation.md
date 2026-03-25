@@ -1,0 +1,165 @@
+- application [active] [ref=e1]:
+  - generic [ref=e6]:
+    - generic [ref=e10]:
+      - generic [ref=e12]:
+        - button "Open office app launcher" [ref=e13]:
+          - img [ref=e15]
+        - img [ref=e17]
+      - search [ref=e38]:
+        - button [ref=e39]:
+          - img [ref=e40]
+        - combobox "Search (Ctrl+Alt+E)" [ref=e46]
+      - generic [ref=e48]:
+        - button "Settings and more, new activity" [ref=e50]:
+          - img [ref=e54]
+        - button "Your profile, status Away" [ref=e4411]:
+          - img "Profile picture of Eric Anderson." [ref=e59]:
+            - generic [ref=e60]: EA
+            - img [ref=e61]
+            - img "away" [ref=e4412]:
+              - img [ref=e4413]
+    - group [ref=e527]:
+      - img [ref=e529]
+      - generic [ref=e531]: Download the new Teams desktop app for improved speed and performance
+      - button "Download now" [ref=e533]
+      - button "Close" [ref=e535]:
+        - img [ref=e537]
+    - generic [ref=e69]:
+      - generic [ref=e71]:
+        - navigation "Apps" [ref=e73]:
+          - generic "Activity (Ctrl+Shift+1)" [ref=e75]:
+            - button "Activity (Ctrl+Shift+1)" [ref=e76]:
+              - generic [ref=e77]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Activity
+          - generic "Chat (Ctrl+Shift+2)" [ref=e79]:
+            - button "Chat (Ctrl+Shift+2)" [ref=e80]:
+              - generic [ref=e81]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Chat
+          - generic "Calendar (Ctrl+Shift+3)" [ref=e84]:
+            - button "Calendar (Ctrl+Shift+3)" [ref=e85]:
+              - generic [ref=e86]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Calendar
+          - generic "Calls (Ctrl+Shift+4)" [ref=e88]:
+            - button "Calls (Ctrl+Shift+4)" [ref=e89]:
+              - generic [ref=e90]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Calls
+          - generic "OneDrive (Ctrl+Shift+5)" [ref=e92]:
+            - button "OneDrive (Ctrl+Shift+5)" [ref=e93]:
+              - generic [ref=e94]:
+                - generic:
+                  - generic:
+                    - img "OneDrive"
+                    - img
+                  - generic: OneDrive
+          - generic "Copilot (Ctrl+Shift+6)" [ref=e96]:
+            - button "Copilot (Ctrl+Shift+6)" [ref=e97]:
+              - generic [ref=e98]:
+                - generic:
+                  - generic:
+                    - img "Copilot"
+                    - img
+                  - generic: Copilot
+          - separator [ref=e2274]
+          - generic "HelkinSwarm (Ctrl+Shift+8)" [ref=e2277]:
+            - button "HelkinSwarm (Ctrl+Shift+8)" [pressed] [ref=e2278]:
+              - generic [ref=e2279]:
+                - generic:
+                  - generic:
+                    - img "HelkinSwarm"
+                    - img
+                  - generic: HelkinSwarm
+        - generic [ref=e103]:
+          - generic "View more apps" [ref=e104]:
+            - button "View more apps" [ref=e105]:
+              - generic [ref=e106]:
+                - generic:
+                  - generic:
+                    - img
+          - generic "Apps" [ref=e108]:
+            - button "Apps" [ref=e109]:
+              - generic [ref=e110]:
+                - generic:
+                  - generic:
+                    - img
+                  - generic: Apps
+      - generic [ref=e113]: Has context menu
+    - generic [ref=e2285]:
+      - generic "HelkinSwarm Bot Away" [ref=e4415]:
+        - generic [ref=e2289]:
+          - img [ref=e2291]
+          - heading "HelkinSwarm" [level=2] [ref=e2292]
+      - generic [ref=e2295]:
+        - tablist [ref=e2296]:
+          - tab "Chat" [ref=e2298] [cursor=pointer]:
+            - generic [ref=e2301]: Chat
+          - tab "Get Started" [ref=e2302] [cursor=pointer]:
+            - generic [ref=e2305]: Get Started
+          - tab "Control Center" [selected] [ref=e2306] [cursor=pointer]:
+            - generic [ref=e2309]: Control Center
+        - generic [ref=e2311]: Has context menu
+      - button "More HelkinSwarm actions" [ref=e2313]:
+        - img "More HelkinSwarm actions" [ref=e2315]
+    - generic [ref=e126]:
+      - generic:
+        - main
+      - iframe [ref=e4417]:
+        - generic [ref=f10e2]:
+          - heading "Control Center" [level=1] [ref=f10e3]
+          - generic [ref=f10e4]:
+            - heading "Service Status" [level=2] [ref=f10e5]
+            - generic [ref=f10e6]: healthy
+            - paragraph [ref=f10e7]: "Uptime: 0h 20m | Version: 1.0.7"
+            - paragraph [ref=f10e8]: "Sessions: 1 active / 332 total"
+          - generic [ref=f10e9]:
+            - heading "Model Routing" [level=2] [ref=f10e10]
+            - table [ref=f10e11]:
+              - rowgroup [ref=f10e12]:
+                - row "Role Deployment" [ref=f10e13]:
+                  - columnheader "Role" [ref=f10e14]
+                  - columnheader "Deployment" [ref=f10e15]
+                - row "Primary grok-4-1-fast-non-reasoning" [ref=f10e16]:
+                  - cell "Primary" [ref=f10e17]
+                  - cell "grok-4-1-fast-non-reasoning" [ref=f10e18]
+                - row "Secondary grok-4-1-fast-non-reasoning" [ref=f10e19]:
+                  - cell "Secondary" [ref=f10e20]
+                  - cell "grok-4-1-fast-non-reasoning" [ref=f10e21]
+                - row "Reasoning o4-mini" [ref=f10e22]:
+                  - cell "Reasoning" [ref=f10e23]
+                  - cell "o4-mini" [ref=f10e24]
+                - row "Embedding text-embedding-3-large" [ref=f10e25]:
+                  - cell "Embedding" [ref=f10e26]
+                  - cell "text-embedding-3-large" [ref=f10e27]
+                - row "Vision gpt-5.4-mini" [ref=f10e28]:
+                  - cell "Vision" [ref=f10e29]
+                  - cell "gpt-5.4-mini" [ref=f10e30]
+                - row "Lane global" [ref=f10e31]:
+                  - cell "Lane" [ref=f10e32]
+                  - cell "global" [ref=f10e33]:
+                    - strong [ref=f10e34]: global
+          - generic [ref=f10e35]:
+            - heading "Safety & Maintenance" [level=2] [ref=f10e36]
+            - paragraph [ref=f10e37]:
+              - text: "Safety Mode:"
+              - strong [ref=f10e38]: confirmation-gated
+            - paragraph [ref=f10e39]:
+              - text: "EU Residency:"
+              - strong [ref=f10e40]: "OFF"
+            - paragraph [ref=f10e41]:
+              - text: "Maintenance:"
+              - strong [ref=f10e42]:
+                - generic [ref=f10e43]: "ON"
+          - generic [ref=f10e44]:
+            - heading "Capabilities" [level=2] [ref=f10e45]
+            - paragraph [ref=f10e46]: 22 tools loaded across 5 skills

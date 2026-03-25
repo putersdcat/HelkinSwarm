@@ -209,8 +209,11 @@ df.app.activity('llmFollowUpActivity', {
         finishReason: choice.finishReason,
       };
     } catch (err) {
+      // Sanitize error message to prevent HTML/junk from LLM API responses leaking to Teams (#234)
+      const rawMsg = err instanceof Error ? err.message : String(err);
+      const safeMsg = rawMsg.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 300);
       return {
-        content: `Follow-up LLM call failed: ${err instanceof Error ? err.message : String(err)}`,
+        content: `Follow-up LLM call failed: ${safeMsg}`,
         model: routing.deploymentName,
         tokensUsed: 0,
         promptTokens: 0,
