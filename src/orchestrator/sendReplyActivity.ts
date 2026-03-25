@@ -15,6 +15,7 @@ import {
 } from '../bot/conversationStore.js';
 import { cacheSentMessage } from '../bot/sentMessageCache.js';
 import { getEnvConfig } from '../config/envConfig.js';
+import { splitReplyIntoChunks } from './replyChunking.js';
 
 export interface SendReplyInput {
   /** User AAD Object ID — used to look up ConversationReference from Cosmos. */
@@ -47,10 +48,7 @@ function getAdapter(): CloudAdapter {
 
 async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
   try {
-    // Guard: Teams rejects activities with empty text
-    const messageText = input.message?.trim()
-      ? input.message
-      : 'I processed your request but have nothing to report back.';
+    const replyChunks = splitReplyIntoChunks(input.message);
 
     const adapter = getAdapter();
     const appId = getEnvConfig().microsoftAppId;
@@ -72,22 +70,35 @@ async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
           await turnContext.updateActivity({
             type: ActivityTypes.Message,
             id: ackActivityId,
-            text: messageText,
+            text: replyChunks[0]!.text,
             textFormat: 'markdown',
           });
           // Cache under ack ID so reply-with-quote can resolve full text (#166)
-          cacheSentMessage(ackActivityId, messageText);
+          cacheSentMessage(ackActivityId, replyChunks[0]!.text);
           const conversationId = (conversationReference as ConversationReference).conversation?.id ?? input.userId;
           await clearPendingAckId(input.userId, conversationId);
+
+          for (const chunk of replyChunks.slice(1)) {
+            const response = await turnContext.sendActivity({
+              type: ActivityTypes.Message,
+              text: chunk.text,
+              textFormat: 'markdown',
+            });
+            if (response?.id) {
+              cacheSentMessage(response.id, chunk.text);
+            }
+          }
         } else {
           // No ack stored (e.g. first reply after container restart) — fall back to new message
-          const response = await turnContext.sendActivity({
-            type: ActivityTypes.Message,
-            text: messageText,
-            textFormat: 'markdown',
-          });
-          if (response?.id) {
-            cacheSentMessage(response.id, messageText);
+          for (const chunk of replyChunks) {
+            const response = await turnContext.sendActivity({
+              type: ActivityTypes.Message,
+              text: chunk.text,
+              textFormat: 'markdown',
+            });
+            if (response?.id) {
+              cacheSentMessage(response.id, chunk.text);
+            }
           }
         }
       },
