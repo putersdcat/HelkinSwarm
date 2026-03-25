@@ -35,14 +35,21 @@
     Adds ?requiresReview=true to the publish endpoint.
     Default behavior (switch absent) is immediate publish when permitted.
 
+.PARAMETER BumpVersion
+    Increment the patch version in manifest.json before packaging.
+    Default: do NOT bump — use the version already in the file.
+    Use this switch when you want a new version and haven't manually edited the manifest.
+
 .EXAMPLE
     .\scripts\New-TeamsAppPackage.ps1
+    .\scripts\New-TeamsAppPackage.ps1 -BumpVersion
     .\scripts\New-TeamsAppPackage.ps1 -Open
     .\scripts\New-TeamsAppPackage.ps1 -Publish
     .\scripts\New-TeamsAppPackage.ps1 -Publish -RequiresReview
 #>
 [CmdletBinding()]
 param(
+    [switch]$BumpVersion,
     [switch]$Open,
     [switch]$SkipValidation,
     [switch]$Publish,
@@ -71,34 +78,40 @@ if (-not (Test-Path $ManifestPath)) {
 
 $manifest = Get-Content $ManifestPath -Raw | ConvertFrom-Json
 
-# ── Auto-increment patch version ─────────────────────────────────────────────
-# Splits e.g. "1.1.0" → major=1, minor=1, patch=0 → bumps to "1.1.1"
-# Teams rejects versions starting with 0 and requires #.#.# format.
+# ── Version handling ────────────────────────────────────────────────────────────
+# By default: just use the version already in manifest.json
+# With -BumpVersion: increment the patch number and write it back before packaging
 $prevVersion = $manifest.version
 $parts = $prevVersion -split '\.'
 if ($parts.Count -ne 3) {
     Write-Error "manifest.json version '$prevVersion' is not in #.#.# format. Fix it and re-run."
     exit 1
 }
-$major = [int]$parts[0]
-$minor = [int]$parts[1]
-$patch = [int]$parts[2] + 1
-$newVersion = "$major.$minor.$patch"
-$manifest.version = $newVersion
 
-# Write bumped version back to manifest.json (formatted, no BOM)
-$manifestJson = $manifest | ConvertTo-Json -Depth 10
-[System.IO.File]::WriteAllText($ManifestPath, $manifestJson, [System.Text.UTF8Encoding]::new($false))
+if ($BumpVersion) {
+    $major = [int]$parts[0]
+    $minor = [int]$parts[1]
+    $patch = [int]$parts[2] + 1
+    $newVersion = "$major.$minor.$patch"
+    $manifest.version = $newVersion
+
+    $manifestJson = $manifest | ConvertTo-Json -Depth 10
+    [System.IO.File]::WriteAllText($ManifestPath, $manifestJson, [System.Text.UTF8Encoding]::new($false))
+
+    Write-Host "  Version  : $prevVersion → $newVersion (bumped)" -ForegroundColor Yellow
+} else {
+    $newVersion = $prevVersion
+    Write-Host "  Version  : $newVersion" -ForegroundColor White
+}
 
 $appVersion  = $newVersion
 $colorIcon   = Join-Path $PackageDir $manifest.icons.color
 $outlineIcon = Join-Path $PackageDir $manifest.icons.outline
 
-Write-Host "  App ID   : $($manifest.id)"                         -ForegroundColor White
-Write-Host "  Version  : $prevVersion → $appVersion (auto-bumped)" -ForegroundColor Yellow
-Write-Host "  Bot ID   : $($manifest.bots[0].botId)" -ForegroundColor White
-Write-Host "  Color    : $($manifest.icons.color)"   -ForegroundColor White
-Write-Host "  Outline  : $($manifest.icons.outline)" -ForegroundColor White
+Write-Host "  App ID   : $($manifest.id)"              -ForegroundColor White
+Write-Host "  Bot ID   : $($manifest.bots[0].botId)"   -ForegroundColor White
+Write-Host "  Color    : $($manifest.icons.color)"     -ForegroundColor White
+Write-Host "  Outline  : $($manifest.icons.outline)"   -ForegroundColor White
 Write-Host ""
 
 # ── Validate required files ───────────────────────────────────────────────────

@@ -18,10 +18,6 @@ on:
         description: "Build only — skip Graph API publish"
         type: boolean
         default: true
-      auto_version_bump:
-        description: "Auto-increment patch version on each build"
-        type: boolean
-        default: true
 
   push:  # Triggered automatically when appPackage/ files change — version bump IS the push
     paths:
@@ -31,7 +27,7 @@ on:
 
 permissions:
   id-token: write  # OIDC token for Azure login → Graph API
-  contents: write  # Push version bump commit back to main
+  contents: read
 
 jobs:
   package-and-publish:
@@ -44,28 +40,9 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      # ── Auto-increment patch version ───────────────────────────────────
-      - name: Bump patch version
-        if: ${{ github.event_name == 'push' || github.event.inputs.auto_version_bump == 'true' }}
-        id: bump
-        run: |
-          MANIFEST="appPackage/manifest.json"
-          CURRENT=$(jq -r '.version' "$MANIFEST")
-          MAJOR=$(echo "$CURRENT" | cut -d. -f1)
-          MINOR=$(echo "$CURRENT" | cut -d. -f2)
-          PATCH=$(echo "$CURRENT" | cut -d. -f3)
-          NEW_PATCH=$((PATCH + 1))
-          NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
-
-          echo "📦 Version bump: $CURRENT → $NEW_VERSION"
-          TMP_MANIFEST=$(mktemp)
-          jq --arg v "$NEW_VERSION" '.version = $v' "$MANIFEST" > "$TMP_MANIFEST"
-          mv "$TMP_MANIFEST" "$MANIFEST"
-
-          echo "bumped-version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-          echo "previous-version=$CURRENT"   >> "$GITHUB_OUTPUT"
-
       # ── Inject global bot identity ─────────────────────────────────────
+      # Version is owned by the developer — set it in manifest.json before pushing.
+      # The pipeline NEVER bumps versions; it packages exactly what is in the repo.
       # BOT_APP_ID is set by deploy-router.yml after the router UAMI is created.
       # TAB_HOST_URL is the global tab SPA URL (set after deploy-tabs.yml runs).
       # The manifest stores {{BOT_APP_ID}}, {{TAB_HOST_URL}}, and {{TAB_HOST_DOMAIN}}
@@ -194,17 +171,6 @@ jobs:
           name: HelkinSwarm-${{ steps.manifest.outputs.version }}
           path: /tmp/teams-pkg/
           retention-days: 90
-
-      # ── Commit version bump back to main ──────────────────────────────
-      - name: Commit version bump
-        if: ${{ (github.event_name == 'push' || github.event.inputs.auto_version_bump == 'true') && steps.bump.outputs.bumped-version != '' }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add appPackage/manifest.json
-          git diff --cached --quiet && echo "No version change to commit" && exit 0
-          git commit -m "chore: bump Teams app version to ${{ steps.bump.outputs.bumped-version }} [skip ci]"
-          git push
 
       # ── Publish to Teams Admin Center via Graph API ────────────────────
       - name: Azure Login (OIDC)
