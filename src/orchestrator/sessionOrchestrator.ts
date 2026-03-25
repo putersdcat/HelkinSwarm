@@ -35,6 +35,8 @@ export interface SessionInput {
   imageUrls?: string[];
   /** Parsed DevLoop protocol context (#147) */
   devLoopContext?: DevLoopContext;
+  /** Override for multi-round tool dispatch limit. Defaults to 5, max 10. (#253) */
+  toolBudget?: number;
 }
 
 export interface SessionResult {
@@ -81,6 +83,10 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     'llmActivity',
     { ...prompt, correlationId, modelOverride: input.modelOverride, imageUrls: input.imageUrls },
   );
+
+  // Cumulative token tracking across all LLM calls in this session (#253)
+  let cumulativeTokensUsed = llmResult.tokensUsed;
+  let cumulativePromptTokens = llmResult.promptTokens;
 
   // 3. If LLM returned tool calls, run the safety pipeline
   let toolResults: ToolDispatchResult | null = null;
@@ -271,12 +277,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         totalCalls: mergedResults.length,
       };
 
-      // 3b. Call LLM again with tool results for natural language response.
-      // If any tools failed, enable retry so the LLM can correct and re-call (#182).
-      const hasFailures = mergedResults.some(
-        (r: { success: boolean }) => !r.success,
-      );
-      const tools = hasFailures ? toolRegistry.toFunctionSchemas() : undefined;
+      // 3b. Multi-round tool dispatch loop (#253)
+      // The LLM can request additional tool calls after seeing results,
+      // enabling chained reasoning (e.g. "find my latest email, then forward it").
+      // Max rounds from toolBudget or default 5, capped at 10.
+      const maxToolRounds = Math.min(input.toolBudget ?? 5, 10);
+      const allToolSchemas = toolRegistry.toFunctionSchemas();
       const initialResultCount = mergedResults.length;
 
       const followUpInput: LlmFollowUpInput = {
@@ -288,68 +294,108 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         toolResults: toolResults?.results ?? [],
         correlationId,
         modelOverride: input.modelOverride,
-        enableRetry: hasFailures,
-        tools,
+        enableRetry: true,
+        tools: allToolSchemas,
       };
       let followUp: LlmResult = yield context.df.callActivity('llmFollowUpActivity', followUpInput);
+      cumulativeTokensUsed += followUp.tokensUsed;
+      cumulativePromptTokens += followUp.promptTokens;
 
-      // 3c. Retry loop — if the follow-up LLM requested corrective tool calls,
-      // dispatch them and call follow-up again. Max 2 retry iterations. (#182)
-      const MAX_RETRY_ITERATIONS = 2;
-      let retryIteration = 0;
+      // Multi-round loop: if the follow-up LLM requests more tool calls,
+      // dispatch them and call the LLM again. This replaces the old 2-iteration
+      // retry loop with a full multi-round mechanism. (#253, supersedes #182)
+      let toolRound = 0;
       const additionalTurns: LlmFollowUpInput['additionalTurns'] = [];
 
       while (
         followUp.toolCalls &&
         followUp.toolCalls.length > 0 &&
-        retryIteration < MAX_RETRY_ITERATIONS
+        toolRound < maxToolRounds
       ) {
-        retryIteration++;
+        toolRound++;
+
+        // Handle finish_reason: "length" with empty content — model was truncated mid-tool-call (#253)
+        if (followUp.finishReason === 'length' && (!followUp.content || !followUp.content.trim())) {
+          console.log(`[sessionOrchestrator] Round ${toolRound}: finish_reason=length, retrying with concise hint (#253)`);
+          additionalTurns.push({
+            assistantContent: followUp.content || '',
+            assistantToolCalls: [],
+            toolResults: [],
+          });
+          // Force a text response by not passing tools on the retry
+          const truncRetryInput: LlmFollowUpInput = {
+            originalMessages: prompt.messages,
+            assistantToolCallMessage: {
+              content: llmResult.content,
+              toolCalls: toolCallsForDispatch,
+            },
+            toolResults: toolResults?.results.slice(0, initialResultCount) ?? [],
+            correlationId,
+            modelOverride: input.modelOverride,
+            enableRetry: false,
+            additionalTurns: [
+              ...additionalTurns,
+              {
+                assistantContent: '',
+                assistantToolCalls: [],
+                toolResults: [{
+                  toolCallId: 'truncation-hint',
+                  toolName: 'system',
+                  success: true,
+                  result: 'Your previous response was truncated because it was too long. Please answer more concisely — use plain text, no tool calls.',
+                }],
+              },
+            ],
+          };
+          followUp = yield context.df.callActivity('llmFollowUpActivity', truncRetryInput);
+          cumulativeTokensUsed += followUp.tokensUsed;
+          cumulativePromptTokens += followUp.promptTokens;
+          break; // Truncation retry is terminal — don't loop further
+        }
+
         console.log(
-          `[sessionOrchestrator] Retry iteration ${retryIteration}: ` +
-          `dispatching ${followUp.toolCalls.length} corrective tool call(s) (#182)`,
+          `[sessionOrchestrator] Multi-round ${toolRound}/${maxToolRounds}: ` +
+          `dispatching ${followUp.toolCalls.length} tool call(s) (#253)`,
         );
 
-        // Only allow low-risk direct tools in retries (no executor, no sub-agent)
-        const retryCallsForDispatch = followUp.toolCalls.filter(
+        // Only allow low-risk direct tools in multi-round iterations (safety)
+        const roundCallsForDispatch = followUp.toolCalls.filter(
           (tc: { name: string }) => {
             const def = toolRegistry.get(tc.name);
             return def && def.risk === 'low' && !def.requiresSubAgent;
           },
         );
 
-        if (retryCallsForDispatch.length === 0) break;
+        if (roundCallsForDispatch.length === 0) break;
 
-        // Dispatch retry tools
-        const retryDispatchInput: ToolDispatchInput = {
-          toolCalls: retryCallsForDispatch,
+        // Dispatch tools for this round
+        const roundDispatchInput: ToolDispatchInput = {
+          toolCalls: roundCallsForDispatch,
           correlationId,
           sessionId: input.state.userId,
           userId: input.state.userId,
         };
-        const retryResults: ToolDispatchResult = yield context.df.callActivity(
+        const roundResults: ToolDispatchResult = yield context.df.callActivity(
           'toolDispatchActivity',
-          retryDispatchInput,
+          roundDispatchInput,
         );
 
         // Accumulate this turn for conversation history
         additionalTurns.push({
           assistantContent: followUp.content,
-          assistantToolCalls: retryCallsForDispatch,
-          toolResults: retryResults.results,
+          assistantToolCalls: roundCallsForDispatch,
+          toolResults: roundResults.results,
         });
 
-        // Also accumulate into overall tool results for telemetry
-        toolResults.results.push(...retryResults.results);
-        toolResults.totalCalls += retryResults.results.length;
+        // Accumulate into overall tool results for telemetry
+        toolResults.results.push(...roundResults.results);
+        toolResults.totalCalls += roundResults.results.length;
 
-        // Determine if there are still failures — if not, no need for more retries
-        const retryHasFailures = retryResults.results.some(
-          (r: { success: boolean }) => !r.success,
-        );
+        // On the last allowed round, don't pass tools — force a text response
+        const isLastRound = toolRound >= maxToolRounds;
 
         // Call follow-up again with full conversation history
-        const retryFollowUpInput: LlmFollowUpInput = {
+        const roundFollowUpInput: LlmFollowUpInput = {
           originalMessages: prompt.messages,
           assistantToolCallMessage: {
             content: llmResult.content,
@@ -358,11 +404,13 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           toolResults: toolResults?.results.slice(0, initialResultCount) ?? [],
           correlationId,
           modelOverride: input.modelOverride,
-          enableRetry: retryHasFailures && retryIteration < MAX_RETRY_ITERATIONS,
-          tools: retryHasFailures && retryIteration < MAX_RETRY_ITERATIONS ? tools : undefined,
+          enableRetry: !isLastRound,
+          tools: !isLastRound ? allToolSchemas : undefined,
           additionalTurns,
         };
-        followUp = yield context.df.callActivity('llmFollowUpActivity', retryFollowUpInput);
+        followUp = yield context.df.callActivity('llmFollowUpActivity', roundFollowUpInput);
+        cumulativeTokensUsed += followUp.tokensUsed;
+        cumulativePromptTokens += followUp.promptTokens;
       }
 
       responseContent = followUp.content;
@@ -398,8 +446,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       correlationId,
       totalMs: turnEndTime - turnStartTime,
       model: llmResult.model,
-      promptTokens: llmResult.promptTokens,
-      completionTokens: llmResult.tokensUsed - llmResult.promptTokens,
+      promptTokens: cumulativePromptTokens,
+      completionTokens: cumulativeTokensUsed - cumulativePromptTokens,
       spans,
       toolCalls: toolNames,
       safetyPassed,
@@ -434,8 +482,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   return {
     response: responseContent,
     cleanResponse,
-    tokensUsed: llmResult.tokensUsed,
-    promptTokens: llmResult.promptTokens,
+    tokensUsed: cumulativeTokensUsed,
+    promptTokens: cumulativePromptTokens,
     model: llmResult.model,
     toolCalls: llmResult.toolCalls,
     toolResults,
