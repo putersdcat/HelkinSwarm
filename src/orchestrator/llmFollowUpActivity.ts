@@ -82,17 +82,37 @@ df.app.activity('llmFollowUpActivity', {
 
     const client = new FoundryClient({ ...routing, deploymentName, isReasoning });
 
-    // Helper to format tool results as chat messages
+    // Helper to format tool results as chat messages.
+    // Smart truncation: for arrays, keep first N items with a count summary instead of
+    // slicing mid-JSON which confuses follow-up models (#234).
+    const smartTruncate = (result: unknown, limit: number): string => {
+      const full = JSON.stringify(result);
+      if (full.length <= limit) return full;
+
+      // If result is an array, keep first items and add count
+      if (Array.isArray(result)) {
+        let kept = 0;
+        let partial = '';
+        for (let i = 0; i < result.length; i++) {
+          const item = JSON.stringify(result[i]);
+          if (partial.length + item.length + 50 > limit) break;
+          partial += (i > 0 ? ',' : '') + item;
+          kept = i + 1;
+        }
+        return `[${partial}] (showing ${kept}/${result.length} items — full result was ${full.length} chars)`;
+      }
+
+      // For objects/primitives, slice with a clean suffix
+      return full.slice(0, limit - 80) + `… (truncated — full result was ${full.length} chars)`;
+    };
+
     const formatToolResults = (results: LlmFollowUpInput['toolResults']): ChatMessage[] =>
       results.map((tr) => {
         let content: string;
         if (!tr.success) {
           content = `Error: ${tr.error}`;
         } else {
-          content = JSON.stringify(tr.result);
-          if (content.length > 8000) {
-            content = content.slice(0, 7950) + '…" (truncated — full result was ' + content.length + ' chars)';
-          }
+          content = smartTruncate(tr.result, 8000);
         }
         return { role: 'tool' as const, content, toolCallId: tr.toolCallId };
       });
