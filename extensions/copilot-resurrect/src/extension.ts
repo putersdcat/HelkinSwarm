@@ -17,7 +17,7 @@ let _watcher: SessionWatcher | undefined;
 let _engine: ResurrectionEngine | undefined;
 let _statusBar: ResurrectStatusBar | undefined;
 
-const EXT_VERSION = '1.4.3';
+const EXT_VERSION = '1.4.4';
 
 // ── Activate ──────────────────────────────────────────────────────────────────
 export function activate(context: vscode.ExtensionContext): void {

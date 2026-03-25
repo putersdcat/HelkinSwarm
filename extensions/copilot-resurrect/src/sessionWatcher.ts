@@ -8,22 +8,62 @@ export type SilenceCallback = () => void;
 export type ErrorCallback = (error: DetectedError) => void;
 
 /**
- * Returns true if the given file-system path matches any of the provided glob patterns.
- * Supports `**` (any path depth), `*` (within a single segment), and `?` (single char).
- * Path separators are normalised to `/` before matching.
+ * Normalise a file-system path or glob to use `/` separators.
  */
-function matchesAnyIgnorePattern(fsPath: string, patterns: string[]): boolean {
-  if (!patterns.length) { return false; }
-  const normalised = fsPath.replace(/\\/g, '/');
+function normalisePath(value: string): string {
+  return value.replace(/\\/g, '/');
+}
+
+/**
+ * Convert a simple glob into a RegExp.
+ * Supports `**` (any path depth), `*` (within a segment), and `?` (single char).
+ */
+function globToRegExp(pattern: string): RegExp {
+  const normalisedPattern = normalisePath(pattern);
+  const escaped = normalisedPattern
+    .replace(/[|\\{}()[\]^$+.]/g, '\\$&')
+    .replace(/\*\*\//g, '(?:.*/)?')
+    .replace(/\*\*/g, '.*')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\?/g, '[^/]');
+
+  return new RegExp(`^${escaped}$`, 'i');
+}
+
+/**
+ * Returns true if the given path should be ignored for activity detection.
+ *
+ * Matching is done against:
+ *  - the normalised absolute file path
+ *  - the workspace-relative path (when available)
+ *
+ * `.git/` internals are also treated as ignorable if any configured pattern
+ * targets `.git`, which makes the default behaviour robust for git noise such
+ * as `.git/FETCH_HEAD`.
+ */
+function shouldIgnoreActivityPath(fsPath: string, patterns: string[]): boolean {
+  if (!patterns.length) {
+    return false;
+  }
+
+  const absolutePath = normalisePath(fsPath);
+  const relativePath = normalisePath(vscode.workspace.asRelativePath(vscode.Uri.file(fsPath), false));
+  const candidatePaths = new Set<string>([absolutePath, relativePath]);
+
+  const gitInternal = absolutePath.includes('/.git/') || relativePath.startsWith('.git/');
+  const hasGitIgnorePattern = patterns.some(pattern => normalisePath(pattern).includes('.git/'));
+  if (gitInternal && hasGitIgnorePattern) {
+    return true;
+  }
+
   return patterns.some(pattern => {
-    const re = pattern
-      .replace(/\\/g, '/')
-      .replace(/[.+^${}()|[\]]/g, '\\$&')  // escape regex special chars (not * or ?)
-      .replace(/\*\*\//g, '(?:.*/)?')       // **/ = zero or more path components
-      .replace(/\*\*/g, '.*')               // ** = anything
-      .replace(/\*/g, '[^/]*')              // * = within single segment
-      .replace(/\?/g, '[^/]');              // ? = single char
-    return new RegExp(re, 'i').test(normalised);
+    const regex = globToRegExp(pattern);
+    for (const candidate of candidatePaths) {
+      if (regex.test(candidate)) {
+        return true;
+      }
+    }
+    return false;
   });
 }
 
@@ -39,6 +79,7 @@ export class SessionWatcher implements vscode.Disposable {
   private _workspaceListeners: vscode.Disposable[] = [];
   private _lastActivityAt: Date = new Date();
   private _lastWorkspaceLogAt = 0;
+  private _lastIgnoredLogAt = 0;
   private _pollInterval: ReturnType<typeof setInterval> | undefined;
   private _onSilenceDetected: SilenceCallback;
   private _onErrorDetected: ErrorCallback;
@@ -144,10 +185,15 @@ export class SessionWatcher implements vscode.Disposable {
     // VS Code editor document events, terminal events, and file lifecycle events.
 
     const bumpWithThrottledLog = (source: string, detail?: string) => {
-      // Skip paths that match the configured ignore patterns
-      if (detail && matchesAnyIgnorePattern(detail, this._config.watchIgnorePatterns)) {
+      if (detail && shouldIgnoreActivityPath(detail, this._config.watchIgnorePatterns)) {
+        const now = Date.now();
+        if (now - this._lastIgnoredLogAt > 30_000) {
+          Logger.debug(`Ignored activity signal (${source}): ${detail}`);
+          this._lastIgnoredLogAt = now;
+        }
         return;
       }
+
       this._bumpActivity();
       const now = Date.now();
       if (now - this._lastWorkspaceLogAt > 30_000) {
@@ -218,7 +264,10 @@ export class SessionWatcher implements vscode.Disposable {
       );
     }
 
-    Logger.info('Activity listeners active (workspace FS, editor, terminal, file lifecycle).');
+    Logger.info(
+      `Activity listeners active (workspace FS, editor, terminal, file lifecycle). ` +
+      `Ignore patterns: ${JSON.stringify(this._config.watchIgnorePatterns)}`
+    );
 
     // ── Polling heartbeat – checks silence threshold every 15s ────────────
     this._pollInterval = setInterval(() => {

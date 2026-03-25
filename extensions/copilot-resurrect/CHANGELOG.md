@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.4] - 2026-03-25
+
+### Fixed
+- **`.git\FETCH_HEAD` still leaked through v1.4.3**: Ignore matching is now evaluated against both the absolute file path and the workspace-relative path, instead of only the absolute path. This makes `.git/**`-style patterns reliable for watcher events originating inside the current workspace.
+- **More robust git-noise filtering**: `.git/` internals are now short-circuited whenever the configured ignore patterns target `.git`, and the default ignore list now includes both `"**/.git/**"` and `".git/**"`.
+- **Verification logging**: Ignored watcher events are now logged as `Ignored activity signal (...)` so you can confirm that `.git/FETCH_HEAD` is being skipped instead of bumping the heartbeat.
+
 ## [1.4.3] - 2026-03-25
 
 ### Added

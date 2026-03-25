@@ -2,7 +2,7 @@
   "name": "copilot-resurrect",
   "displayName": "Copilot Resurrect",
   "description": "Automatically resurrects a dead GitHub Copilot Chat session by re-injecting your configured ignition prompt — keep autonomous coding loops alive overnight.",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "publisher": "EricAnderson",
   "repository": {
     "type": "git",
@@ -126,8 +126,8 @@
           "items": {
             "type": "string"
           },
-          "default": ["**/.git/**"],
-          "description": "Glob patterns for paths to exclude from workspace activity detection. Useful for silencing noise from .git internals, node_modules, or other non-Copilot file changes. Supports ** (any depth), * (within segment), and ? (single char). Default: ['**/.git/**']."
+          "default": ["**/.git/**", ".git/**"],
+          "description": "Glob patterns for paths to exclude from workspace activity detection. Matching is performed against both absolute and workspace-relative paths. Useful for silencing noise from .git internals, node_modules, or other non-Copilot file changes. Supports ** (any depth), * (within segment), and ? (single char). Default: ['**/.git/**', '.git/**']."
         }
       }
     },
