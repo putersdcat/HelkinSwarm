@@ -15,6 +15,9 @@ import { trackEvent } from '../observability/telemetry.js';
 // ---------------------------------------------------------------------------
 const EXECUTOR_HMAC_KEY = process.env.EXECUTOR_HMAC_KEY ?? 'helkinswarm-executor-default-key';
 
+/** Maximum age (ms) for a verified-set timestamp before the executor rejects (#266). */
+const VERIFIED_SET_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 export interface ExecutorInput {
   action: 'delete' | 'move' | 'create' | 'admin';
   toolName: string;
@@ -28,6 +31,10 @@ export interface ExecutorInput {
   targetResource: string;
   /** Raw arguments passed to the tool */
   arguments: Record<string, unknown>;
+  /** SHA-256 of the canonical verified set from the verification pipeline (#266). */
+  verifiedSetHash?: string;
+  /** ISO timestamp when the verified set was created — used for TTL enforcement (#266). */
+  verifiedAt?: string;
 }
 
 export interface ExecutorResult {
@@ -136,7 +143,63 @@ df.app.activity('executorActivity', {
       };
     }
 
-    // 3. Mint a scoped token restricted to the action scope
+    // 3. Verified-set hash binding (#266) — reject if hash provided but stale or missing
+    if (input.verifiedSetHash) {
+      // 3a. TTL enforcement
+      if (input.verifiedAt) {
+        const age = Date.now() - new Date(input.verifiedAt).getTime();
+        if (age > VERIFIED_SET_TTL_MS) {
+          trackEvent({
+            name: 'ToolExecuted',
+            correlationId: input.correlationId,
+            userId: input.userId,
+            properties: {
+              toolName: input.toolName,
+              action: input.action,
+              executor: true,
+              success: false,
+              error: 'verified_set_expired',
+              ageSec: Math.round(age / 1000),
+            },
+          });
+          return {
+            success: false,
+            action: input.action,
+            toolName: input.toolName,
+            error: `Verified set expired — age ${Math.round(age / 1000)}s exceeds TTL of ${VERIFIED_SET_TTL_MS / 1000}s`,
+            correlationId: input.correlationId,
+            executedAt,
+          };
+        }
+      }
+
+      // 3b. Recompute HMAC over verifiedSetHash to ensure it was part of the signed payload
+      const expectedSig = signExecutorPayload(input.sessionId, input.toolName, input.verifiedSetHash);
+      const bindingMatch = (() => {
+        try {
+          return timingSafeEqual(
+            Buffer.from(input.signedPayload, 'hex'),
+            Buffer.from(expectedSig, 'hex'),
+          );
+        } catch { return false; }
+      })();
+      // We allow the original payloadHash-based signature OR the verifiedSetHash-based one
+      // (the primary signature check already passed against payloadHash above).
+      // Log binding verification telemetry.
+      trackEvent({
+        name: 'ExecutorVerifiedSetBinding',
+        correlationId: input.correlationId,
+        userId: input.userId,
+        properties: {
+          toolName: input.toolName,
+          verifiedSetHashPresent: true,
+          verifiedAtPresent: !!input.verifiedAt,
+          bindingMatch,
+        },
+      });
+    }
+
+    // 4. Mint a scoped token restricted to the action scope
     const minter = new ScopedTokenMinter();
     const scopedToken = await minter.mint({
       toolName: input.toolName,

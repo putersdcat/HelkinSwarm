@@ -2,6 +2,7 @@
 // Runs on EVERY sub-agent and SkillForge output before orchestrator reasoning begins.
 // Spec ref: 0e-Safety-and-Four-Eyes-Verification-Pipeline.md, 04-Safety-Architecture.md
 
+import { createHash } from 'node:crypto';
 import { safetyConfig, isConfirmationGated, isReadOnly } from '../config/safetyConfig.js';
 import { promptShields, type ShieldResult } from '../llm/promptShields.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
@@ -50,6 +51,15 @@ export interface VerificationInput {
   spotCheckPolicy?: SpotCheckPolicy;
 }
 
+/** Canonical description of the resource set verified by the pipeline (#266). */
+export interface VerifiedSet {
+  sessionId: string;
+  toolName: string;
+  operationType: string;
+  ids: string[];
+  verifiedAt: string;
+}
+
 export interface VerificationResult {
   passed: boolean;
   correlationId: string;
@@ -57,6 +67,10 @@ export interface VerificationResult {
   requiresConfirmation: boolean;
   confirmedAt?: string;
   error?: string;
+  /** Canonical verified set — present when spot-check IDs were provided (#266). */
+  verifiedSet?: VerifiedSet;
+  /** SHA-256 of the canonical verified set JSON (#266). */
+  verifiedSetHash?: string;
 }
 
 export interface VerificationStepResult {
@@ -114,6 +128,15 @@ export async function runVerificationPipeline(input: VerificationInput): Promise
     return makeResult(false, input.correlationId, steps, false, 'Prompt Shields blocked output');
   }
 
+  // Build canonical verified set when IDs are present (#266)
+  let verifiedSet: VerifiedSet | undefined;
+  let verifiedSetHash: string | undefined;
+  if (input.spotCheckIds && input.spotCheckIds.length > 0) {
+    const opType = inferOperationType(input.toolName);
+    verifiedSet = buildVerifiedSet(input.sessionId, input.toolName, opType, input.spotCheckIds);
+    verifiedSetHash = hashVerifiedSet(verifiedSet);
+  }
+
   // -------------------------------------------------------------------------
   // Step 5: Human confirmation (medium + high risk)
   // -------------------------------------------------------------------------
@@ -124,7 +147,7 @@ export async function runVerificationPipeline(input: VerificationInput): Promise
 
     if (!isConfirmationGated()) {
       // full-destructive mode — auto-proceed but log
-      return makeResult(true, input.correlationId, steps, true);
+      return makeResult(true, input.correlationId, steps, true, undefined, undefined, verifiedSet, verifiedSetHash);
     }
 
     if (input.confirmationResponse === 'approved') {
@@ -134,7 +157,7 @@ export async function runVerificationPipeline(input: VerificationInput): Promise
         details: 'User approved via Adaptive Card',
         latencyMs: Date.now() - startTime,
       });
-      return makeResult(true, input.correlationId, steps, true, undefined, new Date().toISOString());
+      return makeResult(true, input.correlationId, steps, true, undefined, new Date().toISOString(), verifiedSet, verifiedSetHash);
     } else if (input.confirmationResponse === 'denied' || input.confirmationResponse === 'timeout') {
       steps.push({
         step: 'human-confirmation',
@@ -155,7 +178,7 @@ export async function runVerificationPipeline(input: VerificationInput): Promise
     return makeResult(false, input.correlationId, steps, true, 'Awaiting human confirmation');
   }
 
-  return makeResult(true, input.correlationId, steps, false);
+  return makeResult(true, input.correlationId, steps, false, undefined, undefined, verifiedSet, verifiedSetHash);
 }
 
 // ---------------------------------------------------------------------------
@@ -412,6 +435,16 @@ function getDomainVerifier(toolName: string): DomainVerifier | null {
   return null;
 }
 
+/** Infer a coarse operation type from the tool name (#266). */
+function inferOperationType(toolName: string): string {
+  const lower = toolName.toLowerCase();
+  if (lower.includes('delete') || lower.includes('remove')) return 'delete';
+  if (lower.includes('create') || lower.includes('add') || lower.includes('new')) return 'create';
+  if (lower.includes('update') || lower.includes('edit') || lower.includes('modify') || lower.includes('move')) return 'update';
+  if (lower.includes('send') || lower.includes('forward') || lower.includes('reply')) return 'send';
+  return 'unknown';
+}
+
 /** GitHub domain verifier — verifies issue/PR numbers exist in the repo */
 async function verifyGitHubIds(ids: string[], _input: VerificationInput): Promise<string[]> {
   // GitHub IDs are issue/PR numbers — verify they exist via the API
@@ -494,6 +527,40 @@ function makeResult(
   requiresConfirmation: boolean,
   error?: string,
   confirmedAt?: string,
+  verifiedSet?: VerifiedSet,
+  verifiedSetHash?: string,
 ): VerificationResult {
-  return { passed, correlationId, steps, requiresConfirmation, confirmedAt, error };
+  return { passed, correlationId, steps, requiresConfirmation, confirmedAt, error, verifiedSet, verifiedSetHash };
+}
+
+// ---------------------------------------------------------------------------
+// Verified-set canonicalization (#266)
+// ---------------------------------------------------------------------------
+
+/** Build a canonical verified set from the pipeline context. */
+export function buildVerifiedSet(
+  sessionId: string,
+  toolName: string,
+  operationType: string,
+  ids: string[],
+): VerifiedSet {
+  return {
+    sessionId,
+    toolName,
+    operationType,
+    ids: [...new Set(ids)].map(String).sort(),
+    verifiedAt: new Date().toISOString(),
+  };
+}
+
+/** SHA-256 of the canonical verified set for binding to executor payloads. */
+export function hashVerifiedSet(vs: VerifiedSet): string {
+  const canonical = JSON.stringify({
+    sessionId: vs.sessionId,
+    toolName: vs.toolName,
+    operationType: vs.operationType,
+    ids: vs.ids,
+    verifiedAt: vs.verifiedAt,
+  });
+  return createHash('sha256').update(canonical).digest('hex');
 }

@@ -48,7 +48,8 @@ export type TelemetryEventName =
   | 'StateSaved'
   | 'SkillLifecycleAction'
   | 'SkillCredentialRevoked'
-  | 'MaintenanceSweepCompleted';
+  | 'MaintenanceSweepCompleted'
+  | 'ExecutorVerifiedSetBinding';
 
 // ---------------------------------------------------------------------------
 // Session Tracer — maps events to trace phases for Dev Console (#140)

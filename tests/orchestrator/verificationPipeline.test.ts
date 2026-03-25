@@ -3,7 +3,7 @@
 // missing verifier, partial mismatch, threshold exceeded, and full pass.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { VerificationInput, SpotCheckPolicy } from '../../src/orchestrator/verificationPipeline.js';
+import type { VerificationInput, SpotCheckPolicy, VerifiedSet } from '../../src/orchestrator/verificationPipeline.js';
 
 // ---------------------------------------------------------------------------
 // Mocks — we mock heavy dependencies so we're testing spot-check logic only
@@ -41,7 +41,7 @@ vi.mock('../../src/capabilities/capabilityLoader.js', () => ({
 // ---------------------------------------------------------------------------
 // Import after mocks
 // ---------------------------------------------------------------------------
-const { runVerificationPipeline } = await import('../../src/orchestrator/verificationPipeline.js');
+const { runVerificationPipeline, buildVerifiedSet, hashVerifiedSet } = await import('../../src/orchestrator/verificationPipeline.js');
 
 function makeInput(overrides: Partial<VerificationInput> = {}): VerificationInput {
   return {
@@ -303,6 +303,65 @@ describe('spot-check verification', () => {
       expect(spotStep?.spotCheckDetails).toHaveProperty('mismatchedIds');
       expect(spotStep?.spotCheckDetails).toHaveProperty('verifierUsed');
       expect(spotStep?.spotCheckDetails).toHaveProperty('totalIds');
+    });
+  });
+
+  describe('verified-set canonicalization (#266)', () => {
+    it('buildVerifiedSet sorts and deduplicates IDs', () => {
+      const vs = buildVerifiedSet('sess1', 'github_delete_issue', 'delete', ['3', '1', '2', '1']);
+      expect(vs.ids).toEqual(['1', '2', '3']);
+      expect(vs.sessionId).toBe('sess1');
+      expect(vs.toolName).toBe('github_delete_issue');
+      expect(vs.operationType).toBe('delete');
+      expect(vs.verifiedAt).toBeTruthy();
+    });
+
+    it('hashVerifiedSet produces a stable SHA-256 hex string', () => {
+      const vs: VerifiedSet = {
+        sessionId: 'sess1',
+        toolName: 'outlook_delete_email',
+        operationType: 'delete',
+        ids: ['a', 'b', 'c'],
+        verifiedAt: '2026-03-25T00:00:00.000Z',
+      };
+      const h1 = hashVerifiedSet(vs);
+      const h2 = hashVerifiedSet(vs);
+      expect(h1).toBe(h2);
+      expect(h1).toMatch(/^[a-f0-9]{64}$/);
+    });
+
+    it('hashVerifiedSet changes when IDs differ', () => {
+      const base: VerifiedSet = {
+        sessionId: 's', toolName: 't', operationType: 'delete',
+        ids: ['1', '2'], verifiedAt: '2026-01-01T00:00:00Z',
+      };
+      const altered: VerifiedSet = { ...base, ids: ['1', '2', '3'] };
+      expect(hashVerifiedSet(base)).not.toBe(hashVerifiedSet(altered));
+    });
+
+    it('pipeline emits verifiedSet when spotCheckIds are present', async () => {
+      mockGetHandler.mockReturnValue(async () => ({ id: '42' }));
+      const result = await runVerificationPipeline(
+        makeInput({
+          toolName: 'github_delete_issue',
+          spotCheckIds: ['42'],
+          spotCheckPolicy: 'advisory',
+        }),
+      );
+      expect(result.verifiedSet).toBeDefined();
+      expect(result.verifiedSet!.ids).toEqual(['42']);
+      expect(result.verifiedSetHash).toMatch(/^[a-f0-9]{64}$/);
+    });
+
+    it('pipeline does NOT emit verifiedSet when no spotCheckIds', async () => {
+      const result = await runVerificationPipeline(makeInput());
+      expect(result.verifiedSet).toBeUndefined();
+      expect(result.verifiedSetHash).toBeUndefined();
+    });
+
+    it('verifiedSet operationType inferred from tool name', () => {
+      expect(buildVerifiedSet('s', 'outlook_delete_email', 'delete', ['1']).operationType).toBe('delete');
+      expect(buildVerifiedSet('s', 'github_create_issue', 'create', ['1']).operationType).toBe('create');
     });
   });
 });

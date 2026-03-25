@@ -122,6 +122,10 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       return def?.risk === 'low';
     });
 
+    // Capture verified-set data from the safety pipeline for executor binding (#266)
+    let verifiedSetHash: string | undefined;
+    let verifiedAt: string | undefined;
+
     if (!isLowRiskOnly) {
       // Determine the highest risk level among requested tools
       const highestRisk = toolCallsForDispatch.some((tc: { name: string }) =>
@@ -137,6 +141,10 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         rawOutput: toolCallsForDispatch,
         originalQuery: input.userMessage,
       });
+
+      // Capture verified-set binding from pipeline result (#266)
+      verifiedSetHash = verification.verifiedSetHash as string | undefined;
+      verifiedAt = verification.verifiedSet?.verifiedAt as string | undefined;
 
       if (!verification.passed && !verification.requiresConfirmation) {
         // Hard block from safety pipeline (prompt shields, schema validation, etc.)
@@ -266,6 +274,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           userId: input.state.userId,
           targetResource: toolRegistry.get(tc.name)?.handlerModule ?? 'unknown',
           arguments: parsedArgs,
+          // Bind to canonical verified set from verification pipeline (#266)
+          verifiedSetHash,
+          verifiedAt,
         };
         const execResult: ExecutorResult = yield context.df.callActivity('executorActivity', execInput);
         mergedResults[i] = {
