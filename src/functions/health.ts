@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { getEnvConfig } from '../config/envConfig.js';
 import { getDatabase } from '../memory/cosmosClient.js';
 import { APP_VERSION } from '../config/version.js';
+import { getMessagePathSnapshot } from '../observability/messagePathHealth.js';
 
 interface HealthResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -14,8 +15,18 @@ interface HealthResponse {
     overseer: 'ok' | 'pending';
     llm: 'ok' | 'pending';
     memory: 'ok' | 'error';
+    messagePath: 'ok' | 'degraded' | 'error';
     safetyMode: string;
     euResidencyMode: boolean;
+  };
+  diagnostics?: {
+    messagePath: {
+      pendingTurns: number;
+      oldestPendingAgeMs: number | null;
+      lastSuccessAt: string | null;
+      lastFailureAt: string | null;
+      lastFailureReason: string | null;
+    };
   };
 }
 
@@ -50,19 +61,38 @@ export async function healthHandler(
 ): Promise<HttpResponseInit> {
   const env = getEnvConfig();
   const memoryStatus = await checkMemoryStatus();
+  const messagePath = getMessagePathSnapshot();
+
+  const runtimeStatus = messagePath.status === 'error' ? 'error' : 'ok';
+  const overallStatus: HealthResponse['status'] =
+    runtimeStatus === 'error'
+      ? 'unhealthy'
+      : memoryStatus === 'error' || messagePath.status === 'degraded'
+        ? 'degraded'
+        : 'healthy';
 
   const health: HealthResponse = {
-    status: memoryStatus === 'ok' ? 'healthy' : 'degraded',
+    status: overallStatus,
     timestamp: new Date().toISOString(),
     correlationId: randomUUID(),
     version: APP_VERSION,
     components: {
-      runtime: 'ok',
+      runtime: runtimeStatus,
       overseer: 'ok',
       llm: 'ok',
       memory: memoryStatus,
+      messagePath: messagePath.status,
       safetyMode: env.safetyMode,
       euResidencyMode: env.euResidencyMode,
+    },
+    diagnostics: {
+      messagePath: {
+        pendingTurns: messagePath.pendingTurns,
+        oldestPendingAgeMs: messagePath.oldestPendingAgeMs,
+        lastSuccessAt: messagePath.lastSuccessAt,
+        lastFailureAt: messagePath.lastFailureAt,
+        lastFailureReason: messagePath.lastFailureReason,
+      },
     },
   };
 

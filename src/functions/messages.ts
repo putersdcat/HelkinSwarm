@@ -11,6 +11,11 @@ import * as df from 'durable-functions';
 import type { Activity } from 'botbuilder';
 import { createAdapter } from '../bot/adapter.js';
 import { HelkinSwarmBot } from '../bot/HelkinSwarmBot.js';
+import {
+  recordMessagePathFailure,
+  recordMessagePathStart,
+  recordMessagePathSuccess,
+} from '../observability/messagePathHealth.js';
 
 app.http('messages', {
   methods: ['GET', 'POST'],
@@ -27,6 +32,9 @@ app.http('messages', {
     }
 
     context.log('Received bot message webhook');
+
+  const turnId = crypto.randomUUID();
+  recordMessagePathStart(turnId);
 
     const adapter = createAdapter();
     const bot = new HelkinSwarmBot();
@@ -51,6 +59,7 @@ app.http('messages', {
       );
 
       if (invokeResponse) {
+        recordMessagePathSuccess(turnId);
         return {
           status: invokeResponse.status,
           body: JSON.stringify(invokeResponse.body),
@@ -58,9 +67,11 @@ app.http('messages', {
         };
       }
 
+      recordMessagePathSuccess(turnId);
       return { status: 200 };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
+      recordMessagePathFailure(turnId, message);
       context.error('Bot processing error:', message);
       return { status: 500, body: JSON.stringify({ error: message }) };
     }

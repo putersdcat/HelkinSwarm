@@ -9,6 +9,7 @@ import {
   type Activity,
 } from 'botbuilder';
 import { getEnvConfig } from '../config/envConfig.js';
+import { recordMessagePathGlobalFailure } from '../observability/messagePathHealth.js';
 
 /** Return type from processActivity */
 interface InvokeResponse {
@@ -50,6 +51,9 @@ export function createAdapter(): HelkinSwarmAdapter {
   // and keep the HTTP turn hanging (#214).
   sharedAdapter.onTurnError = async (context, error) => {
     const correlationId = crypto.randomUUID();
+    recordMessagePathGlobalFailure(
+      error instanceof Error ? error.message : String(error),
+    );
     console.error(`[HelkinSwarm Bot] correlationId=${correlationId} Unhandled turn error:`, error);
     void context;
   };
