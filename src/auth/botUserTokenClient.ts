@@ -35,3 +35,14 @@ export async function getSignInLinkForActivity(
   const resource = await tokenClient.getSignInResource(connectionName, activity, '');
   return resource.signInLink;
 }
+
+export async function redeemMagicCodeForConnection(
+  userId: string,
+  channelId: string,
+  connectionName: string,
+  magicCode: string,
+): Promise<string | undefined> {
+  const tokenClient = await createBotUserTokenClient();
+  const result = await tokenClient.getUserToken(userId, connectionName, channelId, magicCode);
+  return result?.token;
+}

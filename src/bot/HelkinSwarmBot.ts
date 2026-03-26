@@ -37,7 +37,11 @@ import { toolRegistry } from '../tools/toolRegistry.js';
 import { parseDevLoopMessage } from '../devloop/radioProtocol.js';
 import { createPendingIntent } from '../orchestrator/pendingIntentStore.js';
 import { getBearerToken } from '../auth/identity.js';
-import { getSignInLinkForActivity } from '../auth/botUserTokenClient.js';
+import {
+  getSignInLinkForActivity,
+  redeemMagicCodeForConnection,
+} from '../auth/botUserTokenClient.js';
+import { isLikelyBotFrameworkMagicCode } from '../auth/magicCode.js';
 import { buildSkillLinkSigninCard, buildSkillRelinkSigninCard } from './linkCards.js';
 import type { QuotedContext } from './quotedContext.js';
 import { trackEvent } from '../observability/telemetry.js';
@@ -317,6 +321,13 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     const maintenance = await getMaintenanceMode();
     const lowerMessage = messageText.toLowerCase();
+
+    if (isLikelyBotFrameworkMagicCode(messageText)) {
+      const handled = await this.tryCompleteSkillLinkFromMagicCode(context, messageText);
+      if (handled) {
+        return;
+      }
+    }
 
     // Slash commands are handled before routing to the overseer.
     if (lowerMessage === '/emergency-stop') {
@@ -899,6 +910,44 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     } catch {
       return undefined;
     }
+  }
+
+  private async tryCompleteSkillLinkFromMagicCode(
+    context: TurnContext,
+    magicCode: string,
+  ): Promise<boolean> {
+    const channelUserId = context.activity.from.id;
+    const channelId = context.activity.channelId ?? '';
+
+    for (const manifest of getLinkableSkills()) {
+      const linkConfig = manifest.linkConfig;
+      if (!linkConfig) {
+        continue;
+      }
+
+      try {
+        const token = await redeemMagicCodeForConnection(
+          channelUserId,
+          channelId,
+          linkConfig.connectionName,
+          magicCode,
+        );
+
+        if (token) {
+          await context.sendActivity(
+            `✅ **${manifest.domain}** linked successfully. You can now use its delegated features.`,
+          );
+          return true;
+        }
+      } catch {
+        // Try the next linkable skill connection.
+      }
+    }
+
+    await context.sendActivity(
+      '⚠️ That sign-in validation code was not accepted. Please run `/link outlook` again and use the newest code.',
+    );
+    return true;
   }
 
   /**
