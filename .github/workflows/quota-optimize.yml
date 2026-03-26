@@ -50,6 +50,7 @@ env:
   AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
   AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
   AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  DEFAULT_REPORT_ISSUE_NUMBER: '113'
   USER_ALIAS: ${{ github.event.inputs.USER_ALIAS || vars.USER_ALIAS }}
 
 jobs:
@@ -200,12 +201,20 @@ jobs:
           path: quota-output/**
 
       - name: Comment summary to issue
-        if: ${{ github.event.inputs.REPORT_ISSUE_NUMBER != '' }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $issueNumber = '${{ github.event.inputs.REPORT_ISSUE_NUMBER }}'
+          if ([string]::IsNullOrWhiteSpace($issueNumber)) {
+            $issueNumber = '${{ env.DEFAULT_REPORT_ISSUE_NUMBER }}'
+          }
+
+          if ([string]::IsNullOrWhiteSpace($issueNumber)) {
+            Write-Host 'No report issue number configured — skipping issue comment.'
+            exit 0
+          }
+
           $summaryMarkdownPath = Join-Path $PWD 'quota-output/quota-summary.md'
 
           if (-not (Test-Path -Path $summaryMarkdownPath)) {
