@@ -85,6 +85,7 @@ jobs:
     outputs:
       acr-login-server: ${{ steps.query.outputs.acrLoginServer }}
       acr-name: ${{ steps.query.outputs.acrName }}
+      ai-services-name: ${{ steps.query.outputs.aiServicesName }}
       function-app-name: ${{ steps.query.outputs.functionAppName }}
       managed-identity-client-id: ${{ steps.query.outputs.managedIdentityClientId }}
       managed-identity-resource-id: ${{ steps.query.outputs.managedIdentityResourceId }}
@@ -267,6 +268,11 @@ jobs:
             --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
             --query "[0]" --output json 2>/dev/null || echo '{}')
 
+          AI_INFO=$(az cognitiveservices account list \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
+            --query "[?kind=='AIServices'] | [0]" --output json 2>/dev/null || echo '{}')
+
           FUNC_INFO=$(az functionapp list \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
             --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
@@ -280,11 +286,13 @@ jobs:
 
           ACR_LOGIN=$(echo "$ACR_INFO" | jq -r '.loginServer // ""')
           ACR_NAME=$(echo "$ACR_INFO" | jq -r '.name // ""')
+          AI_NAME=$(echo "$AI_INFO" | jq -r '.name // ""')
           FUNC_NAME=$(echo "$FUNC_INFO" | jq -r '.name // ""')
           MI_CLIENT_ID=$(echo "$UAMI_INFO" | jq -r '.clientId // ""')
           MI_RESOURCE_ID=$(echo "$UAMI_INFO" | jq -r '.id // ""')
 
           echo "  ACR: $ACR_NAME ($ACR_LOGIN)"
+          echo "  AI Services: $AI_NAME"
           echo "  Function App: $FUNC_NAME"
           echo "  UAMI Client ID: $MI_CLIENT_ID"
 
@@ -295,9 +303,54 @@ jobs:
 
           echo "acrLoginServer=$ACR_LOGIN"       >> "$GITHUB_OUTPUT"
           echo "acrName=$ACR_NAME"               >> "$GITHUB_OUTPUT"
+          echo "aiServicesName=$AI_NAME"         >> "$GITHUB_OUTPUT"
           echo "functionAppName=$FUNC_NAME"      >> "$GITHUB_OUTPUT"
           echo "managedIdentityClientId=$MI_CLIENT_ID"   >> "$GITHUB_OUTPUT"
           echo "managedIdentityResourceId=$MI_RESOURCE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Audit AI Foundry deployment capacities
+        if: steps.changes.outputs.infraChanged == 'true'
+        run: |
+          AI_NAME="${{ steps.query.outputs.aiServicesName }}"
+
+          if [ -z "$AI_NAME" ]; then
+            echo "⚠️ AI Services account not found — skipping quota audit"
+            exit 0
+          fi
+
+          echo "📊 Auditing AI Foundry deployment capacities for $AI_NAME"
+          DEPLOYMENTS_JSON=$(az cognitiveservices account deployment list \
+            --name "$AI_NAME" \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
+            --output json)
+
+          echo "$DEPLOYMENTS_JSON" | jq -r '
+            ["Deployment","SKU","Capacity(1k TPM)","Provisioning State"],
+            (.[] | [
+              .name,
+              (.sku.name // "unknown"),
+              ((.sku.capacity // 0) | tostring),
+              (.properties.provisioningState // "unknown")
+            ])
+            | @tsv' > foundry-capacity-audit.tsv
+
+          {
+            echo "## 📈 AI Foundry Capacity Audit"
+            echo
+            echo "Account: \\`$AI_NAME\\`"
+            echo
+            echo '```tsv'
+            cat foundry-capacity-audit.tsv
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          LOW_CAP_COUNT=$(echo "$DEPLOYMENTS_JSON" | jq '[.[] | select((.sku.capacity // 0) <= 1)] | length')
+          if [ "$LOW_CAP_COUNT" -gt 0 ]; then
+            echo "⚠️ Found $LOW_CAP_COUNT deployment(s) at 1k TPM or lower — review quota allocation or overrides."
+          else
+            echo "✅ No deployment is pinned at the 1k TPM floor."
+          fi
 
       - name: Ensure CICD can read DelegatedAuth secret from stamp Key Vault
         if: steps.changes.outputs.infraChanged == 'true'
