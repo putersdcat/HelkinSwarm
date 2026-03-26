@@ -34,6 +34,14 @@ import { existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
+import {
+  getHarnessMessageWindow,
+  queryHarnessMessages,
+  type HarnessMessageDirection,
+  type HarnessMessageWindowQuery,
+  type HarnessPickMode,
+  type HarnessRawMessage,
+} from './teamsTestHarnessQuery.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -240,16 +248,46 @@ interface GraphChat {
   members?: GraphChatMember[];
 }
 
-interface GraphMessageFrom {
-  user?: { displayName?: string; id?: string };
-  application?: { displayName?: string; id?: string };
-}
-
-interface GraphMessage {
+interface GraphMessage extends HarnessRawMessage {
   id: string;
   createdDateTime: string;
-  from?: GraphMessageFrom;
   body?: { content?: string; contentType?: string };
+}
+
+function parseDirection(value: unknown): HarnessMessageDirection | undefined {
+  if (typeof value !== 'string' || value.length === 0) {
+    return undefined;
+  }
+
+  const allowed: HarnessMessageDirection[] = [
+    'any',
+    'human-to-bot',
+    'bot-to-human',
+    'human-only',
+    'bot-only',
+    'system',
+  ];
+
+  return allowed.includes(value as HarnessMessageDirection)
+    ? value as HarnessMessageDirection
+    : undefined;
+}
+
+function parsePickMode(value: unknown): HarnessPickMode | undefined {
+  if (typeof value !== 'string' || value.length === 0) {
+    return undefined;
+  }
+
+  const allowed: HarnessPickMode[] = ['all', 'first', 'last'];
+  return allowed.includes(value as HarnessPickMode) ? value as HarnessPickMode : undefined;
+}
+
+async function getRecentChatMessages(chatId: string, count: number): Promise<GraphMessage[]> {
+  const cappedCount = Math.min(Math.max(count, 1), 50);
+  const msgsResp = await graphGet<{ value: GraphMessage[] }>(
+    `/me/chats/${chatId}/messages?$top=${cappedCount}`,
+  );
+  return msgsResp.value;
 }
 
 // ── MCP Server ────────────────────────────────────────────────────────────────
@@ -287,6 +325,53 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         type: 'object',
         properties: {
           count: { type: 'number', description: 'Number of messages to retrieve (default: 10, max: 50)' },
+        },
+        required: [],
+      },
+    },
+    {
+      name: 'teams_test_query_messages',
+      description:
+        'Targeted Teams chat lookup by correlation tag, direction, message id, text search, time range, and first/last match helpers.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          count: { type: 'number', description: 'How many recent chat messages to inspect first (default: 50, max: 50).' },
+          direction: {
+            type: 'string',
+            description: 'Message direction filter: any, human-to-bot, bot-to-human, human-only, bot-only, system.',
+          },
+          correlation: { type: 'string', description: 'Correlation tag or footer fragment to match.' },
+          contains: { type: 'string', description: 'Substring to match inside the normalized text body.' },
+          messageId: { type: 'string', description: 'Exact Teams message id to return.' },
+          beforeMessageId: { type: 'string', description: 'Only return messages before this message id.' },
+          afterMessageId: { type: 'string', description: 'Only return messages after this message id.' },
+          sinceIso: { type: 'string', description: 'Lower timestamp bound (ISO 8601).' },
+          untilIso: { type: 'string', description: 'Upper timestamp bound (ISO 8601).' },
+          newestFirst: { type: 'boolean', description: 'Return matches newest-first instead of chronological order.' },
+          limit: { type: 'number', description: 'Maximum number of matches to return after filtering.' },
+          pick: { type: 'string', description: 'Return all, first, or last match only.' },
+        },
+        required: [],
+      },
+    },
+    {
+      name: 'teams_test_get_message_window',
+      description:
+        'Return a narrow message window around a message id, correlation tag, or text fragment for fast DevLoop session inspection.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          count: { type: 'number', description: 'How many recent chat messages to inspect first (default: 50, max: 50).' },
+          aroundMessageId: { type: 'string', description: 'Anchor window around this exact Teams message id.' },
+          aroundCorrelation: { type: 'string', description: 'Anchor window around the first correlation tag/footer match.' },
+          aroundContains: { type: 'string', description: 'Anchor window around the first text match.' },
+          beforeCount: { type: 'number', description: 'How many messages before the anchor to include (default: 3).' },
+          afterCount: { type: 'number', description: 'How many messages after the anchor to include (default: 3).' },
+          direction: {
+            type: 'string',
+            description: 'Optional direction filter: any, human-to-bot, bot-to-human, human-only, bot-only, system.',
+          },
         },
         required: [],
       },
@@ -449,11 +534,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         );
       }
 
-      const msgsResp = await graphGet<{ value: GraphMessage[] }>(
-        `/me/chats/${settings.chatId}/messages?$top=${count}`,
-      );
+      const messages = await getRecentChatMessages(settings.chatId, count);
 
-      const lines = msgsResp.value
+      const lines = messages
         .sort(
           (a, b) => new Date(a.createdDateTime).getTime() - new Date(b.createdDateTime).getTime(),
         )
@@ -469,6 +552,101 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       return {
         content: [{ type: 'text', text: lines.join('\n') || '(no messages)' }],
+      };
+    }
+
+    case 'teams_test_query_messages': {
+      const count = Math.min(Number(typedArgs['count'] ?? 50), 50);
+      const settings = await loadSettings();
+      if (!settings.chatId) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          'Chat ID not configured. Run teams_test_setup first.',
+        );
+      }
+
+      const messages = await getRecentChatMessages(settings.chatId, count);
+      const direction = parseDirection(typedArgs['direction']);
+      if (typedArgs['direction'] !== undefined && !direction) {
+        throw new McpError(ErrorCode.InvalidParams, 'Invalid direction filter.');
+      }
+
+      const pick = parsePickMode(typedArgs['pick']);
+      if (typedArgs['pick'] !== undefined && !pick) {
+        throw new McpError(ErrorCode.InvalidParams, 'Invalid pick mode.');
+      }
+
+      const results = queryHarnessMessages(messages, {
+        direction,
+        correlation: typeof typedArgs['correlation'] === 'string' ? typedArgs['correlation'] : undefined,
+        contains: typeof typedArgs['contains'] === 'string' ? typedArgs['contains'] : undefined,
+        messageId: typeof typedArgs['messageId'] === 'string' ? typedArgs['messageId'] : undefined,
+        beforeMessageId: typeof typedArgs['beforeMessageId'] === 'string' ? typedArgs['beforeMessageId'] : undefined,
+        afterMessageId: typeof typedArgs['afterMessageId'] === 'string' ? typedArgs['afterMessageId'] : undefined,
+        sinceIso: typeof typedArgs['sinceIso'] === 'string' ? typedArgs['sinceIso'] : undefined,
+        untilIso: typeof typedArgs['untilIso'] === 'string' ? typedArgs['untilIso'] : undefined,
+        newestFirst: Boolean(typedArgs['newestFirst']),
+        limit: Number(typedArgs['limit'] ?? count),
+        pick,
+      });
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            count: results.length,
+            inspected: count,
+            direction: direction ?? 'any',
+            pick: pick ?? 'all',
+            messages: results,
+          }, null, 2),
+        }],
+      };
+    }
+
+    case 'teams_test_get_message_window': {
+      const count = Math.min(Number(typedArgs['count'] ?? 50), 50);
+      const settings = await loadSettings();
+      if (!settings.chatId) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          'Chat ID not configured. Run teams_test_setup first.',
+        );
+      }
+
+      const messages = await getRecentChatMessages(settings.chatId, count);
+      const direction = parseDirection(typedArgs['direction']);
+      if (typedArgs['direction'] !== undefined && !direction) {
+        throw new McpError(ErrorCode.InvalidParams, 'Invalid direction filter.');
+      }
+
+      const windowQuery: HarnessMessageWindowQuery = {
+        aroundMessageId: typeof typedArgs['aroundMessageId'] === 'string' ? typedArgs['aroundMessageId'] : undefined,
+        aroundCorrelation: typeof typedArgs['aroundCorrelation'] === 'string' ? typedArgs['aroundCorrelation'] : undefined,
+        aroundContains: typeof typedArgs['aroundContains'] === 'string' ? typedArgs['aroundContains'] : undefined,
+        beforeCount: Number(typedArgs['beforeCount'] ?? 3),
+        afterCount: Number(typedArgs['afterCount'] ?? 3),
+        direction,
+      };
+
+      if (!windowQuery.aroundMessageId && !windowQuery.aroundCorrelation && !windowQuery.aroundContains) {
+        throw new McpError(
+          ErrorCode.InvalidParams,
+          'One of aroundMessageId, aroundCorrelation, or aroundContains is required.',
+        );
+      }
+
+      const result = getHarnessMessageWindow(messages, windowQuery);
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            inspected: count,
+            anchor: result.anchor,
+            count: result.messages.length,
+            messages: result.messages,
+          }, null, 2),
+        }],
       };
     }
 

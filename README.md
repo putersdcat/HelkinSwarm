@@ -57,6 +57,10 @@ You should see a clean status report with model health, memory, and safety mode.
 3. **Test it safely**  
    Use the built-in **Teams Test Harness** from VS Code (MCP) — the recommended and only safe way to send test messages programmatically.
 
+   Useful targeted harness queries now include:
+   - `teams_test_query_messages` — direct lookup by correlation tag/footer, direction, message id, text match, and first/last helper
+   - `teams_test_get_message_window` — narrow before/after message windows around a correlation, message id, or text anchor
+
 ---
 
 ### Core Principles
