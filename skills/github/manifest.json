@@ -38,6 +38,10 @@
           "per_page": {
             "type": "number",
             "description": "Results per page (max 100, default 30)"
+          },
+          "page": {
+            "type": "number",
+            "description": "Page number for pagination (default 1). Use with per_page to retrieve large result sets. Check has_next_page in response to know if more pages exist."
           }
         },
         "required": []

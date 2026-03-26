@@ -103,6 +103,25 @@ async function ghFetch<T>(
   return schema.parse(data);
 }
 
+async function ghFetchWithPagination<T>(
+  url: string,
+  schema: z.ZodType<T>,
+): Promise<{ data: T; hasNextPage: boolean }> {
+  const h = await headers();
+  const response = await fetch(url, { headers: h });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`GitHub API ${response.status}: ${errorBody}`);
+  }
+
+  const linkHeader = response.headers.get('link') ?? '';
+  const hasNextPage = linkHeader.includes('rel="next"');
+
+  const data: unknown = await response.json();
+  return { data: schema.parse(data), hasNextPage };
+}
+
 
 
 // ---------------------------------------------------------------------------
@@ -115,13 +134,19 @@ export const github_list_issues: ToolHandler = async (args) => {
   if (args['labels']) params.set('labels', String(args['labels']));
   if (args['milestone']) params.set('milestone', String(args['milestone']));
   if (args['assignee']) params.set('assignee', String(args['assignee']));
-  params.set('per_page', String(Math.min(Number(args['per_page']) || 30, 100)));
+  const perPage = Math.min(Number(args['per_page']) || 30, 100);
+  params.set('per_page', String(perPage));
+  const page = Math.max(Number(args['page']) || 1, 1);
+  params.set('page', String(page));
 
   const url = `${API_BASE}/issues?${params.toString()}`;
-  const issues = await ghFetch(url, z.array(GitHubIssueSchema));
+  const { data: issues, hasNextPage } = await ghFetchWithPagination(url, z.array(GitHubIssueSchema));
 
   return {
     count: issues.length,
+    page,
+    per_page: perPage,
+    has_next_page: hasNextPage,
     issues: issues.map((i) => ({
       number: i.number,
       title: i.title,
