@@ -15,6 +15,22 @@ describe('deploy-stamp bicep result gate', () => {
     });
   });
 
+  it('allows DeploymentFailed when it only wraps RoleAssignmentExists', () => {
+    const output = [
+      '{"code":"DeploymentFailed"}',
+      '{"code":"RoleAssignmentExists","message":"already exists"}',
+    ].join('\n');
+
+    expect(analyzeDeployStampBicepResult({ output, oauthUpdate: false })).toMatchObject({
+      roleAssignmentExistsCount: 1,
+      deploymentFailedCount: 1,
+      totalCodes: 2,
+      benignCodes: 2,
+      realErrors: 0,
+      shouldContinue: true,
+    });
+  });
+
   it('allows wrapped bot validation failures only when oauth update is off', () => {
     const output = [
       '{"code":"InvalidTemplateDeployment"}',

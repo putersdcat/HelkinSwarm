@@ -15,8 +15,12 @@ export function analyzeDeployStampBicepResult(params) {
   const codeMatches = Array.from(output.matchAll(/"code"\s*:\s*"([^"]+)"/gu), (match) => match[1]);
   const roleAssignmentExistsCount = codeMatches.filter((code) => code === 'RoleAssignmentExists').length;
   const botValidationDetected = output.includes('do not have permission');
+  const deploymentFailedCount = codeMatches.filter((code) => code === 'DeploymentFailed').length;
 
   let benignCodes = roleAssignmentExistsCount;
+  if (roleAssignmentExistsCount > 0) {
+    benignCodes += deploymentFailedCount;
+  }
   if (!oauthUpdate && botValidationDetected) {
     benignCodes += codeMatches.filter((code) => BOT_VALIDATION_CODES.has(code)).length;
   }
@@ -27,6 +31,7 @@ export function analyzeDeployStampBicepResult(params) {
   return {
     botValidationDetected,
     roleAssignmentExistsCount,
+    deploymentFailedCount,
     totalCodes,
     benignCodes,
     realErrors,
