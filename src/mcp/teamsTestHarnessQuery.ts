@@ -8,6 +8,16 @@ export interface HarnessRawMessage {
   createdDateTime: string;
   from?: HarnessMessageFrom;
   body?: { content?: string; contentType?: string };
+  attachments?: HarnessRawAttachment[];
+}
+
+export interface HarnessRawAttachment {
+  id?: string;
+  contentType?: string;
+  content?: string;
+  contentUrl?: string;
+  thumbnailUrl?: string;
+  name?: string;
 }
 
 export type HarnessSenderKind = 'human' | 'bot' | 'system';
@@ -23,7 +33,28 @@ export interface NormalizedHarnessMessage {
   text: string;
   html: string;
   contentType: string;
+  formatting: HarnessFormattingHints;
+  attachments: NormalizedHarnessAttachment[];
+  cards: NormalizedHarnessAttachment[];
   correlationMatches: string[];
+}
+
+export interface HarnessFormattingHints {
+  hasHtml: boolean;
+  hasMarkdownLike: boolean;
+  hasCodeBlock: boolean;
+  hasInlineCode: boolean;
+}
+
+export interface NormalizedHarnessAttachment {
+  id?: string;
+  name?: string;
+  contentType: string;
+  kind: 'adaptive-card' | 'signin-card' | 'image' | 'file' | 'other';
+  contentUrl?: string;
+  thumbnailUrl?: string;
+  contentText?: string;
+  cardPayload?: unknown;
 }
 
 export interface HarnessMessageQuery {
@@ -62,6 +93,60 @@ function stripHtml(value: string | undefined): string {
     .trim();
 }
 
+function detectFormatting(text: string, html: string): HarnessFormattingHints {
+  const hasHtml = /<[^>]+>/.test(html);
+  const hasCodeBlock = /```/.test(text) || /<pre\b/i.test(html);
+  const hasInlineCode = /`[^`]+`/.test(text) || /<code\b/i.test(html);
+  const hasMarkdownLike = /(^|\s)([#>*-]|\[[^\]]+\]\([^\)]+\)|\*\*[^*]+\*\*)/.test(text)
+    || hasCodeBlock
+    || hasInlineCode;
+
+  return {
+    hasHtml,
+    hasMarkdownLike,
+    hasCodeBlock,
+    hasInlineCode,
+  };
+}
+
+function parseAttachmentPayload(content: string | undefined): unknown {
+  if (!content) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(content) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizeAttachment(attachment: HarnessRawAttachment): NormalizedHarnessAttachment {
+  const contentType = attachment.contentType ?? 'unknown';
+  const lowerType = contentType.toLowerCase();
+  const parsedPayload = parseAttachmentPayload(attachment.content);
+  const kind: NormalizedHarnessAttachment['kind'] = lowerType.includes('adaptive')
+    ? 'adaptive-card'
+    : lowerType.includes('signin')
+      ? 'signin-card'
+      : lowerType.startsWith('image/') || !!attachment.thumbnailUrl
+        ? 'image'
+        : lowerType.includes('file')
+          ? 'file'
+          : 'other';
+
+  return {
+    id: attachment.id,
+    name: attachment.name,
+    contentType,
+    kind,
+    contentUrl: attachment.contentUrl,
+    thumbnailUrl: attachment.thumbnailUrl,
+    contentText: typeof attachment.content === 'string' && !parsedPayload ? attachment.content : undefined,
+    cardPayload: parsedPayload,
+  };
+}
+
 function collectCorrelationMatches(text: string): string[] {
   const matches = new Set<string>();
   for (const pattern of CORRELATION_PATTERNS) {
@@ -86,6 +171,7 @@ export function normalizeHarnessMessage(message: HarnessRawMessage): NormalizedH
     ?? message.from?.user?.displayName
     ?? 'unknown';
   const senderId = message.from?.application?.id ?? message.from?.user?.id;
+  const attachments = (message.attachments ?? []).map(normalizeAttachment);
 
   return {
     id: message.id,
@@ -96,6 +182,9 @@ export function normalizeHarnessMessage(message: HarnessRawMessage): NormalizedH
     text,
     html,
     contentType: message.body?.contentType ?? 'text',
+    formatting: detectFormatting(text, html),
+    attachments,
+    cards: attachments.filter((attachment) => attachment.kind === 'adaptive-card' || attachment.kind === 'signin-card'),
     correlationMatches: collectCorrelationMatches(text),
   };
 }

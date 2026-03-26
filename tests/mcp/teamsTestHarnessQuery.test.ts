@@ -30,6 +30,26 @@ const messages: HarnessRawMessage[] = [
     createdDateTime: '2026-03-26T07:00:09.000Z',
     from: { application: { displayName: 'HelkinSwarm', id: 'bot1' } },
     body: { content: '<p>done</p><pre>tools: outlook_list_emails</pre>', contentType: 'html' },
+    attachments: [
+      {
+        id: 'a1',
+        contentType: 'application/vnd.microsoft.card.adaptive',
+        content: JSON.stringify({
+          type: 'AdaptiveCard',
+          version: '1.5',
+          body: [{ type: 'TextBlock', text: 'Link Microsoft Account' }],
+          actions: [{ type: 'Action.OpenUrl', title: 'Open', url: 'https://example.test' }],
+        }),
+        name: 'oauth-card',
+      },
+      {
+        id: 'a2',
+        contentType: 'image/png',
+        contentUrl: 'https://example.test/image.png',
+        thumbnailUrl: 'https://example.test/thumb.png',
+        name: 'thumb',
+      },
+    ],
   },
 ];
 
@@ -51,6 +71,22 @@ describe('teamsTestHarnessQuery helpers', () => {
 
     expect(results).toHaveLength(1);
     expect(results[0]?.id).toBe('m2');
+  });
+
+  it('preserves formatting hints and structured card/image attachments', () => {
+    const normalized = normalizeHarnessMessage(messages[3]!);
+
+    expect(normalized.formatting.hasHtml).toBe(true);
+    expect(normalized.formatting.hasCodeBlock).toBe(true);
+    expect(normalized.attachments).toHaveLength(2);
+    expect(normalized.cards).toHaveLength(1);
+    expect(normalized.cards[0]?.kind).toBe('adaptive-card');
+    expect(normalized.cards[0]?.cardPayload).toMatchObject({
+      type: 'AdaptiveCard',
+      body: [{ type: 'TextBlock', text: 'Link Microsoft Account' }],
+    });
+    expect(normalized.attachments[1]?.kind).toBe('image');
+    expect(normalized.attachments[1]?.contentUrl).toBe('https://example.test/image.png');
   });
 
   it('supports before/after message slicing and text matching', () => {
