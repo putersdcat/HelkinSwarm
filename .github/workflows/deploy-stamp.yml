@@ -338,7 +338,7 @@ jobs:
           {
             echo "## 📈 AI Foundry Capacity Audit"
             echo
-            echo "Account: \\`$AI_NAME\\`"
+            echo "Account: $AI_NAME"
             echo
             echo '```tsv'
             cat foundry-capacity-audit.tsv
