@@ -3,7 +3,7 @@ import { describe, it, expect } from 'vitest';
 import type { QuotedContext, QuoteSource } from '../../src/bot/quotedContext.js';
 
 describe('QuotedContext', () => {
-  const sources: QuoteSource[] = ['cache', 'entity', 'channelData', 'blockquote'];
+  const sources: QuoteSource[] = ['cache', 'entity', 'channelData', 'blockquote', 'messageReference'];
 
   it('supports all four resolution sources', () => {
     for (const source of sources) {

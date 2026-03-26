@@ -50,6 +50,7 @@ import {
   registerPendingLinkChallenge,
 } from '../auth/pendingLinkChallengeStore.js';
 import { buildSkillLinkSigninCard, buildSkillRelinkSigninCard } from './linkCards.js';
+import { extractMessageReferenceId, extractMessageReferencePreview } from './messageReference.js';
 import type { QuotedContext } from './quotedContext.js';
 import { trackEvent } from '../observability/telemetry.js';
 
@@ -998,7 +999,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
    */
   private extractQuotedReply(context: TurnContext): QuotedContext | undefined {
     const activity = context.activity;
-    const replyToId = activity.replyToId;
+    const replyToId = activity.replyToId ?? extractMessageReferenceId(activity.attachments);
 
     // 1. Cache lookup — if we sent the quoted message, we have the full text
     if (replyToId) {
@@ -1024,7 +1025,13 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return { text: channelData.quotedMessageContent.trim(), replyToId, source: 'channelData', mayBeTruncated: channelData.quotedMessageContent.length < 180 };
     }
 
-    // 4. Fallback: extract from HTML body if textFormat is 'html'
+    // 4. Teams desktop/web quoted replies may arrive as messageReference attachments (#221)
+    const messageReferencePreview = extractMessageReferencePreview(activity.attachments);
+    if (replyToId && messageReferencePreview) {
+      return { text: messageReferencePreview, replyToId, source: 'messageReference', mayBeTruncated: true };
+    }
+
+    // 5. Fallback: extract from HTML body if textFormat is 'html'
     if (activity.textFormat === 'html' && activity.text) {
       const blockquoteMatch = /<blockquote[^>]*>([\s\S]*?)<\/blockquote>/i.exec(
         activity.text,

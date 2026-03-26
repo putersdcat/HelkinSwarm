@@ -2,7 +2,7 @@
 // Used throughout the orchestration path instead of mutating the raw user message.
 
 /** Resolution source for the quoted text. */
-export type QuoteSource = 'cache' | 'entity' | 'channelData' | 'blockquote';
+export type QuoteSource = 'cache' | 'entity' | 'channelData' | 'blockquote' | 'messageReference';
 
 /** Structured representation of a Teams reply-with-quote payload. */
 export interface QuotedContext {
