@@ -37,6 +37,7 @@ import { loadCapabilities, getManifest, getLinkableSkills } from '../capabilitie
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { parseDevLoopMessage } from '../devloop/radioProtocol.js';
 import { createPendingIntent } from '../orchestrator/pendingIntentStore.js';
+import { createHash } from 'node:crypto';
 import { getBearerToken } from '../auth/identity.js';
 import {
   checkUserTokenForConnection,
@@ -272,16 +273,29 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
   }
 
   private async handleIncomingMessage(context: TurnContext): Promise<void> {
-    // Dedup: Teams adapter may retry the same HTTP POST within seconds (#280).
-    // Reject duplicate activity IDs to prevent double-processing.
-    const activityId = context.activity.id;
-    if (activityId) {
+    const userId = context.activity.from.aadObjectId;
+    const userAlias =
+      context.activity.from.name ?? context.activity.from.id ?? 'unknown';
+    let messageText = (context.activity.text ?? '').trim();
+    const correlationId = crypto.randomUUID();
+
+    // Dedup: Teams adapter may retry the same HTTP POST within seconds (#300).
+    // activity.id may be undefined for incoming messages, so we use a hash of
+    // userId + timestamp + text prefix as a deterministic dedup key.
+    const msgTs = context.activity.timestamp instanceof Date
+      ? context.activity.timestamp.toISOString()
+      : String(context.activity.timestamp ?? '');
+    const dedupKey = createHash('sha256')
+      .update(`${userId ?? 'anon'}:${msgTs}:${messageText.slice(0, 100)}`)
+      .digest('hex')
+      .slice(0, 16);
+    {
       const now = Date.now();
-      if (HelkinSwarmBot.recentActivityIds.has(activityId)) {
-        console.info(`[HelkinSwarmBot] Duplicate activity ${activityId} — skipping`);
+      if (HelkinSwarmBot.recentActivityIds.has(dedupKey)) {
+        console.info(`[HelkinSwarmBot] Duplicate message ${dedupKey} — skipping`);
         return;
       }
-      HelkinSwarmBot.recentActivityIds.set(activityId, now);
+      HelkinSwarmBot.recentActivityIds.set(dedupKey, now);
       // Prune expired entries to prevent unbounded growth
       if (HelkinSwarmBot.recentActivityIds.size > 100) {
         for (const [id, ts] of HelkinSwarmBot.recentActivityIds) {
@@ -291,12 +305,6 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         }
       }
     }
-
-    const userId = context.activity.from.aadObjectId;
-    const userAlias =
-      context.activity.from.name ?? context.activity.from.id ?? 'unknown';
-    let messageText = (context.activity.text ?? '').trim();
-    const correlationId = crypto.randomUUID();
 
     // Emit bot-receive trace phase (#269)
     trackEvent({
@@ -496,6 +504,8 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     // rather than sending a second message (spec: 10-Teams-Interface.md §Message Flow).
     // Include compact correlation tag so the user can trace the turn (#267).
     const correlationTag = correlationId.slice(0, 8);
+    // Diagnostic: log activity.id for dedup debugging (#300)
+    console.info(`[HelkinSwarmBot] activity.id=${context.activity.id ?? 'UNDEFINED'} correlationTag=${correlationTag} userId=${userId}`);
     const ackResponse = await context.sendActivity(getCorrelatedAck(correlationTag));
     if (ackResponse?.id) {
       const conversationId = context.activity.conversation?.id ?? userId;
@@ -561,11 +571,16 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     // does NOT delete history events from the History table, so reusing the same
     // instanceId causes unbounded replay growth.
     //
-    // Use activity.id (Teams-assigned) as the instance suffix for natural dedup (#300).
-    // If Teams retries the same activity to a different container replica, the second
-    // startNew() call will fail with 409 (instance already running) — caught below.
-    const activitySuffix = context.activity.id ?? crypto.randomUUID().slice(0, 8);
-    const instanceId = `overseer-${userId}-${activitySuffix}`;
+    // Dedup (#300): create a deterministic instance ID from userId + activity timestamp
+    // + first 100 chars of the message. If Teams retries the same webhook POST (identical
+    // activity payload), the second startNew() will hit a conflict — caught below.
+    // activity.id may be undefined for incoming Teams messages, so we hash instead.
+    const ts = context.activity.timestamp instanceof Date
+      ? context.activity.timestamp.toISOString()
+      : String(context.activity.timestamp ?? '');
+    const dedupSeed = `${userId}:${ts}:${userMessage.slice(0, 100)}`;
+    const dedupHash = createHash('sha256').update(dedupSeed).digest('hex').slice(0, 12);
+    const instanceId = `overseer-${userId}-${dedupHash}`;
 
     const conversationReference = TurnContextClass.getConversationReference(
       context.activity,
