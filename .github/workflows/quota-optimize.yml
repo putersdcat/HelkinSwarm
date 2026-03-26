@@ -1,0 +1,99 @@
+# ============================================================================
+# HelkinSwarm — quota-optimize.yml: AI Foundry capacity audit + rebalance hints
+# Manual/scheduled quota visibility workflow for stamped deployments.
+# Spec ref: #113, docs/12-Deployment-CICD.md
+# ============================================================================
+
+name: Quota Optimize
+
+on:
+  workflow_dispatch:
+    inputs:
+      USER_ALIAS:
+        description: "4-char alphanumeric user alias (e.g. a7f2). Defaults to vars.USER_ALIAS."
+        required: false
+        type: string
+      LOW_CAPACITY_THRESHOLD:
+        description: "Flag deployments at or below this 1k TPM capacity as floor-pinned."
+        required: false
+        type: number
+        default: 1
+  schedule:
+    - cron: '17 12 * * 1'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+  AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+  AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
+  USER_ALIAS: ${{ github.event.inputs.USER_ALIAS || vars.USER_ALIAS }}
+  RESOURCE_GROUP: rg-helkinswarm-${{ github.event.inputs.USER_ALIAS || vars.USER_ALIAS }}
+
+jobs:
+  quota-audit:
+    name: Audit AI Foundry Quota
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate USER_ALIAS format
+        run: |
+          ALIAS="${{ env.USER_ALIAS }}"
+          if ! echo "$ALIAS" | grep -qE '^[a-z0-9]{4}$'; then
+            echo "❌ USER_ALIAS must be exactly 4 lowercase alphanumeric characters. Got: '$ALIAS'"
+            exit 1
+          fi
+          echo "✅ USER_ALIAS '$ALIAS' is valid"
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Audit quota and generate recommendations
+        shell: pwsh
+        run: |
+          $threshold = [int]${{ github.event.inputs.LOW_CAPACITY_THRESHOLD || 1 }}
+          $result = & "$PWD/scripts/Invoke-AzFoundryQuotaAudit.ps1" `
+            -UserAlias "${{ env.USER_ALIAS }}" `
+            -ResourceGroupName "${{ env.RESOURCE_GROUP }}" `
+            -LowCapacityThreshold $threshold `
+            -OutputFormat Json | ConvertFrom-Json
+
+          $summaryPath = Join-Path $PWD 'quota-audit.json'
+          $result | ConvertTo-Json -Depth 8 | Set-Content -Path $summaryPath -Encoding UTF8
+
+          $rows = @($result.deployments | Sort-Object DeploymentName)
+          $low = @($result.summary.lowCapacityDeployments)
+
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## 📈 AI Foundry Quota Audit"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- User alias: \\`${{ env.USER_ALIAS }}\\`"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- AI Services: \\`$($result.summary.aiServicesName)\\`"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Total requested capacity: \\`$($result.summary.totalRequestedCapacity)\\` (1k TPM units)"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Low-capacity threshold: \\`$threshold\\`"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| Deployment | SKU | Capacity | Model | State |"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "|---|---|---:|---|---|"
+          foreach ($row in $rows) {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| $($row.DeploymentName) | $($row.SkuName) | $($row.Capacity) | $($row.ModelName) | $($row.ProvisioningState) |"
+          }
+
+          if ($low.Count -gt 0) {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### ⚠️ Floor-pinned deployments"
+            foreach ($row in $low) {
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- $($row.DeploymentName) at $($row.Capacity)k TPM"
+            }
+            Write-Host "Found $($low.Count) deployment(s) at or below ${threshold}k TPM."
+          } else {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "✅ No deployments are currently pinned at or below the configured floor."
+            Write-Host "No deployments are pinned at or below ${threshold}k TPM."
+          }
