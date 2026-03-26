@@ -602,13 +602,21 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     try {
       // Check if this instance already exists (running OR completed) — prevents
       // duplicates when the retry arrives after the first overseer completed (#300).
-      const existing = await client.getStatus(instanceId);
-      if (existing?.runtimeStatus !== undefined && existing.runtimeStatus !== null) {
-        console.info(
-          `[HelkinSwarmBot] Overseer ${instanceId} already exists (status: ${existing.runtimeStatus}) — skipping (Teams retry dedup)`,
-        );
-        return;
+      // getStatus may throw 404 for non-existent instances — that's expected.
+      let alreadyExists = false;
+      try {
+        const existing = await client.getStatus(instanceId);
+        if (existing?.runtimeStatus !== undefined && existing.runtimeStatus !== null) {
+          alreadyExists = true;
+          console.info(
+            `[HelkinSwarmBot] Overseer ${instanceId} already exists (status: ${String(existing.runtimeStatus)}) — skipping (Teams retry dedup)`,
+          );
+        }
+      } catch {
+        // getStatus throws for non-existent instances — expected, proceed to startNew
       }
+      if (alreadyExists) return;
+
       await client.startNew('overseer', { instanceId, input: event });
     } catch (err: unknown) {
       // 409 = instance already exists (race condition) — safe to ignore (#300)
