@@ -355,7 +355,8 @@ async function queryRuntimeSessionBundleForCorrelation(correlationTag: string): 
         STAMP_USER_ALIAS,
         '-CorrelationTag',
         correlationTag,
-        '-PassThru',
+        '-OutputFormat',
+        'Json',
       ],
       { cwd: REPO_ROOT, maxBuffer: 1024 * 1024 },
     );

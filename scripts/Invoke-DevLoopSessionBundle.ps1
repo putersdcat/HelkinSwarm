@@ -10,7 +10,11 @@ param(
   [string]$CorrelationTag,
 
   [Parameter()]
-  [switch]$PassThru
+  [switch]$PassThru,
+
+  [Parameter()]
+  [ValidateSet('Json', 'Object')]
+  [string]$OutputFormat = 'Json'
 )
 
 Set-StrictMode -Version Latest
@@ -61,22 +65,22 @@ if ([string]::IsNullOrWhiteSpace($functionKey)) {
 $encodedCorrelationTag = [System.Uri]::EscapeDataString($CorrelationTag)
 $uri = "$baseEndpoint/api/devloop/session-bundle/${encodedCorrelationTag}?code=$functionKey"
 
-$response = Invoke-RestMethod -Method Get -Uri $uri -Headers @{
-  'x-helkinswarm-user-id' = [string]$userObjectId
-}
-
-if ($PassThru) {
-  return [pscustomobject]@{
-    metadata = [pscustomobject]@{
-      userAlias = $UserAlias
-      functionAppName = $functionAppName
-      resourceGroupName = $resourceGroupName
-      functionName = $functionName
-      endpoint = $uri
-      ownerObjectId = [string]$userObjectId
-    }
-    bundle = $response
+$result = [pscustomobject]@{
+  metadata = [pscustomobject]@{
+    userAlias = $UserAlias
+    functionAppName = $functionAppName
+    resourceGroupName = $resourceGroupName
+    functionName = $functionName
+    endpoint = $uri
+    ownerObjectId = [string]$userObjectId
   }
+  bundle = (Invoke-RestMethod -Method Get -Uri $uri -Headers @{
+  'x-helkinswarm-user-id' = [string]$userObjectId
+  })
 }
 
-$response | ConvertTo-Json -Depth 12
+if ($PassThru -or $OutputFormat -eq 'Object') {
+  return $result
+}
+
+$result | ConvertTo-Json -Depth 12
