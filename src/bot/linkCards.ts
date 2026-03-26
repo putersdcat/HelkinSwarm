@@ -1,5 +1,12 @@
 import { CardFactory, type Attachment } from 'botbuilder';
 
+function buildLinkCardText(description: string): string {
+  return [
+    description,
+    'If sign-in shows a code instead of finishing automatically, use Reply with quote on this message and paste the code in your reply.',
+  ].join('\n\n');
+}
+
 function buildSkillLinkCard(
   buttonTitle: string,
   description: string,
@@ -7,7 +14,7 @@ function buildSkillLinkCard(
 ): Attachment {
   return CardFactory.heroCard(
     '',
-    description,
+    buildLinkCardText(description),
     undefined,
     CardFactory.actions([
       {

@@ -13,6 +13,7 @@ import {
   ActivityTypes,
   type Attachment,
   type ConversationReference,
+  type ResourceResponse,
 } from 'botbuilder';
 import type { DurableClient } from 'durable-functions';
 import { OrchestrationRuntimeStatus } from 'durable-functions';
@@ -41,7 +42,13 @@ import {
   getSignInLinkForActivity,
   redeemMagicCodeForConnection,
 } from '../auth/botUserTokenClient.js';
-import { isLikelyBotFrameworkMagicCode } from '../auth/magicCode.js';
+import { extractBotFrameworkAuthCode } from '../auth/magicCode.js';
+import {
+  clearPendingLinkChallenge,
+  getPendingLinkChallengeForReply,
+  type PendingLinkChallenge,
+  registerPendingLinkChallenge,
+} from '../auth/pendingLinkChallengeStore.js';
 import { buildSkillLinkSigninCard, buildSkillRelinkSigninCard } from './linkCards.js';
 import type { QuotedContext } from './quotedContext.js';
 import { trackEvent } from '../observability/telemetry.js';
@@ -61,7 +68,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
   private async sendFreshMessage(
     context: TurnContext,
     activity: { text?: string; attachments?: Attachment[]; textFormat?: string },
-  ): Promise<void> {
+  ): Promise<string | undefined> {
     const adapter = context.adapter as {
       continueConversationAsync?: (
         botAppId: string,
@@ -71,8 +78,8 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     };
 
     if (!adapter.continueConversationAsync) {
-      await context.sendActivity(activity);
-      return;
+      const response = await context.sendActivity(activity);
+      return response?.id;
     }
 
     const freshReference = {
@@ -80,11 +87,13 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       activityId: undefined,
     } satisfies Partial<ConversationReference>;
 
+    let sentResponse: ResourceResponse | undefined;
+
     await adapter.continueConversationAsync(
       getEnvConfig().microsoftAppId,
       freshReference,
       async (turnContext) => {
-        await turnContext.sendActivity({
+        sentResponse = await turnContext.sendActivity({
           type: ActivityTypes.Message,
           text: activity.text,
           textFormat: activity.textFormat,
@@ -92,6 +101,8 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         });
       },
     );
+
+    return sentResponse?.id;
   }
 
   /** Inject the Durable client from the Azure Functions HTTP trigger. */
@@ -322,8 +333,20 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     const maintenance = await getMaintenanceMode();
     const lowerMessage = messageText.toLowerCase();
 
-    if (isLikelyBotFrameworkMagicCode(messageText)) {
-      const handled = await this.tryCompleteSkillLinkFromMagicCode(context, messageText);
+    const pendingLinkChallenge = getPendingLinkChallengeForReply(
+      userId,
+      quotedContext?.replyToId,
+    );
+    const extractedAuthCode = pendingLinkChallenge
+      ? extractBotFrameworkAuthCode(messageText)
+      : undefined;
+
+    if (pendingLinkChallenge && extractedAuthCode) {
+      const handled = await this.tryCompletePendingSkillLink(
+        context,
+        pendingLinkChallenge,
+        extractedAuthCode,
+      );
       if (handled) {
         return;
       }
@@ -811,7 +834,16 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
           `🔗 Link ${displayName}`,
           description,
         );
-    await this.sendFreshMessage(context, { attachments: [card] });
+    const sentActivityId = await this.sendFreshMessage(context, { attachments: [card] });
+    const userId = context.activity.from.aadObjectId;
+    if (userId && sentActivityId) {
+      registerPendingLinkChallenge({
+        userId,
+        skillDomain: manifest.domain,
+        connectionName,
+        replyToActivityId: sentActivityId,
+      });
+    }
   }
 
   /**
@@ -898,7 +930,16 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
           `🔗 Relink ${manifest.linkConfig.displayName}`,
           manifest.linkConfig.description,
         );
-    await this.sendFreshMessage(context, { attachments: [card] });
+    const sentActivityId = await this.sendFreshMessage(context, { attachments: [card] });
+    const aadUserId = context.activity.from.aadObjectId;
+    if (aadUserId && sentActivityId) {
+      registerPendingLinkChallenge({
+        userId: aadUserId,
+        skillDomain: manifest.domain,
+        connectionName: manifest.linkConfig.connectionName,
+        replyToActivityId: sentActivityId,
+      });
+    }
   }
 
   private async getSkillSignInLink(
@@ -912,40 +953,35 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
   }
 
-  private async tryCompleteSkillLinkFromMagicCode(
+  private async tryCompletePendingSkillLink(
     context: TurnContext,
-    magicCode: string,
+    pendingLinkChallenge: PendingLinkChallenge,
+    authCode: string,
   ): Promise<boolean> {
     const channelUserId = context.activity.from.id;
     const channelId = context.activity.channelId ?? '';
 
-    for (const manifest of getLinkableSkills()) {
-      const linkConfig = manifest.linkConfig;
-      if (!linkConfig) {
-        continue;
-      }
+    try {
+      const token = await redeemMagicCodeForConnection(
+        channelUserId,
+        channelId,
+        pendingLinkChallenge.connectionName,
+        authCode,
+      );
 
-      try {
-        const token = await redeemMagicCodeForConnection(
-          channelUserId,
-          channelId,
-          linkConfig.connectionName,
-          magicCode,
+      if (token) {
+        clearPendingLinkChallenge(pendingLinkChallenge.userId);
+        await context.sendActivity(
+          `✅ **${pendingLinkChallenge.skillDomain}** linked successfully. You can now use its delegated features.`,
         );
-
-        if (token) {
-          await context.sendActivity(
-            `✅ **${manifest.domain}** linked successfully. You can now use its delegated features.`,
-          );
-          return true;
-        }
-      } catch {
-        // Try the next linkable skill connection.
+        return true;
       }
+    } catch {
+      // Fall through to the retry guidance below.
     }
 
     await context.sendActivity(
-      '⚠️ That sign-in validation code was not accepted. Please run `/link outlook` again and use the newest code.',
+      `⚠️ That sign-in code was not accepted for **${pendingLinkChallenge.skillDomain}**. Reply with quote to the newest link card and paste the newest code.`,
     );
     return true;
   }
