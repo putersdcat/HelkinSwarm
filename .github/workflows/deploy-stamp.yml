@@ -293,23 +293,20 @@ jobs:
           DEPLOY_EXIT=$?
 
           if [ $DEPLOY_EXIT -ne 0 ]; then
-            ROLE_EXISTS=$(echo "$DEPLOY_OUT" | grep -c '"RoleAssignmentExists"' || true)
+            printf '%s' "$DEPLOY_OUT" > deploy-bicep-output.txt
+            ANALYSIS=$(node "$PWD/scripts/Evaluate-DeployStampBicepResult.mjs" \
+              --input-file "$PWD/deploy-bicep-output.txt" \
+              --oauth-update "$OAUTH_UPDATE_SHOULD_RUN")
+
+            ROLE_EXISTS=$(echo "$ANALYSIS" | jq -r '.roleAssignmentExistsCount')
             # Bot Service ARM validates the endpoint during deploy. During container
             # restarts the probe arrives before the app is ready, returning 401/403.
             # This is safe to ignore — the Bot Service resource already exists with
             # the correct endpoint URL and the container will be healthy after deploy.
-            BOT_VALIDATION=$(echo "$DEPLOY_OUT" | grep -c 'do not have permission' || true)
-            # Count errors excluding known benign codes — use -o to match per-occurrence
-            # (the entire JSON may be on a single line)
-            TOTAL_CODES=$(echo "$DEPLOY_OUT" | grep -oP '"code"\s*:\s*"[^"]*"' | wc -l)
-            # When we are explicitly updating the OAuth connection, BotService/OAuth deploy
-            # failures are NOT benign — they leave /link broken while the workflow goes green.
-            if [ "$OAUTH_UPDATE_SHOULD_RUN" = "true" ]; then
-              BENIGN_CODES=$(echo "$DEPLOY_OUT" | grep -oP '"code"\s*:\s*"(RoleAssignmentExists|DeploymentFailed|BadRequest)"' | wc -l)
-            else
-              BENIGN_CODES=$(echo "$DEPLOY_OUT" | grep -oP '"code"\s*:\s*"(RoleAssignmentExists|DeploymentFailed|BadRequest|InvalidTemplateDeployment|715-123420)"' | wc -l)
-            fi
-            REAL_ERRORS=$((TOTAL_CODES - BENIGN_CODES))
+            BOT_VALIDATION=$(echo "$ANALYSIS" | jq -r '.botValidationDetected | if . then 1 else 0 end')
+            TOTAL_CODES=$(echo "$ANALYSIS" | jq -r '.totalCodes')
+            BENIGN_CODES=$(echo "$ANALYSIS" | jq -r '.benignCodes')
+            REAL_ERRORS=$(echo "$ANALYSIS" | jq -r '.realErrors')
 
             echo "  DEBUG: BOT_VALIDATION=$BOT_VALIDATION TOTAL_CODES=$TOTAL_CODES BENIGN_CODES=$BENIGN_CODES REAL_ERRORS=$REAL_ERRORS"
 
