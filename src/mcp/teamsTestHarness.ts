@@ -34,6 +34,8 @@ import { existsSync } from 'fs';
 import { dirname, join } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import {
   buildHarnessSessionBundle,
   getHarnessMessageWindow,
@@ -57,6 +59,8 @@ const STAMP_HEALTH_URL =
 const REPO_ROOT = join(__dirname, '..', '..', '..'); // dist-mcp/src/mcp → repo root
 
 const SETTINGS_PATH = join(REPO_ROOT, '.vscode', 'mcp-settings.json');
+const APP_INSIGHTS_QUERY_SCRIPT = join(REPO_ROOT, 'scripts', 'Invoke-AzOperationalInsightsQuery.ps1');
+const STAMP_USER_ALIAS = 'a7f2';
 // Persist cache outside the repo so it survives workspace resets and re-clones.
 // One device-code auth per machine; refresh token persists ~90 days silently.
 const TOKEN_CACHE_PATH = join(homedir(), '.helkinswarm', 'msal-cache.json');
@@ -75,6 +79,7 @@ interface CacheContext {
 
 let _msalApp: PublicClientApplication | null = null;
 let _cachedToken: { token: string; expiresAt: number } | null = null;
+const execFileAsync = promisify(execFile);
 
 function parseJwtExpiry(token: string): number | null {
   try {
@@ -289,6 +294,48 @@ async function getRecentChatMessages(chatId: string, count: number): Promise<Gra
     `/me/chats/${chatId}/messages?$top=${cappedCount}`,
   );
   return msgsResp.value;
+}
+
+function escapeKqlLiteral(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
+async function queryAppInsightsForCorrelation(correlationTag: string): Promise<unknown> {
+  if (!existsSync(APP_INSIGHTS_QUERY_SCRIPT)) {
+    return { available: false, error: 'App Insights query script not found.' };
+  }
+
+  const kql = [
+    'AppTraces',
+    `| where Message contains '${escapeKqlLiteral(correlationTag)}' or tostring(Properties) contains '${escapeKqlLiteral(correlationTag)}'`,
+    '| project TimeGenerated, AppRoleName, Message, Properties, OperationId, SeverityLevel',
+    '| order by TimeGenerated asc',
+    '| take 20',
+  ].join(' ');
+
+  try {
+    const { stdout } = await execFileAsync(
+      'pwsh',
+      [
+        '-NoProfile',
+        '-File',
+        APP_INSIGHTS_QUERY_SCRIPT,
+        '-UserAlias',
+        STAMP_USER_ALIAS,
+        '-Query',
+        kql,
+        '-Timespan',
+        '00:30:00',
+        '-OutputFormat',
+        'Json',
+      ],
+      { cwd: REPO_ROOT, maxBuffer: 1024 * 1024 },
+    );
+
+    return JSON.parse(stdout) as unknown;
+  } catch (error) {
+    return { available: false, error: String(error) };
+  }
 }
 
 // ── MCP Server ────────────────────────────────────────────────────────────────
@@ -705,6 +752,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         health = { error: String(error) };
       }
 
+      const appInsights = bundle.correlationTag
+        ? await queryAppInsightsForCorrelation(bundle.correlationTag)
+        : { available: false, reason: 'No correlation tag available for App Insights lookup.' };
+
       return {
         content: [{
           type: 'text',
@@ -712,6 +763,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             inspected: count,
             bundle,
             runtime: health,
+            appInsights,
           }, null, 2),
         }],
       };

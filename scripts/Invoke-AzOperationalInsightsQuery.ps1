@@ -172,13 +172,6 @@ if ($PassThru) {
   return
 }
 
-Write-Host "WorkspaceId: $($metadata.WorkspaceId)"
-if ($metadata.AppInsightsName) {
-  Write-Host "AppInsights: $($metadata.AppInsightsName) [$($metadata.ResourceGroupName)]"
-}
-Write-Host "Timespan: $($metadata.Timespan)"
-Write-Host '---'
-
 if ($OutputFormat -eq 'Json') {
   [pscustomobject]@{
     metadata = $metadata
@@ -189,6 +182,13 @@ if ($OutputFormat -eq 'Json') {
   } | ConvertTo-Json -Depth 12
   return
 }
+
+Write-Host "WorkspaceId: $($metadata.WorkspaceId)"
+if ($metadata.AppInsightsName) {
+  Write-Host "AppInsights: $($metadata.AppInsightsName) [$($metadata.ResourceGroupName)]"
+}
+Write-Host "Timespan: $($metadata.Timespan)"
+Write-Host '---'
 
 if ($result.Error) {
   Write-Warning ($result.Error | Out-String)
