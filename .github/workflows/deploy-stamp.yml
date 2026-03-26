@@ -136,6 +136,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.2.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install workflow dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Detect infrastructure changes
         id: changes
         run: |
@@ -406,11 +420,72 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
           LOW_CAP_COUNT=$(echo "$DEPLOYMENTS_JSON" | jq '[.[] | select((.sku.capacity // 0) <= 1)] | length')
+          DEPLOYMENT_COUNT=$(echo "$DEPLOYMENTS_JSON" | jq 'length')
+          TOTAL_REQUESTED_CAPACITY=$(echo "$DEPLOYMENTS_JSON" | jq '[.[] | (.sku.capacity // 0)] | add // 0')
           if [ "$LOW_CAP_COUNT" -gt 0 ]; then
             echo "⚠️ Found $LOW_CAP_COUNT deployment(s) at 1k TPM or lower — review quota allocation or overrides."
           else
             echo "✅ No deployment is pinned at the 1k TPM floor."
           fi
+
+          jq -n \
+            --arg workflowRunId "${{ github.run_id }}" \
+            --arg workflowName "${{ github.workflow }}" \
+            --arg refName "${{ github.ref_name }}" \
+            --arg alias "${{ env.USER_ALIAS }}" \
+            --arg aiServicesName "$AI_NAME" \
+            --argjson deploymentCount "$DEPLOYMENT_COUNT" \
+            --argjson floorPinnedCount "$LOW_CAP_COUNT" \
+            --argjson totalRequestedCapacity "$TOTAL_REQUESTED_CAPACITY" \
+            --argjson lowCapacityThreshold 1 \
+            --argjson recommendedFloorCapacity 5 \
+            '{
+              workflowRunId: $workflowRunId,
+              workflowName: $workflowName,
+              refName: $refName,
+              sweepAllStamps: false,
+              autoApplyRecommendations: false,
+              lowCapacityThreshold: $lowCapacityThreshold,
+              recommendedFloorCapacity: $recommendedFloorCapacity,
+              aliasCount: 1,
+              aliasesWithFloorPins: (if $floorPinnedCount > 0 then [$alias] else [] end),
+              aliasesWithAutoApplyDispatch: [],
+              aliases: [
+                {
+                  alias: $alias,
+                  aiServicesName: $aiServicesName,
+                  deploymentCount: $deploymentCount,
+                  lowCapacityThreshold: $lowCapacityThreshold,
+                  floorPinnedCount: $floorPinnedCount,
+                  totalRequestedCapacity: $totalRequestedCapacity,
+                  autoApplyRequested: false,
+                  autoApplyDispatched: false,
+                  recommendedFloorCapacity: $recommendedFloorCapacity
+                }
+              ]
+            }' > foundry-capacity-summary.json
+
+      - name: Emit post-deploy quota telemetry
+        if: steps.changes.outputs.infraChanged == 'true'
+        run: |
+          CONNECTION_STRING=$(az resource show \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --name "helkinswarm-appi-${{ env.USER_ALIAS }}" \
+            --resource-type 'Microsoft.Insights/components' \
+            --api-version 2020-02-02 \
+            --query 'properties.ConnectionString' -o tsv)
+
+          if [ -z "$CONNECTION_STRING" ]; then
+            echo "⚠️ Could not resolve Application Insights connection string — skipping post-deploy quota telemetry emit."
+            exit 0
+          fi
+
+          node "$PWD/scripts/Emit-QuotaMaintenanceTelemetry.mjs" \
+            --connection-string "$CONNECTION_STRING" \
+            --summary-path "$PWD/foundry-capacity-summary.json" \
+            --alias "${{ env.USER_ALIAS }}" \
+            --source deploy-stamp-postdeploy \
+            --cloud-role quota-maintenance-workflow
 
       - name: Ensure CICD can read DelegatedAuth secret from stamp Key Vault
         if: steps.changes.outputs.infraChanged == 'true'

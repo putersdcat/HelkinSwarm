@@ -1080,6 +1080,36 @@ resource alertEuViolation 'Microsoft.Insights/scheduledQueryRules@2023-03-15-pre
   }
 }
 
+resource alertQuotaFloorPinned 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = {
+  name: 'helkinswarm-alert-quota-floor-${userAlias}'
+  location: location
+  properties: {
+    displayName: 'HelkinSwarm [${userAlias}] — Quota Maintenance Floor Pinned'
+    description: 'Fires when quota maintenance telemetry reports one or more floor-pinned model deployments for the stamp.'
+    severity: 2
+    enabled: true
+    evaluationFrequency: 'PT15M'
+    windowSize: 'PT30M'
+    scopes: [ appInsights.id ]
+    criteria: {
+      allOf: [
+        {
+          query: '''customEvents
+| where name == "QuotaMaintenanceBaseline"
+| extend FloorPinnedCount = todouble(customMeasurements["floorPinnedCount"])
+| where FloorPinnedCount > 0'''
+          timeAggregation: 'Count'
+          operator: 'GreaterThan'
+          threshold: 0
+        }
+      ]
+    }
+    actions: {
+      actionGroups: alertEmail != '' ? [ actionGroup.id ] : []
+    }
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  OUTPUTS (consumed by deploy-stamp.yml pipeline)
 // ═══════════════════════════════════════════════════════════════════════════

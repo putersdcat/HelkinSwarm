@@ -22,6 +22,10 @@ param(
   [string]$Query,
 
   [Parameter()]
+  [ValidateSet('Workspace', 'AppInsights')]
+  [string]$QueryScope = 'Workspace',
+
+  [Parameter()]
   [string]$Timespan = '01:00:00',
 
   [Parameter()]
@@ -114,6 +118,32 @@ function Resolve-AppInsightsIdentity {
   }
 }
 
+function Invoke-ClassicAppInsightsQuery {
+  param(
+    [string]$ResolvedAppInsightsName,
+    [string]$ResolvedResourceGroupName,
+    [string]$AnalyticsQuery,
+    [string]$RequestedTimespan
+  )
+
+  if (-not $ResolvedAppInsightsName -or -not $ResolvedResourceGroupName) {
+    throw 'AppInsights query scope requires an Application Insights name and resource group.'
+  }
+
+  $json = az monitor app-insights query `
+    --app $ResolvedAppInsightsName `
+    --resource-group $ResolvedResourceGroupName `
+    --analytics-query $AnalyticsQuery `
+    --offset (Convert-ToAppInsightsOffset -InputValue $RequestedTimespan) `
+    -o json
+
+  if ([string]::IsNullOrWhiteSpace($json)) {
+    return [pscustomobject]@{ tables = @() }
+  }
+
+  return ($json | ConvertFrom-Json -Depth 20)
+}
+
 function Convert-ToTimespan {
   param([string]$InputValue)
 
@@ -128,11 +158,42 @@ function Convert-ToTimespan {
   }
 }
 
+function Convert-ToAppInsightsOffset {
+  param([string]$InputValue)
+
+  $span = Convert-ToTimespan -InputValue $InputValue
+  if ($span.Days -gt 0) {
+    return ('{0}d' -f [int]$span.TotalDays)
+  }
+
+  if ($span.Hours -gt 0 -and $span.Minutes -eq 0 -and $span.Seconds -eq 0) {
+    return ('{0}h' -f [int]$span.TotalHours)
+  }
+
+  if ($span.Hours -gt 0) {
+    return ('{0}h{1}m' -f [int]$span.TotalHours, $span.Minutes)
+  }
+
+  if ($span.Minutes -gt 0 -and $span.Seconds -eq 0) {
+    return ('{0}m' -f [int]$span.TotalMinutes)
+  }
+
+  if ($span.Minutes -gt 0) {
+    return ('{0}m' -f [int][Math]::Ceiling($span.TotalMinutes))
+  }
+
+  return ('{0}m' -f [Math]::Max([int][Math]::Ceiling($span.TotalSeconds / 60), 1))
+}
+
 $identity = Resolve-AppInsightsIdentity
-$resolvedWorkspaceId = Resolve-WorkspaceId `
-  -ResolvedWorkspaceId $WorkspaceId `
-  -ResolvedAppInsightsName $identity.AppInsightsName `
-  -ResolvedResourceGroupName $identity.ResourceGroupName
+$resolvedWorkspaceId = if ($QueryScope -eq 'Workspace') {
+  Resolve-WorkspaceId `
+    -ResolvedWorkspaceId $WorkspaceId `
+    -ResolvedAppInsightsName $identity.AppInsightsName `
+    -ResolvedResourceGroupName $identity.ResourceGroupName
+} else {
+  $null
+}
 
 $queryText = if ($Top -gt 0 -and $Query -notmatch '(?i)\|\s*take\s+\d+') {
   "$Query`n| take $Top"
@@ -140,21 +201,29 @@ $queryText = if ($Top -gt 0 -and $Query -notmatch '(?i)\|\s*take\s+\d+') {
   $Query
 }
 
-$invokeParams = @{
-  WorkspaceId = $resolvedWorkspaceId
-  Query = $queryText
-  Timespan = (Convert-ToTimespan -InputValue $Timespan)
-}
+$result = if ($QueryScope -eq 'Workspace') {
+  $invokeParams = @{
+    WorkspaceId = $resolvedWorkspaceId
+    Query = $queryText
+    Timespan = (Convert-ToTimespan -InputValue $Timespan)
+  }
 
-if ($IncludeRender) {
-  $invokeParams['IncludeRender'] = $true
-}
+  if ($IncludeRender) {
+    $invokeParams['IncludeRender'] = $true
+  }
 
-if ($IncludeStatistics) {
-  $invokeParams['IncludeStatistics'] = $true
-}
+  if ($IncludeStatistics) {
+    $invokeParams['IncludeStatistics'] = $true
+  }
 
-$result = Invoke-AzOperationalInsightsQuery @invokeParams
+  Invoke-AzOperationalInsightsQuery @invokeParams
+} else {
+  Invoke-ClassicAppInsightsQuery `
+    -ResolvedAppInsightsName $identity.AppInsightsName `
+    -ResolvedResourceGroupName $identity.ResourceGroupName `
+    -AnalyticsQuery $queryText `
+    -RequestedTimespan $Timespan
+}
 
 $metadata = [pscustomobject]@{
   WorkspaceId = $resolvedWorkspaceId
@@ -162,6 +231,7 @@ $metadata = [pscustomobject]@{
   ResourceGroupName = $identity.ResourceGroupName
   Timespan = $Timespan
   Query = $queryText
+  QueryScope = $QueryScope
 }
 
 if ($PassThru) {
@@ -175,10 +245,10 @@ if ($PassThru) {
 if ($OutputFormat -eq 'Json') {
   [pscustomobject]@{
     metadata = $metadata
-    tables = $result.Results
-    statistics = $result.Statistics
-    render = $result.Render
-    error = $result.Error
+    tables = if ($QueryScope -eq 'Workspace') { $result.Results } else { $result.tables }
+    statistics = if ($QueryScope -eq 'Workspace') { $result.Statistics } else { $null }
+    render = if ($QueryScope -eq 'Workspace') { $result.Render } else { $null }
+    error = if ($QueryScope -eq 'Workspace') { $result.Error } else { $null }
   } | ConvertTo-Json -Depth 12
   return
 }
@@ -190,25 +260,38 @@ if ($metadata.AppInsightsName) {
 Write-Host "Timespan: $($metadata.Timespan)"
 Write-Host '---'
 
-if ($result.Error) {
+if ($QueryScope -eq 'Workspace' -and $result.Error) {
   Write-Warning ($result.Error | Out-String)
 }
 
-if (-not $result.Results -or $result.Results.Count -eq 0) {
+if (($QueryScope -eq 'Workspace' -and (-not $result.Results -or $result.Results.Count -eq 0)) -or ($QueryScope -eq 'AppInsights' -and (-not $result.tables -or $result.tables.Count -eq 0))) {
   Write-Host 'No rows returned.'
   return
 }
 
 if ($OutputFormat -eq 'Table' -or $OutputFormat -eq 'Auto') {
-  $result.Results | Format-Table -AutoSize | Out-String | Write-Host
+  if ($QueryScope -eq 'Workspace') {
+    $result.Results | Format-Table -AutoSize | Out-String | Write-Host
+  } else {
+    foreach ($table in @($result.tables)) {
+      $rows = foreach ($row in @($table.rows)) {
+        $obj = [ordered]@{}
+        for ($i = 0; $i -lt $table.columns.Count; $i++) {
+          $obj[$table.columns[$i].name] = $row[$i]
+        }
+        [pscustomobject]$obj
+      }
+      $rows | Format-Table -AutoSize | Out-String | Write-Host
+    }
+  }
 }
 
-if ($IncludeStatistics -and $result.Statistics) {
+if ($QueryScope -eq 'Workspace' -and $IncludeStatistics -and $result.Statistics) {
   Write-Host 'Statistics:'
   $result.Statistics | ConvertTo-Json -Depth 10 | Write-Host
 }
 
-if ($IncludeRender -and $result.Render) {
+if ($QueryScope -eq 'Workspace' -and $IncludeRender -and $result.Render) {
   Write-Host 'Render:'
   $result.Render | ConvertTo-Json -Depth 10 | Write-Host
 }

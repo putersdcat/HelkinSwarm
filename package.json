@@ -27,6 +27,7 @@
     "@microsoft/teams-js": "^2.50.0",
     "@octokit/auth-app": "^8.2.0",
     "@opentelemetry/api": "^1.9.0",
+    "applicationinsights": "^3.14.0",
     "botbuilder": "^4.23.3",
     "botframework-connector": "^4.23.3",
     "durable-functions": "^3.3.0",

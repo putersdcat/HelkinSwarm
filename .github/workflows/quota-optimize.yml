@@ -61,6 +61,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.2.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install workflow dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Validate workflow inputs
         run: |
           SWEEP_ALL="${{ github.event.inputs.SWEEP_ALL_STAMPS || 'false' }}"
@@ -246,6 +260,41 @@ jobs:
         with:
           name: quota-audit-${{ github.run_id }}
           path: quota-output/**
+
+      - name: Emit quota maintenance telemetry
+        shell: pwsh
+        run: |
+          $summaryJsonPath = Join-Path $PWD 'quota-output/quota-maintenance-summary.json'
+          if (-not (Test-Path -Path $summaryJsonPath)) {
+            throw "Expected summary JSON at $summaryJsonPath but it was not created."
+          }
+
+          $summary = Get-Content -Path $summaryJsonPath -Raw | ConvertFrom-Json
+          foreach ($aliasSummary in @($summary.aliases)) {
+            $alias = [string]$aliasSummary.alias
+            if ([string]::IsNullOrWhiteSpace($alias)) {
+              continue
+            }
+
+            $connectionString = az resource show `
+              --resource-group "rg-helkinswarm-$alias" `
+              --name "helkinswarm-appi-$alias" `
+              --resource-type 'Microsoft.Insights/components' `
+              --api-version 2020-02-02 `
+              --query 'properties.ConnectionString' -o tsv
+
+            if ([string]::IsNullOrWhiteSpace($connectionString)) {
+              Write-Warning "[$alias] Could not resolve Application Insights connection string — skipping quota telemetry emit."
+              continue
+            }
+
+            node "$PWD/scripts/Emit-QuotaMaintenanceTelemetry.mjs" `
+              --connection-string $connectionString `
+              --summary-path $summaryJsonPath `
+              --alias $alias `
+              --source quota-optimize `
+              --cloud-role quota-maintenance-workflow
+          }
 
       - name: Comment summary to issue
         shell: pwsh
