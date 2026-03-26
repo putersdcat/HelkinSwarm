@@ -18,6 +18,11 @@ on:
         required: false
         type: boolean
         default: false
+      AUTO_APPLY_RECOMMENDATIONS:
+        description: "Dispatch deploy-stamp.yml for aliases with generated override recommendations."
+        required: false
+        type: boolean
+        default: false
       LOW_CAPACITY_THRESHOLD:
         description: "Flag deployments at or below this 1k TPM capacity as floor-pinned."
         required: false
@@ -32,6 +37,7 @@ on:
     - cron: '17 12 * * 1'
 
 permissions:
+  actions: write
   id-token: write
   contents: read
 
@@ -75,8 +81,11 @@ jobs:
 
       - name: Audit quota and generate recommendations
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           $sweepAll = '${{ github.event.inputs.SWEEP_ALL_STAMPS || 'false' }}' -eq 'true' -or '${{ github.event_name }}' -eq 'schedule'
+          $autoApply = '${{ github.event.inputs.AUTO_APPLY_RECOMMENDATIONS || 'false' }}' -eq 'true'
           $threshold = [int]${{ github.event.inputs.LOW_CAPACITY_THRESHOLD || 1 }}
           $recommendedFloor = [int]${{ github.event.inputs.RECOMMENDED_FLOOR_CAPACITY || 5 }}
           $outputRoot = Join-Path $PWD 'quota-output'
@@ -97,6 +106,7 @@ jobs:
             '## AI Foundry Quota Audit',
             '',
             "- Sweep all stamps: $sweepAll",
+            "- Auto-apply recommendations: $autoApply",
             "- Alias count: $($aliases.Count)",
             "- Low-capacity threshold: $threshold",
             "- Suggested floor capacity for overrides: $recommendedFloor"
@@ -117,7 +127,8 @@ jobs:
             $summaryPath = Join-Path $aliasDir 'quota-audit.json'
             $result | ConvertTo-Json -Depth 8 | Set-Content -Path $summaryPath -Encoding UTF8
             $overridesPath = Join-Path $aliasDir 'quota-overrides.json'
-            $result.recommendations.modelQuotaOverrides | ConvertTo-Json -Depth 5 | Set-Content -Path $overridesPath -Encoding UTF8
+            $overrideJson = $result.recommendations.modelQuotaOverrides | ConvertTo-Json -Compress -Depth 5
+            $overrideJson | Set-Content -Path $overridesPath -Encoding UTF8
 
             $rows = @($result.deployments | Sort-Object DeploymentName)
             $low = @($result.summary.lowCapacityDeployments)
@@ -146,6 +157,22 @@ jobs:
               $summaryLines += '```json'
               $summaryLines += (Get-Content -Path $overridesPath -Raw).TrimEnd()
               $summaryLines += '```'
+
+              if ($autoApply) {
+                gh workflow run deploy-stamp.yml `
+                  -f USER_ALIAS=$alias `
+                  -f QUOTA_STRATEGY=manual `
+                  -f QUOTA_MAX_TPM_CEILING=200000 `
+                  -f MODEL_QUOTA_OVERRIDES_JSON=$overrideJson `
+                  -f EU_RESIDENCY_MODE=false `
+                  -f CREATE_OAUTH_CONNECTION=false | Out-Null
+
+                $summaryLines += ''
+                $summaryLines += "#### Auto-apply dispatch"
+                $summaryLines += "- Dispatched deploy-stamp.yml for $alias using generated overrides."
+                Write-Host "[$alias] Dispatched deploy-stamp.yml with generated overrides."
+              }
+
               Write-Host "[$alias] Found $($low.Count) deployment(s) at or below ${threshold}k TPM."
             } else {
               $summaryLines += ''
