@@ -10,9 +10,14 @@ on:
   workflow_dispatch:
     inputs:
       USER_ALIAS:
-        description: "4-char alphanumeric user alias (e.g. a7f2). Defaults to vars.USER_ALIAS."
+        description: "4-char alphanumeric user alias (e.g. a7f2). Used when SWEEP_ALL_STAMPS=false."
         required: false
         type: string
+      SWEEP_ALL_STAMPS:
+        description: "Audit all enabled aliases from config/user-map.json instead of a single stamp."
+        required: false
+        type: boolean
+        default: false
       LOW_CAPACITY_THRESHOLD:
         description: "Flag deployments at or below this 1k TPM capacity as floor-pinned."
         required: false
@@ -35,7 +40,6 @@ env:
   AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
   AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
   USER_ALIAS: ${{ github.event.inputs.USER_ALIAS || vars.USER_ALIAS }}
-  RESOURCE_GROUP: rg-helkinswarm-${{ github.event.inputs.USER_ALIAS || vars.USER_ALIAS }}
 
 jobs:
   quota-audit:
@@ -45,13 +49,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Validate USER_ALIAS format
+      - name: Validate workflow inputs
         run: |
+          SWEEP_ALL="${{ github.event.inputs.SWEEP_ALL_STAMPS || 'false' }}"
           ALIAS="${{ env.USER_ALIAS }}"
+
+          if [ "$SWEEP_ALL" = "true" ] || [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "✅ Multi-stamp sweep selected — USER_ALIAS validation skipped"
+            exit 0
+          fi
+
           if ! echo "$ALIAS" | grep -qE '^[a-z0-9]{4}$'; then
-            echo "❌ USER_ALIAS must be exactly 4 lowercase alphanumeric characters. Got: '$ALIAS'"
+            echo "❌ USER_ALIAS must be exactly 4 lowercase alphanumeric characters when SWEEP_ALL_STAMPS=false. Got: '$ALIAS'"
             exit 1
           fi
+
           echo "✅ USER_ALIAS '$ALIAS' is valid"
 
       - name: Azure Login (OIDC)
@@ -64,56 +76,82 @@ jobs:
       - name: Audit quota and generate recommendations
         shell: pwsh
         run: |
+          $sweepAll = '${{ github.event.inputs.SWEEP_ALL_STAMPS || 'false' }}' -eq 'true' -or '${{ github.event_name }}' -eq 'schedule'
           $threshold = [int]${{ github.event.inputs.LOW_CAPACITY_THRESHOLD || 1 }}
           $recommendedFloor = [int]${{ github.event.inputs.RECOMMENDED_FLOOR_CAPACITY || 5 }}
-          $result = & "$PWD/scripts/Invoke-AzFoundryQuotaAudit.ps1" `
-            -UserAlias "${{ env.USER_ALIAS }}" `
-            -ResourceGroupName "${{ env.RESOURCE_GROUP }}" `
-            -LowCapacityThreshold $threshold `
-            -RecommendedFloorCapacity $recommendedFloor `
-            -OutputFormat Json | ConvertFrom-Json
+          $outputRoot = Join-Path $PWD 'quota-output'
+          New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 
-          $summaryPath = Join-Path $PWD 'quota-audit.json'
-          $result | ConvertTo-Json -Depth 8 | Set-Content -Path $summaryPath -Encoding UTF8
-          $overridesPath = Join-Path $PWD 'quota-overrides.json'
-          $result.recommendations.modelQuotaOverrides | ConvertTo-Json -Depth 5 | Set-Content -Path $overridesPath -Encoding UTF8
+          if ($sweepAll) {
+            $userMap = Get-Content -Path (Join-Path $PWD 'config/user-map.json') -Raw | ConvertFrom-Json
+            $aliases = @($userMap.users.PSObject.Properties.Value | Where-Object { $_.enabled -eq $true } | ForEach-Object { $_.alias } | Sort-Object -Unique)
+          } else {
+            $aliases = @('${{ env.USER_ALIAS }}')
+          }
 
-          $rows = @($result.deployments | Sort-Object DeploymentName)
-          $low = @($result.summary.lowCapacityDeployments)
+          if ($aliases.Count -eq 0) {
+            throw 'No enabled aliases found for quota audit sweep.'
+          }
 
           $summaryLines = @(
             '## AI Foundry Quota Audit',
             '',
-            "- User alias: ${{ env.USER_ALIAS }}",
-            "- AI Services: $($result.summary.aiServicesName)",
-            "- Total requested capacity: $($result.summary.totalRequestedCapacity) (1k TPM units)",
+            "- Sweep all stamps: $sweepAll",
+            "- Alias count: $($aliases.Count)",
             "- Low-capacity threshold: $threshold",
-            "- Suggested floor capacity for overrides: $recommendedFloor",
-            '',
-            '| Deployment | SKU | Capacity | Model | State |',
-            '|---|---|---:|---|---|'
+            "- Suggested floor capacity for overrides: $recommendedFloor"
           )
 
-          foreach ($row in $rows) {
-            $summaryLines += "| $($row.DeploymentName) | $($row.SkuName) | $($row.Capacity) | $($row.ModelName) | $($row.ProvisioningState) |"
-          }
+          foreach ($alias in $aliases) {
+            $resourceGroupName = "rg-helkinswarm-$alias"
+            $result = & "$PWD/scripts/Invoke-AzFoundryQuotaAudit.ps1" `
+              -UserAlias $alias `
+              -ResourceGroupName $resourceGroupName `
+              -LowCapacityThreshold $threshold `
+              -RecommendedFloorCapacity $recommendedFloor `
+              -OutputFormat Json | ConvertFrom-Json
 
-          if ($low.Count -gt 0) {
+            $aliasDir = Join-Path $outputRoot $alias
+            New-Item -ItemType Directory -Path $aliasDir -Force | Out-Null
+
+            $summaryPath = Join-Path $aliasDir 'quota-audit.json'
+            $result | ConvertTo-Json -Depth 8 | Set-Content -Path $summaryPath -Encoding UTF8
+            $overridesPath = Join-Path $aliasDir 'quota-overrides.json'
+            $result.recommendations.modelQuotaOverrides | ConvertTo-Json -Depth 5 | Set-Content -Path $overridesPath -Encoding UTF8
+
+            $rows = @($result.deployments | Sort-Object DeploymentName)
+            $low = @($result.summary.lowCapacityDeployments)
+
             $summaryLines += ''
-            $summaryLines += '### Floor-pinned deployments'
-            foreach ($row in $low) {
-              $summaryLines += "- $($row.DeploymentName) at $($row.Capacity)k TPM"
+            $summaryLines += "### Alias $alias"
+            $summaryLines += "- AI Services: $($result.summary.aiServicesName)"
+            $summaryLines += "- Total requested capacity: $($result.summary.totalRequestedCapacity) (1k TPM units)"
+            $summaryLines += "- Floor-pinned count: $($low.Count)"
+            $summaryLines += ''
+            $summaryLines += '| Deployment | SKU | Capacity | Model | State |'
+            $summaryLines += '|---|---|---:|---|---|'
+
+            foreach ($row in $rows) {
+              $summaryLines += "| $($row.DeploymentName) | $($row.SkuName) | $($row.Capacity) | $($row.ModelName) | $($row.ProvisioningState) |"
             }
-            $summaryLines += ''
-            $summaryLines += '### Suggested modelQuotaOverrides snippet'
-            $summaryLines += '```json'
-            $summaryLines += (Get-Content -Path $overridesPath -Raw).TrimEnd()
-            $summaryLines += '```'
-            Write-Host "Found $($low.Count) deployment(s) at or below ${threshold}k TPM."
-          } else {
-            $summaryLines += ''
-            $summaryLines += 'No deployments are currently pinned at or below the configured floor.'
-            Write-Host "No deployments are pinned at or below ${threshold}k TPM."
+
+            if ($low.Count -gt 0) {
+              $summaryLines += ''
+              $summaryLines += '#### Floor-pinned deployments'
+              foreach ($row in $low) {
+                $summaryLines += "- $($row.DeploymentName) at $($row.Capacity)k TPM"
+              }
+              $summaryLines += ''
+              $summaryLines += '#### Suggested modelQuotaOverrides snippet'
+              $summaryLines += '```json'
+              $summaryLines += (Get-Content -Path $overridesPath -Raw).TrimEnd()
+              $summaryLines += '```'
+              Write-Host "[$alias] Found $($low.Count) deployment(s) at or below ${threshold}k TPM."
+            } else {
+              $summaryLines += ''
+              $summaryLines += 'No deployments are currently pinned at or below the configured floor.'
+              Write-Host "[$alias] No deployments are pinned at or below ${threshold}k TPM."
+            }
           }
 
           $summaryLines | Add-Content -Path $env:GITHUB_STEP_SUMMARY
@@ -121,7 +159,5 @@ jobs:
       - name: Upload quota audit artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: quota-audit-${{ env.USER_ALIAS }}
-          path: |
-            quota-audit.json
-            quota-overrides.json
+          name: quota-audit-${{ github.run_id }}
+          path: quota-output/**
