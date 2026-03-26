@@ -32,7 +32,7 @@ const EU_LANE = {
 
 - **Default** (`euResidencyMode = false`): Best available global frontier models in Azure AI Foundry
 - **EU mode** (`euResidencyMode = true`): DataZoneStandard models only — no data ever leaves the EU boundary
-- **BYOK mode**: User-supplied OpenRouter models (defaults from envConfig)
+- **BYOK mode**: Deferred / not active in the current runtime. OpenRouter config may still exist in env/config for future reactivation, but active routing must remain Azure-only unless explicitly re-enabled by a future issue.
 - The overseer uses the `primary` model; sub-agent tool calls use `secondary` by default
 - `grok-4-1-fast-reasoning` consistently times out (>55s) on Global lane; tracked in #128
 
@@ -41,7 +41,7 @@ const EU_LANE = {
 | File | Responsibility |
 |------|----------------|
 | `src/llm/modelRouter.ts` | Chooses model based on EU toggle + model profiles |
-| `src/llm/foundryClient.ts` | API calls + parameter adaptation (global/EU/BYOK) |
+| `src/llm/foundryClient.ts` | API calls + parameter adaptation (currently Azure global/EU only; BYOK deferred) |
 | `src/llm/promptBuilder.ts` | Prompt assembly with skill memory + Hydra-Net |
 | `src/tools/toolRegistry.ts` | Central registry of all tools (filtered by safety + model lane) |
 | `src/orchestrator/toolDispatchActivity.ts` | Routes tool_calls to handlers |

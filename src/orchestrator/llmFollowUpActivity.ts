@@ -6,7 +6,7 @@
 // Spec ref: 06-Tool-Dispatch-LLM-Layer.md
 
 import * as df from 'durable-functions';
-import { FoundryClient, textContent } from '../llm/foundryClient.js';
+import { FoundryClient, sanitizeRemoteErrorText, textContent } from '../llm/foundryClient.js';
 import { getDirectChatModelIncompatibilityReason, getModelRouting } from '../llm/modelRouter.js';
 import type { ChatMessage, ChatCompletionResponse, ToolDefinition } from '../llm/foundryClient.js';
 import type { LlmResult } from './llmActivity.js';
@@ -229,9 +229,9 @@ df.app.activity('llmFollowUpActivity', {
         finishReason: choice.finishReason,
       };
     } catch (err) {
-      // Sanitize error message to prevent HTML/junk from LLM API responses leaking to Teams (#234)
+      // Sanitize error message to prevent HTML/junk from provider responses leaking to Teams (#234, #286)
       const rawMsg = err instanceof Error ? err.message : String(err);
-      const safeMsg = rawMsg.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 300);
+      const safeMsg = sanitizeRemoteErrorText(rawMsg, 300);
       return {
         content: `Follow-up LLM call failed: ${safeMsg}`,
         model: routing.deploymentName,

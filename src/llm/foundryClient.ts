@@ -1,5 +1,5 @@
 // Azure AI Foundry client — single provider-agnostic interface.
-// Handles global frontier, EU DataZoneStandard, and BYOK OpenRouter paths.
+// Handles the currently supported Azure global + EU paths.
 // Spec ref: 06-Tool-Dispatch-LLM-Layer.md, 0c-BYOK-External-LLM-Support.md
 
 import { getModelRouting, getFallbackChain, type ModelRouting } from './modelRouter.js';
@@ -82,27 +82,60 @@ export interface ToolDefinition {
   };
 }
 
+const HTML_ERROR_SIGNAL_REGEX = /<!doctype html|<html\b|<head\b|<body\b|<script\b|<style\b|window\.dataLayer|gtag\(|:root\s*\{|<title\b/i;
+
+/**
+ * Sanitize remote/provider error text before it reaches logs or user-visible messages.
+ * Collapses HTML/JS/CSS page bodies into a short human-readable summary (#286).
+ */
+export function sanitizeRemoteErrorText(rawErrorText: string, maxLength = 500): string {
+  const raw = rawErrorText.replace(/\u0000/g, ' ').trim();
+  if (!raw) {
+    return 'unknown';
+  }
+
+  const looksLikeHtml = HTML_ERROR_SIGNAL_REGEX.test(raw);
+  const stripped = raw
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!stripped) {
+    return 'unknown';
+  }
+
+  if (looksLikeHtml) {
+    const prefix = stripped
+      .split(/window\.dataLayer|gtag\(|:root\s*\{/i)[0]
+      ?.replace(/\|/g, ' ')
+      .trim();
+    if (prefix) {
+      return `${prefix} (remote provider returned an HTML error page; body omitted)`.slice(0, maxLength);
+    }
+    return 'remote provider returned an HTML error page (body omitted)';
+  }
+
+  return stripped.slice(0, maxLength);
+}
+
 // ---------------------------------------------------------------------------
 // Foundry client
 // ---------------------------------------------------------------------------
 
 export class FoundryClient {
   private routing: ModelRouting;
-  private apiKey: string;
   private apiBase: string;
 
   constructor(routing?: ModelRouting) {
     this.routing = routing ?? getModelRouting();
     this.apiBase = this.routing.apiBase;
-
-    // In production: token fetched via Managed Identity from Key Vault
-    // For now, allow env-var override for local dev
-    this.apiKey = process.env.AZURE_AI_FOUNDRY_API_KEY ?? 'placeholder-key';
   }
 
   /**
    * Send a chat completion request with automatic fallback on throttle/failure (#152).
-   * Cascades through the fallback chain: primary → secondary → BYOK.
+  * Cascades through the fallback chain: primary → secondary.
    * Degraded models are skipped for a cooldown period.
    */
   async chatCompletion(options: Omit<FoundryClientOptions, 'routing'>): Promise<ChatCompletionResponse> {
@@ -172,6 +205,14 @@ export class FoundryClient {
     options: Omit<FoundryClientOptions, 'routing'>,
     correlationId: string,
   ): Promise<ChatCompletionResponse> {
+    if (routing.usesObo === false) {
+      throw new FoundryError(
+        'OpenRouter / BYOK external LLM routing is currently disabled in this deployment',
+        501,
+        routing.deploymentName,
+      );
+    }
+
     const base = routing.apiBase.replace(/\/+$/, '');
     // GPT-5, GPT-4o, and o-series models require 2024-12-01-preview or later (#185, #219)
     const needsPreview = routing.isReasoning || needsNewTokenParam(routing.deploymentName);
@@ -208,16 +249,8 @@ export class FoundryClient {
       'x-correlation-id': correlationId,
     };
 
-    // Azure AI Foundry — use OBO token or MI token
-    if (routing.laneName !== 'byok') {
-      const oboToken = await this.getOboToken();
-      headers['Authorization'] = `Bearer ${oboToken}`;
-    } else {
-      // OpenRouter — use API key directly
-      headers['Authorization'] = `Bearer ${this.apiKey}`;
-      headers['HTTP-Referer'] = 'https://helkinswarm.dev';
-      headers['X-Title'] = 'HelkinSwarm';
-    }
+    const oboToken = await this.getOboToken();
+    headers['Authorization'] = `Bearer ${oboToken}`;
 
     const response = await fetch(url, {
       method: 'POST',
@@ -228,8 +261,7 @@ export class FoundryClient {
 
     if (!response.ok) {
       const rawErrorText = await response.text().catch(() => 'unknown');
-      // Strip HTML tags and cap length to prevent HTML injection into Teams messages (#234)
-      const errorText = rawErrorText.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim().slice(0, 500);
+      const errorText = sanitizeRemoteErrorText(rawErrorText);
       throw new FoundryError(
         `Chat completion failed: ${response.status} ${response.statusText} — ${errorText}`,
         response.status,

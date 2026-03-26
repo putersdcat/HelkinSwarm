@@ -38,16 +38,6 @@ const EU_LANE: ModelLane = {
   reasoning: 'grok-4-1-fast-reasoning',
 };
 
-function getBYOKLane(): ModelLane {
-  const config = getEnvConfig();
-  return {
-    primary: config.openrouterFallbackPrimary,
-    secondary: config.openrouterFallbackSecondary,
-    embedding: 'text-embedding-3-large',
-    reasoning: undefined,
-  };
-}
-
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
@@ -56,7 +46,7 @@ export interface ModelRouting {
   /** The resolved model lane */
   lane: ModelLane;
   /** Which lane we are using (for telemetry) */
-  laneName: 'global' | 'eu' | 'byok';
+  laneName: 'global' | 'eu';
   /** Whether this is a reasoning model */
   isReasoning: boolean;
   /** Deployment name in Azure AI Foundry */
@@ -87,25 +77,7 @@ function isEuResidencyModeEnabledForDirectOverrides(): boolean {
   return process.env['EU_RESIDENCY_MODE']?.toLowerCase() === 'true';
 }
 
-/** Returns the active model routing based on current config + override */
-export function getModelRouting(llmProvider?: 'azure' | 'openrouter'): ModelRouting {
-  const config = getEnvConfig();
-  const provider = llmProvider ?? config.llmProvider ?? 'azure';
-
-  if (provider === 'openrouter') {
-    // BYOK / OpenRouter path — global models via OpenRouter
-    const byokLane = getBYOKLane();
-    return {
-      lane: byokLane,
-      laneName: 'byok',
-      isReasoning: false,
-      deploymentName: byokLane.primary,
-      apiBase: 'https://openrouter.ai/api/v1',
-      usesObo: false,
-    };
-  }
-
-  // EU DataZoneStandard lane — restricts to DZ-only deployments
+function getAzureRouting(config: ReturnType<typeof getEnvConfig>): ModelRouting {
   if (config.euResidencyMode) {
     return {
       lane: EU_LANE,
@@ -117,7 +89,6 @@ export function getModelRouting(llmProvider?: 'azure' | 'openrouter'): ModelRout
     };
   }
 
-  // Azure AI Foundry global frontier (default — Unchained)
   const deploymentName = config.llmPrimaryModel;
   return {
     lane: GLOBAL_LANE,
@@ -127,6 +98,20 @@ export function getModelRouting(llmProvider?: 'azure' | 'openrouter'): ModelRout
     apiBase: config.azureAiFoundryEndpoint ?? '',
     usesObo: true,
   };
+}
+
+/** Returns the active model routing based on current config + override */
+export function getModelRouting(llmProvider?: 'azure' | 'openrouter'): ModelRouting {
+  const config = getEnvConfig();
+  const provider = llmProvider ?? config.llmProvider ?? 'azure';
+
+  if (provider === 'openrouter') {
+    // OpenRouter / BYOK is intentionally disabled for now (#286).
+    // Callers still flow through the supported Azure routing path.
+    return getAzureRouting(config);
+  }
+
+  return getAzureRouting(config);
 }
 
 /** Returns the best model for a given task type */
@@ -165,13 +150,7 @@ export function getFallbackChain(): ModelRouting[] {
     });
   }
 
-  // BYOK / OpenRouter as last-resort fallback (only if API key is available)
-  if (primary.laneName !== 'byok' && process.env['OPENROUTER_API_KEY']) {
-    const byokRouting = getModelRouting('openrouter');
-    if (!seen.has(byokRouting.deploymentName)) {
-      chain.push(byokRouting);
-    }
-  }
+  // OpenRouter / BYOK fallback intentionally disabled (#286).
 
   return chain;
 }

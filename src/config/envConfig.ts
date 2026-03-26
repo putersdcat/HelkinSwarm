@@ -51,7 +51,7 @@ const EnvConfigSchema = z.object({
   // Owner
   ownerUserId: z.string().optional(),
 
-  // OpenRouter / BYOK fallback
+  // OpenRouter / BYOK config (feature currently deferred; retained for future reactivation)
   llmProvider: z.enum(['azure', 'openrouter']).default('azure'),
   openrouterFallbackPrimary: z.string().default('moonshotai/kimi-k2.5'),
   openrouterFallbackSecondary: z.string().default('moonshotai/kimi-k2.5'),
