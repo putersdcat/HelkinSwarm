@@ -1,7 +1,7 @@
 {
   "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
   "manifestVersion": "1.17",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "id": "0fe3ff72-40cc-43ab-85bf-a846e399be6d",
   "developer": {
     "name": "Eric Anderson",
@@ -69,10 +69,10 @@
       ]
     },
     {
-      "entityId": "dev-console",
-      "name": "Dev Console",
-      "contentUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/index.html#dev-console",
-      "websiteUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/index.html#dev-console",
+      "entityId": "skills-library",
+      "name": "Skills",
+      "contentUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/index.html#skills-library",
+      "websiteUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/index.html#skills-library",
       "scopes": [
         "personal"
       ]

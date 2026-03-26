@@ -1,5 +1,5 @@
 // HelkinSwarm Tab SPA — app.js
-// Hash-based router for Get Started, Control Center, Dev Console panels.
+// Hash-based router for Get Started, Control Center, Dev Console, Skills Library panels.
 // Spec ref: docs/ADDENDA/ADDENDA-03-Tab-Infrastructure-Control-Center-and-Dev-Console.md
 
 /* global microsoftTeams */
@@ -190,6 +190,7 @@
       if (panel === "get-started") router.renderGetStarted();
       else if (panel === "control-center") router.renderControlCenter();
       else if (panel === "dev-console") router.renderDevConsole();
+      else if (panel === "skills-library") router.renderSkillsLibrary();
     },
 
     renderGetStarted: function () {
@@ -257,7 +258,9 @@
             "</strong></p></div>" +
             '<div class="card"><h2>Capabilities</h2>' +
             "<p>" + esc(data.capabilities.toolCount) + " tools loaded across " +
-            esc((data.capabilities.activeSkills || []).length) + " skills</p></div>";
+            esc((data.capabilities.activeSkills || []).length) + " skills</p></div>" +
+            '<div class="card"><h2>Developer Tools</h2>' +
+            '<button class="cmd-btn" onclick="router.navigate(\'dev-console\')">Open Dev Console</button></div>';
         })
         .catch(function (err) {
           if (String(err.message).startsWith("cold-start:")) {
@@ -515,6 +518,36 @@
             var retry = parseInt(err.message.split(":")[1], 10) || 5;
             showColdStart(panelId, retry);
             setTimeout(function () { router.renderDevConsole(); }, retry * 1000);
+          } else {
+            showError(panelId, err.message);
+          }
+        });
+    },
+
+    renderSkillsLibrary: function () {
+      var panelId = "panel-skills-library";
+      apiCall("get-started")
+        .then(function (data) {
+          var skills = (data.activeSkills || [])
+            .map(function (s) {
+              return '<div class="card" style="display:inline-block;width:180px;margin:8px;vertical-align:top">' +
+                '<h3>' + esc(s) + '</h3>' +
+                '<span class="badge badge-ok">Installed</span></div>';
+            })
+            .join("");
+          document.getElementById(panelId).innerHTML =
+            "<h1>Skills Library</h1>" +
+            '<div class="card"><h2>Installed Skills (' + (data.activeSkills || []).length + ')</h2>' +
+            '<div>' + (skills || '<p>No skills installed.</p>') + '</div></div>' +
+            '<div class="card"><h2>Available Skills</h2>' +
+            '<p>The full Skills Store with browse, install, and uninstall is coming soon.</p>' +
+            '<p>Use <code>/link &lt;skill&gt;</code> in chat to connect skills that need OAuth.</p></div>';
+        })
+        .catch(function (err) {
+          if (String(err.message).startsWith("cold-start:")) {
+            var retry = parseInt(err.message.split(":")[1], 10) || 5;
+            showColdStart(panelId, retry);
+            setTimeout(function () { router.renderSkillsLibrary(); }, retry * 1000);
           } else {
             showError(panelId, err.message);
           }
