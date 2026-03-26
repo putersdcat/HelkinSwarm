@@ -46,3 +46,22 @@ export async function redeemMagicCodeForConnection(
   const result = await tokenClient.getUserToken(userId, connectionName, channelId, magicCode);
   return result?.token;
 }
+
+export async function checkUserTokenForConnection(
+  userId: string,
+  channelId: string,
+  connectionName: string,
+): Promise<string | undefined> {
+  const tokenClient = await createBotUserTokenClient();
+  const result = await tokenClient.getUserToken(userId, connectionName, channelId, '');
+  return result?.token;
+}
+
+export async function signOutUserFromConnection(
+  userId: string,
+  channelId: string,
+  connectionName: string,
+): Promise<void> {
+  const tokenClient = await createBotUserTokenClient();
+  await tokenClient.signOutUser(userId, connectionName, channelId);
+}
