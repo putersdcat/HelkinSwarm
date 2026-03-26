@@ -97,6 +97,7 @@ jobs:
           $outputRoot = Join-Path $PWD 'quota-output'
           New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
           $summaryMarkdownPath = Join-Path $outputRoot 'quota-summary.md'
+          $summaryJsonPath = Join-Path $outputRoot 'quota-maintenance-summary.json'
 
           if ($sweepAll) {
             $userMap = Get-Content -Path (Join-Path $PWD 'config/user-map.json') -Raw | ConvertFrom-Json
@@ -118,6 +119,8 @@ jobs:
             "- Low-capacity threshold: $threshold",
             "- Suggested floor capacity for overrides: $recommendedFloor"
           )
+
+          $aliasSummaries = New-Object System.Collections.Generic.List[object]
 
           foreach ($alias in $aliases) {
             $resourceGroupName = "rg-helkinswarm-$alias"
@@ -142,6 +145,7 @@ jobs:
 
             $rows = @($result.deployments | Sort-Object DeploymentName)
             $low = @($result.summary.lowCapacityDeployments)
+            $autoApplyDispatched = $false
 
             $summaryLines += ''
             $summaryLines += "### Alias $alias"
@@ -177,6 +181,7 @@ jobs:
                   -f EU_RESIDENCY_MODE=false `
                   -f CREATE_OAUTH_CONNECTION=false | Out-Null
 
+                $autoApplyDispatched = $true
                 $summaryLines += ''
                 $summaryLines += "#### Auto-apply dispatch"
                 $summaryLines += "- Dispatched deploy-stamp.yml for $alias using generated overrides."
@@ -189,10 +194,39 @@ jobs:
               $summaryLines += 'No deployments are currently pinned at or below the configured floor.'
               Write-Host "[$alias] No deployments are pinned at or below ${threshold}k TPM."
             }
+
+            $aliasSummaries.Add([pscustomobject]@{
+              alias = $alias
+              aiServicesName = $result.summary.aiServicesName
+              deploymentCount = $result.summary.deploymentCount
+              lowCapacityThreshold = $threshold
+              floorPinnedCount = $low.Count
+              totalRequestedCapacity = $result.summary.totalRequestedCapacity
+              autoApplyRequested = $autoApply
+              autoApplyDispatched = $autoApplyDispatched
+              recommendedFloorCapacity = $recommendedFloor
+              overridesPath = (Resolve-Path -Path $overridesPath).Path
+              fullOverridesPath = (Resolve-Path -Path $fullOverridesPath).Path
+              auditPath = (Resolve-Path -Path $summaryPath).Path
+            }) | Out-Null
           }
 
           $summaryLines | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           $summaryLines | Set-Content -Path $summaryMarkdownPath -Encoding UTF8
+
+          [pscustomobject]@{
+            workflowRunId = '${{ github.run_id }}'
+            workflowName = '${{ github.workflow }}'
+            refName = '${{ github.ref_name }}'
+            sweepAllStamps = $sweepAll
+            autoApplyRecommendations = $autoApply
+            lowCapacityThreshold = $threshold
+            recommendedFloorCapacity = $recommendedFloor
+            aliasCount = $aliases.Count
+            aliasesWithFloorPins = @($aliasSummaries | Where-Object { $_.floorPinnedCount -gt 0 } | ForEach-Object { $_.alias })
+            aliasesWithAutoApplyDispatch = @($aliasSummaries | Where-Object { $_.autoApplyDispatched } | ForEach-Object { $_.alias })
+            aliases = @($aliasSummaries)
+          } | ConvertTo-Json -Depth 8 | Set-Content -Path $summaryJsonPath -Encoding UTF8
 
       - name: Upload quota audit artifacts
         uses: actions/upload-artifact@v4
