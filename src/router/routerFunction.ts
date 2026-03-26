@@ -16,6 +16,7 @@ import {
   recordMessagePathSuccess,
 } from '../observability/messagePathHealth.js';
 import { loadUserMap, type UserMap } from './userMapStore.js';
+import { validateBotFrameworkToken } from './botFrameworkTokenValidator.js';
 
 // Minimal schema for extracting the routing key from the activity
 const ActivityRoutingSchema = z.object({
@@ -36,6 +37,19 @@ app.http('router', {
   ): Promise<HttpResponseInit> => {
     const turnId = crypto.randomUUID();
     recordMessagePathStart(turnId);
+
+    // Validate Bot Framework JWT before routing — defense-in-depth (#213)
+    try {
+      await validateBotFrameworkToken(req.headers.get('Authorization') ?? req.headers.get('authorization'));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unauthorized';
+      await recordMessagePathFailure(turnId, `BF token validation failed: ${msg}`);
+      context.warn(`Router rejected unauthenticated request: ${msg}`);
+      return {
+        status: 401,
+        body: JSON.stringify({ error: 'Unauthorized. Valid Bot Framework token required.' }),
+      };
+    }
 
     let activityBody: unknown;
     try {
