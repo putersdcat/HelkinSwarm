@@ -338,6 +338,24 @@ async function queryAppInsightsForCorrelation(correlationTag: string): Promise<u
   }
 }
 
+function extractAppInsightsCandidates(bundle: { correlationTag: string | null; telemetryFooters: string[] }): string[] {
+  const candidates = new Set<string>();
+
+  if (bundle.correlationTag) {
+    candidates.add(bundle.correlationTag);
+  }
+
+  for (const footer of bundle.telemetryFooters) {
+    for (const match of footer.matchAll(/corr:([A-Za-z0-9-]+)/g)) {
+      if (match[0]) {
+        candidates.add(match[0]);
+      }
+    }
+  }
+
+  return [...candidates];
+}
+
 // ── MCP Server ────────────────────────────────────────────────────────────────
 
 const server = new Server(
@@ -752,9 +770,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         health = { error: String(error) };
       }
 
-      const appInsights = bundle.correlationTag
-        ? await queryAppInsightsForCorrelation(bundle.correlationTag)
-        : { available: false, reason: 'No correlation tag available for App Insights lookup.' };
+      const insightCandidates = extractAppInsightsCandidates(bundle);
+      let appInsights: unknown = { available: false, reason: 'No correlation tag available for App Insights lookup.' };
+
+      if (insightCandidates.length > 0) {
+        const attempts: Array<{ candidate: string; result: unknown }> = [];
+        let firstNonEmpty: unknown | null = null;
+
+        for (const candidate of insightCandidates) {
+          const result = await queryAppInsightsForCorrelation(candidate);
+          attempts.push({ candidate, result });
+
+          const parsed = result as { tables?: unknown[] };
+          if (!firstNonEmpty && Array.isArray(parsed.tables) && parsed.tables.length > 0) {
+            firstNonEmpty = result;
+          }
+        }
+
+        appInsights = {
+          candidates: insightCandidates,
+          selected: firstNonEmpty ?? attempts[0]?.candidate ?? null,
+          result: firstNonEmpty ?? attempts[0]?.result ?? null,
+          attempts,
+        };
+      }
 
       return {
         content: [{
