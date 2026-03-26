@@ -62,11 +62,18 @@ You should see a clean status report with model health, memory, and safety mode.
    - `teams_test_get_message_window` — narrow before/after message windows around a correlation, message id, or text anchor
    - structured message payloads now separate rendered text, raw HTML, formatting hints, attachments, and parsed card payloads when present
       - `teams_test_get_session_bundle` — a stitched message window + timing + card summary + current runtime health bundle for a focused troubleshooting slice
+      - rebuilt harness validation now also includes `runtimeTrace` data when a footer correlation can be resolved back to the runtime trace store
 
    Example workflows:
    - find the last bot reply carrying a specific correlation tag or footer fragment
    - pull a 3-message window around a telemetry marker like `corr:8b42c40e`
    - filter only `human-to-bot` or `bot-to-human` traffic during a focused investigation
+
+   **Maintenance contract for DevLoop tooling**
+   - the Teams Test Harness is not a disposable debug extra; it is part of HelkinSwarm's development surface and must evolve with the product
+   - whenever a new Teams-visible payload type ships (cards, attachments, rich formatting, images, confirmation flows), harness parsing/extraction must be reviewed in the same tranche
+   - whenever new orchestration or runtime telemetry surfaces ship, harness support must be reviewed so DevLoop can still correlate what Teams showed with what the runtime actually did
+   - feature completeness for DevLoop-facing work includes keeping this tooling current — otherwise the outside-in and inside-out debugging loop degrades over time
 
 ---
 
