@@ -59,7 +59,7 @@ if ([string]::IsNullOrWhiteSpace($functionKey)) {
 }
 
 $encodedCorrelationTag = [System.Uri]::EscapeDataString($CorrelationTag)
-$uri = "$baseEndpoint/api/devloop/session-bundle/$encodedCorrelationTag?code=$functionKey"
+$uri = "$baseEndpoint/api/devloop/session-bundle/${encodedCorrelationTag}?code=$functionKey"
 
 $response = Invoke-RestMethod -Method Get -Uri $uri -Headers @{
   'x-helkinswarm-user-id' = [string]$userObjectId

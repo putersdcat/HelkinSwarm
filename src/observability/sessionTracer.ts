@@ -165,6 +165,32 @@ export function getTraceTree(correlationId: string): TraceTree | undefined {
   return traceMap.get(correlationId);
 }
 
+/**
+ * Find the most recent trace tree whose full correlationId starts with a short footer token.
+ * Footer telemetry only exposes the first 8 chars (corr:xxxxxxxx), while the runtime keeps
+ * the full UUID correlationId in-memory.
+ */
+export function findTraceTreeByShortCorrelation(shortCorrelation: string): TraceTree | undefined {
+  const normalized = shortCorrelation
+    .trim()
+    .replace(/^\[?corr:/i, '')
+    .replace(/\]?$/u, '')
+    .toLowerCase();
+
+  if (normalized.length === 0) {
+    return undefined;
+  }
+
+  for (let i = traceOrder.length - 1; i >= 0; i--) {
+    const tree = traceMap.get(traceOrder[i]);
+    if (tree && tree.correlationId.toLowerCase().startsWith(normalized)) {
+      return tree;
+    }
+  }
+
+  return undefined;
+}
+
 export interface TraceListFilter {
   limit?: number;
   sinceIso?: string; // ISO timestamp — only traces after this time

@@ -21,7 +21,7 @@ import {
 import { ResurrectionCommandSchema } from '../devloop/radioProtocol.js';
 import type { NewMessageEvent } from '../orchestrator/overseer.js';
 import { trackEvent } from '../observability/telemetry.js';
-import { getTraceTree } from '../observability/sessionTracer.js';
+import { getTraceTree, findTraceTreeByShortCorrelation } from '../observability/sessionTracer.js';
 
 // ---------------------------------------------------------------------------
 // Zod schemas for request validation
@@ -211,7 +211,14 @@ app.http('devloopSessionBundle', {
     }
 
     const messages = await getMessagesByCorrelation(correlationTag);
-    const traceTree = getTraceTree(correlationTag) ?? null;
+    const exactTraceTree = getTraceTree(correlationTag);
+    const shortTraceTree = exactTraceTree ?? findTraceTreeByShortCorrelation(correlationTag);
+    const traceTree = shortTraceTree ?? null;
+    const traceLookupMode = exactTraceTree
+      ? 'exact'
+      : shortTraceTree
+        ? 'short-prefix'
+        : 'miss';
 
     trackEvent({
       name: 'DevLoopRelayPoll',
@@ -221,6 +228,7 @@ app.http('devloopSessionBundle', {
         endpoint: 'session-bundle',
         relayMessageCount: messages.length,
         traceTreePresent: traceTree !== null,
+        traceLookupMode,
       },
     });
 
@@ -230,6 +238,7 @@ app.http('devloopSessionBundle', {
         correlationTag,
         relayMessages: messages,
         relayMessageCount: messages.length,
+        traceLookupMode,
         traceTree,
       },
     };
