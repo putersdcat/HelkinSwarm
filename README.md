@@ -61,6 +61,11 @@ You should see a clean status report with model health, memory, and safety mode.
    - `teams_test_query_messages` — direct lookup by correlation tag/footer, direction, message id, text match, and first/last helper
    - `teams_test_get_message_window` — narrow before/after message windows around a correlation, message id, or text anchor
 
+   Example workflows:
+   - find the last bot reply carrying a specific correlation tag or footer fragment
+   - pull a 3-message window around a telemetry marker like `corr:8b42c40e`
+   - filter only `human-to-bot` or `bot-to-human` traffic during a focused investigation
+
 ---
 
 ### Core Principles
