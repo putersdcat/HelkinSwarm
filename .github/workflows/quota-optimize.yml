@@ -72,28 +72,33 @@ jobs:
           $rows = @($result.deployments | Sort-Object DeploymentName)
           $low = @($result.summary.lowCapacityDeployments)
 
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## 📈 AI Foundry Quota Audit"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- User alias: \\`${{ env.USER_ALIAS }}\\`"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- AI Services: \\`$($result.summary.aiServicesName)\\`"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Total requested capacity: \\`$($result.summary.totalRequestedCapacity)\\` (1k TPM units)"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- Low-capacity threshold: \\`$threshold\\`"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| Deployment | SKU | Capacity | Model | State |"
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "|---|---|---:|---|---|"
+          $summaryLines = @(
+            '## AI Foundry Quota Audit',
+            '',
+            "- User alias: ${{ env.USER_ALIAS }}",
+            "- AI Services: $($result.summary.aiServicesName)",
+            "- Total requested capacity: $($result.summary.totalRequestedCapacity) (1k TPM units)",
+            "- Low-capacity threshold: $threshold",
+            '',
+            '| Deployment | SKU | Capacity | Model | State |',
+            '|---|---|---:|---|---|'
+          )
+
           foreach ($row in $rows) {
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| $($row.DeploymentName) | $($row.SkuName) | $($row.Capacity) | $($row.ModelName) | $($row.ProvisioningState) |"
+            $summaryLines += "| $($row.DeploymentName) | $($row.SkuName) | $($row.Capacity) | $($row.ModelName) | $($row.ProvisioningState) |"
           }
 
           if ($low.Count -gt 0) {
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "### ⚠️ Floor-pinned deployments"
+            $summaryLines += ''
+            $summaryLines += '### Floor-pinned deployments'
             foreach ($row in $low) {
-              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "- $($row.DeploymentName) at $($row.Capacity)k TPM"
+              $summaryLines += "- $($row.DeploymentName) at $($row.Capacity)k TPM"
             }
             Write-Host "Found $($low.Count) deployment(s) at or below ${threshold}k TPM."
           } else {
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
-            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "✅ No deployments are currently pinned at or below the configured floor."
+            $summaryLines += ''
+            $summaryLines += 'No deployments are currently pinned at or below the configured floor.'
             Write-Host "No deployments are pinned at or below ${threshold}k TPM."
           }
+
+          $summaryLines | Add-Content -Path $env:GITHUB_STEP_SUMMARY
