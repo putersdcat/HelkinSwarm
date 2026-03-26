@@ -37,13 +37,10 @@ import { toolRegistry } from '../tools/toolRegistry.js';
 import { parseDevLoopMessage } from '../devloop/radioProtocol.js';
 import { createPendingIntent } from '../orchestrator/pendingIntentStore.js';
 import { getBearerToken } from '../auth/identity.js';
+import { getSignInLinkForActivity } from '../auth/botUserTokenClient.js';
 import { buildSkillLinkSigninCard, buildSkillRelinkSigninCard } from './linkCards.js';
 import type { QuotedContext } from './quotedContext.js';
 import { trackEvent } from '../observability/telemetry.js';
-
-interface SignInLinkCapableAdapter {
-  getSignInLink?(context: TurnContext, connectionName: string): Promise<string>;
-}
 
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
@@ -897,13 +894,8 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     context: TurnContext,
     connectionName: string,
   ): Promise<string | undefined> {
-    const adapter = context.adapter as SignInLinkCapableAdapter;
-    if (!adapter.getSignInLink) {
-      return undefined;
-    }
-
     try {
-      return await adapter.getSignInLink(context, connectionName);
+      return await getSignInLinkForActivity(connectionName, context.activity);
     } catch {
       return undefined;
     }

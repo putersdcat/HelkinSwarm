@@ -5,26 +5,9 @@
 // The token was originally cached when the user ran /link and completed the OAuth consent flow.
 // This helper retrieves it without needing a TurnContext (works from Durable Activities).
 
-import {
-  ConfigurationBotFrameworkAuthentication,
-} from 'botbuilder';
-import { ClaimsIdentity } from 'botframework-connector';
 import { getEnvConfig } from '../config/envConfig.js';
 import { getConversationReference } from '../bot/conversationStore.js';
-
-let authInstance: ConfigurationBotFrameworkAuthentication | undefined;
-
-function getAuth(): ConfigurationBotFrameworkAuthentication {
-  if (!authInstance) {
-    const env = getEnvConfig();
-    authInstance = new ConfigurationBotFrameworkAuthentication({
-      MicrosoftAppId: env.microsoftAppId,
-      MicrosoftAppType: 'UserAssignedMSI',
-      MicrosoftAppTenantId: env.microsoftAppTenantId,
-    });
-  }
-  return authInstance;
-}
+import { createBotUserTokenClient } from './botUserTokenClient.js';
 
 /**
  * Get a cached Graph access token for a user.
@@ -42,10 +25,7 @@ export async function getGraphTokenForUser(
   if (!connName) return undefined;
 
   try {
-    const auth = getAuth();
-    const tokenClient = await auth.createUserTokenClient(
-      new ClaimsIdentity([{ type: 'appid', value: env.microsoftAppId }], true),
-    );
+    const tokenClient = await createBotUserTokenClient();
     const conversationReference = await getConversationReference(userId);
     const channelUserId = conversationReference?.user?.id ?? userId;
     const channelId = conversationReference?.channelId ?? '';
