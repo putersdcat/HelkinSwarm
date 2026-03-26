@@ -43,6 +43,19 @@ HelkinSwarm **never holds standing privileges or long-lived secrets**. Every act
 - Use `DefaultAzureCredential` — falls back to `az login`, VS Code credential, or env var
 - Never use PATs, client secrets, or connection strings — even locally
 
+## Endpoint Auth Policy (Default-Deny)
+
+All HTTP endpoints **must** require authentication unless explicitly documented. The ONLY exception is `/api/health` (readiness probes).
+
+| Auth Pattern | When to Use | Example |
+|---|---|---|
+| `validateTabTokenFromRequest()` | Tab API endpoints (`/api/tab/*`) | tabDashboard, tabGetStarted |
+| Bot Framework adapter validation | `/api/messages` | Bot webhook |
+| `authLevel: 'function'` | Internal/automated callers | hookReceiver, emergencyStop, devLoopRelay |
+| `validateBotFrameworkToken()` | Router endpoint | routerFunction |
+
+If you add a **new endpoint**, it **must** validate auth. If there is a justified reason for anonymous access, document it in the endpoint file with a comment explaining why.
+
 ## Always
 - ✅ Use `src/auth/identity.ts` as the single credential entry point
 - ✅ Mint scoped tokens via `scopedTokenMinter.ts` — declare scopes in the capability manifest
