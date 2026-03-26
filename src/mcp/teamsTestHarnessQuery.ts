@@ -50,7 +50,7 @@ export interface NormalizedHarnessAttachment {
   id?: string;
   name?: string;
   contentType: string;
-  kind: 'adaptive-card' | 'signin-card' | 'image' | 'file' | 'other';
+  kind: 'adaptive-card' | 'signin-card' | 'image' | 'file' | 'message-reference' | 'other';
   contentUrl?: string;
   thumbnailUrl?: string;
   contentText?: string;
@@ -154,6 +154,8 @@ function normalizeAttachment(attachment: HarnessRawAttachment): NormalizedHarnes
     ? 'adaptive-card'
     : lowerType.includes('signin')
       ? 'signin-card'
+      : lowerType === 'messagereference'
+        ? 'message-reference'
       : lowerType.startsWith('image/') || !!attachment.thumbnailUrl
         ? 'image'
         : lowerType.includes('file')

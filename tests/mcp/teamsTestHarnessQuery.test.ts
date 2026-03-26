@@ -90,6 +90,25 @@ describe('teamsTestHarnessQuery helpers', () => {
     expect(normalized.attachments[1]?.contentUrl).toBe('https://example.test/image.png');
   });
 
+  it('recognizes messageReference attachments used by Teams quoted replies', () => {
+    const normalized = normalizeHarnessMessage({
+      id: 'm5',
+      createdDateTime: '2026-03-26T07:00:10.000Z',
+      from: { user: { displayName: 'Eric', id: 'u1' } },
+      body: { content: '<attachment id="m4"></attachment><p>161948</p>', contentType: 'html' },
+      attachments: [
+        {
+          id: 'm4',
+          contentType: 'messageReference',
+          content: JSON.stringify({ messageId: 'm4', messagePreview: '📄' }),
+        },
+      ],
+    });
+
+    expect(normalized.attachments[0]?.kind).toBe('message-reference');
+    expect(normalized.attachments[0]?.cardPayload).toMatchObject({ messageId: 'm4', messagePreview: '📄' });
+  });
+
   it('supports before/after message slicing and text matching', () => {
     const results = queryHarnessMessages(messages, {
       contains: 'telemetry footer',

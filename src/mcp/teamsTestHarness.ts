@@ -45,6 +45,7 @@ import {
   type HarnessPickMode,
   type HarnessRawMessage,
 } from './teamsTestHarnessQuery.js';
+import { buildQuotedReplyRequest } from './teamsTestHarnessSend.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -243,6 +244,24 @@ async function graphPost<T>(path: string, body: unknown): Promise<T> {
   return resp.json() as Promise<T>;
 }
 
+async function sendPlainChatMessage(chatId: string, message: string): Promise<GraphCreatedMessage> {
+  return graphPost<GraphCreatedMessage>(`/me/chats/${chatId}/messages`, {
+    body: { contentType: 'text', content: message },
+  });
+}
+
+async function sendQuotedReplyMessage(
+  chatId: string,
+  targetMessageId: string,
+  message: string,
+  quotedPreview?: string,
+): Promise<GraphCreatedMessage> {
+  return graphPost<GraphCreatedMessage>(
+    `/chats/${chatId}/messages/replyWithQuote`,
+    buildQuotedReplyRequest({ targetMessageId, message, quotedPreview }),
+  );
+}
+
 interface GraphChatMember {
   displayName?: string;
   userId?: string;
@@ -259,6 +278,41 @@ interface GraphMessage extends HarnessRawMessage {
   id: string;
   createdDateTime: string;
   body?: { content?: string; contentType?: string };
+}
+
+interface GraphCreatedMessage {
+  id: string;
+  createdDateTime?: string;
+}
+
+async function waitForBotReplyAfter(
+  chatId: string,
+  sentAt: Date,
+  timeoutSeconds: number,
+): Promise<{ botReply: string | null; elapsed: string }> {
+  const deadline = Date.now() + timeoutSeconds * 1000;
+
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 3000));
+
+    const msgsResp = await graphGet<{ value: GraphMessage[] }>(
+      `/me/chats/${chatId}/messages?$top=10`,
+    );
+
+    for (const m of msgsResp.value) {
+      if (m.from?.application && new Date(m.createdDateTime) > sentAt) {
+        return {
+          elapsed: ((Date.now() - sentAt.getTime()) / 1000).toFixed(1) + 's',
+          botReply: (m.body?.content ?? '').replace(/<[^>]+>/g, '').trim(),
+        };
+      }
+    }
+  }
+
+  return {
+    botReply: null,
+    elapsed: `timeout after ${timeoutSeconds}s`,
+  };
 }
 
 function parseDirection(value: unknown): HarnessMessageDirection | undefined {
@@ -413,6 +467,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: 'teams_test_send_quoted_reply',
+      description:
+        'Send a Teams reply-with-quote message referencing a specific earlier message id. Useful for auth-code and reply-thread E2E flows.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          messageId: { type: 'string', description: 'The Teams message id to quote/reply to.' },
+          message: { type: 'string', description: 'Message text to send in the quoted reply.' },
+          quotedPreview: { type: 'string', description: 'Optional preview text to include in the messageReference attachment.' },
+        },
+        required: ['messageId', 'message'],
+      },
+    },
+    {
       name: 'teams_test_get_recent',
       description:
         'Read the N most recent messages from the HelkinSwarm Teams chat. Includes messages from both user and bot.',
@@ -530,6 +598,24 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['message'],
       },
     },
+    {
+      name: 'teams_test_full_probe_quoted_reply',
+      description:
+        'Send a quoted reply tied to a specific Teams message id, wait for the bot reply, and correlate runtime health in one call.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          messageId: { type: 'string', description: 'The Teams message id to quote/reply to.' },
+          message: { type: 'string', description: 'Quoted reply message text to send.' },
+          quotedPreview: { type: 'string', description: 'Optional preview text to include in the messageReference attachment.' },
+          timeoutSeconds: {
+            type: 'number',
+            description: 'Max seconds to wait for bot reply (default: 45)',
+          },
+        },
+        required: ['messageId', 'message'],
+      },
+    },
   ],
 }));
 
@@ -631,12 +717,44 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         );
       }
 
-      await graphPost(`/me/chats/${settings.chatId}/messages`, {
-        body: { contentType: 'text', content: message },
-      });
+      await sendPlainChatMessage(settings.chatId, message);
 
       return {
         content: [{ type: 'text', text: `✅ Message sent: "${message}"` }],
+      };
+    }
+
+    case 'teams_test_send_quoted_reply': {
+      const messageId = String(typedArgs['messageId'] ?? '');
+      const message = String(typedArgs['message'] ?? '');
+      const quotedPreview = typeof typedArgs['quotedPreview'] === 'string'
+        ? typedArgs['quotedPreview']
+        : undefined;
+
+      if (!messageId) throw new McpError(ErrorCode.InvalidParams, 'messageId is required');
+      if (!message) throw new McpError(ErrorCode.InvalidParams, 'message is required');
+
+      const settings = await loadSettings();
+      if (!settings.chatId) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          'Chat ID not configured. Run teams_test_setup first.',
+        );
+      }
+
+      const sent = await sendQuotedReplyMessage(settings.chatId, messageId, message, quotedPreview);
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            sent: true,
+            messageId: sent.id,
+            createdDateTime: sent.createdDateTime ?? null,
+            quotedMessageId: messageId,
+            message,
+          }, null, 2),
+        }],
       };
     }
 
@@ -877,34 +995,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       const sentAt = new Date();
-      await graphPost(`/me/chats/${settings.chatId}/messages`, {
-        body: { contentType: 'text', content: message },
-      });
+      await sendPlainChatMessage(settings.chatId, message);
+      const reply = await waitForBotReplyAfter(settings.chatId, sentAt, timeoutSeconds);
 
-      const deadline = Date.now() + timeoutSeconds * 1000;
-      while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 3000));
-
-        const msgsResp = await graphGet<{ value: GraphMessage[] }>(
-          `/me/chats/${settings.chatId}/messages?$top=10`,
-        );
-
-        for (const m of msgsResp.value) {
-          const isBot = !!m.from?.application;
-          const isAfterSent = new Date(m.createdDateTime) > sentAt;
-          if (isBot && isAfterSent) {
-            const elapsed = ((Date.now() - sentAt.getTime()) / 1000).toFixed(1);
-            const text = (m.body?.content ?? '').replace(/<[^>]+>/g, '').trim();
-            return {
-              content: [
-                {
-                  type: 'text',
-                  text: JSON.stringify({ passed: true, botReply: text, elapsed: `${elapsed}s` }),
-                },
-              ],
-            };
-          }
-        }
+      if (reply.botReply !== null) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({ passed: true, botReply: reply.botReply, elapsed: reply.elapsed }),
+            },
+          ],
+        };
       }
 
       return {
@@ -962,30 +1064,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       // Step 2: Send message + poll for bot reply
       const sentAt = new Date();
-      await graphPost(`/me/chats/${settings.chatId}/messages`, {
-        body: { contentType: 'text', content: message },
-      });
-
-      const deadline = Date.now() + timeoutSeconds * 1000;
-      let botReply: string | null = null;
-      let elapsed = '';
-
-      while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 3000));
-
-        const msgsResp = await graphGet<{ value: GraphMessage[] }>(
-          `/me/chats/${settings.chatId}/messages?$top=10`,
-        );
-
-        for (const m of msgsResp.value) {
-          if (m.from?.application && new Date(m.createdDateTime) > sentAt) {
-            elapsed = ((Date.now() - sentAt.getTime()) / 1000).toFixed(1) + 's';
-            botReply = (m.body?.content ?? '').replace(/<[^>]+>/g, '').trim();
-            break;
-          }
-        }
-        if (botReply !== null) break;
-      }
+      await sendPlainChatMessage(settings.chatId, message);
+      const reply = await waitForBotReplyAfter(settings.chatId, sentAt, timeoutSeconds);
 
       const correlationId = `MCP-${Date.now().toString(16).toUpperCase()}`;
       return {
@@ -994,11 +1074,65 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             type: 'text',
             text: JSON.stringify(
               {
-                passed: botReply !== null,
-                botReply: botReply ?? null,
-                elapsed: botReply ? elapsed : `timeout after ${timeoutSeconds}s`,
+                passed: reply.botReply !== null,
+                botReply: reply.botReply ?? null,
+                elapsed: reply.elapsed,
                 runtime: health,
                 correlationId,
+              },
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    }
+
+    case 'teams_test_full_probe_quoted_reply': {
+      const messageId = String(typedArgs['messageId'] ?? '');
+      const message = String(typedArgs['message'] ?? '');
+      const quotedPreview = typeof typedArgs['quotedPreview'] === 'string'
+        ? typedArgs['quotedPreview']
+        : undefined;
+      const timeoutSeconds = Number(typedArgs['timeoutSeconds'] ?? 45);
+
+      if (!messageId) throw new McpError(ErrorCode.InvalidParams, 'messageId is required');
+      if (!message) throw new McpError(ErrorCode.InvalidParams, 'message is required');
+
+      const settings = await loadSettings();
+      if (!settings.chatId) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          'Chat ID not configured. Run teams_test_setup first.',
+        );
+      }
+
+      let health: unknown;
+      try {
+        const resp = await fetch(STAMP_HEALTH_URL);
+        health = await resp.json();
+      } catch (e) {
+        health = { error: String(e) };
+      }
+
+      const sentAt = new Date();
+      const sent = await sendQuotedReplyMessage(settings.chatId, messageId, message, quotedPreview);
+      const reply = await waitForBotReplyAfter(settings.chatId, sentAt, timeoutSeconds);
+
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                passed: reply.botReply !== null,
+                quotedMessageId: messageId,
+                sentMessageId: sent.id,
+                sentAt: sent.createdDateTime ?? sentAt.toISOString(),
+                botReply: reply.botReply ?? null,
+                elapsed: reply.elapsed,
+                runtime: health,
+                correlationId: `MCP-${Date.now().toString(16).toUpperCase()}`,
               },
               null,
               2,
