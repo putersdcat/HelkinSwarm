@@ -1,11 +1,30 @@
 import { CardFactory, type Attachment } from 'botbuilder';
 
+function buildSkillLinkCard(
+  buttonTitle: string,
+  description: string,
+  signInUrl: string,
+): Attachment {
+  return CardFactory.heroCard(
+    '',
+    description,
+    undefined,
+    CardFactory.actions([
+      {
+        type: 'openUrl',
+        title: buttonTitle,
+        value: signInUrl,
+      },
+    ]),
+  );
+}
+
 export function buildSkillLinkSigninCard(
   displayName: string,
   description: string,
   signInUrl: string,
 ): Attachment {
-  return CardFactory.signinCard(`🔗 Link ${displayName}`, signInUrl, description);
+  return buildSkillLinkCard(`🔗 Link ${displayName}`, description, signInUrl);
 }
 
 export function buildSkillRelinkSigninCard(
@@ -13,5 +32,5 @@ export function buildSkillRelinkSigninCard(
   description: string,
   signInUrl: string,
 ): Attachment {
-  return CardFactory.signinCard(`🔗 Relink ${displayName}`, signInUrl, description);
+  return buildSkillLinkCard(`🔗 Relink ${displayName}`, description, signInUrl);
 }
