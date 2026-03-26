@@ -23,6 +23,10 @@ on:
         required: false
         type: boolean
         default: false
+      REPORT_ISSUE_NUMBER:
+        description: "Optional GitHub issue number to receive a workflow summary comment."
+        required: false
+        type: string
       LOW_CAPACITY_THRESHOLD:
         description: "Flag deployments at or below this 1k TPM capacity as floor-pinned."
         required: false
@@ -40,6 +44,7 @@ permissions:
   actions: write
   id-token: write
   contents: read
+  issues: write
 
 env:
   AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
@@ -90,6 +95,7 @@ jobs:
           $recommendedFloor = [int]${{ github.event.inputs.RECOMMENDED_FLOOR_CAPACITY || 5 }}
           $outputRoot = Join-Path $PWD 'quota-output'
           New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
+          $summaryMarkdownPath = Join-Path $outputRoot 'quota-summary.md'
 
           if ($sweepAll) {
             $userMap = Get-Content -Path (Join-Path $PWD 'config/user-map.json') -Raw | ConvertFrom-Json
@@ -185,9 +191,34 @@ jobs:
           }
 
           $summaryLines | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+          $summaryLines | Set-Content -Path $summaryMarkdownPath -Encoding UTF8
 
       - name: Upload quota audit artifacts
         uses: actions/upload-artifact@v4
         with:
           name: quota-audit-${{ github.run_id }}
           path: quota-output/**
+
+      - name: Comment summary to issue
+        if: ${{ github.event.inputs.REPORT_ISSUE_NUMBER != '' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $issueNumber = '${{ github.event.inputs.REPORT_ISSUE_NUMBER }}'
+          $summaryMarkdownPath = Join-Path $PWD 'quota-output/quota-summary.md'
+
+          if (-not (Test-Path -Path $summaryMarkdownPath)) {
+            throw "Expected summary markdown at $summaryMarkdownPath but it was not created."
+          }
+
+          $header = @(
+            "Automated quota maintenance summary from workflow run `${{ github.run_id }}`.",
+            '',
+            "Workflow: `${{ github.workflow }}`",
+            "Ref: `${{ github.ref_name }}`",
+            ''
+          ) -join "`n"
+
+          $body = $header + (Get-Content -Path $summaryMarkdownPath -Raw)
+          gh issue comment $issueNumber --body $body
