@@ -22,7 +22,7 @@ export interface ModelLane {
 
 const GLOBAL_LANE_DEFAULTS: ModelLane = {
   primary: 'grok-4-1-fast-non-reasoning',
-  secondary: 'grok-4-1-fast-non-reasoning',
+  secondary: 'gpt-5.4-mini',
   embedding: 'text-embedding-3-large',
   // grok-4-1-fast-reasoning consistently times out (>55s); tracked in #128
   reasoning: 'o4-mini',
@@ -83,7 +83,7 @@ function getGlobalLane(config: ReturnType<typeof getEnvConfig>): ModelLane {
     secondary: config.llmSecondaryModel,
     embedding: config.llmEmbeddingModel,
     reasoning: GLOBAL_LANE_DEFAULTS.reasoning,
-    vision: config.llmFallbackPrimary || GLOBAL_LANE_DEFAULTS.vision,
+    vision: config.llmVisionModel || GLOBAL_LANE_DEFAULTS.vision,
   };
 }
 
@@ -93,7 +93,7 @@ function getEuLane(config: ReturnType<typeof getEnvConfig>): ModelLane {
     secondary: config.llmSecondaryModel || EU_LANE_DEFAULTS.secondary,
     embedding: config.llmEmbeddingModel,
     reasoning: EU_LANE_DEFAULTS.reasoning,
-    vision: config.llmFallbackPrimary || GLOBAL_LANE_DEFAULTS.vision,
+    vision: config.llmVisionModel || GLOBAL_LANE_DEFAULTS.vision,
   };
 }
 
@@ -191,6 +191,11 @@ export function getFallbackChain(requestedDeploymentName?: string): ModelRouting
 
   for (const deploymentName of candidates) {
     if (!deploymentName || seen.has(deploymentName)) {
+      continue;
+    }
+
+    // Skip models that cannot handle chat completions (e.g. codex-only deployments).
+    if (CHAT_INCOMPATIBLE_MODEL_REASONS[deploymentName]) {
       continue;
     }
 

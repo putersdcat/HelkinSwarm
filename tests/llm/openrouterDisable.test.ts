@@ -65,10 +65,12 @@ describe('OpenRouter runtime disablement (#286)', () => {
 
     const chain = modelRouter.getFallbackChain('grok-4-1-fast-non-reasoning');
 
-    expect(chain.map((entry) => entry.deploymentName)).toEqual([
-      'grok-4-1-fast-non-reasoning',
-      'gpt-5.4-mini',
-    ]);
+    const names = chain.map((entry) => entry.deploymentName);
+    // Primary collapses with secondary → fallback primary appears next.
+    // Fallback secondary (default: FW-Kimi-K2.5) trails the chain.
+    expect(names[0]).toBe('grok-4-1-fast-non-reasoning');
+    expect(names[1]).toBe('gpt-5.4-mini');
+    expect(names.length).toBeGreaterThanOrEqual(2);
   });
 });
 

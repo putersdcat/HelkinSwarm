@@ -62,14 +62,14 @@ param delegatedAuthClientSecret string = ''
 @description('Primary LLM model. Azure default: grok-4-1-fast-non-reasoning. OpenRouter: e.g. openai/gpt-4o')
 param llmPrimaryModel string = 'grok-4-1-fast-non-reasoning'
 
-@description('Secondary LLM model. Azure default: grok-4-1-fast-non-reasoning.')
-param llmSecondaryModel string = 'grok-4-1-fast-non-reasoning'
+@description('Secondary LLM model. Azure default: gpt-5.4-mini — different provider than primary for rate-limit isolation.')
+param llmSecondaryModel string = 'gpt-5.4-mini'
 
 @description('Fallback primary model.')
-param llmFallbackPrimaryModel string = 'gpt-5.4-mini'
+param llmFallbackPrimaryModel string = 'DeepSeek-V3.2'
 
 @description('Fallback secondary model.')
-param llmFallbackSecondaryModel string = 'gpt-5.1-codex-mini'
+param llmFallbackSecondaryModel string = 'FW-Kimi-K2.5'
 
 @description('Coding primary model.')
 param llmCodingPrimaryModel string = 'FW-MiniMax-M2.5'

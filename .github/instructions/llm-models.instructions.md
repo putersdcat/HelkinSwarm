@@ -14,7 +14,7 @@ applyTo: "src/llm/**"
 // src/llm/modelRouter.ts — source of truth
 const GLOBAL_LANE = {
   primary:   "grok-4-1-fast-non-reasoning",
-  secondary: "grok-4-1-fast-non-reasoning",
+  secondary: "gpt-5.4-mini",
   embedding: "text-embedding-3-large",
   reasoning: "o4-mini",
   vision:    "gpt-5.4-mini",
@@ -26,6 +26,11 @@ const EU_LANE = {
   embedding: "text-embedding-3-large",  // GlobalStandard — no DZ embedding exists yet
   reasoning: "grok-4-1-fast-reasoning",
 };
+
+// Fallback chain (primary path):
+// grok-4-1-fast-non-reasoning → DeepSeek-V3.2 → gpt-5.4-mini → FW-Kimi-K2.5
+// Each model is a different provider/deployment to isolate rate limits.
+// Chat-incompatible models (e.g. gpt-5.1-codex-mini) are automatically excluded.
 
 // BYOK lane reads from env config (openrouterFallbackPrimary/Secondary)
 ```
