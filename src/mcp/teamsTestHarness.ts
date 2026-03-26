@@ -35,6 +35,7 @@ import { dirname, join } from 'path';
 import { homedir } from 'os';
 import { fileURLToPath } from 'url';
 import {
+  buildHarnessSessionBundle,
   getHarnessMessageWindow,
   queryHarnessMessages,
   type HarnessMessageDirection,
@@ -377,6 +378,27 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       },
     },
     {
+      name: 'teams_test_get_session_bundle',
+      description:
+        'Return a structured end-to-end session bundle around a correlation tag, message id, or text anchor, including rich Teams message payloads plus current runtime health.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          count: { type: 'number', description: 'How many recent chat messages to inspect first (default: 30, max: 50).' },
+          correlation: { type: 'string', description: 'Correlation tag/footer fragment to anchor the bundle.' },
+          aroundMessageId: { type: 'string', description: 'Anchor the bundle around this exact Teams message id.' },
+          aroundContains: { type: 'string', description: 'Anchor the bundle around this text or card-payload match.' },
+          beforeCount: { type: 'number', description: 'How many messages before the anchor to include (default: 3).' },
+          afterCount: { type: 'number', description: 'How many messages after the anchor to include (default: 3).' },
+          direction: {
+            type: 'string',
+            description: 'Optional direction filter: any, human-to-bot, bot-to-human, human-only, bot-only, system.',
+          },
+        },
+        required: [],
+      },
+    },
+    {
       name: 'teams_test_wait_for_bot_reply',
       description:
         'Send a message and poll for a bot reply with a configurable timeout. Returns the reply text or a timeout error with elapsed time.',
@@ -645,6 +667,51 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             anchor: result.anchor,
             count: result.messages.length,
             messages: result.messages,
+          }, null, 2),
+        }],
+      };
+    }
+
+    case 'teams_test_get_session_bundle': {
+      const count = Math.min(Number(typedArgs['count'] ?? 30), 50);
+      const settings = await loadSettings();
+      if (!settings.chatId) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          'Chat ID not configured. Run teams_test_setup first.',
+        );
+      }
+
+      const direction = parseDirection(typedArgs['direction']);
+      if (typedArgs['direction'] !== undefined && !direction) {
+        throw new McpError(ErrorCode.InvalidParams, 'Invalid direction filter.');
+      }
+
+      const messages = await getRecentChatMessages(settings.chatId, count);
+      const bundle = buildHarnessSessionBundle(messages, {
+        correlation: typeof typedArgs['correlation'] === 'string' ? typedArgs['correlation'] : undefined,
+        aroundMessageId: typeof typedArgs['aroundMessageId'] === 'string' ? typedArgs['aroundMessageId'] : undefined,
+        aroundContains: typeof typedArgs['aroundContains'] === 'string' ? typedArgs['aroundContains'] : undefined,
+        beforeCount: Number(typedArgs['beforeCount'] ?? 3),
+        afterCount: Number(typedArgs['afterCount'] ?? 3),
+        direction,
+      });
+
+      let health: unknown;
+      try {
+        const resp = await fetch(STAMP_HEALTH_URL);
+        health = await resp.json();
+      } catch (error) {
+        health = { error: String(error) };
+      }
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            inspected: count,
+            bundle,
+            runtime: health,
           }, null, 2),
         }],
       };

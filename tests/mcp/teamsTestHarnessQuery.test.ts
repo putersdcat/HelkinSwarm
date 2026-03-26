@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildHarnessSessionBundle,
   getHarnessMessageWindow,
   normalizeHarnessMessage,
   queryHarnessMessages,
@@ -108,5 +109,34 @@ describe('teamsTestHarnessQuery helpers', () => {
 
     expect(result.anchor?.id).toBe('m3');
     expect(result.messages.map((message) => message.id)).toEqual(['m2', 'm3', 'm4']);
+  });
+
+  it('can anchor a message window on card payload text', () => {
+    const result = getHarnessMessageWindow(messages, {
+      aroundContains: 'Link Microsoft Account',
+      beforeCount: 0,
+      afterCount: 0,
+    });
+
+    expect(result.anchor?.id).toBe('m4');
+    expect(result.messages.map((message) => message.id)).toEqual(['m4']);
+  });
+
+  it('builds a structured session bundle summary', () => {
+    const bundle = buildHarnessSessionBundle(messages, {
+      correlation: '8b42c40e',
+      beforeCount: 1,
+      afterCount: 1,
+    });
+
+    expect(bundle.anchor?.id).toBe('m3');
+    expect(bundle.messages.map((message) => message.id)).toEqual(['m2', 'm3', 'm4']);
+    expect(bundle.timing.elapsedMs).toBe(7000);
+    expect(bundle.participants).toHaveLength(2);
+    expect(bundle.confirmationDetected).toBe(true);
+    expect(bundle.cards[0]).toMatchObject({
+      messageId: 'm4',
+      kind: 'adaptive-card',
+    });
   });
 });

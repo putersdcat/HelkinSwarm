@@ -80,6 +80,31 @@ export interface HarnessMessageWindowQuery {
   direction?: HarnessMessageDirection;
 }
 
+export interface HarnessSessionBundleQuery {
+  correlation?: string;
+  aroundContains?: string;
+  aroundMessageId?: string;
+  beforeCount?: number;
+  afterCount?: number;
+  direction?: HarnessMessageDirection;
+}
+
+export interface HarnessSessionBundle {
+  correlationTag: string | null;
+  anchor: NormalizedHarnessMessage | null;
+  messages: NormalizedHarnessMessage[];
+  timing: {
+    firstMessageAt: string | null;
+    lastMessageAt: string | null;
+    elapsedMs: number;
+  };
+  participants: Array<{ name: string; kind: HarnessSenderKind; count: number }>;
+  telemetryFooters: string[];
+  toolHints: string[];
+  confirmationDetected: boolean;
+  cards: Array<{ messageId: string; kind: NormalizedHarnessAttachment['kind']; contentType: string; payload: unknown }>;
+}
+
 const CORRELATION_PATTERNS = [
   /\[DL-[^\]]+\]/g,
   /\[corr:[^\]]+\]/gi,
@@ -145,6 +170,43 @@ function normalizeAttachment(attachment: HarnessRawAttachment): NormalizedHarnes
     contentText: typeof attachment.content === 'string' && !parsedPayload ? attachment.content : undefined,
     cardPayload: parsedPayload,
   };
+}
+
+function messageSearchHaystack(message: NormalizedHarnessMessage): string {
+  const attachmentText = message.attachments
+    .map((attachment) => {
+      if (attachment.cardPayload) {
+        return JSON.stringify(attachment.cardPayload);
+      }
+      return attachment.contentText ?? '';
+    })
+    .join(' ');
+
+  return [message.text, message.html, attachmentText].join(' ').toLowerCase();
+}
+
+function collectTelemetryFooters(messages: NormalizedHarnessMessage[]): string[] {
+  const matches = new Set<string>();
+  for (const message of messages) {
+    for (const match of message.text.matchAll(/\[[^\]]*(?:corr:|E2E:)[^\]]*\]/g)) {
+      if (match[0]) {
+        matches.add(match[0]);
+      }
+    }
+  }
+  return [...matches];
+}
+
+function collectToolHints(messages: NormalizedHarnessMessage[]): string[] {
+  const hints = new Set<string>();
+  for (const message of messages) {
+    for (const match of message.text.matchAll(/\b[a-z]+(?:_[a-z0-9]+)+\b/gi)) {
+      if (match[0]) {
+        hints.add(match[0]);
+      }
+    }
+  }
+  return [...hints];
 }
 
 function collectCorrelationMatches(text: string): string[] {
@@ -247,11 +309,13 @@ export function queryHarnessMessages(
       return false;
     }
     if (contains && !message.text.toLowerCase().includes(contains)) {
-      return false;
+      if (!messageSearchHaystack(message).includes(contains)) {
+        return false;
+      }
     }
     if (correlation) {
       const matches = message.correlationMatches.some((match) => match.toLowerCase().includes(correlation))
-        || message.text.toLowerCase().includes(correlation);
+        || messageSearchHaystack(message).includes(correlation);
       if (!matches) {
         return false;
       }
@@ -297,10 +361,10 @@ export function getHarnessMessageWindow(
     if (query.aroundCorrelation) {
       const needle = query.aroundCorrelation.toLowerCase();
       return message.correlationMatches.some((match) => match.toLowerCase().includes(needle))
-        || message.text.toLowerCase().includes(needle);
+        || messageSearchHaystack(message).includes(needle);
     }
     if (query.aroundContains) {
-      return message.text.toLowerCase().includes(query.aroundContains.toLowerCase());
+      return messageSearchHaystack(message).includes(query.aroundContains.toLowerCase());
     }
     return false;
   }) ?? null;
@@ -318,4 +382,67 @@ export function getHarnessMessageWindow(
   const window = normalized.slice(start, end).filter((message) => matchesDirection(message, direction));
 
   return { anchor, messages: window };
+}
+
+export function buildHarnessSessionBundle(
+  rawMessages: HarnessRawMessage[],
+  query: HarnessSessionBundleQuery = {},
+): HarnessSessionBundle {
+  const window = getHarnessMessageWindow(rawMessages, {
+    aroundMessageId: query.aroundMessageId,
+    aroundCorrelation: query.correlation,
+    aroundContains: query.aroundContains,
+    beforeCount: query.beforeCount ?? 3,
+    afterCount: query.afterCount ?? 3,
+    direction: query.direction,
+  });
+
+  const messages = window.messages;
+  const firstMessageAt = messages[0]?.createdDateTime ?? null;
+  const lastMessageAt = messages[messages.length - 1]?.createdDateTime ?? null;
+  const elapsedMs = firstMessageAt && lastMessageAt
+    ? new Date(lastMessageAt).getTime() - new Date(firstMessageAt).getTime()
+    : 0;
+
+  const participantsMap = new Map<string, { name: string; kind: HarnessSenderKind; count: number }>();
+  for (const message of messages) {
+    const key = `${message.senderKind}:${message.senderDisplayName}`;
+    const current = participantsMap.get(key) ?? {
+      name: message.senderDisplayName,
+      kind: message.senderKind,
+      count: 0,
+    };
+    current.count += 1;
+    participantsMap.set(key, current);
+  }
+
+  const cards = messages.flatMap((message) =>
+    message.cards.map((card) => ({
+      messageId: message.id,
+      kind: card.kind,
+      contentType: card.contentType,
+      payload: card.cardPayload ?? card.contentText ?? null,
+    })),
+  );
+
+  const correlationTag = query.correlation
+    ?? window.anchor?.correlationMatches[0]
+    ?? collectTelemetryFooters(messages).find((value) => value.toLowerCase().includes('corr:'))
+    ?? null;
+
+  return {
+    correlationTag,
+    anchor: window.anchor,
+    messages,
+    timing: {
+      firstMessageAt,
+      lastMessageAt,
+      elapsedMs,
+    },
+    participants: [...participantsMap.values()],
+    telemetryFooters: collectTelemetryFooters(messages),
+    toolHints: collectToolHints(messages),
+    confirmationDetected: cards.length > 0,
+    cards,
+  };
 }

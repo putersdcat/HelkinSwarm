@@ -61,6 +61,7 @@ You should see a clean status report with model health, memory, and safety mode.
    - `teams_test_query_messages` — direct lookup by correlation tag/footer, direction, message id, text match, and first/last helper
    - `teams_test_get_message_window` — narrow before/after message windows around a correlation, message id, or text anchor
    - structured message payloads now separate rendered text, raw HTML, formatting hints, attachments, and parsed card payloads when present
+      - `teams_test_get_session_bundle` — a stitched message window + timing + card summary + current runtime health bundle for a focused troubleshooting slice
 
    Example workflows:
    - find the last bot reply carrying a specific correlation tag or footer fragment
