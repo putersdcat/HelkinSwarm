@@ -214,6 +214,19 @@ jobs:
           $summaryLines | Add-Content -Path $env:GITHUB_STEP_SUMMARY
           $summaryLines | Set-Content -Path $summaryMarkdownPath -Encoding UTF8
 
+          $aliasSummaryArray = @($aliasSummaries.ToArray())
+          $aliasesWithFloorPins = @()
+          $aliasesWithAutoApplyDispatch = @()
+          foreach ($aliasSummary in $aliasSummaryArray) {
+            if ($aliasSummary.floorPinnedCount -gt 0) {
+              $aliasesWithFloorPins += $aliasSummary.alias
+            }
+
+            if ($aliasSummary.autoApplyDispatched -eq $true) {
+              $aliasesWithAutoApplyDispatch += $aliasSummary.alias
+            }
+          }
+
           [pscustomobject]@{
             workflowRunId = '${{ github.run_id }}'
             workflowName = '${{ github.workflow }}'
@@ -223,9 +236,9 @@ jobs:
             lowCapacityThreshold = $threshold
             recommendedFloorCapacity = $recommendedFloor
             aliasCount = $aliases.Count
-            aliasesWithFloorPins = @(@($aliasSummaries) | Where-Object { $_.floorPinnedCount -gt 0 } | ForEach-Object { $_.alias })
-            aliasesWithAutoApplyDispatch = @(@($aliasSummaries) | Where-Object { $_.autoApplyDispatched -eq $true } | ForEach-Object { $_.alias })
-            aliases = @($aliasSummaries)
+            aliasesWithFloorPins = $aliasesWithFloorPins
+            aliasesWithAutoApplyDispatch = $aliasesWithAutoApplyDispatch
+            aliases = $aliasSummaryArray
           } | ConvertTo-Json -Depth 8 | Set-Content -Path $summaryJsonPath -Encoding UTF8
 
       - name: Upload quota audit artifacts
