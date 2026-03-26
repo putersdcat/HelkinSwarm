@@ -95,17 +95,15 @@ customEvents
 
 ## Alert hooks
 
-### Implemented alert: floor-pinned quota detected
+### Defined alert hook: floor-pinned quota detected
 
-`infra/main.bicep` defines a scheduled query rule that fires when a `QuotaMaintenanceBaseline` event reports `floorPinnedCount > 0` for the stamp.
+The concrete alert hook for quota floor-pin detection is defined here for use in Azure Monitor / Application Insights alerting.
 
 Recommended KQL shape:
 
 ```kusto
 customEvents
-| where name == 'QuotaMaintenanceBaseline'
-| extend FloorPinnedCount = todouble(customMeasurements['floorPinnedCount'])
-| where FloorPinnedCount > 0
+| where name == 'QuotaMaintenanceFloorPinned'
 ```
 
 ### Additional alert ideas
