@@ -280,13 +280,7 @@ jobs:
             routerUamiId="${{ vars.ROUTER_UAMI_ID }}"
             createOAuthConnection=${OAUTH_UPDATE_SHOULD_RUN}
             delegatedAuthClientSecret="$DELEGATED_SECRET"
-            quotaStrategy="${QUOTA_STRATEGY}"
-            quotaMaxTPMCeiling="${QUOTA_MAX_TPM_CEILING}"
           )
-
-          if [ -n "$MODEL_QUOTA_OVERRIDES_JSON" ]; then
-            DEPLOY_CMD+=(modelQuotaOverrides="$MODEL_QUOTA_OVERRIDES_JSON")
-          fi
 
           DEPLOY_CMD+=(--output json)
           DEPLOY_OUT=$("${DEPLOY_CMD[@]}" 2>&1)
@@ -328,6 +322,30 @@ jobs:
           fi
 
           echo "✅ Bicep deployment complete for stamp '${{ env.USER_ALIAS }}'"
+
+      - name: Deploy AI model deployments
+        if: steps.changes.outputs.infraChanged == 'true'
+        run: |
+          set -e
+          QUOTA_STRATEGY="${{ github.event.inputs.QUOTA_STRATEGY || 'maximize' }}"
+          QUOTA_MAX_TPM_CEILING="${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '200000' }}"
+          MODEL_QUOTA_OVERRIDES_JSON='${{ github.event.inputs.MODEL_QUOTA_OVERRIDES_JSON || '' }}'
+
+          DEPLOY_CMD=(az deployment group create
+            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}"
+            --resource-group "${{ env.RESOURCE_GROUP }}"
+            --template-file infra/ai-deployments.bicep
+            --parameters
+            aiServicesName="helkinswarm-ai-${{ env.USER_ALIAS }}"
+            quotaStrategy="${QUOTA_STRATEGY}"
+            quotaMaxTPMCeiling="${QUOTA_MAX_TPM_CEILING}"
+            --output json)
+
+          if [ -n "$MODEL_QUOTA_OVERRIDES_JSON" ]; then
+            DEPLOY_CMD+=(modelQuotaOverrides="$MODEL_QUOTA_OVERRIDES_JSON")
+          fi
+
+          "${DEPLOY_CMD[@]}"
 
       - name: Query deployed resources
         id: query
