@@ -223,8 +223,8 @@ jobs:
             lowCapacityThreshold = $threshold
             recommendedFloorCapacity = $recommendedFloor
             aliasCount = $aliases.Count
-            aliasesWithFloorPins = @($aliasSummaries | Where-Object { $_.floorPinnedCount -gt 0 } | ForEach-Object { $_.alias })
-            aliasesWithAutoApplyDispatch = @($aliasSummaries | Where-Object { $_.autoApplyDispatched } | ForEach-Object { $_.alias })
+            aliasesWithFloorPins = @(@($aliasSummaries) | Where-Object { $_.floorPinnedCount -gt 0 } | ForEach-Object { $_.alias })
+            aliasesWithAutoApplyDispatch = @(@($aliasSummaries) | Where-Object { $_.autoApplyDispatched -eq $true } | ForEach-Object { $_.alias })
             aliases = @($aliasSummaries)
           } | ConvertTo-Json -Depth 8 | Set-Content -Path $summaryJsonPath -Encoding UTF8
 
