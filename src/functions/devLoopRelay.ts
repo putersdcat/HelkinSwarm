@@ -21,6 +21,7 @@ import {
 import { ResurrectionCommandSchema } from '../devloop/radioProtocol.js';
 import type { NewMessageEvent } from '../orchestrator/overseer.js';
 import { trackEvent } from '../observability/telemetry.js';
+import { getTraceTree } from '../observability/sessionTracer.js';
 
 // ---------------------------------------------------------------------------
 // Zod schemas for request validation
@@ -186,6 +187,51 @@ app.http('devloopThread', {
     return {
       status: 200,
       jsonBody: { correlationTag, messages, count: messages.length },
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/devloop/session-bundle/{correlationTag} — joined runtime trace bundle
+// ---------------------------------------------------------------------------
+
+app.http('devloopSessionBundle', {
+  methods: ['GET'],
+  authLevel: 'function',
+  route: 'devloop/session-bundle/{correlationTag}',
+  handler: async (req: HttpRequest): Promise<HttpResponseInit> => {
+    const userId = req.headers.get('x-helkinswarm-user-id');
+    if (!userId || !(await isOwnerUserId(userId))) {
+      return { status: 403, jsonBody: { error: 'Owner-only endpoint.' } };
+    }
+
+    const correlationTag = req.params.correlationTag;
+    if (!correlationTag) {
+      return { status: 400, jsonBody: { error: 'Missing correlationTag parameter.' } };
+    }
+
+    const messages = await getMessagesByCorrelation(correlationTag);
+    const traceTree = getTraceTree(correlationTag) ?? null;
+
+    trackEvent({
+      name: 'DevLoopRelayPoll',
+      correlationId: correlationTag,
+      userId,
+      properties: {
+        endpoint: 'session-bundle',
+        relayMessageCount: messages.length,
+        traceTreePresent: traceTree !== null,
+      },
+    });
+
+    return {
+      status: 200,
+      jsonBody: {
+        correlationTag,
+        relayMessages: messages,
+        relayMessageCount: messages.length,
+        traceTree,
+      },
     };
   },
 });

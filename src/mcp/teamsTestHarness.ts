@@ -60,6 +60,7 @@ const REPO_ROOT = join(__dirname, '..', '..', '..'); // dist-mcp/src/mcp → rep
 
 const SETTINGS_PATH = join(REPO_ROOT, '.vscode', 'mcp-settings.json');
 const APP_INSIGHTS_QUERY_SCRIPT = join(REPO_ROOT, 'scripts', 'Invoke-AzOperationalInsightsQuery.ps1');
+const RUNTIME_SESSION_BUNDLE_SCRIPT = join(REPO_ROOT, 'scripts', 'Invoke-DevLoopSessionBundle.ps1');
 const STAMP_USER_ALIAS = 'a7f2';
 // Persist cache outside the repo so it survives workspace resets and re-clones.
 // One device-code auth per machine; refresh token persists ~90 days silently.
@@ -328,6 +329,33 @@ async function queryAppInsightsForCorrelation(correlationTag: string): Promise<u
         '00:30:00',
         '-OutputFormat',
         'Json',
+      ],
+      { cwd: REPO_ROOT, maxBuffer: 1024 * 1024 },
+    );
+
+    return JSON.parse(stdout) as unknown;
+  } catch (error) {
+    return { available: false, error: String(error) };
+  }
+}
+
+async function queryRuntimeSessionBundleForCorrelation(correlationTag: string): Promise<unknown> {
+  if (!existsSync(RUNTIME_SESSION_BUNDLE_SCRIPT)) {
+    return { available: false, error: 'Runtime session bundle script not found.' };
+  }
+
+  try {
+    const { stdout } = await execFileAsync(
+      'pwsh',
+      [
+        '-NoProfile',
+        '-File',
+        RUNTIME_SESSION_BUNDLE_SCRIPT,
+        '-UserAlias',
+        STAMP_USER_ALIAS,
+        '-CorrelationTag',
+        correlationTag,
+        '-PassThru',
       ],
       { cwd: REPO_ROOT, maxBuffer: 1024 * 1024 },
     );
@@ -772,6 +800,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       const insightCandidates = extractAppInsightsCandidates(bundle);
       let appInsights: unknown = { available: false, reason: 'No correlation tag available for App Insights lookup.' };
+      let runtimeTrace: unknown = { available: false, reason: 'No correlation tag available for runtime trace lookup.' };
 
       if (insightCandidates.length > 0) {
         const attempts: Array<{ candidate: string; result: unknown }> = [];
@@ -793,6 +822,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           result: firstNonEmpty ?? attempts[0]?.result ?? null,
           attempts,
         };
+
+        const runtimeAttempts: Array<{ candidate: string; result: unknown }> = [];
+        let firstRuntimeMatch: unknown | null = null;
+
+        for (const candidate of insightCandidates) {
+          const result = await queryRuntimeSessionBundleForCorrelation(candidate);
+          runtimeAttempts.push({ candidate, result });
+
+          const parsed = result as {
+            bundle?: { relayMessageCount?: number; traceTree?: unknown | null };
+          };
+          const relayCount = parsed.bundle?.relayMessageCount ?? 0;
+          const hasTraceTree = parsed.bundle?.traceTree !== null && parsed.bundle?.traceTree !== undefined;
+          if (!firstRuntimeMatch && (relayCount > 0 || hasTraceTree)) {
+            firstRuntimeMatch = result;
+          }
+        }
+
+        runtimeTrace = {
+          candidates: insightCandidates,
+          selected: firstRuntimeMatch ?? runtimeAttempts[0]?.candidate ?? null,
+          result: firstRuntimeMatch ?? runtimeAttempts[0]?.result ?? null,
+          attempts: runtimeAttempts,
+        };
       }
 
       return {
@@ -802,6 +855,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             inspected: count,
             bundle,
             runtime: health,
+            runtimeTrace,
             appInsights,
           }, null, 2),
         }],
