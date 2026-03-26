@@ -18,6 +18,11 @@ on:
         required: false
         type: number
         default: 1
+      RECOMMENDED_FLOOR_CAPACITY:
+        description: "Suggested replacement capacity (1k TPM units) for floor-pinned deployments in the generated override snippet."
+        required: false
+        type: number
+        default: 5
   schedule:
     - cron: '17 12 * * 1'
 
@@ -60,14 +65,18 @@ jobs:
         shell: pwsh
         run: |
           $threshold = [int]${{ github.event.inputs.LOW_CAPACITY_THRESHOLD || 1 }}
+          $recommendedFloor = [int]${{ github.event.inputs.RECOMMENDED_FLOOR_CAPACITY || 5 }}
           $result = & "$PWD/scripts/Invoke-AzFoundryQuotaAudit.ps1" `
             -UserAlias "${{ env.USER_ALIAS }}" `
             -ResourceGroupName "${{ env.RESOURCE_GROUP }}" `
             -LowCapacityThreshold $threshold `
+            -RecommendedFloorCapacity $recommendedFloor `
             -OutputFormat Json | ConvertFrom-Json
 
           $summaryPath = Join-Path $PWD 'quota-audit.json'
           $result | ConvertTo-Json -Depth 8 | Set-Content -Path $summaryPath -Encoding UTF8
+          $overridesPath = Join-Path $PWD 'quota-overrides.json'
+          $result.recommendations.modelQuotaOverrides | ConvertTo-Json -Depth 5 | Set-Content -Path $overridesPath -Encoding UTF8
 
           $rows = @($result.deployments | Sort-Object DeploymentName)
           $low = @($result.summary.lowCapacityDeployments)
@@ -79,6 +88,7 @@ jobs:
             "- AI Services: $($result.summary.aiServicesName)",
             "- Total requested capacity: $($result.summary.totalRequestedCapacity) (1k TPM units)",
             "- Low-capacity threshold: $threshold",
+            "- Suggested floor capacity for overrides: $recommendedFloor",
             '',
             '| Deployment | SKU | Capacity | Model | State |',
             '|---|---|---:|---|---|'
@@ -94,6 +104,11 @@ jobs:
             foreach ($row in $low) {
               $summaryLines += "- $($row.DeploymentName) at $($row.Capacity)k TPM"
             }
+            $summaryLines += ''
+            $summaryLines += '### Suggested modelQuotaOverrides snippet'
+            $summaryLines += '```json'
+            $summaryLines += (Get-Content -Path $overridesPath -Raw).TrimEnd()
+            $summaryLines += '```'
             Write-Host "Found $($low.Count) deployment(s) at or below ${threshold}k TPM."
           } else {
             $summaryLines += ''
@@ -102,3 +117,11 @@ jobs:
           }
 
           $summaryLines | Add-Content -Path $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload quota audit artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: quota-audit-${{ env.USER_ALIAS }}
+          path: |
+            quota-audit.json
+            quota-overrides.json

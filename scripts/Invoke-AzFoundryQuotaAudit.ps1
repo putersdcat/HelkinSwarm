@@ -16,6 +16,9 @@ param(
   [int]$LowCapacityThreshold = 1,
 
   [Parameter()]
+  [int]$RecommendedFloorCapacity = 5,
+
+  [Parameter()]
   [ValidateSet('Json', 'Table')]
   [string]$OutputFormat = 'Json'
 )
@@ -63,9 +66,18 @@ $summary = [pscustomobject]@{
   totalRequestedCapacity = (@($rows | Measure-Object -Property Capacity -Sum).Sum ?? 0)
 }
 
+$recommendedOverrides = [ordered]@{}
+foreach ($row in $summary.lowCapacityDeployments) {
+  $recommendedOverrides[$row.DeploymentName] = [Math]::Max([int]$row.Capacity, $RecommendedFloorCapacity)
+}
+
 $result = [pscustomobject]@{
   summary = $summary
   deployments = @($rows)
+  recommendations = [pscustomobject]@{
+    recommendedFloorCapacity = $RecommendedFloorCapacity
+    modelQuotaOverrides = [pscustomobject]$recommendedOverrides
+  }
 }
 
 if ($OutputFormat -eq 'Table') {
