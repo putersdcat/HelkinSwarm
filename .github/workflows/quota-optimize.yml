@@ -213,10 +213,10 @@ jobs:
           }
 
           $header = @(
-            "Automated quota maintenance summary from workflow run `${{ github.run_id }}`.",
+            "Automated quota maintenance summary from workflow run ${{ github.run_id }}.",
             '',
-            "Workflow: `${{ github.workflow }}`",
-            "Ref: `${{ github.ref_name }}`",
+            "Workflow: ${{ github.workflow }}",
+            "Ref: ${{ github.ref_name }}",
             ''
           ) -join "`n"
 
