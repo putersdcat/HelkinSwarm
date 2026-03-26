@@ -27,6 +27,24 @@ on:
         description: "4-char alphanumeric user alias (e.g. a7f2). Defaults to vars.USER_ALIAS."
         required: false
         type: string
+      QUOTA_STRATEGY:
+        description: "Quota allocation strategy for AI deployments."
+        required: false
+        type: choice
+        default: maximize
+        options:
+          - maximize
+          - minimize
+          - manual
+      QUOTA_MAX_TPM_CEILING:
+        description: "Maximum total requested AI deployment capacity in TPM."
+        required: false
+        type: number
+        default: 200000
+      MODEL_QUOTA_OVERRIDES_JSON:
+        description: "Optional JSON object for Bicep modelQuotaOverrides, e.g. {\"FW-MiniMax-M2.5\":5}."
+        required: false
+        type: string
       EU_RESIDENCY_MODE:
         description: "Enable EU Data Residency (DataZoneStandard models)"
         required: false
@@ -74,6 +92,28 @@ jobs:
             exit 1
           fi
           echo "✅ USER_ALIAS '$ALIAS' is valid"
+
+      - name: Validate quota override inputs
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          STRATEGY="${{ github.event.inputs.QUOTA_STRATEGY || 'maximize' }}"
+          CEILING="${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '200000' }}"
+          OVERRIDES='${{ github.event.inputs.MODEL_QUOTA_OVERRIDES_JSON || '' }}'
+
+          if ! echo "$STRATEGY" | grep -qE '^(maximize|minimize|manual)$'; then
+            echo "❌ Invalid QUOTA_STRATEGY: '$STRATEGY'"
+            exit 1
+          fi
+
+          if ! echo "$CEILING" | grep -qE '^[0-9]+$'; then
+            echo "❌ QUOTA_MAX_TPM_CEILING must be numeric. Got: '$CEILING'"
+            exit 1
+          fi
+
+          if [ -n "$OVERRIDES" ]; then
+            echo "$OVERRIDES" | jq -e . >/dev/null
+            echo "✅ MODEL_QUOTA_OVERRIDES_JSON is valid JSON"
+          fi
 
   # ─────────────────────────────────────────────────────────────────────────
   # 2. Deploy Infrastructure (Bicep)
@@ -199,23 +239,43 @@ jobs:
           fi
 
           CICD_PRINCIPAL_ID="${{ env.AZURE_CLIENT_OBJECT_ID }}"
+          QUOTA_STRATEGY="${{ github.event.inputs.QUOTA_STRATEGY || 'maximize' }}"
+          QUOTA_MAX_TPM_CEILING="${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '200000' }}"
+          MODEL_QUOTA_OVERRIDES_JSON='${{ github.event.inputs.MODEL_QUOTA_OVERRIDES_JSON || '' }}'
+
           echo "ℹ️ CICD principal object id: ${CICD_PRINCIPAL_ID}"
 
-          DEPLOY_OUT=$(az deployment group create \
-            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}" \
-            --resource-group "${{ env.RESOURCE_GROUP }}" \
-            --template-file infra/main.bicep \
-            --parameters "@infra/main.parameters.json" \
-              userAlias="${{ env.USER_ALIAS }}" \
-              userPrincipalId="${{ vars.USER_PRINCIPAL_ID }}" \
-              cicdPrincipalId="${CICD_PRINCIPAL_ID}" \
-              alertEmail="${{ vars.ALERT_EMAIL }}" \
-              euResidencyMode=${{ github.event.inputs.EU_RESIDENCY_MODE || 'false' }} \
-              routerBotId="${{ vars.BOT_APP_ID }}" \
-              routerUamiId="${{ vars.ROUTER_UAMI_ID }}" \
-              createOAuthConnection=${OAUTH_UPDATE_SHOULD_RUN} \
-              delegatedAuthClientSecret="$DELEGATED_SECRET" \
-            --output json 2>&1)
+          echo "ℹ️ Quota strategy: ${QUOTA_STRATEGY}"
+          echo "ℹ️ Quota max TPM ceiling: ${QUOTA_MAX_TPM_CEILING}"
+          if [ -n "$MODEL_QUOTA_OVERRIDES_JSON" ]; then
+            echo "$MODEL_QUOTA_OVERRIDES_JSON" | jq -e . >/dev/null
+            echo "ℹ️ Applying modelQuotaOverrides JSON from workflow input"
+          fi
+
+          DEPLOY_CMD=(az deployment group create
+            --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}"
+            --resource-group "${{ env.RESOURCE_GROUP }}"
+            --template-file infra/main.bicep
+            --parameters "@infra/main.parameters.json"
+            userAlias="${{ env.USER_ALIAS }}"
+            userPrincipalId="${{ vars.USER_PRINCIPAL_ID }}"
+            cicdPrincipalId="${CICD_PRINCIPAL_ID}"
+            alertEmail="${{ vars.ALERT_EMAIL }}"
+            euResidencyMode=${{ github.event.inputs.EU_RESIDENCY_MODE || 'false' }}
+            routerBotId="${{ vars.BOT_APP_ID }}"
+            routerUamiId="${{ vars.ROUTER_UAMI_ID }}"
+            createOAuthConnection=${OAUTH_UPDATE_SHOULD_RUN}
+            delegatedAuthClientSecret="$DELEGATED_SECRET"
+            quotaStrategy="${QUOTA_STRATEGY}"
+            quotaMaxTPMCeiling="${QUOTA_MAX_TPM_CEILING}"
+          )
+
+          if [ -n "$MODEL_QUOTA_OVERRIDES_JSON" ]; then
+            DEPLOY_CMD+=(modelQuotaOverrides="$MODEL_QUOTA_OVERRIDES_JSON")
+          fi
+
+          DEPLOY_CMD+=(--output json)
+          DEPLOY_OUT=$("${DEPLOY_CMD[@]}" 2>&1)
           DEPLOY_EXIT=$?
 
           if [ $DEPLOY_EXIT -ne 0 ]; then
