@@ -66,7 +66,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
    * Static: survives across per-request HelkinSwarmBot instances within the same container.
    */
   private static readonly recentActivityIds = new Map<string, number>();
-  private static readonly DEDUP_TTL_MS = 30_000;
+  private static readonly DEDUP_TTL_MS = 60_000;
 
   private async sendFreshMessage(
     context: TurnContext,
@@ -560,8 +560,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     // This avoids Azure Storage history accumulation (#280) — purgeInstanceHistory
     // does NOT delete history events from the History table, so reusing the same
     // instanceId causes unbounded replay growth.
-    const turnId = crypto.randomUUID().slice(0, 8);
-    const instanceId = `overseer-${userId}-${turnId}`;
+    //
+    // Use activity.id (Teams-assigned) as the instance suffix for natural dedup (#300).
+    // If Teams retries the same activity to a different container replica, the second
+    // startNew() call will fail with 409 (instance already running) — caught below.
+    const activitySuffix = context.activity.id ?? crypto.randomUUID().slice(0, 8);
+    const instanceId = `overseer-${userId}-${activitySuffix}`;
 
     const conversationReference = TurnContextClass.getConversationReference(
       context.activity,
@@ -580,7 +584,17 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       ...(quotedContext !== undefined ? { quotedContext } : {}),
     };
 
-    await client.startNew('overseer', { instanceId, input: event });
+    try {
+      await client.startNew('overseer', { instanceId, input: event });
+    } catch (err: unknown) {
+      // 409 = instance already exists (duplicate delivery from Teams) — safe to ignore (#300)
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('409') || msg.includes('already exists') || msg.includes('conflict')) {
+        console.info(`[HelkinSwarmBot] Duplicate overseer ${instanceId} — skipping (Teams retry dedup)`);
+        return;
+      }
+      throw err;
+    }
   }
 
   /** /forge <idea> — SkillForge entry point (owner-only). */
