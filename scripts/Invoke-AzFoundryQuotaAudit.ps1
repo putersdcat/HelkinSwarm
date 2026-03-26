@@ -67,8 +67,15 @@ $summary = [pscustomobject]@{
 }
 
 $recommendedOverrides = [ordered]@{}
-foreach ($row in $summary.lowCapacityDeployments) {
-  $recommendedOverrides[$row.DeploymentName] = [Math]::Max([int]$row.Capacity, $RecommendedFloorCapacity)
+$fullRecommendedOverrides = [ordered]@{}
+foreach ($row in $rows) {
+  $targetCapacity = [int]$row.Capacity
+  if ($targetCapacity -le $LowCapacityThreshold) {
+    $targetCapacity = [Math]::Max($targetCapacity, $RecommendedFloorCapacity)
+    $recommendedOverrides[$row.DeploymentName] = $targetCapacity
+  }
+
+  $fullRecommendedOverrides[$row.DeploymentName] = $targetCapacity
 }
 
 $result = [pscustomobject]@{
@@ -77,6 +84,7 @@ $result = [pscustomobject]@{
   recommendations = [pscustomobject]@{
     recommendedFloorCapacity = $RecommendedFloorCapacity
     modelQuotaOverrides = [pscustomobject]$recommendedOverrides
+    fullModelQuotaOverrides = [pscustomobject]$fullRecommendedOverrides
   }
 }
 

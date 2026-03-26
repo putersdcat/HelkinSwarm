@@ -129,6 +129,9 @@ jobs:
             $overridesPath = Join-Path $aliasDir 'quota-overrides.json'
             $overrideJson = $result.recommendations.modelQuotaOverrides | ConvertTo-Json -Compress -Depth 5
             $overrideJson | Set-Content -Path $overridesPath -Encoding UTF8
+            $fullOverridesPath = Join-Path $aliasDir 'quota-overrides-full.json'
+            $fullOverrideJson = $result.recommendations.fullModelQuotaOverrides | ConvertTo-Json -Compress -Depth 5
+            $fullOverrideJson | Set-Content -Path $fullOverridesPath -Encoding UTF8
 
             $rows = @($result.deployments | Sort-Object DeploymentName)
             $low = @($result.summary.lowCapacityDeployments)
@@ -163,7 +166,7 @@ jobs:
                   -f USER_ALIAS=$alias `
                   -f QUOTA_STRATEGY=manual `
                   -f QUOTA_MAX_TPM_CEILING=200000 `
-                  -f MODEL_QUOTA_OVERRIDES_JSON=$overrideJson `
+                  -f MODEL_QUOTA_OVERRIDES_JSON=$fullOverrideJson `
                   -f EU_RESIDENCY_MODE=false `
                   -f CREATE_OAUTH_CONNECTION=false | Out-Null
 
