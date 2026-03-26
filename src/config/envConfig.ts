@@ -21,6 +21,8 @@ const EnvConfigSchema = z.object({
   azureAiFoundryEndpoint: z.string().url('AZURE_AI_FOUNDRY_ENDPOINT must be a valid URL').optional(),
   llmPrimaryModel: z.string().default('grok-4-1-fast-non-reasoning'),
   llmSecondaryModel: z.string().default('grok-4-1-fast-non-reasoning'),
+  llmFallbackPrimary: z.string().default('gpt-5.4-mini'),
+  llmFallbackSecondary: z.string().optional(),
   llmEmbeddingModel: z.string().default('text-embedding-3-large'),
 
   // Cosmos DB
@@ -78,6 +80,8 @@ function loadFromEnv(): EnvConfig {
     azureAiFoundryEndpoint: process.env['AZURE_AI_FOUNDRY_ENDPOINT'] || undefined,
     llmPrimaryModel: process.env['LLM_PRIMARY_MODEL'] || undefined,
     llmSecondaryModel: process.env['LLM_SECONDARY_MODEL'] || undefined,
+    llmFallbackPrimary: process.env['LLM_FALLBACK_PRIMARY'] || undefined,
+    llmFallbackSecondary: process.env['LLM_FALLBACK_SECONDARY'] || undefined,
     llmEmbeddingModel: process.env['LLM_EMBEDDING_MODEL'] || undefined,
     cosmosEndpoint: process.env['COSMOS_ENDPOINT'] || undefined,
     cosmosDatabase: process.env['COSMOS_DATABASE'] || undefined,

@@ -2,7 +2,11 @@
 // Spec ref: 06-Tool-Dispatch-LLM-Layer.md
 
 import * as df from 'durable-functions';
-import { FoundryClient } from '../llm/foundryClient.js';
+import {
+  buildLlmFailureNotice,
+  buildSuccessfulFailoverNotices,
+  FoundryClient,
+} from '../llm/foundryClient.js';
 import {
   getDirectChatModelIncompatibilityReason,
   getModelRouting,
@@ -22,6 +26,7 @@ export interface LlmResult {
   promptTokens: number;
   toolCalls: Array<{ id: string; name: string; arguments: string }>;
   finishReason: string;
+  operationalNotices: string[];
 }
 
 df.app.activity('llmActivity', {
@@ -61,6 +66,7 @@ df.app.activity('llmActivity', {
           promptTokens: 0,
           toolCalls: [],
           finishReason: 'error',
+          operationalNotices: [],
         };
       }
       deploymentName = input.modelOverride;
@@ -140,20 +146,24 @@ df.app.activity('llmActivity', {
         promptTokens: response.usage.promptTokens,
         toolCalls,
         finishReason: choice.finishReason,
+        operationalNotices: buildSuccessfulFailoverNotices(response.failoverSteps),
       };
     } catch (err) {
+      const notice = buildLlmFailureNotice(err);
       trackEvent({ name: 'LlmCallFailed', correlationId, properties: {
         error: err instanceof Error ? err.message : String(err),
+        userNotice: notice,
       } });
       console.error(`[llmActivity] LLM call failed: correlationId=${correlationId}`, err);
-      // Return a graceful error result — orchestrator handles the failure
+      // Return a graceful operational notice instead of leaking raw provider errors.
       return {
-        content: `LLM call failed: ${err instanceof Error ? err.message : String(err)}`,
+        content: notice,
         model: routing.deploymentName,
         tokensUsed: 0,
         promptTokens: 0,
         toolCalls: [],
         finishReason: 'error',
+        operationalNotices: [],
       };
     }
   },

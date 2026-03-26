@@ -6,7 +6,12 @@
 // Spec ref: 06-Tool-Dispatch-LLM-Layer.md
 
 import * as df from 'durable-functions';
-import { FoundryClient, sanitizeRemoteErrorText, textContent } from '../llm/foundryClient.js';
+import {
+  buildLlmFailureNotice,
+  buildSuccessfulFailoverNotices,
+  FoundryClient,
+  textContent,
+} from '../llm/foundryClient.js';
 import { getDirectChatModelIncompatibilityReason, getModelRouting } from '../llm/modelRouter.js';
 import type { ChatMessage, ChatCompletionResponse, ToolDefinition } from '../llm/foundryClient.js';
 import type { LlmResult } from './llmActivity.js';
@@ -72,6 +77,7 @@ df.app.activity('llmFollowUpActivity', {
           promptTokens: 0,
           toolCalls: [],
           finishReason: 'error',
+          operationalNotices: [],
         };
       }
       deploymentName = input.modelOverride;
@@ -183,6 +189,7 @@ df.app.activity('llmFollowUpActivity', {
           promptTokens: response.usage.promptTokens,
           toolCalls: retryToolCalls,
           finishReason: choice.finishReason,
+          operationalNotices: buildSuccessfulFailoverNotices(response.failoverSteps),
         };
       }
 
@@ -227,18 +234,17 @@ df.app.activity('llmFollowUpActivity', {
         promptTokens: response.usage.promptTokens,
         toolCalls: [],
         finishReason: choice.finishReason,
+        operationalNotices: buildSuccessfulFailoverNotices(response.failoverSteps),
       };
     } catch (err) {
-      // Sanitize error message to prevent HTML/junk from provider responses leaking to Teams (#234, #286)
-      const rawMsg = err instanceof Error ? err.message : String(err);
-      const safeMsg = sanitizeRemoteErrorText(rawMsg, 300);
       return {
-        content: `Follow-up LLM call failed: ${safeMsg}`,
+        content: buildLlmFailureNotice(err),
         model: routing.deploymentName,
         tokensUsed: 0,
         promptTokens: 0,
         toolCalls: [],
         finishReason: 'error',
+        operationalNotices: [],
       };
     }
   },

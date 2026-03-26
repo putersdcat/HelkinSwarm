@@ -20,7 +20,7 @@ export interface ModelLane {
   vision?: string;
 }
 
-const GLOBAL_LANE: ModelLane = {
+const GLOBAL_LANE_DEFAULTS: ModelLane = {
   primary: 'grok-4-1-fast-non-reasoning',
   secondary: 'grok-4-1-fast-non-reasoning',
   embedding: 'text-embedding-3-large',
@@ -29,7 +29,7 @@ const GLOBAL_LANE: ModelLane = {
   vision: 'gpt-5.4-mini', // vision-capable fallback
 };
 
-const EU_LANE: ModelLane = {
+const EU_LANE_DEFAULTS: ModelLane = {
   // DataZoneStandard deployments only — data stays within EU boundary.
   // Grok models are already DataZoneStandard in Bicep.
   primary: 'grok-4-1-fast-reasoning',
@@ -77,23 +77,57 @@ function isEuResidencyModeEnabledForDirectOverrides(): boolean {
   return process.env['EU_RESIDENCY_MODE']?.toLowerCase() === 'true';
 }
 
+function getGlobalLane(config: ReturnType<typeof getEnvConfig>): ModelLane {
+  return {
+    primary: config.llmPrimaryModel,
+    secondary: config.llmSecondaryModel,
+    embedding: config.llmEmbeddingModel,
+    reasoning: GLOBAL_LANE_DEFAULTS.reasoning,
+    vision: config.llmFallbackPrimary || GLOBAL_LANE_DEFAULTS.vision,
+  };
+}
+
+function getEuLane(config: ReturnType<typeof getEnvConfig>): ModelLane {
+  return {
+    primary: EU_LANE_DEFAULTS.primary,
+    secondary: config.llmSecondaryModel || EU_LANE_DEFAULTS.secondary,
+    embedding: config.llmEmbeddingModel,
+    reasoning: EU_LANE_DEFAULTS.reasoning,
+    vision: config.llmFallbackPrimary || GLOBAL_LANE_DEFAULTS.vision,
+  };
+}
+
+function isReasoningDeploymentName(deploymentName: string, lane: ModelLane): boolean {
+  return deploymentName === lane.reasoning || deploymentName.includes('reasoning') || deploymentName.startsWith('o');
+}
+
+function createRoutingEntry(base: ModelRouting, deploymentName: string): ModelRouting {
+  return {
+    ...base,
+    deploymentName,
+    isReasoning: isReasoningDeploymentName(deploymentName, base.lane),
+  };
+}
+
 function getAzureRouting(config: ReturnType<typeof getEnvConfig>): ModelRouting {
   if (config.euResidencyMode) {
+    const lane = getEuLane(config);
     return {
-      lane: EU_LANE,
+      lane,
       laneName: 'eu',
       isReasoning: true,
-      deploymentName: EU_LANE.primary,
+      deploymentName: lane.primary,
       apiBase: config.azureAiFoundryEndpoint ?? '',
       usesObo: true,
     };
   }
 
-  const deploymentName = config.llmPrimaryModel;
+  const lane = getGlobalLane(config);
+  const deploymentName = lane.primary;
   return {
-    lane: GLOBAL_LANE,
+    lane,
     laneName: 'global',
-    isReasoning: deploymentName === GLOBAL_LANE.reasoning || deploymentName.includes('reasoning'),
+    isReasoning: isReasoningDeploymentName(deploymentName, lane),
     deploymentName,
     apiBase: config.azureAiFoundryEndpoint ?? '',
     usesObo: true,
@@ -130,24 +164,38 @@ export function getModelForTask(task: 'reasoning' | 'fast' | 'embedding' | 'visi
 }
 
 /**
- * Returns an ordered fallback chain of ModelRouting objects: primary → secondary
- * → BYOK (if configured). Deduplicated by deployment name.
- * Used by FoundryClient to cascade through models on throttle/failure (#152).
+ * Returns an ordered fallback chain of ModelRouting objects for the requested deployment.
+ * Ordering is slot-aware: requested deployment → slot fallback(s) → sibling slot(s).
+ * Deduplicated by deployment name. Used by FoundryClient to cascade on throttle/failure (#152).
  */
-export function getFallbackChain(): ModelRouting[] {
-  const primary = getModelRouting();
-  const chain: ModelRouting[] = [primary];
-  const seen = new Set<string>([primary.deploymentName]);
+export function getFallbackChain(requestedDeploymentName?: string): ModelRouting[] {
+  const routing = getModelRouting();
+  const config = getEnvConfig();
+  const requested = requestedDeploymentName ?? routing.deploymentName;
+  const candidates: Array<string | undefined> = [requested];
 
-  // Secondary model in the same lane
-  const secondaryName = primary.lane.secondary;
-  if (secondaryName && !seen.has(secondaryName)) {
-    seen.add(secondaryName);
-    chain.push({
-      ...primary,
-      deploymentName: secondaryName,
-      isReasoning: false,
-    });
+  if (requested === routing.lane.primary) {
+    candidates.push(config.llmFallbackPrimary, routing.lane.secondary, config.llmFallbackSecondary);
+  } else if (requested === routing.lane.secondary) {
+    candidates.push(config.llmFallbackSecondary, config.llmFallbackPrimary, routing.lane.primary);
+  } else {
+    candidates.push(config.llmFallbackPrimary, routing.lane.secondary, routing.lane.primary, config.llmFallbackSecondary);
+  }
+
+  if (routing.lane.vision) {
+    candidates.push(routing.lane.vision);
+  }
+
+  const chain: ModelRouting[] = [];
+  const seen = new Set<string>();
+
+  for (const deploymentName of candidates) {
+    if (!deploymentName || seen.has(deploymentName)) {
+      continue;
+    }
+
+    seen.add(deploymentName);
+    chain.push(createRoutingEntry(routing, deploymentName));
   }
 
   // OpenRouter / BYOK fallback intentionally disabled (#286).

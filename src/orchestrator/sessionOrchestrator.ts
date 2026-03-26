@@ -97,6 +97,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // Cumulative token tracking across all LLM calls in this session (#253)
   let cumulativeTokensUsed = llmResult.tokensUsed;
   let cumulativePromptTokens = llmResult.promptTokens;
+  const operationalNotices = new Set(llmResult.operationalNotices ?? []);
 
   // 3. If LLM returned tool calls, run the safety pipeline
   let toolResults: ToolDispatchResult | null = null;
@@ -329,6 +330,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       let followUp: LlmResult = yield context.df.callActivity('llmFollowUpActivity', followUpInput);
       cumulativeTokensUsed += followUp.tokensUsed;
       cumulativePromptTokens += followUp.promptTokens;
+      for (const notice of followUp.operationalNotices ?? []) {
+        operationalNotices.add(notice);
+      }
 
       // Multi-round loop: if the follow-up LLM requests more tool calls,
       // dispatch them and call the LLM again. This replaces the old 2-iteration
@@ -379,6 +383,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           followUp = yield context.df.callActivity('llmFollowUpActivity', truncRetryInput);
           cumulativeTokensUsed += followUp.tokensUsed;
           cumulativePromptTokens += followUp.promptTokens;
+          for (const notice of followUp.operationalNotices ?? []) {
+            operationalNotices.add(notice);
+          }
           break; // Truncation retry is terminal — don't loop further
         }
 
@@ -440,6 +447,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         followUp = yield context.df.callActivity('llmFollowUpActivity', roundFollowUpInput);
         cumulativeTokensUsed += followUp.tokensUsed;
         cumulativePromptTokens += followUp.promptTokens;
+        for (const notice of followUp.operationalNotices ?? []) {
+          operationalNotices.add(notice);
+        }
       }
 
       responseContent = followUp.content;
@@ -455,12 +465,14 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // 5. Send reply to Teams (proactive)
   // For DevLoop sessions, wrap the response in protocol format (#147, #92)
   const cleanResponse = responseContent; // Preserve pre-decoration LLM output for recentHistory
-  let replyMessage = responseContent;
+  const displayResponse = operationalNotices.size > 0
+    ? `${Array.from(operationalNotices).join('\n')}\n\n${responseContent}`
+    : responseContent;
+  let replyMessage = displayResponse;
 
   const modelDisclosure = buildModelOverrideDisclosure(input.modelOverride, llmResult.model);
   if (modelDisclosure) {
-    responseContent = `${modelDisclosure}\n\n${responseContent}`;
-    replyMessage = responseContent;
+    replyMessage = `${modelDisclosure}\n\n${replyMessage}`;
   }
 
   // 5a. Append debug telemetry footer (#174, #254, spec: 0n)
@@ -489,7 +501,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     const tag = input.devLoopContext.correlationTag ? ` ${input.devLoopContext.correlationTag}` : '';
     // Use HELKIN-REPLY for interrogation queries, SWARM for steering messages (#92)
     const replyPrefix = input.devLoopContext.prefix === 'DEVQUERY' ? 'HELKIN-REPLY' : 'SWARM';
-    replyMessage = `${replyPrefix}: ${responseContent}${tag} OVER`;
+    replyMessage = `${replyPrefix}: ${replyMessage}${tag} OVER`;
   }
 
   const replyInput: SendReplyInput = {
@@ -511,7 +523,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   yield context.df.callActivity('storeMemoryActivity', memoryInput);
 
   return {
-    response: responseContent,
+    response: displayResponse,
     cleanResponse,
     tokensUsed: cumulativeTokensUsed,
     promptTokens: cumulativePromptTokens,

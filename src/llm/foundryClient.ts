@@ -61,6 +61,14 @@ export interface ChatCompletionResponse {
   choices: ChatCompletionChoice[];
   usage: ChatCompletionUsage;
   created: number;
+  failoverSteps?: LlmFailoverStep[];
+}
+
+export interface LlmFailoverStep {
+  fromModel: string;
+  toModel: string;
+  reason: string;
+  statusCode?: number;
 }
 
 export interface FoundryClientOptions {
@@ -141,31 +149,32 @@ export class FoundryClient {
   async chatCompletion(options: Omit<FoundryClientOptions, 'routing'>): Promise<ChatCompletionResponse> {
     const correlationId = options.correlationId ?? crypto.randomUUID();
 
-    // Get the full fallback chain; the first entry is always the configured primary.
-    const chain = getFallbackChain();
-
-    // If the constructor was given an override deployment (e.g. /heavy → o4-mini),
-    // prepend it so the override is tried first before falling through (#185).
-    if (this.routing.deploymentName !== chain[0]?.deploymentName) {
-      chain.unshift(this.routing);
-    }
+    // Get the full fallback chain for the requested deployment.
+    const chain = getFallbackChain(this.routing.deploymentName);
 
     // Filter out currently degraded models — but keep at least the last resort.
     const available = chain.filter((r) => !isModelDegraded(r.deploymentName));
     const candidates = available.length > 0 ? available : [chain[chain.length - 1]];
 
     let lastError: FoundryError | Error | undefined;
+    const failoverSteps: LlmFailoverStep[] = [];
+    const attemptedModels: string[] = [];
 
     for (let i = 0; i < candidates.length; i++) {
       const routing = candidates[i];
+      attemptedModels.push(routing.deploymentName);
       try {
         const result = await this.callSingleModel(routing, options, correlationId);
         // Successful response — clear any degradation for this model.
         clearModelDegraded(routing.deploymentName);
+        if (failoverSteps.length > 0) {
+          result.failoverSteps = [...failoverSteps];
+        }
         return result;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
         const isRetryable = isRetryableError(err);
+        const nextCandidate = candidates[i + 1];
 
         if (isRetryable) {
           const reason = err instanceof FoundryError
@@ -173,12 +182,21 @@ export class FoundryClient {
             : (err instanceof Error && err.name === 'TimeoutError') ? 'timeout' : 'error';
           markModelDegraded(routing.deploymentName, reason);
 
+          if (nextCandidate) {
+            failoverSteps.push({
+              fromModel: routing.deploymentName,
+              toModel: nextCandidate.deploymentName,
+              reason,
+              statusCode: err instanceof FoundryError ? err.statusCode : undefined,
+            });
+          }
+
           trackEvent({
             name: 'LlmFallbackTriggered',
             correlationId,
             properties: {
               originalModel: routing.deploymentName,
-              fallbackModel: candidates[i + 1]?.deploymentName ?? 'none',
+              fallbackModel: nextCandidate?.deploymentName ?? 'none',
               reason,
               chainPosition: i,
             },
@@ -187,6 +205,13 @@ export class FoundryClient {
 
         // If not retryable or this is the last candidate, throw
         if (!isRetryable || i === candidates.length - 1) {
+          if (isRetryable) {
+            throw new FoundryFallbackExhaustedError(
+              attemptedModels,
+              failoverSteps,
+              lastError,
+            );
+          }
           throw lastError;
         }
         // Otherwise continue to next candidate in chain
@@ -334,6 +359,69 @@ export class FoundryError extends Error {
     super(message);
     this.name = 'FoundryError';
   }
+}
+
+export class FoundryFallbackExhaustedError extends Error {
+  constructor(
+    public readonly attemptedModels: string[],
+    public readonly failoverSteps: LlmFailoverStep[],
+    public readonly lastError: Error,
+  ) {
+    super(`All models in fallback chain exhausted after attempts: ${attemptedModels.join(' -> ')}`);
+    this.name = 'FoundryFallbackExhaustedError';
+  }
+}
+
+export function buildSuccessfulFailoverNotices(failoverSteps: readonly LlmFailoverStep[] | undefined): string[] {
+  if (!failoverSteps || failoverSteps.length === 0) {
+    return [];
+  }
+
+  const first = failoverSteps[0];
+  const final = failoverSteps[failoverSteps.length - 1];
+  const quotaIssue = failoverSteps.some((step) => step.statusCode === 429);
+
+  if (quotaIssue) {
+    return [
+      `⚠️ Operational note: ${first.fromModel} hit a 429 quota/rate limit; auto-failed over to ${final.toModel} and continued your request.`,
+    ];
+  }
+
+  return [
+    `⚠️ Operational note: ${first.fromModel} was temporarily unavailable (${first.reason}); auto-failed over to ${final.toModel} and continued your request.`,
+  ];
+}
+
+export function buildLlmFailureNotice(err: unknown): string {
+  if (err instanceof FoundryFallbackExhaustedError) {
+    const quotaIssue = err.failoverSteps.some((step) => step.statusCode === 429)
+      || (err.lastError instanceof FoundryError && err.lastError.statusCode === 429);
+    const firstModel = err.attemptedModels[0] ?? 'the active model';
+
+    if (quotaIssue) {
+      return `⚠️ Operational note: ${firstModel} hit a 429 quota/rate limit and automatic fallback recovery is temporarily exhausted. Please retry in a minute while capacity recovers.`;
+    }
+
+    return '⚠️ Operational note: the active model service is temporarily unavailable and automatic fallback recovery could not complete. Please retry in a minute.';
+  }
+
+  if (err instanceof FoundryError) {
+    if (err.statusCode === 429) {
+      return `⚠️ Operational note: ${err.deploymentName} hit a 429 quota/rate limit and no alternate model was available for automatic recovery. Please retry in a minute.`;
+    }
+
+    if (isRetryableError(err)) {
+      return `⚠️ Operational note: ${err.deploymentName} is temporarily unavailable (${err.statusCode}). Automatic recovery could not complete just now; please retry in a minute.`;
+    }
+
+    return '⚠️ Operational note: the model provider returned an unexpected error. Please retry in a minute.';
+  }
+
+  if (err instanceof Error && err.name === 'TimeoutError') {
+    return '⚠️ Operational note: the model request timed out and automatic recovery could not complete just now. Please retry in a minute.';
+  }
+
+  return '⚠️ Operational note: the model request failed and automatic recovery could not complete just now. Please retry in a minute.';
 }
 
 // ---------------------------------------------------------------------------
