@@ -15,6 +15,7 @@ import { isOwnerUserId, getMaintenanceMode } from '../bot/maintenanceMode.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { listAllHooks } from '../orchestrator/hookCatalog.js';
 import { getContainer } from '../memory/cosmosClient.js';
+import { MemoryManager } from '../memory/memoryManager.js';
 import { validateTabTokenFromRequest } from '../auth/tabTokenValidator.js';
 
 const TAB_CORS_HEADERS: Record<string, string> = {
@@ -116,6 +117,20 @@ app.http('tab-dev-console', {
     // --- Maintenance -------------------------------------------------------
     const maintenance = await getMaintenanceMode();
 
+    // --- Memory vaults (owner's skill memory catalog) ----------------------
+    let memoryVaults: Array<{ skill: string; entries: number; lastUpdated: string }> = [];
+    try {
+      const mm = new MemoryManager(userId);
+      const catalog = await mm.getSkillCatalog();
+      memoryVaults = catalog.map((v) => ({
+        skill: v.skillId,
+        entries: v.entryCount,
+        lastUpdated: v.lastUpdated,
+      }));
+    } catch {
+      context.warn('Failed to fetch memory catalog for dev console');
+    }
+
     return {
       status: 200,
       headers: TAB_CORS_HEADERS,
@@ -131,6 +146,11 @@ app.http('tab-dev-console', {
           total: hooks.length,
         },
         relay: relayStats,
+        memory: {
+          vaults: memoryVaults,
+          totalVaults: memoryVaults.length,
+          totalEntries: memoryVaults.reduce((sum, v) => sum + v.entries, 0),
+        },
         maintenance,
         safetyMode: env.safetyMode,
         euResidencyMode: env.euResidencyMode,

@@ -318,6 +318,9 @@
           // Relay stats
           var relay = data.relay || { total: 0, pending: 0 };
 
+          // Memory stats
+          var mem = data.memory || { totalVaults: 0, totalEntries: 0, vaults: [] };
+
           // Maintenance status
           var maintBadge = data.maintenance ? "error" : "ok";
           var maintText = data.maintenance ? "ACTIVE" : "Clear";
@@ -333,6 +336,8 @@
             esc(data.hooks ? data.hooks.active : 0) + " / " + esc(data.hooks ? data.hooks.total : 0) + "</span></div>" +
             '<div class="card mini-card"><h3>Relay (24h)</h3><span class="stat">' +
             esc(relay.total) + " msgs / " + esc(relay.pending) + " pending</span></div>" +
+            '<div class="card mini-card"><h3>Memory</h3><span class="stat">' +
+            esc(mem.totalVaults) + " vaults / " + esc(mem.totalEntries) + " entries</span></div>" +
             '<div class="card mini-card"><h3>Maintenance</h3><span class="badge badge-' +
             maintBadge + '">' + maintText + "</span></div>" +
             '<div class="card mini-card"><h3>Safety</h3><span class="stat">' +
@@ -350,6 +355,18 @@
               ? "<table><tr><th>Hook ID</th><th>Type</th><th>Skill</th><th>Status</th><th>Expires</th></tr>" +
                 hookRows + "</table>"
               : "<p>No hooks registered.</p>") +
+            "</div>" +
+
+            // Memory vaults
+            '<div class="card"><h2>Memory Vaults</h2>' +
+            (mem.vaults.length > 0
+              ? "<table><tr><th>Skill</th><th>Entries</th><th>Last Updated</th></tr>" +
+                mem.vaults.map(function (v) {
+                  return "<tr><td>" + esc(v.skill) + "</td>" +
+                    "<td>" + esc(v.entries) + "</td>" +
+                    "<td>" + (v.lastUpdated ? new Date(v.lastUpdated).toLocaleString() : "—") + "</td></tr>";
+                }).join("") + "</table>"
+              : "<p>No memory vaults created yet.</p>") +
             "</div>" +
 
             // Recent traces list
