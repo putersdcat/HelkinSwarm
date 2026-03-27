@@ -140,6 +140,7 @@ export async function loadCapabilities(
             requiresExecutor: tool.requiresExecutor,
             requiresSubAgent: tool.requiresSubAgent,
             requiresConfirmation: tool.requiresConfirmation,
+            privilegeClass: tool.privilegeClass,
             handlerModule: `skills/${manifest.domain}`,
             inputSchema: tool.inputSchema,
             outputSchema: tool.outputSchema,

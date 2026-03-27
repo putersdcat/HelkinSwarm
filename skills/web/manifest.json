@@ -28,8 +28,12 @@
             "description": "Country code for localized results (e.g. 'us', 'nl'). Default: 'us'"
           }
         },
-        "required": ["query"]
-      }
+        "required": [
+          "query"
+        ]
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
     }
   ],
   "shortName": "web",
@@ -39,7 +43,9 @@
   "deploymentScenario": "personal-user-centric",
   "onboardingMethod": "automatic-agentic",
   "lifecycleRules": "keep-credentials",
-  "externalAccountsNeeded": ["Brave Search API key"],
+  "externalAccountsNeeded": [
+    "Brave Search API key"
+  ],
   "maintenanceTasks": [
     {
       "name": "verify-brave-api-key",

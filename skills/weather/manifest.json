@@ -21,12 +21,21 @@
           },
           "period": {
             "type": "string",
-            "enum": ["current", "today", "3day", "7day"],
+            "enum": [
+              "current",
+              "today",
+              "3day",
+              "7day"
+            ],
             "description": "Forecast period: 'current' for now, 'today' for today's hourly, '3day' or '7day' for multi-day forecast (default: current)"
           }
         },
-        "required": ["location"]
-      }
+        "required": [
+          "location"
+        ]
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
     }
   ],
   "shortName": "weather",

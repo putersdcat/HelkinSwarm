@@ -8,7 +8,9 @@
   "deploymentScenario": "personal-user-centric",
   "onboardingMethod": "post-install-link",
   "lifecycleRules": "keep-credentials",
-  "requiredPermissions": ["Chat.Read"],
+  "requiredPermissions": [
+    "Chat.Read"
+  ],
   "linkConfig": {
     "connectionName": "GraphOAuth",
     "displayName": "Microsoft Account",
@@ -37,8 +39,12 @@
             "description": "The Teams chat ID (format: 19:xxx@thread.v2). Omit to use the current conversation automatically."
           }
         },
-        "required": ["messageId"]
-      }
+        "required": [
+          "messageId"
+        ]
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": true
     }
   ]
 }

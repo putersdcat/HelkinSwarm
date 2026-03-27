@@ -11,16 +11,29 @@
       "requiresConfirmation": false,
       "requiresExecutor": false,
       "externalAutomationCapabilities": [
-        { "type": "github-actions", "action": "Workflow triggers on issue events (opened, labeled, closed)" },
-        { "type": "github-projects", "action": "Project board automation rules for issue triage" }
+        {
+          "type": "github-actions",
+          "action": "Workflow triggers on issue events (opened, labeled, closed)"
+        },
+        {
+          "type": "github-projects",
+          "action": "Project board automation rules for issue triage"
+        }
       ],
-      "longTermMemorySchema": ["label_taxonomy", "active_milestones"],
+      "longTermMemorySchema": [
+        "label_taxonomy",
+        "active_milestones"
+      ],
       "inputSchema": {
         "type": "object",
         "properties": {
           "state": {
             "type": "string",
-            "enum": ["open", "closed", "all"],
+            "enum": [
+              "open",
+              "closed",
+              "all"
+            ],
             "description": "Filter by issue state (default: open)"
           },
           "labels": {
@@ -45,7 +58,9 @@
           }
         },
         "required": []
-      }
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
     },
     {
       "name": "github_search_issues",
@@ -56,9 +71,14 @@
       "requiresConfirmation": false,
       "requiresExecutor": false,
       "externalAutomationCapabilities": [
-        { "type": "github-saved-searches", "action": "Saved search queries and custom notification filters" }
+        {
+          "type": "github-saved-searches",
+          "action": "Saved search queries and custom notification filters"
+        }
       ],
-      "longTermMemorySchema": ["frequent_search_patterns"],
+      "longTermMemorySchema": [
+        "frequent_search_patterns"
+      ],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -71,8 +91,12 @@
             "description": "Results per page (max 100, default 30)"
           }
         },
-        "required": ["query"]
-      }
+        "required": [
+          "query"
+        ]
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
     },
     {
       "name": "github_get_issue",
@@ -92,8 +116,12 @@
             "description": "The issue number to retrieve"
           }
         },
-        "required": ["issue_number"]
-      }
+        "required": [
+          "issue_number"
+        ]
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
     },
     {
       "name": "github_create_issue",
@@ -104,10 +132,19 @@
       "requiresConfirmation": false,
       "requiresExecutor": false,
       "externalAutomationCapabilities": [
-        { "type": "github-actions", "action": "Workflow triggers on issues.opened for auto-labeling and triage" },
-        { "type": "issue-templates", "action": "Repository issue templates for structured creation" }
+        {
+          "type": "github-actions",
+          "action": "Workflow triggers on issues.opened for auto-labeling and triage"
+        },
+        {
+          "type": "issue-templates",
+          "action": "Repository issue templates for structured creation"
+        }
       ],
-      "longTermMemorySchema": ["common_labels", "issue_template_patterns"],
+      "longTermMemorySchema": [
+        "common_labels",
+        "issue_template_patterns"
+      ],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -121,7 +158,9 @@
           },
           "labels": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Labels to apply"
           },
           "milestone": {
@@ -130,12 +169,19 @@
           },
           "assignees": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "GitHub usernames to assign"
           }
         },
-        "required": ["title", "body"]
-      }
+        "required": [
+          "title",
+          "body"
+        ]
+      },
+      "privilegeClass": "create",
+      "requiresSubAgent": true
     },
     {
       "name": "github_update_issue",
@@ -146,10 +192,18 @@
       "requiresConfirmation": false,
       "requiresExecutor": false,
       "externalAutomationCapabilities": [
-        { "type": "github-actions", "action": "Workflow triggers on issues.edited and issues.closed" },
-        { "type": "github-projects", "action": "Auto-move cards on state change" }
+        {
+          "type": "github-actions",
+          "action": "Workflow triggers on issues.edited and issues.closed"
+        },
+        {
+          "type": "github-projects",
+          "action": "Auto-move cards on state change"
+        }
       ],
-      "longTermMemorySchema": ["workflow_state_patterns"],
+      "longTermMemorySchema": [
+        "workflow_state_patterns"
+      ],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -167,12 +221,17 @@
           },
           "state": {
             "type": "string",
-            "enum": ["open", "closed"],
+            "enum": [
+              "open",
+              "closed"
+            ],
             "description": "New state"
           },
           "labels": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Labels to set (replaces existing)"
           },
           "milestone": {
@@ -181,12 +240,18 @@
           },
           "assignees": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Assignees to set (replaces existing)"
           }
         },
-        "required": ["issue_number"]
-      }
+        "required": [
+          "issue_number"
+        ]
+      },
+      "privilegeClass": "read-write",
+      "requiresSubAgent": false
     },
     {
       "name": "github_add_comment",
@@ -197,7 +262,10 @@
       "requiresConfirmation": false,
       "requiresExecutor": false,
       "externalAutomationCapabilities": [
-        { "type": "github-actions", "action": "Workflow triggers on issue_comment.created for bot commands" }
+        {
+          "type": "github-actions",
+          "action": "Workflow triggers on issue_comment.created for bot commands"
+        }
       ],
       "longTermMemorySchema": [],
       "inputSchema": {
@@ -212,8 +280,13 @@
             "description": "Comment body (Markdown supported)"
           }
         },
-        "required": ["issue_number", "body"]
-      }
+        "required": [
+          "issue_number",
+          "body"
+        ]
+      },
+      "privilegeClass": "create",
+      "requiresSubAgent": false
     },
     {
       "name": "github_list_milestones",
@@ -224,18 +297,26 @@
       "requiresConfirmation": false,
       "requiresExecutor": false,
       "externalAutomationCapabilities": [],
-      "longTermMemorySchema": ["active_milestone_numbers"],
+      "longTermMemorySchema": [
+        "active_milestone_numbers"
+      ],
       "inputSchema": {
         "type": "object",
         "properties": {
           "state": {
             "type": "string",
-            "enum": ["open", "closed", "all"],
+            "enum": [
+              "open",
+              "closed",
+              "all"
+            ],
             "description": "Filter by state (default: open)"
           }
         },
         "required": []
-      }
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
     }
   ],
   "shortName": "github",

@@ -22,6 +22,10 @@ export type OnboardingMethod = z.infer<typeof OnboardingMethod>;
 export const LifecycleRules = z.enum(['keep-credentials', 'close-external-account', 'ask-user']);
 export type LifecycleRules = z.infer<typeof LifecycleRules>;
 
+/** Privilege class for scoped token minting decisions (#316) */
+export const PrivilegeClass = z.enum(['read-only', 'read-write', 'create', 'delete']);
+export type PrivilegeClass = z.infer<typeof PrivilegeClass>;
+
 export const ExternalAutomationCapability = z.object({
   type: z.string(),
   action: z.string(),
@@ -50,6 +54,8 @@ export const ToolManifestEntry = z.object({
   requiresExecutor: z.boolean().default(false),
   /** Route through isolated sub-agent LLM session (#47) */
   requiresSubAgent: z.boolean().default(false),
+  /** Privilege class for scoped token minting scope decisions (#316) */
+  privilegeClass: PrivilegeClass.default('read-only'),
   externalAutomationCapabilities: z.array(ExternalAutomationCapability).default([]),
   longTermMemorySchema: z.array(z.string()).default([]),
   inputSchema: z.record(z.unknown()).optional(),

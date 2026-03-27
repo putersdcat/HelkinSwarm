@@ -16,10 +16,19 @@
       "requiresConfirmation": false,
       "requiresExecutor": false,
       "externalAutomationCapabilities": [
-        { "type": "outlook-rules", "action": "Inbox rules for automatic sorting, forwarding, and flagging" },
-        { "type": "focused-inbox", "action": "ML-based priority sorting via Focused Inbox" }
+        {
+          "type": "outlook-rules",
+          "action": "Inbox rules for automatic sorting, forwarding, and flagging"
+        },
+        {
+          "type": "focused-inbox",
+          "action": "ML-based priority sorting via Focused Inbox"
+        }
       ],
-      "longTermMemorySchema": ["frequently_accessed_folders", "important_senders"],
+      "longTermMemorySchema": [
+        "frequently_accessed_folders",
+        "important_senders"
+      ],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -37,7 +46,9 @@
           }
         },
         "required": []
-      }
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": true
     },
     {
       "name": "outlook_read_email",
@@ -57,8 +68,12 @@
             "description": "The Graph API message ID"
           }
         },
-        "required": ["messageId"]
-      }
+        "required": [
+          "messageId"
+        ]
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": true
     },
     {
       "name": "outlook_send_email",
@@ -69,16 +84,27 @@
       "requiresConfirmation": false,
       "requiresExecutor": false,
       "externalAutomationCapabilities": [
-        { "type": "outlook-rules", "action": "Auto-replies, send-later scheduling, and Quick Parts templates" },
-        { "type": "graph-subscriptions", "action": "Webhook notifications on sent item changes" }
+        {
+          "type": "outlook-rules",
+          "action": "Auto-replies, send-later scheduling, and Quick Parts templates"
+        },
+        {
+          "type": "graph-subscriptions",
+          "action": "Webhook notifications on sent item changes"
+        }
       ],
-      "longTermMemorySchema": ["common_recipients", "email_signature_style"],
+      "longTermMemorySchema": [
+        "common_recipients",
+        "email_signature_style"
+      ],
       "inputSchema": {
         "type": "object",
         "properties": {
           "to": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Array of recipient email addresses"
           },
           "subject": {
@@ -91,17 +117,28 @@
           },
           "bodyType": {
             "type": "string",
-            "enum": ["text", "html"],
+            "enum": [
+              "text",
+              "html"
+            ],
             "description": "Body content type (default: text)"
           },
           "cc": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "CC recipient email addresses"
           }
         },
-        "required": ["to", "subject", "body"]
-      }
+        "required": [
+          "to",
+          "subject",
+          "body"
+        ]
+      },
+      "privilegeClass": "create",
+      "requiresSubAgent": true
     },
     {
       "name": "outlook_search_emails",
@@ -112,9 +149,14 @@
       "requiresConfirmation": false,
       "requiresExecutor": false,
       "externalAutomationCapabilities": [
-        { "type": "outlook-search-folders", "action": "Saved search folders for persistent KQL queries" }
+        {
+          "type": "outlook-search-folders",
+          "action": "Saved search folders for persistent KQL queries"
+        }
       ],
-      "longTermMemorySchema": ["frequent_search_queries"],
+      "longTermMemorySchema": [
+        "frequent_search_queries"
+      ],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -127,8 +169,12 @@
             "description": "Max results (default: 10, max: 25)"
           }
         },
-        "required": ["query"]
-      }
+        "required": [
+          "query"
+        ]
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": true
     },
     {
       "name": "outlook_list_calendar_events",
@@ -139,10 +185,19 @@
       "requiresConfirmation": false,
       "requiresExecutor": false,
       "externalAutomationCapabilities": [
-        { "type": "calendar-sharing", "action": "Shared calendars and delegate access" },
-        { "type": "graph-subscriptions", "action": "Webhook notifications on calendar changes" }
+        {
+          "type": "calendar-sharing",
+          "action": "Shared calendars and delegate access"
+        },
+        {
+          "type": "graph-subscriptions",
+          "action": "Webhook notifications on calendar changes"
+        }
       ],
-      "longTermMemorySchema": ["recurring_meeting_patterns", "preferred_meeting_times"],
+      "longTermMemorySchema": [
+        "recurring_meeting_patterns",
+        "preferred_meeting_times"
+      ],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -160,7 +215,9 @@
           }
         },
         "required": []
-      }
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": true
     },
     {
       "name": "outlook_create_calendar_event",
@@ -171,10 +228,20 @@
       "requiresConfirmation": false,
       "requiresExecutor": false,
       "externalAutomationCapabilities": [
-        { "type": "scheduling-assistant", "action": "FindMeetingTimes API for optimal slot discovery" },
-        { "type": "booking-pages", "action": "Microsoft Bookings for external scheduling" }
+        {
+          "type": "scheduling-assistant",
+          "action": "FindMeetingTimes API for optimal slot discovery"
+        },
+        {
+          "type": "booking-pages",
+          "action": "Microsoft Bookings for external scheduling"
+        }
       ],
-      "longTermMemorySchema": ["default_meeting_duration", "common_attendees", "preferred_online_meeting_provider"],
+      "longTermMemorySchema": [
+        "default_meeting_duration",
+        "common_attendees",
+        "preferred_online_meeting_provider"
+      ],
       "inputSchema": {
         "type": "object",
         "properties": {
@@ -200,7 +267,9 @@
           },
           "attendees": {
             "type": "array",
-            "items": { "type": "string" },
+            "items": {
+              "type": "string"
+            },
             "description": "Attendee email addresses (optional)"
           },
           "isOnlineMeeting": {
@@ -208,8 +277,14 @@
             "description": "Create as Teams meeting (default: false)"
           }
         },
-        "required": ["subject", "start", "end"]
-      }
+        "required": [
+          "subject",
+          "start",
+          "end"
+        ]
+      },
+      "privilegeClass": "create",
+      "requiresSubAgent": true
     }
   ],
   "shortName": "outlook",
@@ -219,5 +294,11 @@
   "deploymentScenario": "personal-user-centric",
   "onboardingMethod": "post-install-link",
   "lifecycleRules": "keep-credentials",
-  "requiredPermissions": ["User.Read", "Mail.Read", "Mail.Send", "Calendars.Read", "Calendars.ReadWrite"]
+  "requiredPermissions": [
+    "User.Read",
+    "Mail.Read",
+    "Mail.Send",
+    "Calendars.Read",
+    "Calendars.ReadWrite"
+  ]
 }

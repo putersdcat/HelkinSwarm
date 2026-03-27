@@ -14,6 +14,9 @@ export type RiskLevel = z.infer<typeof RiskLevel>;
 export const DataSensitivity = z.enum(['non-pii', 'pii', 'mixed']);
 export type DataSensitivity = z.infer<typeof DataSensitivity>;
 
+export const PrivilegeClass = z.enum(['read-only', 'read-write', 'create', 'delete']);
+export type PrivilegeClass = z.infer<typeof PrivilegeClass>;
+
 export const ToolDefinitionSchema = z.object({
   name: z.string(),
   description: z.string(),
@@ -27,9 +30,12 @@ export const ToolDefinitionSchema = z.object({
   requiresSubAgent: z.boolean().default(false),
   /** Tool declares explicit human confirmation requirement regardless of risk level (#247) */
   requiresConfirmation: z.boolean().default(false),
+  /** Privilege class for scoped token minting scope decisions (#316) */
+  privilegeClass: PrivilegeClass.default('read-only'),
 });
 
 export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;
+export type ToolDefinitionInput = z.input<typeof ToolDefinitionSchema>;
 
 // ---------------------------------------------------------------------------
 // Registry
@@ -39,9 +45,9 @@ export class ToolRegistry {
   private tools = new Map<string, ToolDefinition>();
 
   /**
-   * Register a tool definition.
+   * Register a tool definition. Accepts partial input — Zod defaults fill gaps.
    */
-  register(def: ToolDefinition): void {
+  register(def: ToolDefinitionInput): void {
     const parsed = ToolDefinitionSchema.parse(def);
     this.tools.set(parsed.name, parsed);
   }

@@ -1,4 +1,4 @@
-// Tool registry — unit tests for requiresConfirmation declarative gating (#247)
+// Tool registry — unit tests for declarative gating (#247, #315, #316)
 import { describe, it, expect, vi } from 'vitest';
 
 vi.mock('../../src/config/safetyConfig.js', () => ({
@@ -41,6 +41,43 @@ describe('ToolDefinitionSchema.requiresConfirmation', () => {
     });
     expect(parsed.risk).toBe('low');
     expect(parsed.requiresConfirmation).toBe(true);
+  });
+});
+
+describe('ToolDefinitionSchema.privilegeClass (#316)', () => {
+  it('defaults to read-only when not provided', () => {
+    const parsed = ToolDefinitionSchema.parse({
+      name: 'test_tool',
+      description: 'A test tool',
+      risk: 'low',
+      dataSensitivity: 'non-pii',
+    });
+    expect(parsed.privilegeClass).toBe('read-only');
+  });
+
+  it('accepts all valid privilege classes', () => {
+    for (const pc of ['read-only', 'read-write', 'create', 'delete'] as const) {
+      const parsed = ToolDefinitionSchema.parse({
+        name: `test_${pc}`,
+        description: 'test',
+        risk: 'low',
+        dataSensitivity: 'non-pii',
+        privilegeClass: pc,
+      });
+      expect(parsed.privilegeClass).toBe(pc);
+    }
+  });
+
+  it('rejects invalid privilege class', () => {
+    expect(() =>
+      ToolDefinitionSchema.parse({
+        name: 'test_tool',
+        description: 'test',
+        risk: 'low',
+        dataSensitivity: 'non-pii',
+        privilegeClass: 'admin',
+      }),
+    ).toThrow();
   });
 });
 

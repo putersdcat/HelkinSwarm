@@ -45,8 +45,31 @@ Every tool in the `tools` array must include:
 | `dataSensitivity` | yes | `"non-pii"`, `"pii"`, or `"sensitive"` |
 | `inputSchema` | yes | JSON Schema object for tool parameters |
 | `requiresConfirmation` | yes | Boolean — medium/high risk tools require confirmation cards |
-| `requiresSubAgent` | no | Boolean — if true, runs in isolated LLM session |
+| `requiresSubAgent` | yes | Boolean — if true, runs in isolated LLM session (#315) |
 | `requiresExecutor` | no | Boolean — if true, goes through executor pipeline |
+| `privilegeClass` | yes | `"read-only"`, `"read-write"`, `"create"`, or `"delete"` (#316) |
+
+### requiresSubAgent Criteria (#315)
+
+Declare `requiresSubAgent: true` when a tool meets **any** of:
+- Touches PII via Microsoft Graph (Outlook mail/calendar, Teams messages)
+- Performs write operations on external systems (e.g. `github_create_issue`)
+- Requires scoped token minting with specific Graph permissions
+- Benefits from isolated LLM context (no conversation history bleed)
+
+Tools that should **NOT** use sub-agents:
+- Core introspection tools (health, skills, whoami)
+- Stateless read-only external calls (web search, weather)
+- Lightweight internal read ops (github_list_*, github_get_*)
+
+### privilegeClass Criteria (#316)
+
+| Class | Meaning | Scope Implication |
+|-------|---------|-------------------|
+| `read-only` | Reads data, no side effects | Narrowest Graph scopes (`.Read`) |
+| `read-write` | Modifies existing resources | `.ReadWrite` scopes |
+| `create` | Creates new resources | `.ReadWrite` or `.Send` scopes |
+| `delete` | Removes resources or data | `.ReadWrite` scopes + confirmation |
 
 ## Onboarding Requirements
 
