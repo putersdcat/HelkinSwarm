@@ -37,6 +37,7 @@ interface CachedToken {
 }
 
 const tokenCache = new Map<string, CachedToken>();
+const TOKEN_ACQUIRE_TIMEOUT_MS = 8_000;
 
 /**
  * Get a Bearer token string for the given resource scope.
@@ -49,7 +50,21 @@ export async function getBearerToken(scope: string): Promise<string> {
   }
 
   const credential = getCredential();
-  const result = await credential.getToken(scope);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const result = await Promise.race([
+    credential.getToken(scope),
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const timeoutError = new Error(`Token acquisition timed out after ${TOKEN_ACQUIRE_TIMEOUT_MS}ms for scope: ${scope}`);
+        timeoutError.name = 'TimeoutError';
+        reject(timeoutError);
+      }, TOKEN_ACQUIRE_TIMEOUT_MS);
+    }),
+  ]).finally(() => {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  });
   if (!result?.token) {
     throw new Error(`Failed to acquire token for scope: ${scope}`);
   }
@@ -60,4 +75,10 @@ export async function getBearerToken(scope: string): Promise<string> {
   });
 
   return result.token;
+}
+
+/** Test-only reset hook. */
+export function resetIdentityCachesForTests(): void {
+  tokenCache.clear();
+  _credential = undefined;
 }
