@@ -78,16 +78,6 @@ const MessageListSchema = z.object({
   value: z.array(MessageSchema),
 }).passthrough();
 
-const SearchResultSchema = z.object({
-  value: z.array(z.object({
-    hitsContainers: z.array(z.object({
-      hits: z.array(z.object({
-        resource: MessageSchema,
-      })).default([]),
-    })).default([]),
-  })).default([]),
-}).passthrough();
-
 const CalendarEventSchema = z.object({
   id: z.string(),
   subject: z.string().nullable().optional(),
@@ -209,42 +199,31 @@ const outlookSendEmail: ToolHandler = async (args) => {
 };
 
 const outlookSearchEmails: ToolHandler = async (args) => {
+  // Issue #311: Replaced /search/query (Exchange search index — latency, misses)
+  // with /me/messages?$search= (direct mailbox query, reliable for sender/subject search).
   const userId = z.string().parse(args['userId']);
   const query = z.string().parse(args['query']);
   const top = Math.min(z.number().default(10).parse(args['top'] ?? 10), 25);
+  const folder = z.string().optional().parse(args['folder']);
 
-  const token = await getGraphTokenForUser(userId);
-  if (!token) throw new Error('No Graph token. Run /link first.');
+  // Build the path — optionally scope to a specific folder
+  // Note: $search and $orderby cannot be combined on /me/messages (Graph limitation)
+  const folderSegment = folder
+    ? `/mailFolders/${FOLDER_MAP[folder.toLowerCase()] ?? folder}/`
+    : '/';
+  const path = `/me${folderSegment}messages?$search=${encodeURIComponent(`"${query}"`)}&$top=${top}&$select=id,subject,bodyPreview,from,receivedDateTime,isRead,hasAttachments`;
 
-  const response = await fetch(`${GRAPH_BASE}/search/query`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      requests: [{
-        entityTypes: ['message'],
-        query: { queryString: query },
-        size: top,
-      }],
-    }),
-  });
+  const result = await graphFetch(userId, path, MessageListSchema);
 
-  if (!response.ok) {
-    const errorBody = await response.text();
-    throw new Error(`Graph API ${response.status}: ${errorBody}`);
-  }
-
-  const data = SearchResultSchema.parse(await response.json());
-  const hits = data.value[0]?.hitsContainers[0]?.hits ?? [];
-
-  return hits.map((h) => ({
-    id: h.resource.id,
-    subject: h.resource.subject,
-    from: h.resource.from?.emailAddress?.address,
-    receivedAt: h.resource.receivedDateTime,
-    preview: h.resource.bodyPreview?.slice(0, 200),
+  return result.value.map((m) => ({
+    id: m.id,
+    subject: m.subject,
+    from: m.from?.emailAddress?.address ?? 'unknown',
+    fromName: m.from?.emailAddress?.name,
+    receivedAt: m.receivedDateTime,
+    preview: m.bodyPreview?.slice(0, 200),
+    isRead: m.isRead,
+    hasAttachments: m.hasAttachments,
   }));
 };
 
