@@ -27,6 +27,13 @@ const SPINNER_INITIAL_DELAY_MS = 8_000;
 const SPINNER_INTERVAL_MS = 8_000;
 /** Hard cap on spinner ticks to prevent quadratic replay overhead in Durable Functions. */
 const MAX_SPINNER_TICKS = 6;
+/**
+ * How long to keep the overseer instance in Running state after processing.
+ * Azure Storage startNew silently overwrites Completed instances, so this timer
+ * ensures any Bot Connector retry hitting a different container gets a 409 instead
+ * of spawning a duplicate orchestrator (#300).
+ */
+const DEDUP_HOLD_MS = 60_000;
 
 export interface NewMessageEvent {
   userMessage: string;
@@ -156,6 +163,9 @@ function* processTurn(
       console.error(`[overseer] Failed to send error reply for user=${state.userId}`, replyErr);
     }
     yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
+    // Dedup hold on error path — keep Running to block retries (#300)
+    const errDedupDeadline = new Date(context.df.currentUtcDateTime.getTime() + DEDUP_HOLD_MS);
+    yield context.df.createTimer(errDedupDeadline);
     return;
   }
 
@@ -174,5 +184,13 @@ function* processTurn(
   state.recentHistory = history.slice(-10);
 
   yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
-  // Overseer completes naturally — no ContinueAsNew (#280)
+
+  // Dedup hold:  keep this instance alive (Running) for 60s after processing so
+  // that retried Bot Connector POSTs see a Running instance and get 409 from
+  // startNew, preventing duplicate responses.  Azure Storage backend silently
+  // overwrites Completed instances on startNew, so this timer is the critical
+  // dedup layer for cross-container retries (#300).
+  const dedupDeadline = new Date(context.df.currentUtcDateTime.getTime() + DEDUP_HOLD_MS);
+  yield context.df.createTimer(dedupDeadline);
+  // Overseer completes naturally after the dedup hold — no ContinueAsNew (#280)
 }

@@ -67,7 +67,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
    * Static: survives across per-request HelkinSwarmBot instances within the same container.
    */
   private static readonly recentActivityIds = new Map<string, number>();
-  private static readonly DEDUP_TTL_MS = 30_000;
+  private static readonly DEDUP_TTL_MS = 60_000;
 
   private async sendFreshMessage(
     context: TurnContext,
@@ -281,7 +281,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     // Dedup: Bot Connector may retry the same webhook POST within ~15s (#300).
     // activity.timestamp can differ between original and retry, so we use userId +
-    // message text prefix only. TTL-based: same text from same user within 30s = dup.
+    // message text prefix only. TTL-based: same text from same user within 60s = dup.
     const dedupKey = createHash('sha256')
       .update(`${userId ?? 'anon'}:${messageText.slice(0, 200)}`)
       .digest('hex')
@@ -290,9 +290,10 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       const now = Date.now();
       const lastSeen = HelkinSwarmBot.recentActivityIds.get(dedupKey);
       if (lastSeen !== undefined && (now - lastSeen) < HelkinSwarmBot.DEDUP_TTL_MS) {
-        console.info(`[HelkinSwarmBot] Duplicate message ${dedupKey} — skipping (${now - lastSeen}ms since last)`);
+        console.info(`[HelkinSwarmBot] DEDUP-HIT in-memory key=${dedupKey} age=${now - lastSeen}ms — skipping`);
         return;
       }
+      console.info(`[HelkinSwarmBot] DEDUP-PASS in-memory key=${dedupKey} lastSeen=${lastSeen ?? 'none'} mapSize=${HelkinSwarmBot.recentActivityIds.size}`);
       HelkinSwarmBot.recentActivityIds.set(dedupKey, now);
       // Prune expired entries to prevent unbounded growth
       if (HelkinSwarmBot.recentActivityIds.size > 100) {
@@ -611,16 +612,19 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
           if (existing?.runtimeStatus !== undefined && existing.runtimeStatus !== null) {
             alreadyExists = true;
             console.info(
-              `[HelkinSwarmBot] Overseer ${iid} already exists (status: ${String(existing.runtimeStatus)}) — skipping (Teams retry dedup)`,
+              `[HelkinSwarmBot] DEDUP-HIT durable iid=${iid} status=${String(existing.runtimeStatus)} bucket=${timeBucket} — skipping`,
             );
             break;
           }
+          console.info(`[HelkinSwarmBot] DEDUP getStatus iid=${iid} status=${existing?.runtimeStatus ?? 'null/undefined'}`);
         } catch {
           // getStatus throws for non-existent instances — expected, continue
+          console.info(`[HelkinSwarmBot] DEDUP getStatus iid=${iid} threw (not found)`);
         }
       }
       if (alreadyExists) return;
 
+      console.info(`[HelkinSwarmBot] DEDUP-PASS durable — starting ${instanceId} bucket=${timeBucket}`);
       await client.startNew('overseer', { instanceId, input: event });
     } catch (err: unknown) {
       // 409 = instance already exists (race condition) — safe to ignore (#300)
