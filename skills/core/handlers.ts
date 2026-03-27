@@ -224,6 +224,7 @@ export const helkin_save_preferences: ToolHandler = async (args) => {
 
 export const helkin_forget_skill: ToolHandler = async (args) => {
   const { MemoryManager } = await import('../../src/memory/memoryManager.js');
+  const { getManifest } = await import('../../src/capabilities/capabilityLoader.js');
 
   const userId = args['userId'] as string | undefined;
   const skillId = args['skillId'] as string | undefined;
@@ -231,19 +232,48 @@ export const helkin_forget_skill: ToolHandler = async (args) => {
     return { status: 'error', message: 'userId and skillId are required.' };
   }
 
+  // Enforce lifecycle rules from the skill manifest (#199)
+  const manifest = getManifest(skillId);
+  const lifecycleRules = manifest?.lifecycleRules ?? 'keep-credentials';
+
   const mm = new MemoryManager(userId);
   const deleted = await mm.forgetSkillMemory(skillId);
 
-  return {
+  const base = {
     status: 'success',
     message: `Forgot ${deleted} memories for skill '${skillId}'.`,
     skillId,
     deletedCount: deleted,
+    lifecycleRules,
   };
+
+  if (lifecycleRules === 'close-external-account') {
+    const accounts = manifest?.externalAccountsNeeded ?? [];
+    return {
+      ...base,
+      lifecycleAction: 'external-account-closure-required',
+      externalAccountsToClose: accounts,
+      warning: accounts.length > 0
+        ? `⚠️ Lifecycle policy for '${skillId}' requires closing external account(s): ${accounts.join(', ')}. Memory removed but credentials NOT automatically revoked — action required.`
+        : `⚠️ Lifecycle policy for '${skillId}' requires closing the external account. Memory removed but credentials NOT automatically revoked — action required.`,
+    };
+  }
+
+  if (lifecycleRules === 'ask-user') {
+    return {
+      ...base,
+      lifecycleAction: 'credentials-retained',
+      note: 'Credentials and external access for this skill were NOT revoked. Remove them manually if desired.',
+    };
+  }
+
+  // keep-credentials: expected default — just confirm
+  return { ...base, lifecycleAction: 'credentials-retained' };
 };
 
 export const helkin_skill_catalog: ToolHandler = async (args) => {
   const { MemoryManager } = await import('../../src/memory/memoryManager.js');
+  const { getAllManifests } = await import('../../src/capabilities/capabilityLoader.js');
 
   const userId = args['userId'] as string | undefined;
   if (!userId) {
@@ -251,19 +281,47 @@ export const helkin_skill_catalog: ToolHandler = async (args) => {
   }
 
   const mm = new MemoryManager(userId);
-  const catalog = await mm.getSkillCatalog();
+  const memoryEntries = await mm.getSkillCatalog();
+  const manifests = getAllManifests();
+  const manifestMap = new Map(manifests.map(m => [m.domain, m]));
 
-  if (catalog.length === 0) {
+  // Merge memory stats with manifest lifecycle metadata (#199)
+  const memorySkillIds = new Set(memoryEntries.map(v => v.skillId));
+  const vaults = memoryEntries.map(v => {
+    const m = manifestMap.get(v.skillId);
+    return {
+      skill: v.skillId,
+      displayName: m?.displayName ?? v.skillId,
+      entries: v.entryCount,
+      lastUpdated: v.lastUpdated,
+      lifecycleRules: m?.lifecycleRules ?? 'keep-credentials',
+      maintenanceTasks: m?.maintenanceTasks?.length ?? 0,
+      externalAccountsNeeded: m?.externalAccountsNeeded ?? [],
+    };
+  });
+
+  // Also surface skills with manifests but no memory yet (zero entries)
+  for (const m of manifests) {
+    if (!memorySkillIds.has(m.domain)) {
+      vaults.push({
+        skill: m.domain,
+        displayName: m.displayName,
+        entries: 0,
+        lastUpdated: null as unknown as string,
+        lifecycleRules: m.lifecycleRules,
+        maintenanceTasks: m.maintenanceTasks?.length ?? 0,
+        externalAccountsNeeded: m.externalAccountsNeeded ?? [],
+      });
+    }
+  }
+
+  if (vaults.length === 0) {
     return { status: 'success', message: 'No skill memory vaults found.', vaults: [] };
   }
 
   return {
     status: 'success',
-    totalVaults: catalog.length,
-    vaults: catalog.map((v) => ({
-      skill: v.skillId,
-      entries: v.entryCount,
-      lastUpdated: v.lastUpdated,
-    })),
+    totalVaults: vaults.length,
+    vaults,
   };
 };
