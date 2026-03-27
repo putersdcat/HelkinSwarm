@@ -17,6 +17,7 @@ import type { SubAgentInput, SubAgentResult } from './subAgentActivity.js';
 import type { ExecutorInput, ExecutorResult } from './executorActivity.js';
 import { signExecutorPayload, hashPayload } from './executorActivity.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
+import type { PlanInput, PlanResult } from './planActivity.js';
 import { canonicalizeInput } from './inputCanonicalizer.js';
 import { computeToolBudget } from './toolBudgetScaler.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
@@ -86,16 +87,43 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   const spans: TelemetrySpan[] = [];
   spans.push({ label: 'prompt', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
 
+  // 1b. Plan activity — classify complexity & decompose multi-step requests (#320)
+  // Simple requests skip the LLM planning call (zero overhead).
+  spanStart = context.df.currentUtcDateTime.getTime();
+  const planInput: PlanInput = {
+    userMessage: userMessageForLlm,
+    correlationId,
+    availableToolNames: toolRegistry.getToolNames(),
+  };
+  const planResult: PlanResult = yield context.df.callActivity('planActivity', planInput);
+  if (planResult.planTokensUsed > 0) {
+    spans.push({ label: 'plan', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
+  }
+
+  // Inject plan guidance into prompt messages for compound/complex requests (#320)
+  const promptWithPlan: PromptResult = planResult.steps
+    ? {
+        ...prompt,
+        messages: [
+          ...prompt.messages,
+          {
+            role: 'system' as const,
+            content: `[Plan] Complexity: ${planResult.complexity}. Execute these steps in order:\n${planResult.steps.map(s => `${s.order}. ${s.description}${s.toolHint ? ` (use ${s.toolHint})` : ''}`).join('\n')}`,
+          },
+        ],
+      }
+    : prompt;
+
   // 2. Call LLM (global frontier model via Foundry client)
   spanStart = context.df.currentUtcDateTime.getTime();
   const llmResult: LlmResult = yield context.df.callActivity(
     'llmActivity',
-    { ...prompt, correlationId, modelOverride: input.modelOverride, imageUrls: input.imageUrls },
+    { ...promptWithPlan, correlationId, modelOverride: input.modelOverride, imageUrls: input.imageUrls },
   );
   spans.push({ label: 'llm', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
 
   // Cumulative token tracking across all LLM calls in this session (#253)
-  let cumulativeTokensUsed = llmResult.tokensUsed;
+  let cumulativeTokensUsed = llmResult.tokensUsed + planResult.planTokensUsed;
   let cumulativePromptTokens = llmResult.promptTokens;
   const operationalNotices = new Set(llmResult.operationalNotices ?? []);
 
@@ -402,28 +430,96 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           `dispatching ${followUp.toolCalls.length} tool call(s) (#253)`,
         );
 
-        // Only allow low-risk direct tools in multi-round iterations (safety)
+        // Allow low + medium risk tools in multi-round; block high-risk / executor (#319)
         const roundCallsForDispatch = followUp.toolCalls.filter(
           (tc: { name: string }) => {
             const def = toolRegistry.get(tc.name);
-            return def && def.risk === 'low' && !def.requiresSubAgent;
+            return def && def.risk !== 'high' && !def.requiresExecutor;
           },
         );
 
         if (roundCallsForDispatch.length === 0) break;
 
-        // Dispatch tools for this round
-        const roundDispatchInput: ToolDispatchInput = {
-          toolCalls: roundCallsForDispatch,
-          correlationId,
-          sessionId: input.state.userId,
-          userId: input.state.userId,
-          conversationId: input.state.conversationId,
-        };
-        const roundResults: ToolDispatchResult = yield context.df.callActivity(
-          'toolDispatchActivity',
-          roundDispatchInput,
+        // Lightweight verification for medium-risk tools in multi-round (#319)
+        const hasMediumRisk = roundCallsForDispatch.some(
+          (tc: { name: string }) => toolRegistry.get(tc.name)?.risk === 'medium',
         );
+        if (hasMediumRisk) {
+          const roundVerification = yield context.df.callActivity('verificationPipelineActivity', {
+            correlationId,
+            sessionId: input.state.userId,
+            userId: input.state.userId,
+            toolName: roundCallsForDispatch.map((tc: { name: string }) => tc.name).join(', '),
+            risk: 'medium' as const,
+            rawOutput: roundCallsForDispatch,
+            originalQuery: input.userMessage,
+            skipConfirmation: true, // No human card in multi-round — schema + shields only
+          });
+          if (!roundVerification.passed) {
+            console.log(`[sessionOrchestrator] Multi-round ${toolRound}: verification blocked medium-risk tools`);
+            break;
+          }
+        }
+
+        // Split into sub-agent vs direct dispatch (same as initial dispatch) (#319)
+        const roundSubAgentCalls: typeof roundCallsForDispatch = [];
+        const roundDirectCalls: typeof roundCallsForDispatch = [];
+        for (const tc of roundCallsForDispatch) {
+          const def = toolRegistry.get(tc.name);
+          if (def?.requiresSubAgent) {
+            roundSubAgentCalls.push(tc);
+          } else {
+            roundDirectCalls.push(tc);
+          }
+        }
+
+        // Execute sub-agent calls (#319)
+        const roundSubResults: ToolDispatchResult['results'] = [];
+        for (const tc of roundSubAgentCalls) {
+          const def = toolRegistry.get(tc.name);
+          const subInput: SubAgentInput = {
+            toolName: tc.name,
+            toolDescription: def?.description ?? tc.name,
+            toolInputSchema: def?.inputSchema,
+            arguments: JSON.parse(tc.arguments) as Record<string, unknown>,
+            userContext: input.userMessage,
+            correlationId,
+            sessionId: input.state.userId,
+            userId: input.state.userId,
+          };
+          const subResult: SubAgentResult = yield context.df.callActivity('subAgentActivity', subInput);
+          roundSubResults.push({
+            toolCallId: tc.id,
+            toolName: tc.name,
+            success: subResult.success,
+            result: subResult.output,
+            error: subResult.error,
+            requiresExecutor: false,
+          });
+          console.log(`[sessionOrchestrator] Multi-round ${toolRound}: sub-agent spawn for ${tc.name} (#319)`);
+        }
+
+        // Execute direct-dispatch calls
+        let roundDirectResults: ToolDispatchResult | null = null;
+        if (roundDirectCalls.length > 0) {
+          const roundDispatchInput: ToolDispatchInput = {
+            toolCalls: roundDirectCalls,
+            correlationId,
+            sessionId: input.state.userId,
+            userId: input.state.userId,
+            conversationId: input.state.conversationId,
+          };
+          roundDirectResults = yield context.df.callActivity(
+            'toolDispatchActivity',
+            roundDispatchInput,
+          );
+        }
+
+        // Merge round results
+        const roundResults: ToolDispatchResult = {
+          results: [...roundSubResults, ...(roundDirectResults?.results ?? [])],
+          totalCalls: roundSubResults.length + (roundDirectResults?.results.length ?? 0),
+        };
 
         // Accumulate this turn for conversation history
         additionalTurns.push({
@@ -502,6 +598,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       spans,
       toolCalls: toolNames,
       safetyPassed,
+      planComplexity: planResult.complexity,
     };
     replyMessage += formatTelemetryFooter(envConfig.devTelemetryMode, telemetryData);
   }

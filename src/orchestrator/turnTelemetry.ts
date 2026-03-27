@@ -20,6 +20,8 @@ export interface TurnTelemetryData {
   spans: TelemetrySpan[];
   toolCalls: string[];
   safetyPassed: boolean;
+  /** Request complexity from planning phase (#320). */
+  planComplexity?: 'simple' | 'compound' | 'complex';
 }
 
 // USD per 1M tokens (blended input/output average). (#254, #260)

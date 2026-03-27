@@ -53,7 +53,11 @@ export type TelemetryEventName =
   | 'StaleSessionCleanup'
   | 'BotMessageReceived'
   | 'PromptBuilt'
-  | 'ReplySent';
+  | 'ReplySent'
+  | 'PlanClassification'
+  | 'PlanGenerated'
+  | 'PlanParseError'
+  | 'HandlerTokenSource';
 
 // ---------------------------------------------------------------------------
 // Session Tracer — maps events to trace phases for Dev Console (#140)
