@@ -20,9 +20,7 @@ import type { SendReplyInput } from './sendReplyActivity.js';
 import type { SpinnerHeartbeatInput } from './spinnerHeartbeatActivity.js';
 import type { TerminateOrchestrationInput } from './terminateOrchestrationActivity.js';
 import type { PurgeOrchestrationInput } from './terminateOrchestrationActivity.js';
-import type { BuildPromptInput, PromptResult } from './buildPromptActivity.js';
 import type { LlmResult } from './llmActivity.js';
-import type { PlanInput } from './planActivity.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
 
@@ -96,23 +94,10 @@ function* processTurn(
 
   if (INLINE_SESSION) {
     // Inline session pipeline — no sub-orchestrator (#327)
-    const promptInput: BuildPromptInput = {
-      state,
-      userMessage: event.userMessage,
-      correlationId,
-    };
-    const prompt: PromptResult = yield context.df.callActivity('buildPromptActivity', promptInput);
-
-    const planInput: PlanInput = {
-      userMessage: event.userMessage,
-      correlationId,
-      userId: state.userId,
-      availableToolNames: [],
-    };
-    yield context.df.callActivity('planActivity', planInput);
-
+    // Minimal: skip buildPrompt+plan, go straight to llm+sendReply
     const llmInput = {
-      ...prompt,
+      messages: [{ role: 'user' as const, content: event.userMessage }],
+      tools: [],
       correlationId,
       userId: state.userId,
       modelOverride: event.modelOverride,
