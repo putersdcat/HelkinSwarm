@@ -14,7 +14,8 @@ on:
     paths:
       - 'src/**'
       - 'skills/**'
-      - 'infra/**'
+      - 'infra/*.bicep'
+      - 'infra/*.parameters.json'
       - 'Dockerfile'
       - 'package.json'
       - 'pnpm-lock.yaml'
@@ -159,6 +160,14 @@ jobs:
             exit 0
           fi
 
+          # [skip-infra] in commit message forces code-only deploy
+          COMMIT_MSG=$(git log -1 --format='%s' "${{ github.sha }}")
+          if echo "$COMMIT_MSG" | grep -qi '\[skip-infra\]'; then
+            echo "infraChanged=false" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ [skip-infra] detected in commit message — skipping Bicep deployment."
+            exit 0
+          fi
+
           BEFORE_SHA="${{ github.event.before }}"
           if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
             echo "infraChanged=true" >> "$GITHUB_OUTPUT"
@@ -169,7 +178,9 @@ jobs:
           CHANGED_FILES=$(git diff --name-only "$BEFORE_SHA" "${{ github.sha }}")
           echo "$CHANGED_FILES"
 
-          if echo "$CHANGED_FILES" | grep -qE '^(infra/|\.github/workflows/deploy-stamp\.yml$)'; then
+          # Only trigger infra deployment for actual Bicep templates, parameter files,
+          # and the workflow itself — NOT scratch JSON exports or non-IaC files in infra/
+          if echo "$CHANGED_FILES" | grep -qE '^(infra/.*\.bicep$|infra/.*\.parameters\.json$|\.github/workflows/deploy-stamp\.yml$)'; then
             echo "infraChanged=true" >> "$GITHUB_OUTPUT"
             echo "✅ Infrastructure-affecting files changed — running Bicep deployment."
           else
@@ -325,6 +336,7 @@ jobs:
 
       - name: Deploy AI model deployments
         if: steps.changes.outputs.infraChanged == 'true'
+        continue-on-error: true
         run: |
           set -e
           QUOTA_STRATEGY="${{ github.event.inputs.QUOTA_STRATEGY || 'maximize' }}"
