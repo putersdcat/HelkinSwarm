@@ -81,6 +81,7 @@ function makeRoutingConfig() {
 
 describe('FoundryClient failover', () => {
   afterEach(async () => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.resetModules();
     delete process.env['AZURE_FOUNDRY_OBO_TOKEN'];
@@ -202,6 +203,21 @@ describe('FoundryClient failover', () => {
     // gpt-5.4-mini was skipped entirely
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(response.model).toBe('FW-Kimi-K2.5');
+  });
+
+  it('converts a hung fetch into a TimeoutError via the hard timeout wrapper (#325)', async () => {
+    const { fetchWithHardTimeout } = await loadFoundryClientModule();
+
+    const fetchMock = vi.fn().mockImplementation(() => new Promise(() => undefined));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchWithHardTimeout('https://foundry.example.com/test', {
+      method: 'POST',
+      headers: {},
+      body: '{}',
+    }, 20)).rejects.toMatchObject({ name: 'TimeoutError' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('fast-fails without issuing fetch calls when all known models are down (#325)', async () => {

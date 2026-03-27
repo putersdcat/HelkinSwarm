@@ -162,6 +162,48 @@ export function parseRetryAfterMs(headers: Headers): number | undefined {
   return undefined;
 }
 
+/**
+ * Hard timeout wrapper for fetch.
+ * We cannot trust runtime-specific `AbortSignal.timeout()` behavior in Azure Functions,
+ * so we both abort the request AND locally reject the await path when the timer fires.
+ * This guarantees the caller sees a `TimeoutError` and can continue the fallback chain.
+ */
+export async function fetchWithHardTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+): Promise<Response> {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort();
+      const timeoutError = new Error(`Fetch timed out after ${timeoutMs}ms`);
+      timeoutError.name = 'TimeoutError';
+      reject(timeoutError);
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([
+      fetch(url, { ...init, signal: controller.signal }),
+      timeoutPromise,
+    ]);
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      const timeoutError = new Error(`Fetch timed out after ${timeoutMs}ms`);
+      timeoutError.name = 'TimeoutError';
+      throw timeoutError;
+    }
+    throw err;
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 export class FoundryClient {
   private routing: ModelRouting;
   private apiBase: string;
@@ -357,12 +399,11 @@ export class FoundryClient {
     const oboToken = await this.getOboToken();
     headers['Authorization'] = `Bearer ${oboToken}`;
 
-    const response = await fetch(url, {
+    const response = await fetchWithHardTimeout(url, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    }, timeoutMs);
 
     if (!response.ok) {
       const rawErrorText = await response.text().catch(() => 'unknown');
