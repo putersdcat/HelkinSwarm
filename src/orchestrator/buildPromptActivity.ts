@@ -84,16 +84,23 @@ async function withSoftTimeout<T>(
 export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult> {
   const { state, userMessage } = input;
   const correlationId = input.correlationId ?? state.userId;
+  const stageStart = Date.now();
+  const timings: string[] = [];
+  const mark = (label: string) => timings.push(`${label}:${Date.now() - stageStart}ms`);
 
   recordSubstage(correlationId, 'build-prompt:persona', state.userId);
+  mark('pre-persona');
   const persona = await withSoftTimeout(loadPersona(), 1_000, DEFAULT_PERSONA, 'persona');
+  mark('post-persona');
 
   // Load user profile for preferences injection or onboarding detection
   let preferencesFragment = '';
   let onboardingInstructions = '';
   try {
     recordSubstage(correlationId, 'build-prompt:user-profile', state.userId);
+    mark('pre-profile');
     const profile = await withSoftTimeout(getUserProfile(state.userId), 2_000, undefined, 'userProfile');
+    mark('post-profile');
     if (profile?.onboardedAt) {
       preferencesFragment = profileToPromptFragment(profile);
     } else {
@@ -112,8 +119,10 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   }
 
   // Build tool summary for the system prompt — safety-filtered (#210)
+  mark('pre-tools');
   recordSubstage(correlationId, 'build-prompt:tool-summary', state.userId);
   const tools = toolRegistry.getSafetyFiltered();
+  mark('post-tools');
   const toolSummary = tools.length > 0
     ? `Available tools: ${tools.map((t) => `${t.name} (${t.description})`).join('; ')}`
     : '';
@@ -127,6 +136,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   let recalledMemory = '';
   try {
     recordSubstage(correlationId, 'build-prompt:memory-recall', state.userId);
+    mark('pre-memory');
     recalledMemory = await withSoftTimeout((async () => {
       const mm = new MemoryManager(state.userId);
 
@@ -162,6 +172,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   } catch {
     // Memory recall unavailable — proceed without
   }
+  mark('post-memory');
 
   // Inject DevLoop session context when in a DevLoop session (#147)
   const devLoopBlock = input.devLoopContext?.isDevLoop
@@ -172,6 +183,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   // user-specific context (e.g. "Mr. Anderson" addressing) into system channels (#148).
   const isDevLoop = !!input.devLoopContext?.isDevLoop;
 
+  mark('pre-compose');
   recordSubstage(correlationId, 'build-prompt:compose', state.userId);
 
   const systemPrompt = [
@@ -226,16 +238,32 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
     trackEvent({ name: 'PromptBuilt', correlationId: input.correlationId, userId: input.state.userId, properties: { estimatedTokens: String(estimatedTokens), messageCount: String(messages.length) } });
   }
 
+  mark('return');
+  console.log(`[buildPrompt] timings: ${timings.join(' | ')}`);
   return { systemPrompt, messages, estimatedTokens };
 }
 
 // Durable Functions activity registration
 const ACTIVITY_HARD_TIMEOUT_MS = 25_000;
 
+// DIAGNOSTIC MODE (#327): bypass all async I/O to isolate the hang.
+// If the turn completes with this, the hang is in buildPrompt internals.
+// If not, the hang is in Durable Functions infrastructure.
+const DIAGNOSTIC_FAST_PATH = !!(process.env['BUILDPROMPT_FAST_PATH'] ?? '1');
+
 df.app.activity('buildPromptActivity', {
   handler: async (input: BuildPromptInput): Promise<PromptResult> => {
     const correlationId = input.correlationId ?? input.state.userId;
+    console.log(`[buildPromptActivity] START correlationId=${correlationId} fastPath=${DIAGNOSTIC_FAST_PATH}`);
+
+    if (DIAGNOSTIC_FAST_PATH) {
+      console.log(`[buildPromptActivity] FAST PATH — returning degraded prompt immediately`);
+      recordSubstage(correlationId, 'build-prompt:fast-path', input.state.userId);
+      return buildDegradedPrompt(input);
+    }
+
     await recordOrchestratorStage(correlationId, 'build-prompt', input.state.userId);
+    console.log(`[buildPromptActivity] Stage recorded, entering buildPrompt`);
 
     const start = Date.now();
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -244,6 +272,7 @@ df.app.activity('buildPromptActivity', {
         buildPrompt(input),
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
+            console.error(`[buildPromptActivity] HARD TIMEOUT after ${ACTIVITY_HARD_TIMEOUT_MS}ms`);
             reject(new Error(`buildPromptActivity hard timeout after ${ACTIVITY_HARD_TIMEOUT_MS}ms`));
           }, ACTIVITY_HARD_TIMEOUT_MS);
         }),
@@ -252,7 +281,6 @@ df.app.activity('buildPromptActivity', {
       return result;
     } catch (err) {
       console.error(`[buildPromptActivity] Failed/timed out after ${Date.now() - start}ms:`, err);
-      // Return a minimal degraded prompt so the LLM call can still proceed.
       return buildDegradedPrompt(input);
     } finally {
       if (timer) clearTimeout(timer);
