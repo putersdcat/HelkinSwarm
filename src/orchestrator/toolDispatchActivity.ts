@@ -13,6 +13,7 @@ export interface ToolDispatchInput {
   correlationId: string;
   sessionId: string;
   userId: string;
+  conversationId?: string;
 }
 
 export interface ToolDispatchResult {
@@ -85,8 +86,9 @@ df.app.activity('toolDispatchActivity', {
       // Low/medium risk — dispatch to handler
       try {
         const parsedArgs = JSON.parse(call.arguments) as Record<string, unknown>;
-        // Inject session context (userId) so handlers can access it without cross-boundary imports
+        // Inject session context (userId, conversationId) so handlers can access it without cross-boundary imports
         parsedArgs['userId'] = input.userId;
+        if (input.conversationId) parsedArgs['conversationId'] = input.conversationId;
         const handler = getHandler(call.name);
 
         if (!handler) {

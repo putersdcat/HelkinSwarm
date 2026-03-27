@@ -1,0 +1,44 @@
+{
+  "domain": "teams",
+  "version": "1.0",
+  "shortName": "teams",
+  "displayName": "Microsoft Teams",
+  "shortDescription": "Teams message reactions and chat intelligence via Microsoft Graph",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/teams.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "post-install-link",
+  "lifecycleRules": "keep-credentials",
+  "requiredPermissions": ["Chat.Read"],
+  "linkConfig": {
+    "connectionName": "GraphOAuth",
+    "displayName": "Microsoft Account",
+    "description": "Sign in to grant HelkinSwarm access to your Teams chats and reactions"
+  },
+  "tools": [
+    {
+      "name": "teams_get_message_reactions",
+      "description": "Retrieve the emoji reactions on a specific Teams chat message. Returns each reaction type (e.g. 👍 like, ❤️ heart) with the count, reactor display names, and timestamps. Requires the user's linked Microsoft account. Use the current conversationId if the user refers to 'this chat' — it is automatically injected as a hidden arg.",
+      "risk": "low",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": "The Teams Graph API message ID (format: 1234567890123)"
+          },
+          "chatId": {
+            "type": "string",
+            "description": "The Teams chat ID (format: 19:xxx@thread.v2). Omit to use the current conversation automatically."
+          }
+        },
+        "required": ["messageId"]
+      }
+    }
+  ]
+}

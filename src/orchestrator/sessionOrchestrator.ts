@@ -259,6 +259,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           correlationId,
           sessionId: input.state.userId,
           userId: input.state.userId,
+          conversationId: input.state.conversationId,
         };
         directResults = yield context.df.callActivity('toolDispatchActivity', dispatchInput);
       }
@@ -417,6 +418,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           correlationId,
           sessionId: input.state.userId,
           userId: input.state.userId,
+          conversationId: input.state.conversationId,
         };
         const roundResults: ToolDispatchResult = yield context.df.callActivity(
           'toolDispatchActivity',
