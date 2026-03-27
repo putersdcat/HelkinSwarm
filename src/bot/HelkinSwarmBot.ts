@@ -67,7 +67,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
    * Static: survives across per-request HelkinSwarmBot instances within the same container.
    */
   private static readonly recentActivityIds = new Map<string, number>();
-  private static readonly DEDUP_TTL_MS = 60_000;
+  private static readonly DEDUP_TTL_MS = 30_000;
 
   private async sendFreshMessage(
     context: TurnContext,
@@ -279,20 +279,18 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     let messageText = (context.activity.text ?? '').trim();
     const correlationId = crypto.randomUUID();
 
-    // Dedup: Teams adapter may retry the same HTTP POST within seconds (#300).
-    // activity.id may be undefined for incoming messages, so we use a hash of
-    // userId + timestamp + text prefix as a deterministic dedup key.
-    const msgTs = context.activity.timestamp instanceof Date
-      ? context.activity.timestamp.toISOString()
-      : String(context.activity.timestamp ?? '');
+    // Dedup: Bot Connector may retry the same webhook POST within ~15s (#300).
+    // activity.timestamp can differ between original and retry, so we use userId +
+    // message text prefix only. TTL-based: same text from same user within 30s = dup.
     const dedupKey = createHash('sha256')
-      .update(`${userId ?? 'anon'}:${msgTs}:${messageText.slice(0, 100)}`)
+      .update(`${userId ?? 'anon'}:${messageText.slice(0, 200)}`)
       .digest('hex')
       .slice(0, 16);
     {
       const now = Date.now();
-      if (HelkinSwarmBot.recentActivityIds.has(dedupKey)) {
-        console.info(`[HelkinSwarmBot] Duplicate message ${dedupKey} — skipping`);
+      const lastSeen = HelkinSwarmBot.recentActivityIds.get(dedupKey);
+      if (lastSeen !== undefined && (now - lastSeen) < HelkinSwarmBot.DEDUP_TTL_MS) {
+        console.info(`[HelkinSwarmBot] Duplicate message ${dedupKey} — skipping (${now - lastSeen}ms since last)`);
         return;
       }
       HelkinSwarmBot.recentActivityIds.set(dedupKey, now);
@@ -569,15 +567,17 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     // does NOT delete history events from the History table, so reusing the same
     // instanceId causes unbounded replay growth.
     //
-    // Dedup (#300): create a deterministic instance ID from userId + activity timestamp
-    // + first 100 chars of the message. If Teams retries the same webhook POST (identical
-    // activity payload), the second startNew() will hit a conflict — caught below.
-    // activity.id may be undefined for incoming Teams messages, so we hash instead.
-    const ts = context.activity.timestamp instanceof Date
-      ? context.activity.timestamp.toISOString()
-      : String(context.activity.timestamp ?? '');
-    const dedupSeed = `${userId}:${ts}:${userMessage.slice(0, 100)}`;
-    const dedupHash = createHash('sha256').update(dedupSeed).digest('hex').slice(0, 12);
+    // Dedup (#300): use a wall-clock 60s time bucket + userId + text prefix to create
+    // a deterministic instanceId. activity.timestamp can differ between original POST
+    // and Bot Connector retry, so we use server-side Date.now() in 60s buckets.
+    // We check both current and previous bucket to handle boundary crossings.
+    const timeBucket = Math.floor(Date.now() / 60_000);
+    const makeDedupHash = (bucket: number): string =>
+      createHash('sha256')
+        .update(`${userId}:${bucket}:${userMessage.slice(0, 200)}`)
+        .digest('hex')
+        .slice(0, 12);
+    const dedupHash = makeDedupHash(timeBucket);
     const instanceId = `overseer-${userId}-${dedupHash}`;
 
     const conversationReference = TurnContextClass.getConversationReference(
@@ -600,18 +600,24 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     try {
       // Check if this instance already exists (running OR completed) — prevents
       // duplicates when the retry arrives after the first overseer completed (#300).
+      // Check both current and previous time bucket to handle 60s-boundary crossings.
       // getStatus may throw 404 for non-existent instances — that's expected.
+      const prevDedupHash = makeDedupHash(timeBucket - 1);
+      const prevInstanceId = `overseer-${userId}-${prevDedupHash}`;
       let alreadyExists = false;
-      try {
-        const existing = await client.getStatus(instanceId);
-        if (existing?.runtimeStatus !== undefined && existing.runtimeStatus !== null) {
-          alreadyExists = true;
-          console.info(
-            `[HelkinSwarmBot] Overseer ${instanceId} already exists (status: ${String(existing.runtimeStatus)}) — skipping (Teams retry dedup)`,
-          );
+      for (const iid of [instanceId, prevInstanceId]) {
+        try {
+          const existing = await client.getStatus(iid);
+          if (existing?.runtimeStatus !== undefined && existing.runtimeStatus !== null) {
+            alreadyExists = true;
+            console.info(
+              `[HelkinSwarmBot] Overseer ${iid} already exists (status: ${String(existing.runtimeStatus)}) — skipping (Teams retry dedup)`,
+            );
+            break;
+          }
+        } catch {
+          // getStatus throws for non-existent instances — expected, continue
         }
-      } catch {
-        // getStatus throws for non-existent instances — expected, proceed to startNew
       }
       if (alreadyExists) return;
 
