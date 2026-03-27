@@ -4,6 +4,7 @@ import { getEnvConfig } from '../config/envConfig.js';
 import { getDatabase } from '../memory/cosmosClient.js';
 import { APP_VERSION } from '../config/version.js';
 import { getMessagePathSnapshot } from '../observability/messagePathHealth.js';
+import { getLlmAggregateHealth } from '../llm/llmHealthTracker.js';
 
 interface HealthResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -13,7 +14,7 @@ interface HealthResponse {
   components: {
     runtime: 'ok' | 'error';
     overseer: 'ok' | 'pending';
-    llm: 'ok' | 'pending';
+    llm: 'ok' | 'degraded' | 'down';
     memory: 'ok' | 'error';
     messagePath: 'ok' | 'degraded' | 'error';
     safetyMode: string;
@@ -62,12 +63,13 @@ export async function healthHandler(
   const env = getEnvConfig();
   const memoryStatus = await checkMemoryStatus();
   const messagePath = await getMessagePathSnapshot();
+  const llmHealth = getLlmAggregateHealth();
 
   const runtimeStatus = messagePath.status === 'error' ? 'error' : 'ok';
   const overallStatus: HealthResponse['status'] =
-    runtimeStatus === 'error'
+    runtimeStatus === 'error' || llmHealth === 'down'
       ? 'unhealthy'
-      : memoryStatus === 'error' || messagePath.status === 'degraded'
+      : memoryStatus === 'error' || messagePath.status === 'degraded' || llmHealth === 'degraded'
         ? 'degraded'
         : 'healthy';
 
@@ -79,7 +81,7 @@ export async function healthHandler(
     components: {
       runtime: runtimeStatus,
       overseer: 'ok',
-      llm: 'ok',
+      llm: llmHealth,
       memory: memoryStatus,
       messagePath: messagePath.status,
       safetyMode: env.safetyMode,

@@ -17,6 +17,7 @@ import { listAllHooks } from '../orchestrator/hookCatalog.js';
 import { getContainer } from '../memory/cosmosClient.js';
 import { MemoryManager } from '../memory/memoryManager.js';
 import { validateTabTokenFromRequest } from '../auth/tabTokenValidator.js';
+import { getLlmHealthSnapshot } from '../llm/llmHealthTracker.js';
 
 const TAB_CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': 'https://helkinswarmtabsst.z20.web.core.windows.net',
@@ -152,6 +153,7 @@ app.http('tab-dev-console', {
           totalEntries: memoryVaults.reduce((sum, v) => sum + v.entries, 0),
         },
         maintenance,
+        llmHealth: getLlmHealthSnapshot(),
         safetyMode: env.safetyMode,
         euResidencyMode: env.euResidencyMode,
         timestamp: new Date().toISOString(),

@@ -89,6 +89,8 @@ describe('FoundryClient failover', () => {
 
     const circuitBreaker = await import('../../src/llm/modelCircuitBreaker.js');
     circuitBreaker.resetAllDegraded();
+    const tracker = await import('../../src/llm/llmHealthTracker.js');
+    tracker.resetLlmHealthTracker();
   });
 
   it('auto-fails over on HTTP 429 and records a concise operational notice path', async () => {
@@ -200,6 +202,35 @@ describe('FoundryClient failover', () => {
     // gpt-5.4-mini was skipped entirely
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(response.model).toBe('FW-Kimi-K2.5');
+  });
+
+  it('fast-fails without issuing fetch calls when all known models are down (#325)', async () => {
+    const { FoundryClient, FoundryAllModelsDownError } = await loadFoundryClientModule();
+    const tracker = await import('../../src/llm/llmHealthTracker.js');
+
+    tracker.registerModels([
+      'grok-4-1-fast-non-reasoning',
+      'gpt-5.4-mini',
+      'FW-Kimi-K2.5',
+    ]);
+    tracker.reportLlmFailure('grok-4-1-fast-non-reasoning');
+    tracker.reportLlmFailure('grok-4-1-fast-non-reasoning');
+    tracker.reportLlmFailure('gpt-5.4-mini');
+    tracker.reportLlmFailure('gpt-5.4-mini');
+    tracker.reportLlmFailure('FW-Kimi-K2.5');
+    tracker.reportLlmFailure('FW-Kimi-K2.5');
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new FoundryClient(makeRoutingConfig());
+
+    await expect(client.chatCompletion({
+      messages: [{ role: 'user', content: 'hello while down' }],
+      correlationId: 'corr-all-down',
+    })).rejects.toBeInstanceOf(FoundryAllModelsDownError);
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

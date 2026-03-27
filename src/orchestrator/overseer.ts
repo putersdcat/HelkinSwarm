@@ -18,6 +18,7 @@ import type { SaveStateInput } from './saveStateActivity.js';
 import type { LoadStateInput } from './loadStateActivity.js';
 import type { SendReplyInput } from './sendReplyActivity.js';
 import type { SpinnerHeartbeatInput } from './spinnerHeartbeatActivity.js';
+import type { TerminateOrchestrationInput } from './terminateOrchestrationActivity.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
 
@@ -94,9 +95,13 @@ function* processTurn(
   const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
   const sessionDeadline = new Date(context.df.currentUtcDateTime.getTime() + SESSION_TIMEOUT_MS);
   const sessionTimer = context.df.createTimer(sessionDeadline);
+
+  // Assign a deterministic instanceId so we can terminate on timeout (#325).
+  const sessionInstanceId = `session-${context.df.instanceId}`;
   const sessionTask = context.df.callSubOrchestrator(
     'sessionOrchestrator',
     sessionInput,
+    sessionInstanceId,
   );
 
   // Spinner heartbeat (#267)
@@ -120,6 +125,17 @@ function* processTurn(
         timedOut = true;
         spinnerTimer.cancel();
         console.error(`[overseer] processTurn timed out after ${SESSION_TIMEOUT_MS}ms for user=${state.userId}`);
+
+        // Kill the orphaned sub-orchestrator to prevent zombie sessions (#325).
+        try {
+          yield context.df.callActivity('terminateOrchestrationActivity', {
+            instanceId: sessionInstanceId,
+            reason: `Overseer timeout after ${SESSION_TIMEOUT_MS}ms for user=${state.userId}`,
+          } satisfies TerminateOrchestrationInput);
+        } catch (termErr) {
+          console.warn(`[overseer] Failed to terminate session ${sessionInstanceId}:`, termErr);
+        }
+
         try {
           const errorReply: SendReplyInput = {
             userId: state.userId,

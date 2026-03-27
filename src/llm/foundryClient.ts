@@ -6,6 +6,7 @@ import { getModelRouting, getFallbackChain, type ModelRouting } from './modelRou
 import { getBearerToken } from '../auth/identity.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { isModelDegraded, markModelDegraded, clearModelDegraded } from './modelCircuitBreaker.js';
+import { reportLlmSuccess, reportLlmFailure, registerModels, isAllModelsDown } from './llmHealthTracker.js';
 import { trackEvent } from '../observability/telemetry.js';
 
 // ---------------------------------------------------------------------------
@@ -185,6 +186,15 @@ export class FoundryClient {
     // Get the full fallback chain for the requested deployment.
     const chain = getFallbackChain(this.routing.deploymentName);
 
+    // Register models with the health tracker so it knows the full set (#325).
+    registerModels(chain.map(r => r.deploymentName));
+
+    // Circuit-open fast-fail: if ALL models in the chain are down, don't waste
+    // 90 seconds cascading through guaranteed failures (#325).
+    if (isAllModelsDown()) {
+      throw new FoundryAllModelsDownError(chain.map(r => r.deploymentName));
+    }
+
     let lastError: FoundryError | Error | undefined;
     const failoverSteps: LlmFailoverStep[] = [];
     const attemptedModels: string[] = [];
@@ -217,6 +227,7 @@ export class FoundryClient {
         const result = await this.callSingleModel(routing, options, correlationId, perModelTimeout);
         // Successful response — clear any degradation for this model.
         clearModelDegraded(routing.deploymentName);
+        reportLlmSuccess(routing.deploymentName);
         if (failoverSteps.length > 0) {
           result.failoverSteps = [...failoverSteps];
           // Emit chain-level summary telemetry (#313-D)
@@ -236,6 +247,7 @@ export class FoundryClient {
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
         const isRetryable = isRetryableError(err);
+        reportLlmFailure(routing.deploymentName);
 
         if (isRetryable) {
           const reason = err instanceof FoundryError
@@ -447,6 +459,17 @@ export class FoundryFallbackExhaustedError extends Error {
   }
 }
 
+/**
+ * Thrown when the circuit-open fast-fail detects ALL models are down before attempting any calls.
+ * This avoids wasting 90s cascading through guaranteed failures (#325).
+ */
+export class FoundryAllModelsDownError extends Error {
+  constructor(public readonly knownModels: string[]) {
+    super(`All ${knownModels.length} models are currently unreachable — circuit open. No request attempted.`);
+    this.name = 'FoundryAllModelsDownError';
+  }
+}
+
 export function buildSuccessfulFailoverNotices(failoverSteps: readonly LlmFailoverStep[] | undefined): string[] {
   if (!failoverSteps || failoverSteps.length === 0) {
     return [];
@@ -468,6 +491,10 @@ export function buildSuccessfulFailoverNotices(failoverSteps: readonly LlmFailov
 }
 
 export function buildLlmFailureNotice(err: unknown): string {
+  if (err instanceof FoundryAllModelsDownError) {
+    return '⚠️ All AI models are currently unreachable. Your message cannot be processed right now. The system will auto-recover when models come back online.';
+  }
+
   if (err instanceof FoundryFallbackExhaustedError) {
     const quotaIssue = err.failoverSteps.some((step) => step.statusCode === 429)
       || (err.lastError instanceof FoundryError && err.lastError.statusCode === 429);
