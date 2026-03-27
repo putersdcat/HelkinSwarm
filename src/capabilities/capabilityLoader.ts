@@ -44,6 +44,23 @@ export function getAllManifests(): CapabilityManifest[] {
 }
 
 /**
+ * Return the list of skill domains that declare the given skillId as a dependency.
+ * Used by helkin_uninstall_skill to enforce uninstall protection (#200).
+ */
+export function getDependentsOf(skillId: string): string[] {
+  return [...manifestRegistry.values()]
+    .filter((m) => m.dependencies?.includes(skillId))
+    .map((m) => m.domain);
+}
+
+/**
+ * Get the dependency list for a skill (ids of skills it requires).
+ */
+export function getDependenciesOf(skillId: string): string[] {
+  return manifestRegistry.get(skillId)?.dependencies ?? [];
+}
+
+/**
  * Collect all maintenanceTasks across installed skills, tagged with domain.
  */
 export function getAllMaintenanceTasks(): Array<{

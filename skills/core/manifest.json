@@ -142,6 +142,48 @@
         "properties": {},
         "required": []
       }
+    },
+    {
+      "name": "helkin_uninstall_skill",
+      "description": "Check whether a skill can be safely uninstalled. Verifies no other installed skills depend on it (bidirectional dependency check). Returns 'blocked' with dependent list if removal would break dependents, or 'ready' with next steps if safe.",
+      "risk": "medium",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": true,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "skillId": {
+            "type": "string",
+            "description": "The skill domain to check for uninstall (e.g. 'outlook', 'github')"
+          }
+        },
+        "required": ["skillId"]
+      }
+    },
+    {
+      "name": "helkin_install_skill",
+      "description": "Check installation readiness and onboarding steps for a skill. Returns dependency status, missing prerequisites, required external accounts, and ordered setup steps.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "skillId": {
+            "type": "string",
+            "description": "The skill domain to inspect (e.g. 'outlook', 'github', 'web')"
+          }
+        },
+        "required": ["skillId"]
+      }
     }
   ],
   "shortName": "core",
