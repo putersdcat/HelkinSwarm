@@ -551,6 +551,9 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'OPENROUTER_FALLBACK_PRIMARY', value: openrouterFallbackPrimary }
         { name: 'OPENROUTER_FALLBACK_SECONDARY', value: openrouterFallbackSecondary }
 
+        // ── Web search: Brave Search API key from Key Vault (#190) ──
+        { name: 'BRAVE_SEARCH_API_KEY', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=BraveSearchApiKey)' }
+
         // ── OBO / Delegated Identity (spec 11) ──
         { name: 'BOT_OAUTH_CONNECTION_NAME', value: 'GraphOAuth' }
         { name: 'ENTRA_DELEGATED_AUTH_CLIENT_ID', value: delegatedAuthClientId }

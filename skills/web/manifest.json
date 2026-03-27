@@ -25,7 +25,7 @@
           },
           "market": {
             "type": "string",
-            "description": "Market code for localized results (e.g. 'en-US', 'nl-NL'). Default: 'en-US'"
+            "description": "Country code for localized results (e.g. 'us', 'nl'). Default: 'us'"
           }
         },
         "required": ["query"]
@@ -34,18 +34,18 @@
   ],
   "shortName": "web",
   "displayName": "Web Search",
-  "shortDescription": "Perform internet searches via Bing Search API",
+  "shortDescription": "Perform internet searches via Brave Search API",
   "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/web.png",
   "deploymentScenario": "personal-user-centric",
   "onboardingMethod": "automatic-agentic",
   "lifecycleRules": "keep-credentials",
-  "externalAccountsNeeded": ["Bing Search API key"],
+  "externalAccountsNeeded": ["Brave Search API key"],
   "maintenanceTasks": [
     {
-      "name": "verify-bing-api-key",
+      "name": "verify-brave-api-key",
       "type": "scheduled",
       "schedule": "0 0 0 * * 1",
-      "description": "Verify Bing Search API key is valid by making a test query"
+      "description": "Verify Brave Search API key is valid by making a test query"
     }
   ]
 }
