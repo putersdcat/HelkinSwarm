@@ -38,6 +38,10 @@ export function registerPendingLinkChallenge(
   };
 
   challengesByUser.set(input.userId, challenge);
+  console.info(
+    `[pendingLinkChallengeStore] Registered challenge: userId=${input.userId} ` +
+    `skill=${input.skillDomain} replyToActivityId=${input.replyToActivityId}`,
+  );
   return challenge;
 }
 
@@ -58,10 +62,28 @@ export function getPendingLinkChallengeForReply(
   }
 
   if (challenge.replyToActivityId !== replyToActivityId) {
+    console.info(
+      `[pendingLinkChallengeStore] replyToId mismatch for userId=${userId}: ` +
+      `expected=${challenge.replyToActivityId} got=${replyToActivityId}`,
+    );
     return undefined;
   }
 
   return challenge;
+}
+
+/**
+ * Get any pending link challenge for a user, ignoring replyToId matching.
+ * Used as a fallback when the message looks like an auth code but the strict
+ * replyToId match fails (e.g., due to cross-container delivery or Teams message
+ * ID format differences).
+ */
+export function getPendingLinkChallengeForUser(
+  userId: string,
+  nowMs = Date.now(),
+): PendingLinkChallenge | undefined {
+  pruneExpiredChallenges(nowMs);
+  return challengesByUser.get(userId);
 }
 
 export function clearPendingLinkChallenge(userId: string): void {

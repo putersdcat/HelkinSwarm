@@ -49,6 +49,7 @@ import { extractBotFrameworkAuthCode } from '../auth/magicCode.js';
 import {
   clearPendingLinkChallenge,
   getPendingLinkChallengeForReply,
+  getPendingLinkChallengeForUser,
   type PendingLinkChallenge,
   registerPendingLinkChallenge,
 } from '../auth/pendingLinkChallengeStore.js';
@@ -347,14 +348,22 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       userId,
       quotedContext?.replyToId,
     );
-    const extractedAuthCode = pendingLinkChallenge
-      ? extractBotFrameworkAuthCode(messageText)
-      : undefined;
+    // Fallback: if the message looks like an auth code and the user has ANY pending
+    // challenge, try it. Covers cross-container delivery + Teams replyToId mismatches.
+    const extractedAuthCode = extractBotFrameworkAuthCode(messageText);
+    const effectiveChallenge = pendingLinkChallenge
+      ?? (extractedAuthCode ? getPendingLinkChallengeForUser(userId) : undefined);
 
-    if (pendingLinkChallenge && extractedAuthCode) {
+    if (effectiveChallenge && extractedAuthCode) {
+      if (!pendingLinkChallenge) {
+        console.info(
+          `[HelkinSwarmBot] Auth code fallback: strict replyToId match failed but user has pending challenge ` +
+          `for skill=${effectiveChallenge.skillDomain} replyToId=${quotedContext?.replyToId ?? 'none'}`,
+        );
+      }
       const handled = await this.tryCompletePendingSkillLink(
         context,
-        pendingLinkChallenge,
+        effectiveChallenge,
         extractedAuthCode,
       );
       if (handled) {
