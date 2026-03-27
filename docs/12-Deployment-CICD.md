@@ -37,9 +37,23 @@ All workflows use **OIDC federation** (no secrets stored in GitHub).
 Key parameter (propagated everywhere):
 ```bicep
 param euResidencyMode bool = false   // ← default = global frontier performance
+param lowCostDevMode bool = false     // ← reduces retention, sampling, scale floor (#303)
 ```
 
-Changing this flag and pushing to `main` automatically switches the entire LLM, embeddings, memory, and routing layer.
+Changing `euResidencyMode` and pushing to `main` automatically switches the entire LLM, embeddings, memory, and routing layer. Activating `lowCostDevMode` requires triggering a manual `workflow_dispatch` with `LOW_COST_DEV_MODE=true` (push-triggered deploys always default to `false` to preserve existing resource state).
+
+### workflow_dispatch Inputs (`deploy-stamp.yml`)
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `USER_ALIAS` | `vars.USER_ALIAS` | 4-char stamp alias |
+| `QUOTA_STRATEGY` | `maximize` | AI deployment quota allocation |
+| `QUOTA_MAX_TPM_CEILING` | `400000` | Max total TPM requested |
+| `MODEL_QUOTA_OVERRIDES_JSON` | `''` | Per-model TPM overrides as JSON |
+| `EU_RESIDENCY_MODE` | `false` | EU DataZoneStandard toggle |
+| `CREATE_OAUTH_CONNECTION` | `false` | Recreate GraphOAuth Bot Service connection |
+| `LOW_COST_DEV_MODE` | `false` | Activate Low Cost Dev Mode cost controls (#303) |
+
 
 ### Docker & Container Apps Flow
 

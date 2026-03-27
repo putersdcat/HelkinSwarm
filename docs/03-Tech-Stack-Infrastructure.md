@@ -113,3 +113,41 @@ All Bicep resources now accept `userAlias` parameter. Resource names are suffixe
 - ❌ Never store any secret in GitHub secrets, .env, or Bicep
 - ❌ Never run `az containerapp update` manually
 - ❌ Never upload the Teams app package without the official script (manual upload of the generated zip is still required as of March 2026)
+
+### Runtime Environment Variables
+
+Key environment variables set via Bicep and propagated to the Function App:
+
+| Variable | Source | Description |
+|----------|--------|-------------|
+| `LLM_PRIMARY_MODEL` | Bicep param | Primary LLM model deployment name |
+| `LLM_SECONDARY_MODEL` | Bicep param | Secondary LLM model |
+| `EU_RESIDENCY_MODE` | Bicep param | EU DataZone toggle |
+| `COSMOS_ENDPOINT` | Bicep | Cosmos DB URL (MSI auth) |
+| `AZURE_CLIENT_ID` | Bicep | Stamp UAMI client ID |
+| `MICROSOFT_APP_ID` | Bicep | Router UAMI client ID (bot identity) |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | Bicep | App Insights telemetry |
+| `DEV_TELEMETRY_MODE` | Bicep param | `off\|minimal\|standard\|verbose` (default: `verbose`) |
+| `OWNER_USER_ID` | Manual (Function App settings) | Azure AD object ID of the owner; drives RBAC role resolution (#248) |
+| `MAINTENANCE_MODE` | Bicep | `true\|false` — disables bot if set |
+| `SKILLFORGE_ENABLED` | Bicep | `true\|false` — enables SkillForge dynamic skill creation |
+
+### Low Cost Dev Mode (`lowCostDevMode`, #303)
+
+Added in #303. A single Bicep boolean param controls a bundle of cost-reduction settings designed for personal dev use.
+
+| Setting | Normal | Low Cost Dev Mode |
+|---------|--------|-------------------|
+| Log Analytics retention | 30 days | 7 days (minimum) |
+| App Insights retention | 30 days | 7 days |
+| Log Analytics daily ingestion cap | unlimited | 0.1 GB/day |
+| App Insights sampling | 100% | 10% (~90% ingestion reduction) |
+| `DEV_TELEMETRY_MODE` override | from param | forced `minimal` |
+| `minimumElasticInstanceCount` | 1 (always warm) | 0 (scale to zero when idle) |
+
+**Activation**: Trigger `deploy-stamp.yml` with `LOW_COST_DEV_MODE=true`. The default (`false`) preserves existing behaviour for all push-triggered deploys.
+
+Estimated monthly savings when active: ~$11–25 (Container Apps scale-to-zero + ingestion reduction). Actual verification requires a full billing cycle.
+
+> ⚠️ Scale-to-zero means cold starts (~2–5s extra) for the first message after idle. Acceptable for personal dev use.
+

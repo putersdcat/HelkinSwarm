@@ -158,3 +158,35 @@ When SkillForge creates a new skill:
 - ❌ Never hard-code risk levels, schemas, or memory fields in TypeScript
 - ❌ Never bypass the capability loader or Tool Registry
 - ❌ Never create a skill without declaring `externalAutomationCapabilities` and `longTermMemorySchema`
+
+### Core Skill Tool Inventory (`skills/core/`)
+
+The `core` skill is always present and cannot be uninstalled. It provides HelkinSwarm's self-management tools.
+
+| Tool | Risk | Description |
+|------|------|-------------|
+| `helkin_health_check` | low | Returns bot version, runtime health, and component status |
+| `helkin_list_skills` | low | Lists all loaded skill manifests and their domains |
+| `helkin_get_costs` | low | Queries Azure Cost Management for real MTD spend in the stamp resource group (#232) |
+| `helkin_test_confirmation` | medium | Sends a test Adaptive Card confirmation to verify the verification pipeline end-to-end |
+| `helkin_save_preferences` | low | Persists user preferences to Cosmos DB skill vault |
+| `helkin_forget_skill` | medium | Revokes credentials and removes a skill vault; enforces lifecycle rules (`close-external-account` blocks without explicit override) (#199) |
+| `helkin_skill_catalog` | low | Lists all skill vaults with entry counts, lifecycle rules, maintenance tasks, and external accounts (#199) |
+| `helkin_install_skill` | low | Checks installation readiness for a skill; resolves dependencies and returns step-by-step onboarding guide (#200) |
+| `helkin_uninstall_skill` | medium | Checks if a skill can be safely uninstalled; blocks if any installed skill depends on it (bidirectional dependency check) (#200) |
+| `helkin_whoami` | low | Returns the current user's role (`owner`/`user`/`guest`) and permissions in HelkinSwarm (#248) |
+
+### Application-Level RBAC (`src/auth/roles.ts`)
+
+Added in #248. Three roles are defined:
+
+| Role | Permissions | Assigned by |
+|------|-------------|-------------|
+| `owner` | all, control-center, maintenance, high-risk | OWNER_USER_ID env var match |
+| `user` | standard, read, skill-invoke | All other authenticated users |
+| `guest` | read-only | Future: unauthenticated or anonymous callers |
+
+Role resolution flows through `getUserRole(userId)` → `canInvokeTool(role, toolName)` in `toolDispatchActivity.ts`. Currently owner-restricted tools: `helkin_test_confirmation`.
+
+The `OWNER_USER_ID` environment variable must be set on the Function App (e.g. `40f5c975-3aa2-47d8-b32d-a9d7a392f6dc` for eric@putersdcat.com).
+
