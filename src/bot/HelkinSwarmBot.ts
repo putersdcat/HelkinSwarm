@@ -565,6 +565,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     quotedContext?: QuotedContext,
   ): Promise<void> {
     const client = this.durableClient!;
+    const eventCorrelationId = crypto.randomUUID();
 
     // One-shot pattern: each message gets a unique overseer instance.
     // This avoids Azure Storage history accumulation (#280) — purgeInstanceHistory
@@ -594,6 +595,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       conversationReference,
       userId,
       userAlias,
+      correlationId: eventCorrelationId,
       ...(modelOverride !== undefined ? { modelOverride } : {}),
       ...(imageUrls && imageUrls.length > 0 ? { imageUrls } : {}),
       ...(devLoopContext !== undefined ? { devLoopContext } : {}),

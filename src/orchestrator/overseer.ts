@@ -41,6 +41,8 @@ export interface NewMessageEvent {
   conversationReference: Partial<ConversationReference>;
   userId: string;
   userAlias: string;
+  /** Full correlation ID for end-to-end stage tracing (#327). */
+  correlationId?: string;
   /** Optional model override: 'primary', 'secondary', or a direct deployment name (e.g. 'o4-mini'). */
   modelOverride?: string;
   /** Image URLs extracted from Teams attachments (#130) */
@@ -61,7 +63,7 @@ df.app.orchestration('overseer', function* (context) {
   // Restore state from Cosmos (survives orchestrator purge / container restart)
   const restoredState: OverseerState | null = yield context.df.callActivity(
     'loadStateActivity',
-    { userId: msg.userId } satisfies LoadStateInput,
+    { userId: msg.userId, correlationId: msg.correlationId } satisfies LoadStateInput,
   );
 
   const state: OverseerState = restoredState ?? createInitialState({
@@ -85,7 +87,7 @@ function* processTurn(
     state,
     userMessage: event.userMessage,
     conversationReference: event.conversationReference,
-    correlationId: crypto.randomUUID(),
+    correlationId: event.correlationId ?? crypto.randomUUID(),
     modelOverride: event.modelOverride,
     imageUrls: event.imageUrls,
     devLoopContext: event.devLoopContext,

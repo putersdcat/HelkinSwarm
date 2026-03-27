@@ -17,6 +17,7 @@ import { cacheSentMessage } from '../bot/sentMessageCache.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { splitReplyIntoChunks } from './replyChunking.js';
 import { trackEvent } from '../observability/telemetry.js';
+import { clearOrchestratorStage, recordOrchestratorStage } from '../observability/orchestratorStageHealth.js';
 
 export interface SendReplyInput {
   /** User AAD Object ID — used to look up ConversationReference from Cosmos. */
@@ -50,6 +51,8 @@ function getAdapter(): CloudAdapter {
 }
 
 async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
+  const correlationId = input.correlationId ?? input.userId;
+  recordOrchestratorStage(correlationId, 'send-reply', input.userId);
   try {
     const replyChunks = splitReplyIntoChunks(input.message);
 
@@ -120,6 +123,8 @@ async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
     // Throw so the Durable activity is marked failed and the failure is visible
     // in orchestration history. Let the overseer handle the failure cleanly.
     throw new Error(`Proactive reply failed: ${message}`);
+  } finally {
+    clearOrchestratorStage(correlationId);
   }
 }
 

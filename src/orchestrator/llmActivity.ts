@@ -17,6 +17,7 @@ import type { PromptResult } from './buildPromptActivity.js';
 import type { ChatCompletionResponse, ChatMessage, ContentPart } from '../llm/foundryClient.js';
 import { textContent } from '../llm/foundryClient.js';
 import { trackEvent } from '../observability/telemetry.js';
+import { clearOrchestratorStage, recordOrchestratorStage } from '../observability/orchestratorStageHealth.js';
 
 export interface LlmResult {
   content: string;
@@ -33,6 +34,7 @@ df.app.activity('llmActivity', {
   handler: async (input: PromptResult & { correlationId?: string; modelOverride?: string; imageUrls?: string[] }): Promise<LlmResult> => {
     const routing = getModelRouting();
     const correlationId = input.correlationId ?? crypto.randomUUID();
+    recordOrchestratorStage(correlationId, 'llm');
     const hasImages = input.imageUrls && input.imageUrls.length > 0;
 
     // Apply model override for /heavy (force reasoning) or /light (force fast) commands
@@ -165,6 +167,8 @@ df.app.activity('llmActivity', {
         finishReason: 'error',
         operationalNotices: [],
       };
+    } finally {
+      clearOrchestratorStage(correlationId);
     }
   },
 });

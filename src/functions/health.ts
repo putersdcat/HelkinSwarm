@@ -5,6 +5,7 @@ import { getDatabase } from '../memory/cosmosClient.js';
 import { APP_VERSION } from '../config/version.js';
 import { getMessagePathSnapshot } from '../observability/messagePathHealth.js';
 import { getLlmAggregateHealth, getLlmHealthSnapshot } from '../llm/llmHealthTracker.js';
+import { getOrchestratorStageSnapshot } from '../observability/orchestratorStageHealth.js';
 
 interface HealthResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -29,6 +30,17 @@ interface HealthResponse {
         lastFailureAt: string | null;
         consecutiveFailures: number;
         isDown: boolean;
+      }>;
+    };
+    orchestrator: {
+      activeTurns: number;
+      oldestAgeMs: number | null;
+      turns: Array<{
+        correlationId: string;
+        userId?: string;
+        stage: string;
+        ageMs: number;
+        updatedAt: string;
       }>;
     };
     messagePath: {
@@ -75,6 +87,7 @@ export async function healthHandler(
   const messagePath = await getMessagePathSnapshot();
   const llmHealth = getLlmAggregateHealth();
   const llmSnapshot = getLlmHealthSnapshot();
+  const orchestratorSnapshot = getOrchestratorStageSnapshot();
 
   const runtimeStatus = messagePath.status === 'error' ? 'error' : 'ok';
   const overallStatus: HealthResponse['status'] =
@@ -100,6 +113,7 @@ export async function healthHandler(
     },
     diagnostics: {
       llm: llmSnapshot,
+      orchestrator: orchestratorSnapshot,
       messagePath: {
         pendingTurns: messagePath.pendingTurns,
         oldestPendingAgeMs: messagePath.oldestPendingAgeMs,
