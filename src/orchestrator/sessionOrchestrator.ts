@@ -621,6 +621,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     userId: input.state.userId,
     message: replyMessage,
     correlationId,
+    conversationReference: input.conversationReference,
   };
   const replyResult: SendReplyResult = yield context.df.callActivity(
     'sendReplyActivity',
@@ -628,12 +629,15 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   );
 
   // 6. Store conversation turn in vector memory (non-blocking, best-effort) (#134)
-  const memoryInput: StoreMemoryInput = {
-    userId: input.state.userId,
-    userMessage: input.userMessage,
-    assistantReply: responseContent,
-  };
-  yield context.df.callActivity('storeMemoryActivity', memoryInput);
+  // Skip in diagnostic mode to eliminate all Cosmos I/O
+  if (!process.env['LLM_FAST_PATH']) {
+    const memoryInput: StoreMemoryInput = {
+      userId: input.state.userId,
+      userMessage: input.userMessage,
+      assistantReply: responseContent,
+    };
+    yield context.df.callActivity('storeMemoryActivity', memoryInput);
+  }
 
   return {
     response: displayResponse,

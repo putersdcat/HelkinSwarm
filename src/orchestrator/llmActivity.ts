@@ -30,11 +30,28 @@ export interface LlmResult {
   operationalNotices: string[];
 }
 
+// DIAGNOSTIC (#327): Skip LLM entirely when fast-path is active
+const LLM_FAST_PATH = !!(process.env['LLM_FAST_PATH'] ?? '1');
+
 df.app.activity('llmActivity', {
   handler: async (input: PromptResult & { correlationId?: string; userId?: string; modelOverride?: string; imageUrls?: string[] }): Promise<LlmResult> => {
     const routing = getModelRouting();
     const correlationId = input.correlationId ?? crypto.randomUUID();
     recordSubstage(correlationId, 'llm', input.userId ?? 'unknown');
+    console.log(`[llmActivity] START correlationId=${correlationId} fastPath=${LLM_FAST_PATH}`);
+
+    if (LLM_FAST_PATH) {
+      console.log(`[llmActivity] FAST PATH — returning hardcoded response`);
+      return {
+        content: 'ALIVE — diagnostic fast-path active (no LLM call)',
+        model: routing.deploymentName,
+        tokensUsed: 0,
+        promptTokens: 0,
+        toolCalls: [],
+        finishReason: 'stop',
+        operationalNotices: ['[diag] LLM_FAST_PATH=1 — no actual LLM call was made'],
+      };
+    }
     const hasImages = input.imageUrls && input.imageUrls.length > 0;
 
     // Apply model override for /heavy (force reasoning) or /light (force fast) commands

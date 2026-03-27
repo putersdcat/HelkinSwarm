@@ -25,6 +25,8 @@ export interface SendReplyInput {
   message: string;
   /** Correlation ID for tracing (#269). */
   correlationId?: string;
+  /** Pass-through ConversationReference to avoid Cosmos read (#327 diagnostic). */
+  conversationReference?: Partial<ConversationReference>;
 }
 
 export interface SendReplyResult {
@@ -69,24 +71,29 @@ function getAdapter(): CloudAdapter {
   return adapterInstance;
 }
 
+// DIAGNOSTIC (#327): Skip Cosmos reads when fast-path is active
+const SENDREPLY_FAST_PATH = !!(process.env['SENDREPLY_FAST_PATH'] ?? '1');
+
 export async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
   const correlationId = input.correlationId ?? input.userId;
   recordSubstage(correlationId, 'send-reply', input.userId);
+  console.log(`[sendReplyActivity] START correlationId=${correlationId} fastPath=${SENDREPLY_FAST_PATH} hasPassthroughRef=${!!input.conversationReference}`);
   try {
     const replyChunks = splitReplyIntoChunks(input.message);
 
     const adapter = getAdapter();
     const appId = getEnvConfig().microsoftAppId;
 
-    // Read ConversationReference from Cosmos (survives container restarts)
-    const conversationReference = await getConversationReference(input.userId);
+    // Prefer the pass-through ConversationReference (avoids Cosmos read) (#327 diagnostic)
+    const conversationReference = input.conversationReference
+      ?? await getConversationReference(input.userId);
     if (!conversationReference) {
-      throw new Error(`No ConversationReference found in Cosmos for userId=${input.userId}`);
+      throw new Error(`No ConversationReference found for userId=${input.userId}`);
     }
 
-    const ackActivityId = input.correlationId
-      ? await getPendingAckId(input.correlationId)
-      : null;
+    // In fast-path mode, skip Cosmos ack lookup and just send a new message
+    const ackActivityId = SENDREPLY_FAST_PATH ? null
+      : (input.correlationId ? await getPendingAckId(input.correlationId) : null);
 
     await adapter.continueConversationAsync(
       appId,
@@ -121,7 +128,7 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
           }
 
           const conversationId = (conversationReference as ConversationReference).conversation?.id ?? input.userId;
-          if (input.correlationId) {
+          if (input.correlationId && !SENDREPLY_FAST_PATH) {
             await clearPendingAckId(conversationId, input.correlationId);
           }
 
@@ -153,7 +160,10 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
     if (input.correlationId) {
       trackEvent({ name: 'ReplySent', correlationId: input.correlationId, userId: input.userId, properties: { success: 'true', chunks: String(replyChunks.length) } });
     }
-    await clearOrchestratorStage(correlationId, input.userId);
+    if (!SENDREPLY_FAST_PATH) {
+      await clearOrchestratorStage(correlationId, input.userId);
+    }
+    console.log(`[sendReplyActivity] DONE correlationId=${correlationId}`);
     return { success: true };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
