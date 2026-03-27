@@ -1,6 +1,6 @@
 {
   "name": "helkinswarm",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "HelkinSwarm — Personal Sovereign AI Copilot in Teams",
   "private": true,
   "type": "module",
