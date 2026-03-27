@@ -133,6 +133,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       toolRegistry.get(tc.name)?.requiresConfirmation === true,
     );
 
+    // Per-tool opt-out: if ALL tools in the batch have requiresConfirmation:false,
+    // skip the confirmation card even for medium/high risk (#302).
+    const allToolsSkipConfirmation = toolCallsForDispatch.every((tc: { name: string }) =>
+      toolRegistry.get(tc.name)?.requiresConfirmation === false,
+    );
+
     // Capture verified-set data from the safety pipeline for executor binding (#266)
     let verifiedSetHash: string | undefined;
     let verifiedAt: string | undefined;
@@ -151,6 +157,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         risk: highestRisk,
         rawOutput: toolCallsForDispatch,
         originalQuery: input.userMessage,
+        skipConfirmation: allToolsSkipConfirmation,
       });
 
       // Capture verified-set binding from pipeline result (#266)

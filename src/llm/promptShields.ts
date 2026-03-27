@@ -62,12 +62,14 @@ export class PromptShields {
       });
 
       if (!response.ok) {
-        // eslint-disable-next-line no-console
-        console.error(`[PromptShields] Content Safety API error: ${response.status}`);
-        // Fail closed — block on API error
+        // Fail open on API errors — personal single-user bot, transient Content Safety
+        // outages should not block all messages (#302). Log for investigation.
+        console.error(
+          `[PromptShields] Content Safety API error: status=${response.status} correlationId=${correlationId}`,
+        );
         return {
-          clean: false,
-          categories: { hate: true, violence: true, sexual: true, selfHarm: true, jailbreak: true },
+          clean: true,
+          categories: { hate: false, violence: false, sexual: false, selfHarm: false, jailbreak: false },
           correlationId,
         };
       }
@@ -83,11 +85,12 @@ export class PromptShields {
         categories: { hate: false, violence: false, sexual: false, selfHarm: false, jailbreak },
         correlationId,
       };
-    } catch {
-      // Fail closed
+    } catch (err) {
+      // Fail open on errors — personal single-user bot (#302)
+      console.error(`[PromptShields] Exception during check: correlationId=${correlationId}`, err);
       return {
-        clean: false,
-        categories: { hate: true, violence: true, sexual: true, selfHarm: true, jailbreak: true },
+        clean: true,
+        categories: { hate: false, violence: false, sexual: false, selfHarm: false, jailbreak: false },
         correlationId,
       };
     }

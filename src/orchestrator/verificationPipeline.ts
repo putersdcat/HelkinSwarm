@@ -49,6 +49,8 @@ export interface VerificationInput {
   scopedToken?: ScopedToken;
   /** Spot-check policy: 'disabled' skips, 'advisory' logs only, 'enforced' hard-fails on mismatch or missing verifier */
   spotCheckPolicy?: SpotCheckPolicy;
+  /** When true, skip human confirmation even for medium/high risk (manifest says requiresConfirmation:false for all tools in batch) */
+  skipConfirmation?: boolean;
 }
 
 /** Canonical description of the resource set verified by the pipeline (#266). */
@@ -148,6 +150,12 @@ export async function runVerificationPipeline(input: VerificationInput): Promise
     if (!isConfirmationGated()) {
       // full-destructive mode — auto-proceed but log
       return makeResult(true, input.correlationId, steps, true, undefined, undefined, verifiedSet, verifiedSetHash);
+    }
+
+    // Per-tool opt-out: when ALL tools in the batch declare requiresConfirmation:false,
+    // skip the confirmation card even in confirmation-gated mode (#302).
+    if (input.skipConfirmation) {
+      return makeResult(true, input.correlationId, steps, false, undefined, undefined, verifiedSet, verifiedSetHash);
     }
 
     if (input.confirmationResponse === 'approved') {

@@ -364,4 +364,30 @@ describe('spot-check verification', () => {
       expect(buildVerifiedSet('s', 'github_create_issue', 'create', ['1']).operationType).toBe('create');
     });
   });
+
+  describe('per-tool confirmation opt-out (#302)', () => {
+    it('skipConfirmation=true bypasses confirmation for high-risk tools', async () => {
+      const result = await runVerificationPipeline(
+        makeInput({ risk: 'high', skipConfirmation: true }),
+      );
+      expect(result.passed).toBe(true);
+      expect(result.requiresConfirmation).toBe(false);
+    });
+
+    it('skipConfirmation=false still requires confirmation for high-risk tools', async () => {
+      const result = await runVerificationPipeline(
+        makeInput({ risk: 'high', skipConfirmation: false }),
+      );
+      // No confirmationResponse provided, so pipeline should require confirmation
+      expect(result.requiresConfirmation).toBe(true);
+    });
+
+    it('skipConfirmation=true bypasses confirmation for medium-risk tools', async () => {
+      const result = await runVerificationPipeline(
+        makeInput({ risk: 'medium', skipConfirmation: true }),
+      );
+      expect(result.passed).toBe(true);
+      expect(result.requiresConfirmation).toBe(false);
+    });
+  });
 });
