@@ -77,6 +77,27 @@ export async function recordOrchestratorStage(
   }
 }
 
+/**
+ * Record a substage with in-memory tracking only — no Cosmos write.
+ * Use inside hot paths (buildPrompt, etc.) where multiple stage updates per activity
+ * would over-saturate Cosmos connections and stall the event loop (#327).
+ */
+export function recordSubstage(
+  correlationId: string,
+  stage: string,
+  userId: string,
+  nowMs = Date.now(),
+): void {
+  const existing = activeTurns.get(correlationId);
+  activeTurns.set(correlationId, {
+    correlationId,
+    userId,
+    stage,
+    startedAtMs: existing?.startedAtMs ?? nowMs,
+    updatedAtMs: nowMs,
+  });
+}
+
 export async function clearOrchestratorStage(correlationId: string, userId: string): Promise<void> {
   activeTurns.delete(correlationId);
   try {

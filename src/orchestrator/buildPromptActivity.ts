@@ -15,7 +15,7 @@ import { buildDevLoopSystemBlock } from '../devloop/sessionContext.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
 import { trackEvent } from '../observability/telemetry.js';
-import { recordOrchestratorStage } from '../observability/orchestratorStageHealth.js';
+import { recordOrchestratorStage, recordSubstage } from '../observability/orchestratorStageHealth.js';
 
 export interface BuildPromptInput {
   state: OverseerState;
@@ -85,14 +85,14 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   const { state, userMessage } = input;
   const correlationId = input.correlationId ?? state.userId;
 
-  await recordOrchestratorStage(correlationId, 'build-prompt:persona', state.userId);
+  recordSubstage(correlationId, 'build-prompt:persona', state.userId);
   const persona = await withSoftTimeout(loadPersona(), 1_000, DEFAULT_PERSONA, 'persona');
 
   // Load user profile for preferences injection or onboarding detection
   let preferencesFragment = '';
   let onboardingInstructions = '';
   try {
-    await recordOrchestratorStage(correlationId, 'build-prompt:user-profile', state.userId);
+    recordSubstage(correlationId, 'build-prompt:user-profile', state.userId);
     const profile = await withSoftTimeout(getUserProfile(state.userId), 2_000, undefined, 'userProfile');
     if (profile?.onboardedAt) {
       preferencesFragment = profileToPromptFragment(profile);
@@ -112,7 +112,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   }
 
   // Build tool summary for the system prompt — safety-filtered (#210)
-  await recordOrchestratorStage(correlationId, 'build-prompt:tool-summary', state.userId);
+  recordSubstage(correlationId, 'build-prompt:tool-summary', state.userId);
   const tools = toolRegistry.getSafetyFiltered();
   const toolSummary = tools.length > 0
     ? `Available tools: ${tools.map((t) => `${t.name} (${t.description})`).join('; ')}`
@@ -126,7 +126,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   // JIT injection: also recall skill-specific memories based on detected domains (#66)
   let recalledMemory = '';
   try {
-    await recordOrchestratorStage(correlationId, 'build-prompt:memory-recall', state.userId);
+    recordSubstage(correlationId, 'build-prompt:memory-recall', state.userId);
     recalledMemory = await withSoftTimeout((async () => {
       const mm = new MemoryManager(state.userId);
 
@@ -172,7 +172,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   // user-specific context (e.g. "Mr. Anderson" addressing) into system channels (#148).
   const isDevLoop = !!input.devLoopContext?.isDevLoop;
 
-  await recordOrchestratorStage(correlationId, 'build-prompt:compose', state.userId);
+  recordSubstage(correlationId, 'build-prompt:compose', state.userId);
 
   const systemPrompt = [
     persona,
