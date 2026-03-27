@@ -6,7 +6,7 @@ import * as df from 'durable-functions';
 import type { OverseerState } from './stateManager.js';
 import { loadState } from './stateManager.js';
 import { trackEvent } from '../observability/telemetry.js';
-import { clearOrchestratorStage, recordOrchestratorStage } from '../observability/orchestratorStageHealth.js';
+import { recordOrchestratorStage } from '../observability/orchestratorStageHealth.js';
 
 export interface LoadStateInput {
   userId: string;
@@ -36,7 +36,7 @@ async function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
 df.app.activity('loadStateActivity', {
   handler: async (input: LoadStateInput): Promise<OverseerState | null> => {
     const correlationId = input.correlationId ?? input.userId;
-    recordOrchestratorStage(correlationId, 'load-state', input.userId);
+    await recordOrchestratorStage(correlationId, 'load-state', input.userId);
     try {
       const state = await withTimeout(loadState(input.userId), LOAD_STATE_TIMEOUT_MS);
       trackEvent({ name: 'StateLoaded', correlationId, userId: input.userId, properties: {
@@ -51,8 +51,6 @@ df.app.activity('loadStateActivity', {
       } });
       console.warn(`[loadStateActivity] Falling back to empty state for userId=${input.userId}: ${err instanceof Error ? err.message : err}`);
       return null;
-    } finally {
-      clearOrchestratorStage(correlationId);
     }
   },
 });

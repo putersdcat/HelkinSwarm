@@ -15,7 +15,7 @@ import { buildDevLoopSystemBlock } from '../devloop/sessionContext.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
 import { trackEvent } from '../observability/telemetry.js';
-import { clearOrchestratorStage, recordOrchestratorStage } from '../observability/orchestratorStageHealth.js';
+import { recordOrchestratorStage } from '../observability/orchestratorStageHealth.js';
 
 export interface BuildPromptInput {
   state: OverseerState;
@@ -224,11 +224,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
 df.app.activity('buildPromptActivity', {
   handler: async (input: BuildPromptInput): Promise<PromptResult> => {
     const correlationId = input.correlationId ?? input.state.userId;
-    recordOrchestratorStage(correlationId, 'build-prompt', input.state.userId);
-    try {
-      return await buildPrompt(input);
-    } finally {
-      clearOrchestratorStage(correlationId);
-    }
+    await recordOrchestratorStage(correlationId, 'build-prompt', input.state.userId);
+    return await buildPrompt(input);
   },
 });

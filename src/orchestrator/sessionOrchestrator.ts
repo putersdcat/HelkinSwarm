@@ -93,6 +93,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   const planInput: PlanInput = {
     userMessage: userMessageForLlm,
     correlationId,
+    userId: input.state.userId,
     availableToolNames: toolRegistry.getToolNames(),
   };
   const planResult: PlanResult = yield context.df.callActivity('planActivity', planInput);
@@ -118,7 +119,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   spanStart = context.df.currentUtcDateTime.getTime();
   const llmResult: LlmResult = yield context.df.callActivity(
     'llmActivity',
-    { ...promptWithPlan, correlationId, modelOverride: input.modelOverride, imageUrls: input.imageUrls },
+    { ...promptWithPlan, correlationId, userId: input.state.userId, modelOverride: input.modelOverride, imageUrls: input.imageUrls },
   );
   spans.push({ label: 'llm', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
 

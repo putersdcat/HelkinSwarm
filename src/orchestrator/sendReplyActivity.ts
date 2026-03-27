@@ -71,7 +71,7 @@ function getAdapter(): CloudAdapter {
 
 export async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
   const correlationId = input.correlationId ?? input.userId;
-  recordOrchestratorStage(correlationId, 'send-reply', input.userId);
+  await recordOrchestratorStage(correlationId, 'send-reply', input.userId);
   try {
     const replyChunks = splitReplyIntoChunks(input.message);
 
@@ -153,6 +153,7 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
     if (input.correlationId) {
       trackEvent({ name: 'ReplySent', correlationId: input.correlationId, userId: input.userId, properties: { success: 'true', chunks: String(replyChunks.length) } });
     }
+    await clearOrchestratorStage(correlationId, input.userId);
     return { success: true };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
@@ -164,8 +165,6 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
     // Throw so the Durable activity is marked failed and the failure is visible
     // in orchestration history. Let the overseer handle the failure cleanly.
     throw new Error(`Proactive reply failed: ${message}`);
-  } finally {
-    clearOrchestratorStage(correlationId);
   }
 }
 

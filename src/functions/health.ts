@@ -87,7 +87,7 @@ export async function healthHandler(
   const messagePath = await getMessagePathSnapshot();
   const llmHealth = getLlmAggregateHealth();
   const llmSnapshot = getLlmHealthSnapshot();
-  const orchestratorSnapshot = getOrchestratorStageSnapshot();
+  const orchestratorSnapshot = await getOrchestratorStageSnapshot();
 
   const runtimeStatus = messagePath.status === 'error' ? 'error' : 'ok';
   const overallStatus: HealthResponse['status'] =
