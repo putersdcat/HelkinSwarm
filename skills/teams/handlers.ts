@@ -17,16 +17,22 @@ import { registerHandler } from '../../src/capabilities/capabilityLoader.js';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 
+/**
+ * Resolve a Graph API token from handler args.
+ * Prefers scoped token injected by orchestrator (#318); falls back to legacy getGraphTokenForUser.
+ */
+async function resolveToken(args: Record<string, unknown>): Promise<string> {
+  if (typeof args['_scopedToken'] === 'string') return args['_scopedToken'];
+  const token = await getGraphTokenForUser(args['userId'] as string);
+  if (!token) throw new Error('No Graph token available. Please run /link first to connect your Microsoft account.');
+  return token;
+}
+
 async function graphFetch<T>(
-  userId: string,
+  token: string,
   path: string,
   schema: z.ZodType<T>,
 ): Promise<T> {
-  const token = await getGraphTokenForUser(userId);
-  if (!token) {
-    throw new Error('No Graph token available. Please run /link first to connect your Microsoft account.');
-  }
-
   const response = await fetch(`${GRAPH_BASE}${path}`, {
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -73,7 +79,7 @@ const ChatMessageSchema = z.object({
 // ---------------------------------------------------------------------------
 
 const teamsGetMessageReactions: ToolHandler = async (args) => {
-  const userId = z.string().parse(args['userId']);
+  z.string().parse(args['userId']);
   const messageId = z.string().min(1).parse(args['messageId']);
 
   // chatId: explicit arg OR injected conversationId from dispatch context
@@ -85,8 +91,9 @@ const teamsGetMessageReactions: ToolHandler = async (args) => {
   }
   const chatId = rawChatId.trim();
 
+  const token = await resolveToken(args);
   const path = `/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}?$select=id,reactions,createdDateTime`;
-  const message = await graphFetch(userId, path, ChatMessageSchema);
+  const message = await graphFetch(token, path, ChatMessageSchema);
 
   const reactions = message.reactions ?? [];
 

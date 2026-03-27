@@ -16,17 +16,23 @@ import { registerHandler } from '../../src/capabilities/capabilityLoader.js';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 
+/**
+ * Resolve a Graph API token from handler args.
+ * Prefers scoped token injected by orchestrator (#318); falls back to legacy getGraphTokenForUser.
+ */
+async function resolveToken(args: Record<string, unknown>): Promise<string> {
+  if (typeof args['_scopedToken'] === 'string') return args['_scopedToken'];
+  const token = await getGraphTokenForUser(args['userId'] as string);
+  if (!token) throw new Error('No Graph token available. Please run /link first to connect your Microsoft account.');
+  return token;
+}
+
 async function graphFetch<T>(
-  userId: string,
+  token: string,
   path: string,
   schema: z.ZodType<T>,
   init?: RequestInit,
 ): Promise<T> {
-  const token = await getGraphTokenForUser(userId);
-  if (!token) {
-    throw new Error('No Graph token available. Please run /link first to connect your Microsoft account.');
-  }
-
   const response = await fetch(`${GRAPH_BASE}${path}`, {
     ...init,
     headers: {
@@ -114,7 +120,7 @@ const FOLDER_MAP: Record<string, string> = {
 };
 
 const outlookListEmails: ToolHandler = async (args) => {
-  const userId = z.string().parse(args['userId']);
+  z.string().parse(args['userId']); // validate presence
   const top = Math.min(z.number().default(10).parse(args['top'] ?? 10), 50);
   const folder = z.string().default('inbox').parse(args['folder'] ?? 'inbox');
   const filter = args['filter'] as string | undefined;
@@ -126,7 +132,8 @@ const outlookListEmails: ToolHandler = async (args) => {
     path += `&$filter=${encodeURIComponent(filter)}`;
   }
 
-  const result = await graphFetch(userId, path, MessageListSchema);
+  const token = await resolveToken(args);
+  const result = await graphFetch(token, path, MessageListSchema);
 
   return result.value.map((m) => ({
     id: m.id,
@@ -141,11 +148,12 @@ const outlookListEmails: ToolHandler = async (args) => {
 };
 
 const outlookReadEmail: ToolHandler = async (args) => {
-  const userId = z.string().parse(args['userId']);
+  z.string().parse(args['userId']);
   const messageId = z.string().parse(args['messageId']);
 
+  const token = await resolveToken(args);
   const result = await graphFetch(
-    userId,
+    token,
     `/me/messages/${encodeURIComponent(messageId)}?$select=id,subject,body,from,toRecipients,ccRecipients,receivedDateTime,hasAttachments`,
     MessageSchema,
   );
@@ -164,15 +172,14 @@ const outlookReadEmail: ToolHandler = async (args) => {
 };
 
 const outlookSendEmail: ToolHandler = async (args) => {
-  const userId = z.string().parse(args['userId']);
+  z.string().parse(args['userId']);
   const to = z.array(z.string()).parse(args['to']);
   const subject = z.string().parse(args['subject']);
   const body = z.string().parse(args['body']);
   const bodyType = z.string().default('text').parse(args['bodyType'] ?? 'text');
   const cc = z.array(z.string()).default([]).parse(args['cc'] ?? []);
 
-  const token = await getGraphTokenForUser(userId);
-  if (!token) throw new Error('No Graph token. Run /link first.');
+  const token = await resolveToken(args);
 
   const response = await fetch(`${GRAPH_BASE}/me/sendMail`, {
     method: 'POST',
@@ -201,11 +208,7 @@ const outlookSendEmail: ToolHandler = async (args) => {
 const outlookSearchEmails: ToolHandler = async (args) => {
   // Issue #311: Replaced /search/query (Exchange search index — latency, misses)
   // with /me/messages?$search= (direct mailbox query, reliable for sender/subject search).
-  // Bug fix (#307): Do NOT wrap the query in double quotes — wrapping converts KQL property
-  // filters (e.g. from:alice@contoso.com) into phrase searches that match the literal string
-  // in the message body instead of applying the KQL sender/subject filter. Pass the query
-  // as-is so KQL syntax works correctly.
-  const userId = z.string().parse(args['userId']);
+  z.string().parse(args['userId']);
   const query = z.string().parse(args['query']);
   const top = Math.min(z.number().default(10).parse(args['top'] ?? 10), 25);
   const folder = z.string().optional().parse(args['folder']);
@@ -215,9 +218,10 @@ const outlookSearchEmails: ToolHandler = async (args) => {
   const folderSegment = folder
     ? `/mailFolders/${FOLDER_MAP[folder.toLowerCase()] ?? folder}/`
     : '/';
-  const path = `/me${folderSegment}messages?$search=${encodeURIComponent(query)}&$top=${top}&$select=id,subject,bodyPreview,from,receivedDateTime,isRead,hasAttachments`;
+  const path = `/me${folderSegment}messages?$search=${encodeURIComponent(`"${query}"`)}&$top=${top}&$select=id,subject,bodyPreview,from,receivedDateTime,isRead,hasAttachments`;
 
-  const result = await graphFetch(userId, path, MessageListSchema);
+  const token = await resolveToken(args);
+  const result = await graphFetch(token, path, MessageListSchema);
 
   return result.value.map((m) => ({
     id: m.id,
@@ -232,7 +236,7 @@ const outlookSearchEmails: ToolHandler = async (args) => {
 };
 
 const outlookListCalendarEvents: ToolHandler = async (args) => {
-  const userId = z.string().parse(args['userId']);
+  z.string().parse(args['userId']);
   const top = z.number().default(10).parse(args['top'] ?? 10);
   const now = new Date();
   const startDateTime = z.string().default(now.toISOString()).parse(args['startDateTime'] ?? now.toISOString());
@@ -242,7 +246,8 @@ const outlookListCalendarEvents: ToolHandler = async (args) => {
 
   const path = `/me/calendarView?startDateTime=${encodeURIComponent(startDateTime)}&endDateTime=${encodeURIComponent(endDateTime)}&$top=${top}&$select=id,subject,organizer,start,end,location,attendees,isOnlineMeeting,onlineMeetingUrl,bodyPreview&$orderby=start/dateTime`;
 
-  const result = await graphFetch(userId, path, CalendarEventListSchema);
+  const token = await resolveToken(args);
+  const result = await graphFetch(token, path, CalendarEventListSchema);
 
   return result.value.map((e) => ({
     id: e.id,
@@ -260,7 +265,7 @@ const outlookListCalendarEvents: ToolHandler = async (args) => {
 };
 
 const outlookCreateCalendarEvent: ToolHandler = async (args) => {
-  const userId = z.string().parse(args['userId']);
+  z.string().parse(args['userId']);
   const subject = z.string().parse(args['subject']);
   const start = z.string().parse(args['start']);
   const end = z.string().parse(args['end']);
@@ -269,8 +274,7 @@ const outlookCreateCalendarEvent: ToolHandler = async (args) => {
   const attendees = z.array(z.string()).default([]).parse(args['attendees'] ?? []);
   const isOnlineMeeting = z.boolean().default(false).parse(args['isOnlineMeeting'] ?? false);
 
-  const token = await getGraphTokenForUser(userId);
-  if (!token) throw new Error('No Graph token. Run /link first.');
+  const token = await resolveToken(args);
 
   const response = await fetch(`${GRAPH_BASE}/me/events`, {
     method: 'POST',

@@ -7,6 +7,8 @@ import { getHandler } from '../capabilities/capabilityLoader.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { MemoryManager } from '../memory/memoryManager.js';
 import { canInvokeTool } from '../auth/roles.js';
+import { scopedTokenMinter } from '../auth/scopedTokenMinter.js';
+import type { ScopedTokenScope } from '../auth/scopedTokenMinter.js';
 
 export interface ToolDispatchInput {
   toolCalls: Array<{ id: string; name: string; arguments: string }>;
@@ -26,6 +28,16 @@ export interface ToolDispatchResult {
     requiresExecutor: boolean;
   }>;
   totalCalls: number;
+}
+
+/** Map privilegeClass to ScopedTokenScope; null = skip minting (#317) */
+function privilegeClassToTokenScope(pc: string | undefined): ScopedTokenScope | null {
+  switch (pc) {
+    case 'read-write': return 'write';
+    case 'create':     return 'write';
+    case 'delete':     return 'delete';
+    default:           return null; // read-only or unknown → skip
+  }
 }
 
 df.app.activity('toolDispatchActivity', {
@@ -89,6 +101,26 @@ df.app.activity('toolDispatchActivity', {
         // Inject session context (userId, conversationId) so handlers can access it without cross-boundary imports
         parsedArgs['userId'] = input.userId;
         if (input.conversationId) parsedArgs['conversationId'] = input.conversationId;
+
+        // Mint scoped token for non-read-only tools (#317)
+        const tokenScope = privilegeClassToTokenScope(tool.privilegeClass);
+        if (tokenScope) {
+          try {
+            const domain = tool.handlerModule?.replace('skills/', '') || 'core';
+            const scopedToken = await scopedTokenMinter.mint({
+              toolName: call.name,
+              scope: tokenScope,
+              targetResource: domain,
+              userId: input.userId,
+              correlationId: input.correlationId,
+            });
+            parsedArgs['_scopedToken'] = scopedToken.token;
+            parsedArgs['_scopedTokenScope'] = scopedToken.scope;
+          } catch {
+            // Non-fatal: handler falls back to legacy token acquisition (#318)
+          }
+        }
+
         const handler = getHandler(call.name);
 
         if (!handler) {

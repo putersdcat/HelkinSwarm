@@ -11,6 +11,8 @@ import { getHandler } from '../capabilities/capabilityLoader.js';
 import { trackEvent } from '../observability/telemetry.js';
 import type { ChatMessage } from '../llm/foundryClient.js';
 import { MemoryManager } from '../memory/memoryManager.js';
+import { scopedTokenMinter } from '../auth/scopedTokenMinter.js';
+import type { ScopedTokenScope } from '../auth/scopedTokenMinter.js';
 
 export interface SubAgentInput {
   toolName: string;
@@ -30,6 +32,16 @@ export interface SubAgentResult {
   error?: string;
   tokensUsed: number;
   correlationId: string;
+}
+
+/** Map privilegeClass to ScopedTokenScope; null = skip minting (#317) */
+function privilegeClassToTokenScope(pc: string | undefined): ScopedTokenScope | null {
+  switch (pc) {
+    case 'read-write': return 'write';
+    case 'create':     return 'write';
+    case 'delete':     return 'delete';
+    default:           return null;
+  }
 }
 
 df.app.activity('subAgentActivity', {
@@ -120,6 +132,26 @@ Description: ${input.toolDescription}`;
 
         const parsedArgs = JSON.parse(tc.function.arguments) as Record<string, unknown>;
         parsedArgs['userId'] = input.userId;
+
+        // Mint scoped token for non-read-only tools (#317)
+        const tokenScope = privilegeClassToTokenScope(tool?.privilegeClass);
+        if (tokenScope) {
+          try {
+            const domain = tool?.handlerModule?.replace('skills/', '') || 'core';
+            const scopedToken = await scopedTokenMinter.mint({
+              toolName: tc.function.name,
+              scope: tokenScope,
+              targetResource: domain,
+              userId: input.userId,
+              correlationId: input.correlationId,
+            });
+            parsedArgs['_scopedToken'] = scopedToken.token;
+            parsedArgs['_scopedTokenScope'] = scopedToken.scope;
+          } catch {
+            // Non-fatal: handler falls back to legacy token acquisition (#318)
+          }
+        }
+
         const handlerResult = await handler(parsedArgs);
 
         trackEvent({
