@@ -49,20 +49,57 @@ app.http('messages', {
       '';
     const activity = (await req.json()) as Activity;
 
-    try {
-      const invokeResponse = await adapter.processActivityForFunctions(
-        authHeader,
-        activity,
-        async (turnContext) => {
-          await bot.run(turnContext);
-        },
-      );
+    // Teams retries the webhook POST if 200 isn't returned within ~15s (#300).
+    // Use Promise.race with a 9s timeout to guarantee we reply before Teams retries.
+    // If the handler is still running when the timeout fires, processing continues
+    // in the background (Container Apps keeps the Node.js process alive).
+    const EARLY_RESPONSE_MS = 9_000;
 
-      if (invokeResponse) {
+    const adapterPromise = adapter.processActivityForFunctions(
+      authHeader,
+      activity,
+      async (turnContext) => {
+        await bot.run(turnContext);
+      },
+    );
+
+    let timeoutHandle: ReturnType<typeof setTimeout>;
+
+    try {
+      const result = await Promise.race([
+        adapterPromise.then((r) => {
+          clearTimeout(timeoutHandle);
+          return { timedOut: false as const, response: r };
+        }),
+        new Promise<{ timedOut: true }>((resolve) => {
+          timeoutHandle = setTimeout(
+            () => resolve({ timedOut: true }),
+            EARLY_RESPONSE_MS,
+          );
+        }),
+      ]);
+
+      if (result.timedOut) {
+        context.warn(
+          '[messages] Handler exceeded 9s — returning 200 early to prevent Teams retry',
+        );
+        // Track completion/failure in background — don't await
+        void adapterPromise
+          .then(() => recordMessagePathSuccess(turnId))
+          .catch((bgErr: unknown) => {
+            const msg =
+              bgErr instanceof Error ? bgErr.message : String(bgErr);
+            context.error('[messages] Background processing error:', msg);
+            void recordMessagePathFailure(turnId, msg);
+          });
+        return { status: 200 };
+      }
+
+      if (result.response) {
         await recordMessagePathSuccess(turnId);
         return {
-          status: invokeResponse.status,
-          body: JSON.stringify(invokeResponse.body),
+          status: result.response.status,
+          body: JSON.stringify(result.response.body),
           headers: { 'Content-Type': 'application/json' },
         };
       }
@@ -70,6 +107,7 @@ app.http('messages', {
       await recordMessagePathSuccess(turnId);
       return { status: 200 };
     } catch (err: unknown) {
+      clearTimeout(timeoutHandle!);
       const message = err instanceof Error ? err.message : String(err);
       await recordMessagePathFailure(turnId, message);
       context.error('Bot processing error:', message);
