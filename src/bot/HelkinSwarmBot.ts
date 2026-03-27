@@ -504,8 +504,6 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     // rather than sending a second message (spec: 10-Teams-Interface.md §Message Flow).
     // Include compact correlation tag so the user can trace the turn (#267).
     const correlationTag = correlationId.slice(0, 8);
-    // Diagnostic: log activity.id for dedup debugging (#300)
-    console.info(`[HelkinSwarmBot] activity.id=${context.activity.id ?? 'UNDEFINED'} correlationTag=${correlationTag} userId=${userId}`);
     const ackResponse = await context.sendActivity(getCorrelatedAck(correlationTag));
     if (ackResponse?.id) {
       const conversationId = context.activity.conversation?.id ?? userId;
