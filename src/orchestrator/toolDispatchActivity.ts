@@ -6,6 +6,7 @@ import { toolRegistry } from '../tools/toolRegistry.js';
 import { getHandler } from '../capabilities/capabilityLoader.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { MemoryManager } from '../memory/memoryManager.js';
+import { canInvokeTool } from '../auth/roles.js';
 
 export interface ToolDispatchInput {
   toolCalls: Array<{ id: string; name: string; arguments: string }>;
@@ -51,6 +52,19 @@ df.app.activity('toolDispatchActivity', {
           toolName: call.name,
           success: false,
           error: `Tool ${call.name} (risk: ${tool.risk}) blocked by safety mode`,
+          requiresExecutor: false,
+        });
+        continue;
+      }
+
+      // Application-level RBAC — check role before executing privileged tools (#248)
+      const allowed = await canInvokeTool(input.userId, call.name);
+      if (!allowed) {
+        results.push({
+          toolCallId: call.id,
+          toolName: call.name,
+          success: false,
+          error: `Tool ${call.name} requires owner role. Current user does not have sufficient privileges.`,
           requiresExecutor: false,
         });
         continue;

@@ -184,6 +184,22 @@
         },
         "required": ["skillId"]
       }
+    },
+    {
+      "name": "helkin_whoami",
+      "description": "Return the current user's application role (owner or guest) and the list of privileged tools accessible to them. Use to explain what the current user can and cannot do.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
     }
   ],
   "shortName": "core",

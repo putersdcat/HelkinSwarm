@@ -442,3 +442,23 @@ export const helkin_install_skill: ToolHandler = async (args) => {
     message: `Skill '${skillId}' is installed. ${steps.length > 0 ? 'Complete the steps listed to activate it.' : 'Ready to use.'}`,
   };
 };
+
+export const helkin_whoami: ToolHandler = async (args) => {
+  const { getRoleSummary } = await import('../../src/auth/roles.js');
+
+  const userId = args['userId'] as string | undefined;
+  if (!userId) {
+    return { status: 'error', message: 'userId is required.' };
+  }
+
+  const summary = await getRoleSummary(userId);
+
+  return {
+    status: 'success',
+    userId,
+    role: summary.role,
+    description: summary.description,
+    privilegedTools: summary.privilegedTools,
+    message: `You are playing the role of '${summary.role}'. ${summary.description}`,
+  };
+};
