@@ -57,7 +57,10 @@ export type TelemetryEventName =
   | 'PlanClassification'
   | 'PlanGenerated'
   | 'PlanParseError'
-  | 'HandlerTokenSource';
+  | 'HandlerTokenSource'
+  | 'OrchestratorPlanCreated'
+  | 'SubAgentSpawned'
+  | 'MultiRoundDispatch';
 
 // ---------------------------------------------------------------------------
 // Session Tracer — maps events to trace phases for Dev Console (#140)
@@ -83,6 +86,9 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   DurableHookTriggered: 'orchestrator',
   ExecutorVerifiedSetBinding: 'executor',
   ScopedTokenMinted: 'executor',
+  OrchestratorPlanCreated: 'orchestrator',
+  SubAgentSpawned: 'subagent',
+  MultiRoundDispatch: 'tool-dispatch',
   BotMessageReceived: 'bot-receive',
   PromptBuilt: 'prompt-build',
   ReplySent: 'reply-send',

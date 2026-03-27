@@ -22,6 +22,8 @@ export interface TurnTelemetryData {
   safetyPassed: boolean;
   /** Request complexity from planning phase (#320). */
   planComplexity?: 'simple' | 'compound' | 'complex';
+  /** Number of sub-agent sessions spawned this turn (#321). */
+  subAgentCount?: number;
 }
 
 // USD per 1M tokens (blended input/output average). (#254, #260)
@@ -152,7 +154,12 @@ export function formatTelemetryFooter(
   }
 
   if (mode === 'standard') {
-    const line = `[E2E:${data.totalMs}ms|m:${shortModel}|pt:${data.promptTokens}|ct:${data.completionTokens}|tools:${data.toolCalls.length}|${moneyEmoji}${costStr}|🕐${uptime}|corr:${shortCorr}]`;
+    const extraParts = [
+      data.subAgentCount ? `sa:${data.subAgentCount}` : '',
+      data.planComplexity && data.planComplexity !== 'simple' ? `plan:${data.planComplexity}` : '',
+    ].filter(Boolean).join('|');
+    const extra = extraParts ? `|${extraParts}` : '';
+    const line = `[E2E:${data.totalMs}ms|m:${shortModel}|pt:${data.promptTokens}|ct:${data.completionTokens}|tools:${data.toolCalls.length}${extra}|${moneyEmoji}${costStr}|🕐${uptime}|corr:${shortCorr}]`;
     return '\n\n---\n`' + line + '`';
   }
 
@@ -175,6 +182,8 @@ export function formatTelemetryFooter(
   }
 
   parts.push(`safe:${data.safetyPassed ? '✓' : '✗'}`);
+  if (data.subAgentCount) parts.push(`sa:${data.subAgentCount}`);
+  if (data.planComplexity && data.planComplexity !== 'simple') parts.push(`plan:${data.planComplexity}`);
   parts.push(`${moneyEmoji}${costStr}`);
   parts.push(`🕐${uptime}`);
   parts.push(`corr:${shortCorr}`);

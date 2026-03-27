@@ -127,6 +127,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   let cumulativePromptTokens = llmResult.promptTokens;
   const operationalNotices = new Set(llmResult.operationalNotices ?? []);
 
+  // Counters for telemetry footer (#321)
+  let subAgentSpawnCount = 0;
+
   // 3. If LLM returned tool calls, run the safety pipeline
   let toolResults: ToolDispatchResult | null = null;
   let safetyPassed = true;
@@ -269,6 +272,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           userId: input.state.userId,
         };
         const subResult: SubAgentResult = yield context.df.callActivity('subAgentActivity', subInput);
+        subAgentSpawnCount++;
         subAgentResults.push({
           toolCallId: tc.id,
           toolName: tc.name,
@@ -488,6 +492,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             userId: input.state.userId,
           };
           const subResult: SubAgentResult = yield context.df.callActivity('subAgentActivity', subInput);
+          subAgentSpawnCount++;
           roundSubResults.push({
             toolCallId: tc.id,
             toolName: tc.name,
@@ -599,6 +604,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       toolCalls: toolNames,
       safetyPassed,
       planComplexity: planResult.complexity,
+      subAgentCount: subAgentSpawnCount > 0 ? subAgentSpawnCount : undefined,
     };
     replyMessage += formatTelemetryFooter(envConfig.devTelemetryMode, telemetryData);
   }

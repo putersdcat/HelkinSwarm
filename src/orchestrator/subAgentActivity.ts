@@ -158,7 +158,13 @@ Description: ${input.toolDescription}`;
           name: 'SubAgentToolExecuted',
           correlationId: input.correlationId,
           userId: input.userId,
-          properties: { toolName: tc.function.name, success: true, model: secondaryModel },
+          properties: {
+            toolName: tc.function.name,
+            success: true,
+            model: secondaryModel,
+            privilegeClass: tool?.privilegeClass ?? 'unknown',
+            scopedTokenScope: String(parsedArgs['_scopedTokenScope'] ?? 'none'),
+          },
         });
 
         // Store sub-agent result as skill memory for JIT injection (#203)
