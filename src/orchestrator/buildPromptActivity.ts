@@ -249,7 +249,7 @@ const ACTIVITY_HARD_TIMEOUT_MS = 25_000;
 // DIAGNOSTIC MODE (#327): bypass all async I/O to isolate the hang.
 // If the turn completes with this, the hang is in buildPrompt internals.
 // If not, the hang is in Durable Functions infrastructure.
-const DIAGNOSTIC_FAST_PATH = !!(process.env['BUILDPROMPT_FAST_PATH'] ?? '1');
+const DIAGNOSTIC_FAST_PATH = !!(process.env['BUILDPROMPT_FAST_PATH'] ?? '');
 
 df.app.activity('buildPromptActivity', {
   handler: async (input: BuildPromptInput): Promise<PromptResult> => {

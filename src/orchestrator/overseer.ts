@@ -20,9 +20,6 @@ import type { SendReplyInput } from './sendReplyActivity.js';
 import type { SpinnerHeartbeatInput } from './spinnerHeartbeatActivity.js';
 import type { TerminateOrchestrationInput } from './terminateOrchestrationActivity.js';
 import type { PurgeOrchestrationInput } from './terminateOrchestrationActivity.js';
-import type { LlmResult } from './llmActivity.js';
-import type { BuildPromptInput, PromptResult } from './buildPromptActivity.js';
-import type { PlanInput } from './planActivity.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
 
@@ -80,11 +77,6 @@ df.app.orchestration('overseer', function* (context) {
   yield* processTurn(context, state, msg);
 });
 
-// DIAGNOSTIC (#327): inline session pipeline — sub-orchestrator is stuck.
-// Proved that callSubOrchestrator never returns.
-// This inlines buildPrompt + plan + llm + sendReply directly in overseer.
-const INLINE_SESSION = process.env['INLINE_SESSION'] !== '0';
-
 // Helper generator to process a turn
 function* processTurn(
   context: df.OrchestrationContext,
@@ -94,49 +86,11 @@ function* processTurn(
 ): Generator<df.Task, void, any> {
   const correlationId = event.correlationId ?? crypto.randomUUID();
 
-  if (INLINE_SESSION) {
-    // Inline session pipeline — no sub-orchestrator (#327)
-    // Test: add buildPromptActivity to see if it's the blocker
-    const promptInput: BuildPromptInput = {
-      state,
-      userMessage: event.userMessage,
-      correlationId,
-    };
-    const prompt: PromptResult = yield context.df.callActivity('buildPromptActivity', promptInput);
-
-    // Test: add planActivity back — if this hangs, planActivity is the blocker
-    const planInput: PlanInput = {
-      userMessage: event.userMessage,
-      correlationId,
-      userId: state.userId,
-      availableToolNames: [], // empty → always 'simple' → no LLM call
-    };
-    yield context.df.callActivity('planActivity', planInput);
-
-    const llmInput = {
-      ...prompt,
-      correlationId,
-      userId: state.userId,
-      modelOverride: event.modelOverride,
-      imageUrls: event.imageUrls,
-    };
-    const llmResult: LlmResult = yield context.df.callActivity('llmActivity', llmInput);
-
-    const replyInput: SendReplyInput = {
-      userId: state.userId,
-      message: llmResult.content,
-      correlationId,
-      conversationReference: event.conversationReference,
-    };
-    yield context.df.callActivity('sendReplyActivity', replyInput);
-    return;
-  }
-
   const sessionInput: SessionInput = {
     state,
     userMessage: event.userMessage,
     conversationReference: event.conversationReference,
-    correlationId: event.correlationId ?? crypto.randomUUID(),
+    correlationId,
     modelOverride: event.modelOverride,
     imageUrls: event.imageUrls,
     devLoopContext: event.devLoopContext,

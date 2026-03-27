@@ -31,7 +31,7 @@ export interface LlmResult {
 }
 
 // DIAGNOSTIC (#327): Skip LLM entirely when fast-path is active
-const LLM_FAST_PATH = !!(process.env['LLM_FAST_PATH'] ?? '1');
+const LLM_FAST_PATH = !!(process.env['LLM_FAST_PATH'] ?? '');
 
 df.app.activity('llmActivity', {
   handler: async (input: PromptResult & { correlationId?: string; userId?: string; modelOverride?: string; imageUrls?: string[] }): Promise<LlmResult> => {

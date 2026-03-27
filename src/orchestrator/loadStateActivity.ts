@@ -35,7 +35,7 @@ async function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
 
 // DIAGNOSTIC (#327): Skip Cosmos entirely — return null to isolate hang.
 // When LOADSTATE_FAST_PATH is set (default ON), skip all Cosmos I/O.
-const LOADSTATE_FAST_PATH = !!(process.env['LOADSTATE_FAST_PATH'] ?? '1');
+const LOADSTATE_FAST_PATH = !!(process.env['LOADSTATE_FAST_PATH'] ?? '');
 
 df.app.activity('loadStateActivity', {
   handler: async (input: LoadStateInput): Promise<OverseerState | null> => {

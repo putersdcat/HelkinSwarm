@@ -72,7 +72,7 @@ function getAdapter(): CloudAdapter {
 }
 
 // DIAGNOSTIC (#327): Skip Cosmos reads when fast-path is active
-const SENDREPLY_FAST_PATH = !!(process.env['SENDREPLY_FAST_PATH'] ?? '1');
+const SENDREPLY_FAST_PATH = !!(process.env['SENDREPLY_FAST_PATH'] ?? '');
 
 export async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
   const correlationId = input.correlationId ?? input.userId;
