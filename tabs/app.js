@@ -526,22 +526,35 @@
 
     renderSkillsLibrary: function () {
       var panelId = "panel-skills-library";
-      apiCall("get-started")
+      apiCall("skills")
         .then(function (data) {
-          var skills = (data.activeSkills || [])
-            .map(function (s) {
-              return '<div class="card" style="display:inline-block;width:180px;margin:8px;vertical-align:top">' +
-                '<h3>' + esc(s) + '</h3>' +
-                '<span class="badge badge-ok">Installed</span></div>';
-            })
-            .join("");
+          var skills = (data.skills || []);
+          var cards = skills.map(function (s) {
+            var badge = s.installed
+              ? '<span class="badge badge-ok">Installed</span>'
+              : '<span class="badge">Available</span>';
+            var linkBadge = s.linkRequired
+              ? ' <span class="badge badge-warn">OAuth</span>'
+              : '';
+            var tools = (s.toolNames || []).map(function (t) {
+              return '<code>' + esc(t) + '</code>';
+            }).join(', ');
+            return '<div class="card skill-card">' +
+              '<div class="skill-card-header">' +
+              '<img src="' + esc(s.iconUrl) + '" alt="" class="skill-icon" width="32" height="32" />' +
+              '<div><h3>' + esc(s.displayName) + '</h3>' +
+              badge + linkBadge + '</div></div>' +
+              '<p>' + esc(s.shortDescription) + '</p>' +
+              '<p class="muted">' + s.toolCount + ' tool' + (s.toolCount !== 1 ? 's' : '') + ': ' + tools + '</p>' +
+              '</div>';
+          }).join("");
           document.getElementById(panelId).innerHTML =
             "<h1>Skills Library</h1>" +
-            '<div class="card"><h2>Installed Skills (' + (data.activeSkills || []).length + ')</h2>' +
-            '<div>' + (skills || '<p>No skills installed.</p>') + '</div></div>' +
-            '<div class="card"><h2>Available Skills</h2>' +
-            '<p>The full Skills Store with browse, install, and uninstall is coming soon.</p>' +
-            '<p>Use <code>/link &lt;skill&gt;</code> in chat to connect skills that need OAuth.</p></div>';
+            '<div class="card"><h2>Installed Skills (' + skills.filter(function (s) { return s.installed; }).length + ')</h2>' +
+            '<p>' + esc(data.totalTools) + ' tools total across all skills.</p></div>' +
+            '<div class="skills-grid">' + (cards || '<p>No skills loaded.</p>') + '</div>' +
+            '<div class="card"><h2>SkillForge</h2>' +
+            '<p>Custom skills forged by SkillForge will appear here as "Available" once the forge pipeline is active.</p></div>';
         })
         .catch(function (err) {
           if (String(err.message).startsWith("cold-start:")) {

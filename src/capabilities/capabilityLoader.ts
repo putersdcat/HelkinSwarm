@@ -199,3 +199,40 @@ export function getActiveSkills(): string[] {
   }
   return Array.from(domains).sort();
 }
+
+// ---------------------------------------------------------------------------
+// Skill catalog — rich metadata for Skills Library tab (#197)
+// ---------------------------------------------------------------------------
+
+export interface SkillCatalogEntry {
+  domain: string;
+  displayName: string;
+  shortDescription: string;
+  iconUrl: string;
+  onboardingMethod: string;
+  toolCount: number;
+  toolNames: string[];
+  installed: boolean;
+  linkRequired: boolean;
+}
+
+/** Returns rich skill metadata from loaded manifests for the Skills Library tab. */
+export function getSkillCatalog(): SkillCatalogEntry[] {
+  const catalog: SkillCatalogEntry[] = [];
+  for (const manifest of manifestRegistry.values()) {
+    catalog.push({
+      domain: manifest.domain,
+      displayName: manifest.displayName,
+      shortDescription: manifest.shortDescription,
+      iconUrl: manifest.iconUrl,
+      onboardingMethod: manifest.onboardingMethod,
+      toolCount: manifest.tools.length,
+      toolNames: manifest.tools.map((t) => t.name),
+      installed: true,
+      linkRequired:
+        manifest.onboardingMethod === 'post-install-link' ||
+        manifest.onboardingMethod === 'both',
+    });
+  }
+  return catalog.sort((a, b) => a.displayName.localeCompare(b.displayName));
+}

@@ -20,6 +20,7 @@ import './tabGetStarted.js';
 import './tabDashboard.js';
 import './tabSessions.js';
 import './tabDevConsole.js';
+import './tabSkills.js';
 
 // Orchestrator + activity registrations (Phase 2)
 import '../orchestrator/overseer.js';
