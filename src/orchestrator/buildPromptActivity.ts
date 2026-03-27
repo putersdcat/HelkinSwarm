@@ -54,6 +54,30 @@ function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }
 
+async function withSoftTimeout<T>(
+  work: Promise<T>,
+  timeoutMs: number,
+  fallback: T,
+  label: string,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => {
+          console.warn(`[buildPrompt] ${label} timed out after ${timeoutMs}ms — continuing without it`);
+          resolve(fallback);
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  }
+}
+
 export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult> {
   const { state, userMessage } = input;
 
@@ -63,7 +87,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   let preferencesFragment = '';
   let onboardingInstructions = '';
   try {
-    const profile = await getUserProfile(state.userId);
+    const profile = await withSoftTimeout(getUserProfile(state.userId), 2_000, undefined, 'userProfile');
     if (profile?.onboardedAt) {
       preferencesFragment = profileToPromptFragment(profile);
     } else {
@@ -95,37 +119,38 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   // JIT injection: also recall skill-specific memories based on detected domains (#66)
   let recalledMemory = '';
   try {
-    const mm = new MemoryManager(state.userId);
+    recalledMemory = await withSoftTimeout((async () => {
+      const mm = new MemoryManager(state.userId);
 
-    // General memory recall (cross-skill)
-    const memories = await mm.recall(userMessage, { topK: 3, minScore: 0.7 });
+      // General memory recall (cross-skill)
+      const memories = await mm.recall(userMessage, { topK: 3, minScore: 0.7 });
 
-    // Skill-scoped JIT injection: detect active skill domains from tool registry
-    // and pull skill-specific memories for relevant domains
-    const skillDomains = [...new Set(
-      toolRegistry.getSafetyFiltered()
-        .map((t) => t.handlerModule)
-        .filter(Boolean)
-        .map((m) => m!.replace('skills/', '')),
-    )];
+      // Skill-scoped JIT injection: detect active skill domains from tool registry
+      // and pull skill-specific memories for relevant domains
+      const skillDomains = [...new Set(
+        toolRegistry.getSafetyFiltered()
+          .map((t) => t.handlerModule)
+          .filter(Boolean)
+          .map((m) => m!.replace('skills/', '')),
+      )];
 
-    const skillMemories = skillDomains.length > 0
-      ? await mm.recallForSkills(userMessage, skillDomains, { topK: 2, minScore: 0.65 })
-      : new Map<string, never[]>();
+      const skillMemories = skillDomains.length > 0
+        ? await mm.recallForSkills(userMessage, skillDomains, { topK: 2, minScore: 0.65 })
+        : new Map<string, never[]>();
 
-    // Format memories with skill attribution
-    const parts: string[] = [];
-    if (memories.length > 0) {
-      parts.push(memories.map((m) => `- ${m.content}`).join('\n'));
-    }
-    for (const [skillId, mems] of skillMemories) {
-      if (mems.length > 0) {
-        parts.push(`[${skillId} skill context]\n${mems.map((m) => `- ${m.content}`).join('\n')}`);
+      const parts: string[] = [];
+      if (memories.length > 0) {
+        parts.push(memories.map((m) => `- ${m.content}`).join('\n'));
       }
-    }
-    if (parts.length > 0) {
-      recalledMemory = `Relevant context from past interactions:\n${parts.join('\n')}`;
-    }
+      for (const [skillId, mems] of skillMemories) {
+        if (mems.length > 0) {
+          parts.push(`[${skillId} skill context]\n${mems.map((m) => `- ${m.content}`).join('\n')}`);
+        }
+      }
+      return parts.length > 0
+        ? `Relevant context from past interactions:\n${parts.join('\n')}`
+        : '';
+    })(), 4_000, '', 'memoryRecall');
   } catch {
     // Memory recall unavailable — proceed without
   }

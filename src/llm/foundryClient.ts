@@ -143,6 +143,9 @@ const FALLBACK_BUDGET_MS = 90_000;
 /** Minimum per-model timeout — never go below this even when budget is tight. */
 const MIN_PER_MODEL_TIMEOUT_MS = 8_000;
 
+/** Embedding requests must be bounded too; prompt-building memory recall depends on them. */
+const EMBEDDING_TIMEOUT_MS = 10_000;
+
 /**
  * Parse a `retry-after` header value (seconds) or `retry-after-ms` (milliseconds)
  * from an HTTP Response.  Returns milliseconds, or undefined if not present / invalid.
@@ -433,7 +436,7 @@ export class FoundryClient {
 
     const oboToken = await this.getOboToken();
 
-    const response = await fetch(url, {
+    const response = await fetchWithHardTimeout(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -443,7 +446,7 @@ export class FoundryClient {
         input: text,
         model: embeddingModel,
       }),
-    });
+    }, EMBEDDING_TIMEOUT_MS);
 
     if (!response.ok) {
       throw new FoundryError(
