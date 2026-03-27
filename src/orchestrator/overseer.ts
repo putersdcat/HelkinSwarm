@@ -22,6 +22,7 @@ import type { TerminateOrchestrationInput } from './terminateOrchestrationActivi
 import type { PurgeOrchestrationInput } from './terminateOrchestrationActivity.js';
 import type { LlmResult } from './llmActivity.js';
 import type { BuildPromptInput, PromptResult } from './buildPromptActivity.js';
+import type { PlanInput } from './planActivity.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
 
@@ -102,6 +103,15 @@ function* processTurn(
       correlationId,
     };
     const prompt: PromptResult = yield context.df.callActivity('buildPromptActivity', promptInput);
+
+    // Test: add planActivity back — if this hangs, planActivity is the blocker
+    const planInput: PlanInput = {
+      userMessage: event.userMessage,
+      correlationId,
+      userId: state.userId,
+      availableToolNames: [], // empty → always 'simple' → no LLM call
+    };
+    yield context.df.callActivity('planActivity', planInput);
 
     const llmInput = {
       ...prompt,
