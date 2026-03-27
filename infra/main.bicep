@@ -114,6 +114,7 @@ var roleCognitiveServicesUser   = 'a97b65f3-24c7-4388-baec-2e87135dc908'
 var roleStorageBlobDataOwner    = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
 var roleStorageQueueContributor = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
 var roleStorageTableContributor = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
+var roleCostManagementReader    = '72fafb9e-0641-4937-9268-a91bfd8191a3' // helkin_get_costs (#232)
 
 // Cosmos DB built-in data-plane role IDs
 var cosmosDataContributorRoleId = '00000000-0000-0000-0000-000000000002'
@@ -739,6 +740,17 @@ resource cosmosDataRole 'Microsoft.DocumentDB/databaseAccounts/sqlRoleAssignment
     roleDefinitionId: '${cosmosAccount.id}/sqlRoleDefinitions/${cosmosDataContributorRoleId}'
     principalId: uami.properties.principalId
     scope: cosmosAccount.id
+  }
+}
+
+// ── UAMI → Cost Management Reader (RG scope — helkin_get_costs #232) ──
+resource roleCostMgmtUami 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(uami.id, resourceGroup().id, roleCostManagementReader)
+  scope: resourceGroup()
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleCostManagementReader)
+    principalId: uami.properties.principalId
+    principalType: 'ServicePrincipal'
   }
 }
 

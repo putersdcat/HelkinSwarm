@@ -62,6 +62,10 @@ const EnvConfigSchema = z.object({
   // Web search (Brave Search API) — key from Key Vault (#190)
   braveSearchApiKey: z.string().optional(),
 
+  // Azure context — subscription + RG for helkin_get_costs (#232)
+  azureSubscriptionId: z.string().optional(),
+  azureResourceGroup: z.string().optional(),
+
   // Local dev overrides (never set in production)
   azureFoundryOboToken: z.string().optional(),
 });
@@ -101,6 +105,8 @@ function loadFromEnv(): EnvConfig {
     openrouterFallbackPrimary: process.env['OPENROUTER_FALLBACK_PRIMARY'] || undefined,
     openrouterFallbackSecondary: process.env['OPENROUTER_FALLBACK_SECONDARY'] || undefined,
     braveSearchApiKey: process.env['BRAVE_SEARCH_API_KEY'] || undefined,
+    azureSubscriptionId: process.env['AZURE_SUBSCRIPTION_ID'] || undefined,
+    azureResourceGroup: process.env['AZURE_RESOURCE_GROUP'] || undefined,
     azureFoundryOboToken: process.env['AZURE_FOUNDRY_OBO_TOKEN'] || undefined,
   };
 
