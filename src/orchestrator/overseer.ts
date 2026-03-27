@@ -19,6 +19,7 @@ import type { LoadStateInput } from './loadStateActivity.js';
 import type { SendReplyInput } from './sendReplyActivity.js';
 import type { SpinnerHeartbeatInput } from './spinnerHeartbeatActivity.js';
 import type { TerminateOrchestrationInput } from './terminateOrchestrationActivity.js';
+import type { PurgeOrchestrationInput } from './terminateOrchestrationActivity.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
 
@@ -78,7 +79,8 @@ df.app.orchestration('overseer', function* (context) {
 
 // DIAGNOSTIC (#327): bypass session sub-orchestrator entirely.
 // Proves whether the sub-orchestrator dispatch is the issue.
-const OVERSEER_FAST_PATH = !!(process.env['OVERSEER_FAST_PATH'] ?? '1');
+// DISABLED — proved the issue is in sub-orchestrator. Now testing pre-purge.
+const OVERSEER_FAST_PATH = false;
 
 // Helper generator to process a turn
 function* processTurn(
@@ -118,6 +120,14 @@ function* processTurn(
 
   // Assign a deterministic instanceId so we can terminate on timeout (#325).
   const sessionInstanceId = `session-${context.df.instanceId}`;
+
+  // Pre-purge stale sub-orchestrator instances (#327).
+  // If a previous overseer run left a session instance in Running/Terminated state,
+  // callSubOrchestrator would silently wait for it instead of creating a new one.
+  yield context.df.callActivity('purgeOrchestrationActivity', {
+    instanceId: sessionInstanceId,
+  } satisfies PurgeOrchestrationInput);
+
   const sessionTask = context.df.callSubOrchestrator(
     'sessionOrchestrator',
     sessionInput,
