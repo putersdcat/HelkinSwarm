@@ -132,6 +132,35 @@ export function sanitizeRemoteErrorText(rawErrorText: string, maxLength = 500): 
 // Foundry client
 // ---------------------------------------------------------------------------
 
+/**
+ * Total milliseconds allowed for the entire fallback cascade per request (#313).
+ * Prevents N×55s = 220s silent cascade.  Individual per-model timeouts are
+ * reduced dynamically to stay within this budget.
+ */
+const FALLBACK_BUDGET_MS = 90_000;
+
+/** Minimum per-model timeout — never go below this even when budget is tight. */
+const MIN_PER_MODEL_TIMEOUT_MS = 8_000;
+
+/**
+ * Parse a `retry-after` header value (seconds) or `retry-after-ms` (milliseconds)
+ * from an HTTP Response.  Returns milliseconds, or undefined if not present / invalid.
+ * Per Microsoft docs, Azure AI Foundry returns both headers on 429 responses.
+ */
+export function parseRetryAfterMs(headers: Headers): number | undefined {
+  const retryAfterMs = headers.get('retry-after-ms');
+  if (retryAfterMs) {
+    const ms = Number(retryAfterMs);
+    if (Number.isFinite(ms) && ms > 0) return ms;
+  }
+  const retryAfter = headers.get('retry-after');
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds > 0) return seconds * 1_000;
+  }
+  return undefined;
+}
+
 export class FoundryClient {
   private routing: ModelRouting;
   private apiBase: string;
@@ -142,9 +171,13 @@ export class FoundryClient {
   }
 
   /**
-   * Send a chat completion request with automatic fallback on throttle/failure (#152).
-  * Cascades through the fallback chain: primary → secondary.
-   * Degraded models are skipped for a cooldown period.
+   * Send a chat completion request with automatic fallback on throttle/failure (#152, #313).
+   *
+   * Design follows Microsoft's documented Azure AI Foundry patterns:
+   * - 429 responses are INSTANT — parse Retry-After, mark degraded, immediately try next model.
+   * - Timeouts are expensive — reduce per-model timeout as budget shrinks.
+   * - Total cascade is capped at FALLBACK_BUDGET_MS (90s) to prevent silent 4×55s = 220s.
+   * - Models are re-checked for degradation before each attempt (not just at chain start).
    */
   async chatCompletion(options: Omit<FoundryClientOptions, 'routing'>): Promise<ChatCompletionResponse> {
     const correlationId = options.correlationId ?? crypto.randomUUID();
@@ -152,36 +185,73 @@ export class FoundryClient {
     // Get the full fallback chain for the requested deployment.
     const chain = getFallbackChain(this.routing.deploymentName);
 
-    // Filter out currently degraded models — but keep at least the last resort.
-    const available = chain.filter((r) => !isModelDegraded(r.deploymentName));
-    const candidates = available.length > 0 ? available : [chain[chain.length - 1]];
-
     let lastError: FoundryError | Error | undefined;
     const failoverSteps: LlmFailoverStep[] = [];
     const attemptedModels: string[] = [];
+    const budgetStart = Date.now();
 
-    for (let i = 0; i < candidates.length; i++) {
-      const routing = candidates[i];
+    for (let i = 0; i < chain.length; i++) {
+      const routing = chain[i];
+
+      // Re-check degraded status before EACH attempt — catches models degraded
+      // by concurrent requests during the cascade (#313-B).
+      if (isModelDegraded(routing.deploymentName)) {
+        // Skip silently; don't count as an "attempt" or waste budget.
+        continue;
+      }
+
+      // Budget accounting: how much time remains for the rest of the cascade?
+      const elapsed = Date.now() - budgetStart;
+      const remaining = FALLBACK_BUDGET_MS - elapsed;
+      if (remaining <= MIN_PER_MODEL_TIMEOUT_MS) {
+        // Budget exhausted — break out and throw.
+        break;
+      }
+
+      // Dynamic per-model timeout: base timeout clamped to remaining budget (#313-A).
+      const baseTimeout = routing.isReasoning ? 120_000 : 55_000;
+      const perModelTimeout = Math.max(MIN_PER_MODEL_TIMEOUT_MS, Math.min(baseTimeout, remaining));
+
       attemptedModels.push(routing.deploymentName);
       try {
-        const result = await this.callSingleModel(routing, options, correlationId);
+        const result = await this.callSingleModel(routing, options, correlationId, perModelTimeout);
         // Successful response — clear any degradation for this model.
         clearModelDegraded(routing.deploymentName);
         if (failoverSteps.length > 0) {
           result.failoverSteps = [...failoverSteps];
+          // Emit chain-level summary telemetry (#313-D)
+          trackEvent({
+            name: 'LlmFallbackChainCompleted',
+            correlationId,
+            properties: {
+              originalModel: attemptedModels[0],
+              finalModel: routing.deploymentName,
+              totalAttempts: attemptedModels.length,
+              totalElapsedMs: Date.now() - budgetStart,
+              failoverSteps: failoverSteps.map(s => `${s.fromModel}→${s.toModel}(${s.reason})`).join(', '),
+            },
+          });
         }
         return result;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
         const isRetryable = isRetryableError(err);
-        const nextCandidate = candidates[i + 1];
 
         if (isRetryable) {
           const reason = err instanceof FoundryError
             ? `HTTP ${err.statusCode}`
             : (err instanceof Error && err.name === 'TimeoutError') ? 'timeout' : 'error';
-          markModelDegraded(routing.deploymentName, reason);
 
+          // For 429: use Retry-After header from the response if available (#313).
+          // This aligns with Microsoft's documented Azure AI Foundry behavior —
+          // the response includes retry-after / retry-after-ms headers.
+          const retryAfterCooldown = (err instanceof FoundryError && err.retryAfterMs)
+            ? err.retryAfterMs
+            : undefined;
+          markModelDegraded(routing.deploymentName, reason, retryAfterCooldown);
+
+          // Find the next non-degraded candidate for the failover step log.
+          const nextCandidate = chain.slice(i + 1).find(r => !isModelDegraded(r.deploymentName));
           if (nextCandidate) {
             failoverSteps.push({
               fromModel: routing.deploymentName,
@@ -199,36 +269,37 @@ export class FoundryClient {
               fallbackModel: nextCandidate?.deploymentName ?? 'none',
               reason,
               chainPosition: i,
+              elapsedMs: Date.now() - budgetStart,
+              ...(retryAfterCooldown !== undefined && { retryAfterMs: retryAfterCooldown }),
             },
           });
         }
 
-        // If not retryable or this is the last candidate, throw
-        if (!isRetryable || i === candidates.length - 1) {
-          if (isRetryable) {
-            throw new FoundryFallbackExhaustedError(
-              attemptedModels,
-              failoverSteps,
-              lastError,
-            );
-          }
+        // If not retryable, throw immediately — no point cascading on 400/401/etc.
+        if (!isRetryable) {
           throw lastError;
         }
         // Otherwise continue to next candidate in chain
       }
     }
 
-    // Should never reach here, but TypeScript requires it
-    throw lastError ?? new Error('All models in fallback chain exhausted');
+    // All candidates exhausted or budget spent.
+    throw new FoundryFallbackExhaustedError(
+      attemptedModels,
+      failoverSteps,
+      lastError ?? new Error('All models in fallback chain exhausted or budget spent'),
+    );
   }
 
   /**
    * Execute a single chat completion request against a specific model routing.
+   * The timeout is provided by the caller (dynamic budget-aware timeout from #313).
    */
   private async callSingleModel(
     routing: ModelRouting,
     options: Omit<FoundryClientOptions, 'routing'>,
     correlationId: string,
+    timeoutMs: number,
   ): Promise<ChatCompletionResponse> {
     if (routing.usesObo === false) {
       throw new FoundryError(
@@ -243,9 +314,6 @@ export class FoundryClient {
     const needsPreview = routing.isReasoning || needsNewTokenParam(routing.deploymentName);
     const apiVersion = needsPreview ? '2024-12-01-preview' : '2024-06-01';
     const url = `${base}/openai/deployments/${routing.deploymentName}/chat/completions?api-version=${apiVersion}`;
-
-    // Reasoning models need longer timeouts (#128)
-    const timeoutMs = routing.isReasoning ? 120_000 : 55_000;
 
     const body: Record<string, unknown> = {
       model: routing.deploymentName,
@@ -287,10 +355,15 @@ export class FoundryClient {
     if (!response.ok) {
       const rawErrorText = await response.text().catch(() => 'unknown');
       const errorText = sanitizeRemoteErrorText(rawErrorText);
+      // Parse Retry-After header for 429 responses (per Microsoft Azure AI Foundry docs, #313).
+      const retryAfterMs = response.status === 429
+        ? parseRetryAfterMs(response.headers)
+        : undefined;
       throw new FoundryError(
         `Chat completion failed: ${response.status} ${response.statusText} — ${errorText}`,
         response.status,
         routing.deploymentName,
+        retryAfterMs,
       );
     }
 
@@ -355,6 +428,8 @@ export class FoundryError extends Error {
     message: string,
     public readonly statusCode: number,
     public readonly deploymentName: string,
+    /** Parsed Retry-After value in ms from 429 response headers (Azure AI Foundry, #313). */
+    public readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = 'FoundryError';

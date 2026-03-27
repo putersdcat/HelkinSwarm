@@ -39,6 +39,7 @@ export type TelemetryEventName =
   | 'LlmCallCompleted'
   | 'LlmCallFailed'
   | 'LlmFallbackTriggered'
+  | 'LlmFallbackChainCompleted'
   | 'GraphNotificationProcessed'
   | 'GraphSubscriptionRenewed'
   | 'PendingIntentCreated'
@@ -71,6 +72,7 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   LlmCallCompleted: 'llm-call',
   LlmCallFailed: 'llm-call',
   LlmFallbackTriggered: 'llm-call',
+  LlmFallbackChainCompleted: 'llm-call',
   ToolExecuted: 'tool-dispatch',
   SubAgentToolExecuted: 'subagent',
   VerificationPipelineResult: 'verification',

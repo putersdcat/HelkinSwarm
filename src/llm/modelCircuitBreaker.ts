@@ -36,7 +36,7 @@ export function getCooldownForReason(reason: string, failureCount: number): numb
 const degradedModels = new Map<string, DegradedModel>();
 
 /** Mark a model as degraded so subsequent requests skip it. */
-export function markModelDegraded(deploymentName: string, reason: string): void {
+export function markModelDegraded(deploymentName: string, reason: string, explicitCooldownMs?: number): void {
   const existing = degradedModels.get(deploymentName);
   const failureCount = (existing?.failureCount ?? 0) + 1;
   degradedModels.set(deploymentName, {
@@ -44,7 +44,7 @@ export function markModelDegraded(deploymentName: string, reason: string): void 
     degradedAt: Date.now(),
     reason,
     failureCount,
-    cooldownMs: getCooldownForReason(reason, failureCount),
+    cooldownMs: explicitCooldownMs ?? getCooldownForReason(reason, failureCount),
   });
 }
 
