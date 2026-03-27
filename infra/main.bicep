@@ -181,6 +181,11 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     minimumTlsVersion: 'TLS1_2'
     supportsHttpsTrafficOnly: true
     allowBlobPublicAccess: false
+    allowSharedKeyAccess: false   // #212 Phase 1 — force AAD-only auth, no storage keys
+    networkAcls: {
+      defaultAction: 'Allow'      // Phase 2 will change to 'Deny' after VNet integration
+      bypass: 'AzureServices'      // Allow trusted Azure services (Functions, Durable Tasks)
+    }
   }
 }
 
@@ -227,6 +232,7 @@ resource cosmosAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
   kind: 'GlobalDocumentDB'
   properties: {
     databaseAccountOfferType: 'Standard'
+    disableLocalAuth: true           // #212 Phase 1 — force AAD/RBAC-only, no master keys
     locations: [
       { locationName: location, failoverPriority: 0 }
     ]
@@ -445,7 +451,8 @@ resource aiServices 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
   sku: { name: 'S0' }
   properties: {
     customSubDomainName: toLower(aisName)
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: 'Enabled'     // Phase 2 will restrict after VNet + private endpoints
+    disableLocalAuth: true              // #212 Phase 1 — force AAD-only, no API keys
   }
 }
 

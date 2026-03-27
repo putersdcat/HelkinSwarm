@@ -95,6 +95,11 @@ resource routerStorage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
     supportsHttpsTrafficOnly: true
     minimumTlsVersion: 'TLS1_2'
     allowBlobPublicAccess: false
+    allowSharedKeyAccess: false   // #212 Phase 1 — force AAD-only auth, no storage keys
+    networkAcls: {
+      defaultAction: 'Allow'      // Phase 2 will change to 'Deny' after VNet integration
+      bypass: 'AzureServices'
+    }
   }
 }
 
