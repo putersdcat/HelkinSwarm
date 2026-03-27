@@ -359,6 +359,41 @@ jobs:
 
           "${DEPLOY_CMD[@]}"
 
+      - name: Post-deploy quota audit
+        if: steps.changes.outputs.infraChanged == 'true'
+        continue-on-error: true
+        run: |
+          echo "📊 Running post-deploy quota audit (#113)..."
+          AIS_NAME="helkinswarm-ai-${{ env.USER_ALIAS }}"
+          RG_NAME="${{ env.RESOURCE_GROUP }}"
+
+          DEPLOYMENTS=$(az cognitiveservices account deployment list \
+            --name "$AIS_NAME" \
+            --resource-group "$RG_NAME" \
+            --query "[].{name:name, capacity:sku.capacity, skuName:sku.name, model:properties.model.name}" \
+            -o json 2>/dev/null || echo '[]')
+
+          TOTAL=0
+          echo ""
+          echo "| Model | SKU | Capacity (kTPM) |"
+          echo "|-------|-----|-----------------|"
+          while IFS= read -r row; do
+            NAME=$(echo "$row" | jq -r '.name')
+            CAP=$(echo "$row" | jq -r '.capacity')
+            SKU=$(echo "$row" | jq -r '.skuName')
+            echo "| $NAME | $SKU | ${CAP}k |"
+            TOTAL=$((TOTAL + CAP))
+          done < <(echo "$DEPLOYMENTS" | jq -c '.[]')
+
+          echo ""
+          echo "📊 Total allocated: ${TOTAL}k TPM"
+          CEILING=${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '200' }}
+          if [ "$TOTAL" -gt "$CEILING" ]; then
+            echo "⚠️ Total allocation (${TOTAL}k) exceeds ceiling (${CEILING}k)"
+          else
+            echo "✅ Within quota ceiling (${TOTAL}k / ${CEILING}k)"
+          fi
+
       - name: Query deployed resources
         id: query
         run: |

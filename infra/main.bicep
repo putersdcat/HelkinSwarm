@@ -449,15 +449,9 @@ resource aiServices 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
   }
 }
 
-// ── AI Model Deployments — DESIRED STATE via Bicep ────────────────────────
-// Capacity is in thousands of tokens per minute.
-// Grok 4-1: DataZoneStandard (GlobalStandard quota 50/50 consumed by Alpha account).
-//   DataZoneStandard quota = 20k. 10k per model = 20k total.
-// gpt-5.4-mini, gpt-5.1-codex-mini, o4-mini: GlobalStandard, 50k each.
-// FW-* models: DataZoneStandard only (no GlobalStandard SKU available), 30k each.
-// DeepSeek-V3.2: GlobalStandard, 50k.
-// text-embedding-3-large: GlobalStandard, 100k (quota ceiling: quotaMaxTPM param).
-// Deployments must be serial (dependsOn chain) to avoid ARM 429s.
+// ── AI Model Deployments — managed by infra/ai-deployments.bicep (#113) ───
+// Deployed as a separate Bicep step in deploy-stamp.yml after main.bicep.
+// See ai-deployments.bicep for quota strategy, budget ceiling, and capacity logic.
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  9. CONTAINER APPS ENVIRONMENT (consumption plan)
