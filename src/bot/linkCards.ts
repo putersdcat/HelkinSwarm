@@ -3,7 +3,7 @@ import { CardFactory, type Attachment } from 'botbuilder';
 function buildLinkCardText(description: string): string {
   return [
     description,
-    'If sign-in shows a code instead of finishing automatically, use Reply with quote on this message and paste the code in your reply.',
+    'If sign-in shows a code instead of finishing automatically, paste the code directly in the chat.',
   ].join('\n\n');
 }
 

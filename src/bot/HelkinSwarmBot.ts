@@ -48,7 +48,6 @@ import {
 import { extractBotFrameworkAuthCode } from '../auth/magicCode.js';
 import {
   clearPendingLinkChallenge,
-  getPendingLinkChallengeForReply,
   getPendingLinkChallengeForUser,
   type PendingLinkChallenge,
   registerPendingLinkChallenge,
@@ -344,26 +343,21 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     const maintenance = await getMaintenanceMode();
     const lowerMessage = messageText.toLowerCase();
 
-    const pendingLinkChallenge = getPendingLinkChallengeForReply(
-      userId,
-      quotedContext?.replyToId,
-    );
-    // Fallback: if the message looks like an auth code and the user has ANY pending
-    // challenge, try it. Covers cross-container delivery + Teams replyToId mismatches.
+    // Auth code interception (#301): if the message looks like a Bot Framework magic
+    // code (6-digit numeric or 32-char hex) and there's a pending /link challenge for
+    // this user, intercept it before it reaches the overseer. No quoted-reply needed —
+    // the user just pastes the code directly in the chat after clicking the sign-in link.
+    // The challenge is looked up by userId only (not replyToId) so it survives Teams
+    // message-reference format differences and is simpler for the user.
     const extractedAuthCode = extractBotFrameworkAuthCode(messageText);
-    const effectiveChallenge = pendingLinkChallenge
-      ?? (extractedAuthCode ? getPendingLinkChallengeForUser(userId) : undefined);
+    const pendingLinkChallenge = extractedAuthCode
+      ? getPendingLinkChallengeForUser(userId)
+      : undefined;
 
-    if (effectiveChallenge && extractedAuthCode) {
-      if (!pendingLinkChallenge) {
-        console.info(
-          `[HelkinSwarmBot] Auth code fallback: strict replyToId match failed but user has pending challenge ` +
-          `for skill=${effectiveChallenge.skillDomain} replyToId=${quotedContext?.replyToId ?? 'none'}`,
-        );
-      }
+    if (pendingLinkChallenge && extractedAuthCode) {
       const handled = await this.tryCompletePendingSkillLink(
         context,
-        effectiveChallenge,
+        pendingLinkChallenge,
         extractedAuthCode,
       );
       if (handled) {
@@ -1043,7 +1037,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
 
     await context.sendActivity(
-      `⚠️ That sign-in code was not accepted for **${pendingLinkChallenge.skillDomain}**. Reply with quote to the newest link card and paste the newest code.`,
+      `⚠️ That sign-in code was not accepted for **${pendingLinkChallenge.skillDomain}**. Please use \`/link ${pendingLinkChallenge.skillDomain}\` to get a fresh sign-in link, then paste the new code directly.`,
     );
     return true;
   }

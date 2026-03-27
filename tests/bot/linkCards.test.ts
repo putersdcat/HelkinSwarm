@@ -21,7 +21,7 @@ describe('skill link sign-in cards', () => {
           value: 'https://token.botframework.com/link',
         },
       ],
-      text: 'Sign in to grant HelkinSwarm access to your email, calendar, and files\n\nIf sign-in shows a code instead of finishing automatically, use Reply with quote on this message and paste the code in your reply.',
+      text: 'Sign in to grant HelkinSwarm access to your email, calendar, and files\n\nIf sign-in shows a code instead of finishing automatically, paste the code directly in the chat.',
     });
   });
 
@@ -41,7 +41,7 @@ describe('skill link sign-in cards', () => {
           value: 'https://token.botframework.com/relink',
         },
       ],
-      text: 'Sign in again\n\nIf sign-in shows a code instead of finishing automatically, use Reply with quote on this message and paste the code in your reply.',
+      text: 'Sign in again\n\nIf sign-in shows a code instead of finishing automatically, paste the code directly in the chat.',
     });
   });
 });
