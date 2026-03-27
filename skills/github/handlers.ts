@@ -227,12 +227,54 @@ export const github_get_issue: ToolHandler = async (args) => {
 // Tool: github_create_issue
 // ---------------------------------------------------------------------------
 
+// Similarity check: extract key words (≥5 chars) and compute overlap ratio.
+// Returns true if two titles share ≥60% of their key words — enough to catch
+// near-duplicates like the Outlook-search spray (#305–#311) without blocking
+// legitimately distinct issues.
+function titlesAreSimilar(a: string, b: string): boolean {
+  const words = (s: string) =>
+    s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter((w) => w.length >= 5);
+  const wa = new Set(words(a));
+  const wb = new Set(words(b));
+  if (wa.size === 0 || wb.size === 0) return false;
+  const intersection = [...wa].filter((w) => wb.has(w)).length;
+  const overlap = intersection / Math.min(wa.size, wb.size);
+  return overlap >= 0.6;
+}
+
 export const github_create_issue: ToolHandler = async (args) => {
   const title = String(args['title'] ?? '').trim();
   if (!title) return { error: 'title is required' };
 
   const issueBody = String(args['body'] ?? '').trim();
   if (!issueBody) return { error: 'body is required — every issue needs context and acceptance criteria' };
+
+  // Dedup guard (#312): search for open issues with similar title before creating.
+  // This prevents a single complaint from spawning multiple near-identical issues
+  // during model fallback/retry loops.
+  try {
+    // Fetch recent open issues (first page, up to 100) and compare titles client-side.
+    const recentUrl = `${API_BASE}/issues?state=open&per_page=100&sort=created&direction=desc`;
+    const h = await headers();
+    const recentResponse = await fetch(recentUrl, { headers: h });
+    if (recentResponse.ok) {
+      const recentIssues = z.array(GitHubIssueSchema).parse(await recentResponse.json() as unknown);
+      const duplicate = recentIssues.find((i) => titlesAreSimilar(i.title, title));
+      if (duplicate) {
+        return {
+          status: 'duplicate_skipped',
+          message: `A similar open issue already exists — commenting on it is preferred over creating a new one.`,
+          existing_issue: {
+            number: duplicate.number,
+            title: duplicate.title,
+            url: duplicate.html_url,
+          },
+        };
+      }
+    }
+  } catch {
+    // Dedup check failed — proceed with creation rather than blocking the tool.
+  }
 
   const payload: Record<string, unknown> = { title, body: issueBody };
   if (args['labels'] && Array.isArray(args['labels'])) payload['labels'] = args['labels'];

@@ -201,6 +201,10 @@ const outlookSendEmail: ToolHandler = async (args) => {
 const outlookSearchEmails: ToolHandler = async (args) => {
   // Issue #311: Replaced /search/query (Exchange search index — latency, misses)
   // with /me/messages?$search= (direct mailbox query, reliable for sender/subject search).
+  // Bug fix (#307): Do NOT wrap the query in double quotes — wrapping converts KQL property
+  // filters (e.g. from:alice@contoso.com) into phrase searches that match the literal string
+  // in the message body instead of applying the KQL sender/subject filter. Pass the query
+  // as-is so KQL syntax works correctly.
   const userId = z.string().parse(args['userId']);
   const query = z.string().parse(args['query']);
   const top = Math.min(z.number().default(10).parse(args['top'] ?? 10), 25);
@@ -211,7 +215,7 @@ const outlookSearchEmails: ToolHandler = async (args) => {
   const folderSegment = folder
     ? `/mailFolders/${FOLDER_MAP[folder.toLowerCase()] ?? folder}/`
     : '/';
-  const path = `/me${folderSegment}messages?$search=${encodeURIComponent(`"${query}"`)}&$top=${top}&$select=id,subject,bodyPreview,from,receivedDateTime,isRead,hasAttachments`;
+  const path = `/me${folderSegment}messages?$search=${encodeURIComponent(query)}&$top=${top}&$select=id,subject,bodyPreview,from,receivedDateTime,isRead,hasAttachments`;
 
   const result = await graphFetch(userId, path, MessageListSchema);
 

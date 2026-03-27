@@ -26,6 +26,9 @@ param userPrincipalId string
 @description('Create/update the GraphOAuth Bot Service connection. Set true only on first deploy or when scopes change.')
 param createOAuthConnection bool = false
 
+@description('Low Cost Dev Mode — 7-day log retention (minimum for PerGB2018), 0.1 GB/day ingestion cap, minimal App Insights sampling. (#303)')
+param lowCostDevMode bool = false
+
 @description('Client ID of the HelkinSwarm-DelegatedAuth Entra app for user-delegated Graph access.')
 param delegatedAuthClientId string = 'd4e5cf74-9f99-4504-b4ab-d4516dd10577'
 
@@ -50,6 +53,10 @@ var roleStorageQueueContributor = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
 var roleStorageTableContributor = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
 var roleAcrPull                 = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 
+// Low Cost Dev Mode derived values (#303)
+var routerLawDailyCapGb     = lowCostDevMode ? json('0.1') : json('-1')
+var routerAppInsSamplingPct = lowCostDevMode ? 10 : 100
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  1. USER-ASSIGNED MANAGED IDENTITY (global bot identity — fresh, not Alpha)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -68,7 +75,10 @@ resource routerLaw 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   location: location
   properties: {
     sku: { name: 'PerGB2018' }
-    retentionInDays: 30
+    retentionInDays: 30  // PerGB2018 minimum; 30 days included in ingestion price
+    workspaceCapping: {
+      dailyQuotaGb: routerLawDailyCapGb
+    }
   }
 }
 
@@ -79,6 +89,7 @@ resource routerAppi 'Microsoft.Insights/components@2020-02-02' = {
   properties: {
     Application_Type: 'web'
     WorkspaceResourceId: routerLaw.id
+    SamplingPercentage: routerAppInsSamplingPct
   }
 }
 
