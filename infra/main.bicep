@@ -90,6 +90,9 @@ param openrouterFallbackSecondary string = 'moonshotai/kimi-k2.5'
 @allowed(['off', 'minimal', 'standard', 'verbose'])
 param devTelemetryMode string = 'verbose'
 
+@description('Low Cost Dev Mode — reduces Log Analytics retention, telemetry verbosity, and scale floor to minimise dev spend. (#303)')
+param lowCostDevMode bool = false
+
 
 // ─── Variables ──────────────────────────────────────────────────────────────
 
@@ -107,6 +110,15 @@ var funcName      = 'helkinswarm-func-${userAlias}'
 var botName       = 'helkinswarm-bot-${userAlias}'
 
 // Built-in ARM role definition IDs
+// ─── Low Cost Dev Mode derived values (#303) ───────────────────────────────
+// lowCostDevMode=true: 7-day retention, scale-to-zero, minimal telemetry, 0.1 GB/day LA cap.
+var lawRetentionDays       = lowCostDevMode ? 7   : 30
+var appInsRetentionDays    = lowCostDevMode ? 7   : 30
+var funcInstanceMin        = lowCostDevMode ? 0   : 1
+var effectiveTelemetryMode = lowCostDevMode ? 'minimal' : devTelemetryMode
+var lawDailyCapGb          = lowCostDevMode ? json('0.1') : json('-1')  // -1 = no cap
+var appInsSamplingPct      = lowCostDevMode ? 10  : 100
+
 var roleKvSecretsUser           = '4633458b-17de-408a-b874-0445c86b69e6'
 var roleKvAdmin                 = '00482a5a-887f-4fb3-b363-3b7fe8e74483'
 var roleAcrPull                 = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
@@ -140,7 +152,10 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   location: location
   properties: {
     sku: { name: 'PerGB2018' }
-    retentionInDays: 30
+    retentionInDays: lawRetentionDays
+    workspaceCapping: {
+      dailyQuotaGb: lawDailyCapGb
+    }
   }
 }
 
@@ -156,7 +171,8 @@ resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
     Application_Type: 'web'
     WorkspaceResourceId: logAnalytics.id
     DisableIpMasking: false
-    RetentionInDays: 30
+    RetentionInDays: appInsRetentionDays
+    SamplingPercentage: appInsSamplingPct
   }
 }
 
@@ -505,7 +521,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
     managedEnvironmentId: containerAppsEnv.id
     keyVaultReferenceIdentity: uami.id
     siteConfig: {
-      minimumElasticInstanceCount: 1
+      minimumElasticInstanceCount: funcInstanceMin
       functionAppScaleLimit: 5
       linuxFxVersion: 'DOCKER|${acrName}.azurecr.io/helkinswarm:latest'
       acrUseManagedIdentityCreds: true
@@ -581,7 +597,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'MAINTENANCE_MODE', value: 'false' }
 
         // ── Dev telemetry (spec 0n, #174) ──
-        { name: 'DEV_TELEMETRY_MODE', value: devTelemetryMode }
+        { name: 'DEV_TELEMETRY_MODE', value: effectiveTelemetryMode }
       ]
     }
   }
