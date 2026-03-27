@@ -76,6 +76,10 @@ df.app.orchestration('overseer', function* (context) {
   yield* processTurn(context, state, msg);
 });
 
+// DIAGNOSTIC (#327): bypass session sub-orchestrator entirely.
+// Proves whether the sub-orchestrator dispatch is the issue.
+const OVERSEER_FAST_PATH = !!(process.env['OVERSEER_FAST_PATH'] ?? '1');
+
 // Helper generator to process a turn
 function* processTurn(
   context: df.OrchestrationContext,
@@ -83,6 +87,20 @@ function* processTurn(
   event: NewMessageEvent,
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions runtime drives the generator with mixed types
 ): Generator<df.Task, void, any> {
+  const correlationId = event.correlationId ?? crypto.randomUUID();
+
+  if (OVERSEER_FAST_PATH) {
+    // Skip sub-orchestrator entirely — send reply directly from overseer
+    const replyInput: SendReplyInput = {
+      userId: state.userId,
+      message: 'ALIVE — overseer fast-path (no session sub-orchestrator)',
+      correlationId,
+      conversationReference: event.conversationReference,
+    };
+    yield context.df.callActivity('sendReplyActivity', replyInput);
+    return;
+  }
+
   const sessionInput: SessionInput = {
     state,
     userMessage: event.userMessage,
