@@ -34,6 +34,8 @@ export interface PromptResult {
   estimatedTokens: number;
 }
 
+const DEFAULT_PERSONA = 'You are HelkinSwarm — a personal sovereign AI copilot. You are direct, capable, and act with precision.';
+
 // Cache persona text after first load
 let cachedPersona: string | null = null;
 
@@ -45,7 +47,7 @@ async function loadPersona(): Promise<string> {
       'utf-8',
     );
   } catch {
-    cachedPersona = 'You are HelkinSwarm — a personal sovereign AI copilot. You are direct, capable, and act with precision.';
+    cachedPersona = DEFAULT_PERSONA;
   }
   return cachedPersona;
 }
@@ -81,13 +83,16 @@ async function withSoftTimeout<T>(
 
 export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult> {
   const { state, userMessage } = input;
+  const correlationId = input.correlationId ?? state.userId;
 
-  const persona = await loadPersona();
+  await recordOrchestratorStage(correlationId, 'build-prompt:persona', state.userId);
+  const persona = await withSoftTimeout(loadPersona(), 1_000, DEFAULT_PERSONA, 'persona');
 
   // Load user profile for preferences injection or onboarding detection
   let preferencesFragment = '';
   let onboardingInstructions = '';
   try {
+    await recordOrchestratorStage(correlationId, 'build-prompt:user-profile', state.userId);
     const profile = await withSoftTimeout(getUserProfile(state.userId), 2_000, undefined, 'userProfile');
     if (profile?.onboardedAt) {
       preferencesFragment = profileToPromptFragment(profile);
@@ -107,6 +112,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   }
 
   // Build tool summary for the system prompt — safety-filtered (#210)
+  await recordOrchestratorStage(correlationId, 'build-prompt:tool-summary', state.userId);
   const tools = toolRegistry.getSafetyFiltered();
   const toolSummary = tools.length > 0
     ? `Available tools: ${tools.map((t) => `${t.name} (${t.description})`).join('; ')}`
@@ -120,6 +126,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   // JIT injection: also recall skill-specific memories based on detected domains (#66)
   let recalledMemory = '';
   try {
+    await recordOrchestratorStage(correlationId, 'build-prompt:memory-recall', state.userId);
     recalledMemory = await withSoftTimeout((async () => {
       const mm = new MemoryManager(state.userId);
 
@@ -164,6 +171,8 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   // In DevLoop sessions, suppress user preferences and onboarding — they leak
   // user-specific context (e.g. "Mr. Anderson" addressing) into system channels (#148).
   const isDevLoop = !!input.devLoopContext?.isDevLoop;
+
+  await recordOrchestratorStage(correlationId, 'build-prompt:compose', state.userId);
 
   const systemPrompt = [
     persona,
@@ -221,10 +230,46 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
 }
 
 // Durable Functions activity registration
+const ACTIVITY_HARD_TIMEOUT_MS = 25_000;
+
 df.app.activity('buildPromptActivity', {
   handler: async (input: BuildPromptInput): Promise<PromptResult> => {
     const correlationId = input.correlationId ?? input.state.userId;
     await recordOrchestratorStage(correlationId, 'build-prompt', input.state.userId);
-    return await buildPrompt(input);
+
+    const start = Date.now();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([
+        buildPrompt(input),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            reject(new Error(`buildPromptActivity hard timeout after ${ACTIVITY_HARD_TIMEOUT_MS}ms`));
+          }, ACTIVITY_HARD_TIMEOUT_MS);
+        }),
+      ]);
+      console.log(`[buildPromptActivity] Completed in ${Date.now() - start}ms`);
+      return result;
+    } catch (err) {
+      console.error(`[buildPromptActivity] Failed/timed out after ${Date.now() - start}ms:`, err);
+      // Return a minimal degraded prompt so the LLM call can still proceed.
+      return buildDegradedPrompt(input);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   },
 });
+
+/** Minimal prompt when the full build hangs or fails — keeps the turn alive. */
+function buildDegradedPrompt(input: BuildPromptInput): PromptResult {
+  const persona = cachedPersona ?? DEFAULT_PERSONA;
+  const systemPrompt = [
+    persona,
+    input.state.summary ? `Previous conversation summary:\n${input.state.summary}` : '',
+  ].filter(Boolean).join('\n\n');
+  const messages: PromptResult['messages'] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: input.userMessage },
+  ];
+  return { systemPrompt, messages, estimatedTokens: estimateTokens(systemPrompt + input.userMessage) };
+}

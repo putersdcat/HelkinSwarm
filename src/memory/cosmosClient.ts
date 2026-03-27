@@ -2,7 +2,7 @@
 // Spec ref: 07-Memory-Manager.md
 
 import { CosmosClient } from '@azure/cosmos';
-import { getCredential } from '../auth/identity.js';
+import { getBoundedCredential } from '../auth/identity.js';
 import { getEnvConfig } from '../config/envConfig.js';
 
 let _client: CosmosClient | undefined;
@@ -13,7 +13,10 @@ export function getCosmosClient(): CosmosClient {
     if (!endpoint) {
       throw new Error('COSMOS_ENDPOINT environment variable is not set');
     }
-    _client = new CosmosClient({ endpoint, aadCredentials: getCredential() });
+    // Use getBoundedCredential to ensure token acquisition has a hard timeout (#327).
+    // The raw credential's getToken() has no timeout, which can hang the entire
+    // activity when the Managed Identity endpoint is slow.
+    _client = new CosmosClient({ endpoint, aadCredentials: getBoundedCredential() });
   }
   return _client;
 }

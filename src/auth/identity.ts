@@ -3,7 +3,7 @@
 // Spec ref: 11-Authentication-Identity.md
 
 import { DefaultAzureCredential, ManagedIdentityCredential } from '@azure/identity';
-import type { TokenCredential } from '@azure/identity';
+import type { TokenCredential, AccessToken, GetTokenOptions } from '@azure/identity';
 import { getEnvConfig } from '../config/envConfig.js';
 
 // ---------------------------------------------------------------------------
@@ -11,11 +11,11 @@ import { getEnvConfig } from '../config/envConfig.js';
 // ---------------------------------------------------------------------------
 
 let _credential: TokenCredential | undefined;
+let _boundedCredential: TokenCredential | undefined;
 
 /**
- * Returns the shared Azure credential singleton.
- * - Production (AZURE_CLIENT_ID set): uses UAMI via ManagedIdentityCredential
- * - Local dev (no AZURE_CLIENT_ID): falls back to DefaultAzureCredential (az login, VS Code, etc.)
+ * Returns the shared Azure credential singleton (raw, no timeout wrapper).
+ * Prefer `getBoundedCredential()` for SDK clients that call `getToken()` internally.
  */
 export function getCredential(): TokenCredential {
   if (!_credential) {
@@ -25,6 +25,47 @@ export function getCredential(): TokenCredential {
       : new DefaultAzureCredential();
   }
   return _credential;
+}
+
+/**
+ * Returns a credential that wraps `getToken()` with TOKEN_ACQUIRE_TIMEOUT_MS.
+ * Use this for SDK clients (Cosmos, etc.) that call `credential.getToken()` internally
+ * without their own timeout protection (#327).
+ */
+export function getBoundedCredential(): TokenCredential {
+  if (!_boundedCredential) {
+    const inner = getCredential();
+    _boundedCredential = {
+      async getToken(scopes: string | string[], options?: GetTokenOptions): Promise<AccessToken> {
+        const scopeKey = Array.isArray(scopes) ? scopes.join(' ') : scopes;
+        // Check our own cache first — avoids hitting the credential at all for warm tokens.
+        const cached = tokenCache.get(scopeKey);
+        if (cached && cached.expiresAt > Date.now() + 60_000) {
+          return { token: cached.token, expiresOnTimestamp: cached.expiresAt };
+        }
+
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const result = await Promise.race([
+          inner.getToken(scopes, options),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => {
+              const err = new Error(`BoundedCredential: token acquisition timed out after ${TOKEN_ACQUIRE_TIMEOUT_MS}ms`);
+              err.name = 'TimeoutError';
+              reject(err);
+            }, TOKEN_ACQUIRE_TIMEOUT_MS);
+          }),
+        ]).finally(() => {
+          if (timer) clearTimeout(timer);
+        });
+
+        if (result?.token) {
+          tokenCache.set(scopeKey, { token: result.token, expiresAt: result.expiresOnTimestamp });
+        }
+        return result!;
+      },
+    };
+  }
+  return _boundedCredential;
 }
 
 // ---------------------------------------------------------------------------
@@ -81,4 +122,5 @@ export async function getBearerToken(scope: string): Promise<string> {
 export function resetIdentityCachesForTests(): void {
   tokenCache.clear();
   _credential = undefined;
+  _boundedCredential = undefined;
 }
