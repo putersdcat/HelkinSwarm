@@ -20,6 +20,9 @@ import type { SendReplyInput } from './sendReplyActivity.js';
 import type { SpinnerHeartbeatInput } from './spinnerHeartbeatActivity.js';
 import type { TerminateOrchestrationInput } from './terminateOrchestrationActivity.js';
 import type { PurgeOrchestrationInput } from './terminateOrchestrationActivity.js';
+import type { BuildPromptInput, PromptResult } from './buildPromptActivity.js';
+import type { LlmResult } from './llmActivity.js';
+import type { PlanInput } from './planActivity.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
 
@@ -77,10 +80,10 @@ df.app.orchestration('overseer', function* (context) {
   yield* processTurn(context, state, msg);
 });
 
-// DIAGNOSTIC (#327): bypass session sub-orchestrator entirely.
-// Proves whether the sub-orchestrator dispatch is the issue.
-// DISABLED — proved the issue is in sub-orchestrator. Now testing pre-purge.
-const OVERSEER_FAST_PATH = false;
+// DIAGNOSTIC (#327): inline session pipeline — sub-orchestrator is stuck.
+// Proved that callSubOrchestrator never returns.
+// This inlines buildPrompt + plan + llm + sendReply directly in overseer.
+const INLINE_SESSION = process.env['INLINE_SESSION'] !== '0';
 
 // Helper generator to process a turn
 function* processTurn(
@@ -91,11 +94,35 @@ function* processTurn(
 ): Generator<df.Task, void, any> {
   const correlationId = event.correlationId ?? crypto.randomUUID();
 
-  if (OVERSEER_FAST_PATH) {
-    // Skip sub-orchestrator entirely — send reply directly from overseer
+  if (INLINE_SESSION) {
+    // Inline session pipeline — no sub-orchestrator (#327)
+    const promptInput: BuildPromptInput = {
+      state,
+      userMessage: event.userMessage,
+      correlationId,
+    };
+    const prompt: PromptResult = yield context.df.callActivity('buildPromptActivity', promptInput);
+
+    const planInput: PlanInput = {
+      userMessage: event.userMessage,
+      correlationId,
+      userId: state.userId,
+      availableToolNames: [],
+    };
+    yield context.df.callActivity('planActivity', planInput);
+
+    const llmInput = {
+      ...prompt,
+      correlationId,
+      userId: state.userId,
+      modelOverride: event.modelOverride,
+      imageUrls: event.imageUrls,
+    };
+    const llmResult: LlmResult = yield context.df.callActivity('llmActivity', llmInput);
+
     const replyInput: SendReplyInput = {
       userId: state.userId,
-      message: 'ALIVE — overseer fast-path (no session sub-orchestrator)',
+      message: llmResult.content,
       correlationId,
       conversationReference: event.conversationReference,
     };
