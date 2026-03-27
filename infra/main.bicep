@@ -98,7 +98,6 @@ var uamiName      = 'helkinswarm-id-${userAlias}'
 var lawName       = 'helkinswarm-law-${userAlias}'
 var appInsName    = 'helkinswarm-appi-${userAlias}'
 var kvName        = 'helkinswarm-kv-${userAlias}'       // 20 chars max for alias a7f2 ✓
-var bingName      = 'helkinswarm-bing-${userAlias}'     // Bing Search API (#190)
 var acrName       = 'helkinswarmacr${userAlias}'         // globally unique, stamped per user
 var stName        = 'helkinswarmst${userAlias}'          // globally unique, alphanumeric only
 var cosmosName    = 'helkinswarm-cosmos-${userAlias}'    // globally unique
@@ -199,25 +198,6 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     softDeleteRetentionInDays: 90
     enablePurgeProtection: true  // #201 — prevent permanent secret destruction by agents
     sku: { family: 'A', name: 'standard' }
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-//  5b. BING SEARCH API — Web search skill (#190)
-// ═══════════════════════════════════════════════════════════════════════════
-
-resource bingSearch 'Microsoft.Bing/accounts@2020-06-10' = {
-  name: bingName
-  location: 'global'
-  kind: 'Bing.Search.v7'
-  sku: { name: 'S1' }   // Free tier: 1 000 calls/month
-}
-
-resource bingSearchApiKeySecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
-  parent: keyVault
-  name: 'BingSearchApiKey'
-  properties: {
-    value: bingSearch.listKeys().key1
   }
 }
 
@@ -570,9 +550,6 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'OPENROUTER_API_KEY', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=OpenRouterApiKey)' }
         { name: 'OPENROUTER_FALLBACK_PRIMARY', value: openrouterFallbackPrimary }
         { name: 'OPENROUTER_FALLBACK_SECONDARY', value: openrouterFallbackSecondary }
-
-        // ── Web search: Bing API key from Key Vault (#190) ──
-        { name: 'BING_SEARCH_API_KEY', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=BingSearchApiKey)' }
 
         // ── OBO / Delegated Identity (spec 11) ──
         { name: 'BOT_OAUTH_CONNECTION_NAME', value: 'GraphOAuth' }
