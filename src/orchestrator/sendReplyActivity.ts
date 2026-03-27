@@ -35,6 +35,25 @@ export interface SendReplyResult {
 // Shared adapter instance for proactive messaging.
 // Uses the UAMI credentials from the Bot Service registration.
 let adapterInstance: CloudAdapter | undefined;
+const ACK_UPDATE_TIMEOUT_MS = 3_000;
+
+async function withTimeout<T>(work: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return await Promise.race([
+    work,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const timeoutError = new Error(`${label} timed out after ${timeoutMs}ms`);
+        timeoutError.name = 'TimeoutError';
+        reject(timeoutError);
+      }, timeoutMs);
+    }),
+  ]).finally(() => {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  });
+}
 
 function getAdapter(): CloudAdapter {
   if (!adapterInstance) {
@@ -74,21 +93,39 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
       conversationReference as ConversationReference,
       async (turnContext) => {
         if (ackActivityId) {
-          // Replace the "⌛ Working on it..." placeholder in-place (spec: 10-Teams-Interface.md)
-          await turnContext.updateActivity({
-            type: ActivityTypes.Message,
-            id: ackActivityId,
-            text: replyChunks[0]!.text,
-            textFormat: 'markdown',
-          });
-          // Cache under ack ID so reply-with-quote can resolve full text (#166)
-          cacheSentMessage(ackActivityId, replyChunks[0]!.text);
+          let firstChunkSent = false;
+          try {
+            // Replace the "⌛ Working on it..." placeholder in-place when Teams cooperates.
+            await withTimeout(turnContext.updateActivity({
+              type: ActivityTypes.Message,
+              id: ackActivityId,
+              text: replyChunks[0]!.text,
+              textFormat: 'markdown',
+            }), ACK_UPDATE_TIMEOUT_MS, 'ack update');
+            // Cache under ack ID so reply-with-quote can resolve full text (#166)
+            cacheSentMessage(ackActivityId, replyChunks[0]!.text);
+            firstChunkSent = true;
+          } catch (err) {
+            console.warn(
+              `[sendReplyActivity] Ack update failed for userId=${input.userId}; falling back to new message send: ${err instanceof Error ? err.message : err}`,
+            );
+            const response = await turnContext.sendActivity({
+              type: ActivityTypes.Message,
+              text: replyChunks[0]!.text,
+              textFormat: 'markdown',
+            });
+            if (response?.id) {
+              cacheSentMessage(response.id, replyChunks[0]!.text);
+            }
+            firstChunkSent = true;
+          }
+
           const conversationId = (conversationReference as ConversationReference).conversation?.id ?? input.userId;
           if (input.correlationId) {
             await clearPendingAckId(conversationId, input.correlationId);
           }
 
-          for (const chunk of replyChunks.slice(1)) {
+          for (const chunk of firstChunkSent ? replyChunks.slice(1) : replyChunks) {
             const response = await turnContext.sendActivity({
               type: ActivityTypes.Message,
               text: chunk.text,
