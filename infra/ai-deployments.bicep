@@ -7,7 +7,7 @@ param aiServicesName string
 param quotaMaxTPM int = 100000
 
 @description('Maximum TPM ceiling for AI model deployments. The summed requested deployment capacities stay within this ceiling.')
-param quotaMaxTPMCeiling int = 200000
+param quotaMaxTPMCeiling int = 400000
 
 @description('Quota allocation strategy. maximize = favor higher initial deployment capacities; minimize = conservative baseline; manual = rely primarily on modelQuotaOverrides.')
 @allowed([ 'maximize', 'minimize', 'manual' ])

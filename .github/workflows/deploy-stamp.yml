@@ -41,7 +41,7 @@ on:
         description: "Maximum total requested AI deployment capacity in TPM."
         required: false
         type: number
-        default: 200000
+        default: 400000
       MODEL_QUOTA_OVERRIDES_JSON:
         description: "Optional JSON object for Bicep modelQuotaOverrides, e.g. {\"FW-MiniMax-M2.5\":5}."
         required: false
@@ -98,7 +98,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: |
           STRATEGY="${{ github.event.inputs.QUOTA_STRATEGY || 'maximize' }}"
-          CEILING="${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '200000' }}"
+          CEILING="${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '400000' }}"
           OVERRIDES='${{ github.event.inputs.MODEL_QUOTA_OVERRIDES_JSON || '' }}'
 
           if ! echo "$STRATEGY" | grep -qE '^(maximize|minimize|manual)$'; then
@@ -265,7 +265,7 @@ jobs:
 
           CICD_PRINCIPAL_ID="${{ env.AZURE_CLIENT_OBJECT_ID }}"
           QUOTA_STRATEGY="${{ github.event.inputs.QUOTA_STRATEGY || 'maximize' }}"
-          QUOTA_MAX_TPM_CEILING="${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '200000' }}"
+          QUOTA_MAX_TPM_CEILING="${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '400000' }}"
           MODEL_QUOTA_OVERRIDES_JSON='${{ github.event.inputs.MODEL_QUOTA_OVERRIDES_JSON || '' }}'
 
           echo "ℹ️ CICD principal object id: ${CICD_PRINCIPAL_ID}"
@@ -340,7 +340,7 @@ jobs:
         run: |
           set -e
           QUOTA_STRATEGY="${{ github.event.inputs.QUOTA_STRATEGY || 'maximize' }}"
-          QUOTA_MAX_TPM_CEILING="${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '200000' }}"
+          QUOTA_MAX_TPM_CEILING="${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '400000' }}"
           MODEL_QUOTA_OVERRIDES_JSON='${{ github.event.inputs.MODEL_QUOTA_OVERRIDES_JSON || '' }}'
 
           DEPLOY_CMD=(az deployment group create
@@ -387,7 +387,8 @@ jobs:
 
           echo ""
           echo "📊 Total allocated: ${TOTAL}k TPM"
-          CEILING=${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '200' }}
+          CEILING_TPM=${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '400000' }}
+          CEILING=$((CEILING_TPM / 1000))
           if [ "$TOTAL" -gt "$CEILING" ]; then
             echo "⚠️ Total allocation (${TOTAL}k) exceeds ceiling (${CEILING}k)"
           else
