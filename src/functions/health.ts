@@ -4,7 +4,7 @@ import { getEnvConfig } from '../config/envConfig.js';
 import { getDatabase } from '../memory/cosmosClient.js';
 import { APP_VERSION } from '../config/version.js';
 import { getMessagePathSnapshot } from '../observability/messagePathHealth.js';
-import { getLlmAggregateHealth } from '../llm/llmHealthTracker.js';
+import { getLlmAggregateHealth, getLlmHealthSnapshot } from '../llm/llmHealthTracker.js';
 
 interface HealthResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -21,6 +21,16 @@ interface HealthResponse {
     euResidencyMode: boolean;
   };
   diagnostics?: {
+    llm: {
+      aggregate: 'ok' | 'degraded' | 'down';
+      models: Array<{
+        deploymentName: string;
+        lastSuccessAt: string | null;
+        lastFailureAt: string | null;
+        consecutiveFailures: number;
+        isDown: boolean;
+      }>;
+    };
     messagePath: {
       pendingTurns: number;
       oldestPendingAgeMs: number | null;
@@ -64,6 +74,7 @@ export async function healthHandler(
   const memoryStatus = await checkMemoryStatus();
   const messagePath = await getMessagePathSnapshot();
   const llmHealth = getLlmAggregateHealth();
+  const llmSnapshot = getLlmHealthSnapshot();
 
   const runtimeStatus = messagePath.status === 'error' ? 'error' : 'ok';
   const overallStatus: HealthResponse['status'] =
@@ -88,6 +99,7 @@ export async function healthHandler(
       euResidencyMode: env.euResidencyMode,
     },
     diagnostics: {
+      llm: llmSnapshot,
       messagePath: {
         pendingTurns: messagePath.pendingTurns,
         oldestPendingAgeMs: messagePath.oldestPendingAgeMs,

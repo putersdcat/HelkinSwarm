@@ -325,6 +325,23 @@
           var maintBadge = data.maintenance ? "error" : "ok";
           var maintText = data.maintenance ? "ACTIVE" : "Clear";
 
+          // LLM aggregate health
+          var llmHealth = data.llmHealth || { aggregate: "ok", models: [] };
+          var llmBadge = llmHealth.aggregate === "down" ? "error" : llmHealth.aggregate === "degraded" ? "warn" : "ok";
+          var llmText = llmHealth.aggregate === "down" ? "ALL DOWN" : llmHealth.aggregate === "degraded" ? "DEGRADED" : "OK";
+          var llmDownModels = (llmHealth.models || []).filter(function (m) { return m.isDown; });
+          var llmSummary = llmDownModels.length > 0
+            ? "<p><strong>Down models:</strong> " + llmDownModels.map(function (m) { return esc(m.deploymentName); }).join(", ") + "</p>"
+            : "<p>No aggregate LLM failures recorded.</p>";
+          var llmRows = (llmHealth.models || []).map(function (m) {
+            var badge = m.isDown ? "error" : m.consecutiveFailures > 0 ? "warn" : "ok";
+            return "<tr><td>" + esc(m.deploymentName) + "</td>" +
+              "<td><span class=\"badge badge-" + badge + "\">" + (m.isDown ? "DOWN" : m.consecutiveFailures > 0 ? "FLAKY" : "OK") + "</span></td>" +
+              "<td>" + esc(m.consecutiveFailures) + "</td>" +
+              "<td>" + (m.lastSuccessAt ? new Date(m.lastSuccessAt).toLocaleString() : "—") + "</td>" +
+              "<td>" + (m.lastFailureAt ? new Date(m.lastFailureAt).toLocaleString() : "—") + "</td></tr>";
+          }).join("");
+
           var html =
             "<h1>Dev Console</h1>" +
 
@@ -340,6 +357,8 @@
             esc(mem.totalVaults) + " vaults / " + esc(mem.totalEntries) + " entries</span></div>" +
             '<div class="card mini-card"><h3>Maintenance</h3><span class="badge badge-' +
             maintBadge + '">' + maintText + "</span></div>" +
+            '<div class="card mini-card"><h3>LLM</h3><span class="badge badge-' +
+            llmBadge + '">' + llmText + "</span></div>" +
             '<div class="card mini-card"><h3>Safety</h3><span class="stat">' +
             esc(data.safetyMode) + "</span></div>" +
             "</div>" +
@@ -355,6 +374,15 @@
               ? "<table><tr><th>Hook ID</th><th>Type</th><th>Skill</th><th>Status</th><th>Expires</th></tr>" +
                 hookRows + "</table>"
               : "<p>No hooks registered.</p>") +
+            "</div>" +
+
+            // LLM health
+            '<div class="card"><h2>LLM Health</h2>' +
+            llmSummary +
+            (llmRows
+              ? "<table><tr><th>Deployment</th><th>Status</th><th>Failures</th><th>Last Success</th><th>Last Failure</th></tr>" +
+                llmRows + "</table>"
+              : "") +
             "</div>" +
 
             // Memory vaults

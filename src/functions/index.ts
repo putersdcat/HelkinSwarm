@@ -44,6 +44,7 @@ import '../orchestrator/loadStateActivity.js';
 import '../orchestrator/storeMemoryActivity.js';
 import '../orchestrator/hookResolutionActivity.js';
 import '../orchestrator/startupRecoveryActivity.js';
+import '../orchestrator/terminateOrchestrationActivity.js';
 
 // Capability loader — scan skills/ directory and register tool handlers
 import { loadCapabilities } from '../capabilities/capabilityLoader.js';
