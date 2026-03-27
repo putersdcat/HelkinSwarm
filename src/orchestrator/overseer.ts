@@ -142,6 +142,7 @@ function* processTurn(
           const errorReply: SendReplyInput = {
             userId: state.userId,
             message: `⏰ Your message took too long to process (>${SESSION_TIMEOUT_MS / 60000} min). The turn was cancelled. Please try again.`,
+            correlationId: sessionInput.correlationId,
           };
           yield context.df.callActivity('sendReplyActivity', errorReply);
         } catch (replyErr) {
@@ -153,6 +154,7 @@ function* processTurn(
         spinnerTicks++;
         yield context.df.callActivity('spinnerHeartbeatActivity', {
           userId: state.userId,
+          correlationId: sessionInput.correlationId,
           correlationTag,
         } satisfies SpinnerHeartbeatInput);
         if (spinnerTicks < MAX_SPINNER_TICKS) {
@@ -175,6 +177,7 @@ function* processTurn(
       const errorReply: SendReplyInput = {
         userId: state.userId,
         message: `⚠️ Something went wrong processing your message. The error has been logged. Please try again.`,
+        correlationId: sessionInput.correlationId,
       };
       yield context.df.callActivity('sendReplyActivity', errorReply);
     } catch (replyErr) {

@@ -18,6 +18,7 @@ import { getEnvConfig } from '../config/envConfig.js';
 
 export interface SpinnerHeartbeatInput {
   userId: string;
+  correlationId: string;
   correlationTag: string;
 }
 
@@ -40,8 +41,8 @@ function getAdapter(): CloudAdapter {
   return adapterInstance;
 }
 
-async function spinnerHeartbeat(input: SpinnerHeartbeatInput): Promise<SpinnerHeartbeatResult> {
-  const ackActivityId = await getPendingAckId(input.userId);
+export async function spinnerHeartbeat(input: SpinnerHeartbeatInput): Promise<SpinnerHeartbeatResult> {
+  const ackActivityId = await getPendingAckId(input.correlationId);
   if (!ackActivityId) {
     // Ack already cleared (reply was sent) — nothing to update
     return { updated: false };

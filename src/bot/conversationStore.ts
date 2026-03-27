@@ -18,13 +18,18 @@ interface ConvRefDocument {
 }
 
 interface PendingAckDocument {
-  /** Document id — 'ack-{userId}' */
+  /** Document id — 'ack-{correlationId}' */
   id: string;
   /** Partition key — same as convref for co-location */
   conversationId: string;
   userId: string;
+  correlationId: string;
   activityId: string;
   createdAt: string;
+}
+
+export function makePendingAckDocumentId(correlationId: string): string {
+  return `ack-${correlationId}`;
 }
 
 /** Upsert the ConversationReference for a user. Called on every inbound message. */
@@ -72,11 +77,13 @@ export async function savePendingAckId(
   userId: string,
   conversationId: string,
   activityId: string,
+  correlationId: string,
 ): Promise<void> {
   const doc: PendingAckDocument = {
-    id: `ack-${userId}`,
+    id: makePendingAckDocumentId(correlationId),
     conversationId,
     userId,
+    correlationId,
     activityId,
     createdAt: new Date().toISOString(),
   };
@@ -85,12 +92,12 @@ export async function savePendingAckId(
 }
 
 /** Retrieve the pending ack activityId. Returns null if none stored. */
-export async function getPendingAckId(userId: string): Promise<string | null> {
+export async function getPendingAckId(correlationId: string): Promise<string | null> {
   const container = getContainer(CONTAINER_NAME);
   const { resources } = await container.items
     .query<PendingAckDocument>({
       query: 'SELECT * FROM c WHERE c.id = @id',
-      parameters: [{ name: '@id', value: `ack-${userId}` }],
+      parameters: [{ name: '@id', value: makePendingAckDocumentId(correlationId) }],
     })
     .fetchAll();
   return resources[0]?.activityId ?? null;
@@ -98,12 +105,12 @@ export async function getPendingAckId(userId: string): Promise<string | null> {
 
 /** Delete the pending ack record after the reply has been sent. */
 export async function clearPendingAckId(
-  userId: string,
   conversationId: string,
+  correlationId: string,
 ): Promise<void> {
   const container = getContainer(CONTAINER_NAME);
   try {
-    await container.item(`ack-${userId}`, conversationId).delete();
+    await container.item(makePendingAckDocumentId(correlationId), conversationId).delete();
   } catch {
     // Already gone — safe to ignore
   }

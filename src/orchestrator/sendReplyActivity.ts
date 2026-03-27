@@ -50,7 +50,7 @@ function getAdapter(): CloudAdapter {
   return adapterInstance;
 }
 
-async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
+export async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
   const correlationId = input.correlationId ?? input.userId;
   recordOrchestratorStage(correlationId, 'send-reply', input.userId);
   try {
@@ -65,7 +65,9 @@ async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
       throw new Error(`No ConversationReference found in Cosmos for userId=${input.userId}`);
     }
 
-    const ackActivityId = await getPendingAckId(input.userId);
+    const ackActivityId = input.correlationId
+      ? await getPendingAckId(input.correlationId)
+      : null;
 
     await adapter.continueConversationAsync(
       appId,
@@ -82,7 +84,9 @@ async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
           // Cache under ack ID so reply-with-quote can resolve full text (#166)
           cacheSentMessage(ackActivityId, replyChunks[0]!.text);
           const conversationId = (conversationReference as ConversationReference).conversation?.id ?? input.userId;
-          await clearPendingAckId(input.userId, conversationId);
+          if (input.correlationId) {
+            await clearPendingAckId(conversationId, input.correlationId);
+          }
 
           for (const chunk of replyChunks.slice(1)) {
             const response = await turnContext.sendActivity({

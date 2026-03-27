@@ -44,9 +44,10 @@ function getAdapter(): CloudAdapter {
  * Called on startup if stale ack documents are found in Cosmos.
  */
 async function recoverStaleAck(
-  userId: string,
   conversationId: string,
   ackActivityId: string,
+  userId: string,
+  correlationId: string,
 ): Promise<void> {
   const adapter = getAdapter();
   const appId = getEnvConfig().microsoftAppId;
@@ -54,7 +55,7 @@ async function recoverStaleAck(
 
   if (!conversationReference) {
     // No conversation reference — can only clear the ack document
-    await clearPendingAckId(userId, conversationId);
+    await clearPendingAckId(conversationId, correlationId);
     return;
   }
 
@@ -71,7 +72,7 @@ async function recoverStaleAck(
     },
   );
 
-  await clearPendingAckId(userId, conversationId);
+  await clearPendingAckId(conversationId, correlationId);
 }
 
 /**
@@ -87,7 +88,8 @@ export async function runStartupRecovery(): Promise<void> {
 
     for (const ack of staleAcks) {
       try {
-        await recoverStaleAck(ack.userId, ack.conversationId, ack.activityId);
+        await recoverStaleAck(ack.conversationId, ack.activityId, ack.userId, ack.correlationId);
+
         stats.staleAcks++;
         trackEvent({
           name: 'StaleAckRecovered',
@@ -99,7 +101,7 @@ export async function runStartupRecovery(): Promise<void> {
         // Individual ack recovery failure — clear the document anyway to avoid infinite retry
         console.warn(`[startupRecovery] Failed to recover stale ack for userId=${ack.userId}:`, err);
         try {
-          await clearPendingAckId(ack.userId, ack.conversationId);
+          await clearPendingAckId(ack.conversationId, ack.correlationId);
         } catch {
           // Nothing more we can do
         }

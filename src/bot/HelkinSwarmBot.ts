@@ -509,7 +509,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     const ackResponse = await context.sendActivity(getCorrelatedAck(correlationTag));
     if (ackResponse?.id) {
       const conversationId = context.activity.conversation?.id ?? userId;
-      await savePendingAckId(userId, conversationId, ackResponse.id);
+      await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
     }
 
     // Extract and download image attachments as base64 data URLs (#130, #165)
@@ -534,6 +534,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         devLoopCtx,
         correlationTag,
         quotedContext,
+        correlationId,
       );
     } catch (err) {
       // Overseer unreachable — persist as pending intent for startup recovery (#116)
@@ -563,9 +564,10 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     devLoopContext?: NewMessageEvent['devLoopContext'],
     correlationTag?: string,
     quotedContext?: QuotedContext,
+    correlationId?: string,
   ): Promise<void> {
     const client = this.durableClient!;
-    const eventCorrelationId = crypto.randomUUID();
+    const eventCorrelationId = correlationId ?? crypto.randomUUID();
 
     // One-shot pattern: each message gets a unique overseer instance.
     // This avoids Azure Storage history accumulation (#280) — purgeInstanceHistory
@@ -695,12 +697,13 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
 
     const label = modelOverride === 'primary' ? '🔥 frontier model' : '⚡ fast model';
+    const correlationId = crypto.randomUUID();
     const ackResponse = await context.sendActivity(`⌛ Working on it... (${label})`);
     if (ackResponse?.id) {
       const conversationId = context.activity.conversation?.id ?? userId;
-      await savePendingAckId(userId, conversationId, ackResponse.id);
+      await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
     }
-    await this.raiseToOverseer(context, userId, userAlias, prompt, modelOverride);
+    await this.raiseToOverseer(context, userId, userAlias, prompt, modelOverride, undefined, undefined, undefined, undefined, correlationId);
   }
 
   /** /model <deployment-name> <prompt> — force a specific Azure AI Foundry deployment for one turn (owner-only, #217). */
@@ -737,11 +740,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
 
     const ackResponse = await context.sendActivity(`⌛ Working on it... (🎯 ${deploymentName})`);
+    const correlationId = crypto.randomUUID();
     if (ackResponse?.id) {
       const conversationId = context.activity.conversation?.id ?? userId;
-      await savePendingAckId(userId, conversationId, ackResponse.id);
+      await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
     }
-    await this.raiseToOverseer(context, userId, userAlias, prompt, deploymentName);
+    await this.raiseToOverseer(context, userId, userAlias, prompt, deploymentName, undefined, undefined, undefined, undefined, correlationId);
   }
 
   private async handleEmergencyStop(
