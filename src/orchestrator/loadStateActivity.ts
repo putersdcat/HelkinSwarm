@@ -6,7 +6,7 @@ import * as df from 'durable-functions';
 import type { OverseerState } from './stateManager.js';
 import { loadState } from './stateManager.js';
 import { trackEvent } from '../observability/telemetry.js';
-import { recordOrchestratorStage } from '../observability/orchestratorStageHealth.js';
+import { recordSubstage } from '../observability/orchestratorStageHealth.js';
 
 export interface LoadStateInput {
   userId: string;
@@ -33,10 +33,21 @@ async function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
   });
 }
 
+// DIAGNOSTIC (#327): Skip Cosmos entirely — return null to isolate hang.
+// When LOADSTATE_FAST_PATH is set (default ON), skip all Cosmos I/O.
+const LOADSTATE_FAST_PATH = !!(process.env['LOADSTATE_FAST_PATH'] ?? '1');
+
 df.app.activity('loadStateActivity', {
   handler: async (input: LoadStateInput): Promise<OverseerState | null> => {
     const correlationId = input.correlationId ?? input.userId;
-    await recordOrchestratorStage(correlationId, 'load-state', input.userId);
+    recordSubstage(correlationId, 'load-state', input.userId);
+    console.log(`[loadStateActivity] START correlationId=${correlationId} fastPath=${LOADSTATE_FAST_PATH}`);
+
+    if (LOADSTATE_FAST_PATH) {
+      console.log(`[loadStateActivity] FAST PATH — returning null immediately`);
+      return null;
+    }
+
     try {
       const state = await withTimeout(loadState(input.userId), LOAD_STATE_TIMEOUT_MS);
       trackEvent({ name: 'StateLoaded', correlationId, userId: input.userId, properties: {

@@ -17,7 +17,7 @@ import { cacheSentMessage } from '../bot/sentMessageCache.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { splitReplyIntoChunks } from './replyChunking.js';
 import { trackEvent } from '../observability/telemetry.js';
-import { clearOrchestratorStage, recordOrchestratorStage } from '../observability/orchestratorStageHealth.js';
+import { clearOrchestratorStage, recordSubstage } from '../observability/orchestratorStageHealth.js';
 
 export interface SendReplyInput {
   /** User AAD Object ID — used to look up ConversationReference from Cosmos. */
@@ -71,7 +71,7 @@ function getAdapter(): CloudAdapter {
 
 export async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
   const correlationId = input.correlationId ?? input.userId;
-  await recordOrchestratorStage(correlationId, 'send-reply', input.userId);
+  recordSubstage(correlationId, 'send-reply', input.userId);
   try {
     const replyChunks = splitReplyIntoChunks(input.message);
 

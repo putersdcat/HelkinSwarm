@@ -7,7 +7,7 @@ import * as df from 'durable-functions';
 import { FoundryClient, textContent } from '../llm/foundryClient.js';
 import { getModelForTask, getModelRouting } from '../llm/modelRouter.js';
 import { trackEvent } from '../observability/telemetry.js';
-import { recordOrchestratorStage } from '../observability/orchestratorStageHealth.js';
+import { recordSubstage } from '../observability/orchestratorStageHealth.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -226,7 +226,7 @@ export async function plan(input: PlanInput): Promise<PlanResult> {
 
 df.app.activity('planActivity', {
   handler: async (input: PlanInput): Promise<PlanResult> => {
-    await recordOrchestratorStage(input.correlationId, 'plan', input.userId);
+    recordSubstage(input.correlationId, 'plan', input.userId);
     return await plan(input);
   },
 });
