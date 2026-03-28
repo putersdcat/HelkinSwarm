@@ -26,6 +26,11 @@ import { buildModelOverrideDisclosure, formatTelemetryFooter } from './turnTelem
 import type { TurnTelemetryData, TelemetrySpan } from './turnTelemetry.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { trackEvent } from '../observability/telemetry.js';
+import {
+  canExecuteInMultiRound,
+  getHighestMultiRoundRisk,
+  shouldSkipConfirmationForMultiRound,
+} from './multiRoundPolicy.js';
 import { resolveExecutionHint, sortToolCallsByPlan } from './planExecutionHints.js';
 
 export interface SessionInput {
@@ -456,33 +461,39 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           `dispatching ${followUp.toolCalls.length} tool call(s) (#253)`,
         );
 
-        // Allow low + medium risk tools in multi-round; block high-risk / executor (#319)
+        // Multi-round policy: allow low/medium tools freely, and allow only the
+        // subset of high-risk tools that explicitly skip confirmation and do not
+        // require the executor path in the current environment.
         const roundCallsForDispatch = sortToolCallsByPlan(followUp.toolCalls, planResult.steps).filter(
           (tc: { name: string }) => {
             const def = toolRegistry.get(tc.name);
-            return def && def.risk !== 'high' && !def.requiresExecutor;
+            return canExecuteInMultiRound(def);
           },
         );
 
         if (roundCallsForDispatch.length === 0) break;
 
-        // Lightweight verification for medium-risk tools in multi-round (#319)
-        const hasMediumRisk = roundCallsForDispatch.some(
-          (tc: { name: string }) => toolRegistry.get(tc.name)?.risk === 'medium',
-        );
-        if (hasMediumRisk) {
+        const roundToolDefs = roundCallsForDispatch
+          .map((tc: { name: string }) => toolRegistry.get(tc.name))
+          .filter((def): def is NonNullable<typeof def> => !!def);
+        const highestRoundRisk = getHighestMultiRoundRisk(roundToolDefs);
+
+        // Verification for medium/high-risk tools in multi-round.
+        if (highestRoundRisk !== 'low') {
           const roundVerification = yield context.df.callActivity('verificationPipelineActivity', {
             correlationId,
             sessionId: input.state.userId,
             userId: input.state.userId,
             toolName: roundCallsForDispatch.map((tc: { name: string }) => tc.name).join(', '),
-            risk: 'medium' as const,
+            risk: highestRoundRisk,
             rawOutput: roundCallsForDispatch,
             originalQuery: input.userMessage,
-            skipConfirmation: true, // No human card in multi-round — schema + shields only
+            // Multi-round remains non-interactive; only batches whose tools all
+            // explicitly skip confirmation may proceed here.
+            skipConfirmation: shouldSkipConfirmationForMultiRound(roundToolDefs),
           });
           if (!roundVerification.passed) {
-            console.log(`[sessionOrchestrator] Multi-round ${toolRound}: verification blocked medium-risk tools`);
+            console.log(`[sessionOrchestrator] Multi-round ${toolRound}: verification blocked ${highestRoundRisk}-risk tools`);
             break;
           }
         }
