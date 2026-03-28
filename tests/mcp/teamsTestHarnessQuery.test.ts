@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildHarnessSessionBundle,
+  findFirstBotReplyAfterMessage,
   getHarnessMessageWindow,
   normalizeHarnessMessage,
   queryHarnessMessages,
@@ -157,6 +158,61 @@ describe('teamsTestHarnessQuery helpers', () => {
       messageId: 'm4',
       kind: 'adaptive-card',
     });
+  });
+
+  it('finds the first bot reply after the sent message id without relying on local clock ordering', () => {
+    const sentAndReplyMessages: HarnessRawMessage[] = [
+      {
+        id: 'old-bot',
+        createdDateTime: '2026-03-26T09:00:00.000Z',
+        from: { application: { displayName: 'HelkinSwarm', id: 'bot1' } },
+        body: { content: 'older ack', contentType: 'text' },
+      },
+      {
+        id: 'sent-1',
+        createdDateTime: '2026-03-26T09:00:05.000Z',
+        from: { user: { displayName: 'Eric', id: 'u1' } },
+        body: { content: 'probe', contentType: 'text' },
+      },
+      {
+        id: 'bot-1',
+        createdDateTime: '2026-03-26T09:00:05.000Z',
+        from: { application: { displayName: 'HelkinSwarm', id: 'bot1' } },
+        body: { content: '⌛ Looking into that...', contentType: 'text' },
+      },
+    ];
+
+    const reply = findFirstBotReplyAfterMessage(sentAndReplyMessages, {
+      id: 'sent-1',
+      createdDateTime: '2026-03-26T09:00:06.500Z',
+    });
+
+    expect(reply?.id).toBe('bot-1');
+  });
+
+  it('recognizes bot replies sent as a Teams user when the known bot user id matches', () => {
+    const sentAndReplyMessages: HarnessRawMessage[] = [
+      {
+        id: 'sent-2',
+        createdDateTime: '2026-03-26T09:10:00.000Z',
+        from: { user: { displayName: 'Eric', id: 'u1' } },
+        body: { content: 'probe', contentType: 'text' },
+      },
+      {
+        id: 'bot-user-1',
+        createdDateTime: '2026-03-26T09:10:02.000Z',
+        from: { user: { displayName: 'HelkinSwarm', id: 'bot-user-id' } },
+        body: { content: 'done', contentType: 'text' },
+      },
+    ];
+
+    const reply = findFirstBotReplyAfterMessage(
+      sentAndReplyMessages,
+      { id: 'sent-2', createdDateTime: '2026-03-26T09:10:00.000Z' },
+      { botUserId: 'bot-user-id', botDisplayNameHint: 'HelkinSwarm' },
+    );
+
+    expect(reply?.id).toBe('bot-user-1');
   });
 
   it('derives bundle correlation from nearby ack messages when the anchor has none', () => {

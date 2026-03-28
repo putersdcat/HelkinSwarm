@@ -38,12 +38,15 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import {
   buildHarnessSessionBundle,
+  findFirstBotReplyAfterMessage,
   getHarnessMessageWindow,
   queryHarnessMessages,
+  type HarnessBotReplySearchOptions,
   type HarnessMessageDirection,
   type HarnessMessageWindowQuery,
   type HarnessPickMode,
   type HarnessRawMessage,
+  type HarnessSentMessageAnchor,
 } from './teamsTestHarnessQuery.js';
 import { buildQuotedReplyRequest } from './teamsTestHarnessSend.js';
 
@@ -287,25 +290,26 @@ interface GraphCreatedMessage {
 
 async function waitForBotReplyAfter(
   chatId: string,
-  sentAt: Date,
+  sentAnchor: HarnessSentMessageAnchor,
   timeoutSeconds: number,
+  options: HarnessBotReplySearchOptions = {},
 ): Promise<{ botReply: string | null; elapsed: string }> {
-  const deadline = Date.now() + timeoutSeconds * 1000;
+  const waitStartedAt = Date.now();
+  const deadline = waitStartedAt + timeoutSeconds * 1000;
 
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 3000));
 
     const msgsResp = await graphGet<{ value: GraphMessage[] }>(
-      `/me/chats/${chatId}/messages?$top=10`,
+      `/me/chats/${chatId}/messages?$top=25`,
     );
 
-    for (const m of msgsResp.value) {
-      if (m.from?.application && new Date(m.createdDateTime) > sentAt) {
-        return {
-          elapsed: ((Date.now() - sentAt.getTime()) / 1000).toFixed(1) + 's',
-          botReply: (m.body?.content ?? '').replace(/<[^>]+>/g, '').trim(),
-        };
-      }
+    const reply = findFirstBotReplyAfterMessage(msgsResp.value, sentAnchor, options);
+    if (reply) {
+      return {
+        elapsed: ((Date.now() - waitStartedAt) / 1000).toFixed(1) + 's',
+        botReply: (reply.body?.content ?? '').replace(/<[^>]+>/g, '').trim(),
+      };
     }
   }
 
@@ -994,9 +998,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         );
       }
 
-      const sentAt = new Date();
-      await sendPlainChatMessage(settings.chatId, message);
-      const reply = await waitForBotReplyAfter(settings.chatId, sentAt, timeoutSeconds);
+      const sent = await sendPlainChatMessage(settings.chatId, message);
+      const reply = await waitForBotReplyAfter(
+        settings.chatId,
+        { id: sent.id, createdDateTime: sent.createdDateTime },
+        timeoutSeconds,
+        { botUserId: settings.botUserId, botDisplayNameHint: BOT_DISPLAY_NAME_HINT },
+      );
 
       if (reply.botReply !== null) {
         return {
@@ -1063,9 +1071,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       // Step 2: Send message + poll for bot reply
-      const sentAt = new Date();
-      await sendPlainChatMessage(settings.chatId, message);
-      const reply = await waitForBotReplyAfter(settings.chatId, sentAt, timeoutSeconds);
+      const sent = await sendPlainChatMessage(settings.chatId, message);
+      const reply = await waitForBotReplyAfter(
+        settings.chatId,
+        { id: sent.id, createdDateTime: sent.createdDateTime },
+        timeoutSeconds,
+        { botUserId: settings.botUserId, botDisplayNameHint: BOT_DISPLAY_NAME_HINT },
+      );
 
       const correlationId = `MCP-${Date.now().toString(16).toUpperCase()}`;
       return {
@@ -1115,9 +1127,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         health = { error: String(e) };
       }
 
-      const sentAt = new Date();
       const sent = await sendQuotedReplyMessage(settings.chatId, messageId, message, quotedPreview);
-      const reply = await waitForBotReplyAfter(settings.chatId, sentAt, timeoutSeconds);
+      const reply = await waitForBotReplyAfter(
+        settings.chatId,
+        { id: sent.id, createdDateTime: sent.createdDateTime },
+        timeoutSeconds,
+        { botUserId: settings.botUserId, botDisplayNameHint: BOT_DISPLAY_NAME_HINT },
+      );
 
       return {
         content: [
@@ -1128,7 +1144,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 passed: reply.botReply !== null,
                 quotedMessageId: messageId,
                 sentMessageId: sent.id,
-                sentAt: sent.createdDateTime ?? sentAt.toISOString(),
+                sentAt: sent.createdDateTime ?? null,
                 botReply: reply.botReply ?? null,
                 elapsed: reply.elapsed,
                 runtime: health,

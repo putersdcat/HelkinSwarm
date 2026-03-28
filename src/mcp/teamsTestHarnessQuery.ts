@@ -105,6 +105,16 @@ export interface HarnessSessionBundle {
   cards: Array<{ messageId: string; kind: NormalizedHarnessAttachment['kind']; contentType: string; payload: unknown }>;
 }
 
+export interface HarnessSentMessageAnchor {
+  id?: string;
+  createdDateTime?: string;
+}
+
+export interface HarnessBotReplySearchOptions {
+  botUserId?: string;
+  botDisplayNameHint?: string;
+}
+
 const CORRELATION_PATTERNS = [
   /\[DL-[^\]]+\]/g,
   /\[corr:[^\]]+\]/gi,
@@ -461,4 +471,64 @@ export function buildHarnessSessionBundle(
     confirmationDetected: cards.length > 0,
     cards,
   };
+}
+
+function matchesBotIdentity(
+  message: HarnessRawMessage,
+  options: HarnessBotReplySearchOptions = {},
+): boolean {
+  if (message.from?.application) {
+    return true;
+  }
+
+  const expectedBotUserId = options.botUserId?.trim();
+  if (expectedBotUserId && message.from?.user?.id === expectedBotUserId) {
+    return true;
+  }
+
+  const displayNameHint = options.botDisplayNameHint?.trim().toLowerCase();
+  const senderName = message.from?.user?.displayName?.toLowerCase() ?? '';
+  return !!displayNameHint && senderName.includes(displayNameHint);
+}
+
+export function findFirstBotReplyAfterMessage(
+  rawMessages: HarnessRawMessage[],
+  sentAnchor: HarnessSentMessageAnchor,
+  options: HarnessBotReplySearchOptions = {},
+): HarnessRawMessage | null {
+  const messages = [...rawMessages].sort(
+    (a, b) => new Date(a.createdDateTime).getTime() - new Date(b.createdDateTime).getTime(),
+  );
+
+  if (sentAnchor.id) {
+    const sentIndex = messages.findIndex((message) => message.id === sentAnchor.id);
+    if (sentIndex >= 0) {
+      for (let index = sentIndex + 1; index < messages.length; index += 1) {
+        const candidate = messages[index];
+        if (candidate && matchesBotIdentity(candidate, options)) {
+          return candidate;
+        }
+      }
+    }
+  }
+
+  const sentCreatedTime = sentAnchor.createdDateTime
+    ? new Date(sentAnchor.createdDateTime).getTime()
+    : Number.NaN;
+  if (!Number.isFinite(sentCreatedTime)) {
+    return null;
+  }
+
+  for (const candidate of messages) {
+    if (!matchesBotIdentity(candidate, options)) {
+      continue;
+    }
+
+    const candidateCreatedTime = new Date(candidate.createdDateTime).getTime();
+    if (candidateCreatedTime >= sentCreatedTime) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
