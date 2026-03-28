@@ -1,4 +1,4 @@
-/* HelkinSwarm Tab SPA — styles.css */
+/* HelkinSwarm Tab SPA — styles.css (#304 sub-tabbed product-grade redesign) */
 
 :root {
   --bg: #f3f2f1;
@@ -15,6 +15,11 @@
   --error: #a80000;
   --error-bg: #fde7e9;
   --accent: #0078d4;
+  --accent-light: #deecf9;
+  --subtab-bg: #ffffff;
+  --subtab-border: #e0e0e0;
+  --subtab-active: #0078d4;
+  --kpi-bg: #f8f8f8;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -23,44 +28,111 @@ body {
   font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
   background: var(--bg);
   color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
+/* ─── Top Nav ─────────────────────────────────────────────────────────── */
 #nav {
   background: var(--nav-bg);
-  padding: 12px 20px;
+  padding: 10px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
-
 .nav-title {
   color: white;
   font-size: 16px;
   font-weight: 600;
 }
-
 .nav-btn {
   background: transparent;
-  border: 1px solid rgba(255,255,255,0.5);
-  color: white;
-  padding: 4px 12px;
+  border: 1px solid rgba(255,255,255,0.4);
+  color: rgba(255,255,255,0.85);
+  padding: 5px 14px;
   border-radius: 4px;
   cursor: pointer;
   font-size: 13px;
   margin-left: 6px;
+  transition: all 0.15s;
 }
-.nav-btn:hover {
-  background: rgba(255,255,255,0.15);
-}
+.nav-btn:hover { background: rgba(255,255,255,0.15); color: white; }
+.nav-btn.active-tab { background: rgba(255,255,255,0.25); color: white; border-color: rgba(255,255,255,0.7); font-weight: 600; }
 
+/* ─── Panel Container ─────────────────────────────────────────────────── */
 .panel {
   display: none;
-  padding: 20px;
-  max-width: 800px;
+  padding: 0;
+  max-width: 960px;
   margin: 0 auto;
 }
 .panel.active { display: block; }
 
+/* ─── Page Header ─────────────────────────────────────────────────────── */
+.page-header {
+  padding: 20px 20px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.page-header h1 {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+}
+.page-header .header-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.refresh-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.15s;
+}
+.refresh-btn:hover { background: var(--bg); color: var(--text); }
+
+/* ─── Sub-Tab Rail ────────────────────────────────────────────────────── */
+.subtab-rail {
+  display: flex;
+  gap: 0;
+  padding: 12px 20px 0;
+  border-bottom: 1px solid var(--subtab-border);
+  overflow-x: auto;
+}
+.subtab-btn {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.subtab-btn:hover { color: var(--text); background: var(--kpi-bg); }
+.subtab-btn.active { color: var(--subtab-active); border-bottom-color: var(--subtab-active); font-weight: 600; }
+
+/* ─── Sub-Tab Content ─────────────────────────────────────────────────── */
+.subtab-content {
+  display: none;
+  padding: 16px 20px;
+}
+.subtab-content.active { display: block; }
+
+/* ─── Cards ───────────────────────────────────────────────────────────── */
 .card {
   background: var(--card-bg);
   border-radius: 8px;
@@ -68,27 +140,88 @@ body {
   margin-bottom: 12px;
   box-shadow: var(--card-shadow);
 }
+.card h2 {
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+.card p { margin: 4px 0; }
 
-.loading-card { text-align: center; }
+.loading-card { text-align: center; padding: 40px; }
 
-h1 { color: var(--text); font-size: 20px; margin-bottom: 12px; }
-h2 { color: var(--muted); font-size: 14px; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+/* ─── KPI Tiles Row ───────────────────────────────────────────────────── */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.kpi-tile {
+  background: var(--card-bg);
+  border-radius: 8px;
+  padding: 14px;
+  box-shadow: var(--card-shadow);
+  text-align: center;
+}
+.kpi-tile .kpi-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+.kpi-tile .kpi-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+.kpi-tile .kpi-value.kpi-ok { color: var(--ok); }
+.kpi-tile .kpi-value.kpi-warn { color: var(--warn); }
+.kpi-tile .kpi-value.kpi-error { color: var(--error); }
 
+/* ─── Badges ──────────────────────────────────────────────────────────── */
 .badge {
   display: inline-block;
   padding: 2px 8px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
 }
 .badge-ok { background: var(--ok-bg); color: var(--ok); }
 .badge-warn { background: var(--warn-bg); color: var(--warn); }
 .badge-error { background: var(--error-bg); color: var(--error); }
+.badge-info { background: var(--accent-light); color: var(--accent); }
 
+/* ─── Health Row ──────────────────────────────────────────────────────── */
+.health-row {
+  display: flex;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+}
+.health-row:last-child { border-bottom: none; }
+.health-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.health-dot.dot-ok { background: var(--ok); }
+.health-dot.dot-warn { background: var(--warn); }
+.health-dot.dot-error { background: var(--error); }
+.health-label { font-weight: 500; flex: 1; }
+.health-detail { color: var(--muted); font-size: 12px; }
+
+/* ─── Tables ──────────────────────────────────────────────────────────── */
 table { width: 100%; border-collapse: collapse; }
-th, td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border); }
-th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
+th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; background: var(--kpi-bg); }
 
+/* ─── Code/Pre ────────────────────────────────────────────────────────── */
 pre {
   background: var(--bg);
   padding: 12px;
@@ -97,7 +230,15 @@ pre {
   font-size: 12px;
   font-family: Consolas, 'Courier New', monospace;
 }
+code {
+  font-size: 11px;
+  background: var(--bg);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: Consolas, 'Courier New', monospace;
+}
 
+/* ─── Buttons ─────────────────────────────────────────────────────────── */
 .cmd-btn {
   background: transparent;
   border: 1px solid var(--border);
@@ -107,54 +248,14 @@ pre {
   cursor: pointer;
   font-size: 13px;
   margin: 4px;
+  transition: all 0.15s;
 }
 .cmd-btn:hover { background: var(--bg); }
 .cmd-btn-danger { border-color: var(--error); color: var(--error); }
 .cmd-btn-danger:hover { background: var(--error-bg); }
+.cmd-btn-primary { background: var(--accent); color: white; border-color: var(--accent); }
+.cmd-btn-primary:hover { opacity: 0.9; }
 
-.error-msg {
-  color: var(--error);
-  padding: 8px 12px;
-  background: var(--error-bg);
-  border-radius: 4px;
-  font-size: 13px;
-}
-
-.skill-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-.skill-chip {
-  background: var(--bg);
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 12px;
-  color: var(--muted);
-}
-
-.card-row {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 12px;
-}
-.mini-card {
-  flex: 1;
-  min-width: 120px;
-  text-align: center;
-}
-.mini-card h3 {
-  font-size: 11px;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: 4px;
-}
-.stat {
-  font-size: 16px;
-  font-weight: 600;
-}
 .btn-kill {
   background: transparent;
   border: 1px solid var(--error);
@@ -167,7 +268,59 @@ pre {
 .btn-kill:hover { background: var(--error-bg); }
 .btn-kill:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* Trace tree — Session Tracer (#140) */
+/* ─── Error/Loading States ────────────────────────────────────────────── */
+.error-msg {
+  color: var(--error);
+  padding: 10px 14px;
+  background: var(--error-bg);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.empty-state {
+  text-align: center;
+  padding: 24px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ─── Chips ───────────────────────────────────────────────────────────── */
+.skill-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.skill-chip {
+  background: var(--accent-light);
+  color: var(--accent);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* ─── Settings/Config Rows ────────────────────────────────────────────── */
+.config-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.config-row:last-child { border-bottom: none; }
+.config-label { font-weight: 500; }
+.config-value { color: var(--muted); font-size: 13px; }
+
+/* ─── Skills Grid (#197) ──────────────────────────────────────────────── */
+.skills-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; margin: 12px 0; }
+.skill-card { display: flex; flex-direction: column; gap: 8px; }
+.skill-card-header { display: flex; align-items: center; gap: 10px; }
+.skill-icon { border-radius: 6px; flex-shrink: 0; }
+.skill-card h3 { margin: 0; font-size: 15px; font-weight: 600; }
+.skill-card p { margin: 0; font-size: 13px; }
+.skill-card .muted { color: var(--muted); font-size: 11px; }
+
+/* ─── Trace Tree (#140) ───────────────────────────────────────────────── */
 .trace-tree { margin: 12px 0; }
 .trace-tree h3 { margin: 0 0 8px; font-size: 14px; }
 .trace-summary { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
@@ -184,12 +337,47 @@ pre {
 .trace-detail { font-size: 11px; color: var(--muted); font-style: italic; }
 .trace-children { border-left: 1px solid var(--border); margin-left: 8px; padding-left: 4px; }
 
-/* Skills Library — skill card grid (#197) */
-.skills-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin: 12px 0; }
-.skill-card { display: flex; flex-direction: column; gap: 6px; }
-.skill-card-header { display: flex; align-items: center; gap: 10px; }
-.skill-icon { border-radius: 6px; flex-shrink: 0; }
-.skill-card h3 { margin: 0; font-size: 15px; }
-.skill-card p { margin: 0; font-size: 13px; }
-.skill-card .muted { color: var(--muted); font-size: 11px; }
-.skill-card code { font-size: 10px; background: var(--bg); padding: 1px 4px; border-radius: 3px; }
+/* ─── Onboarding Step ─────────────────────────────────────────────────── */
+.step-list { counter-reset: step; }
+.step-item {
+  display: flex;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+  align-items: flex-start;
+}
+.step-item:last-child { border-bottom: none; }
+.step-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.step-body h3 { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
+.step-body p { font-size: 13px; color: var(--muted); margin: 0; }
+
+/* ─── Two-Column Layout ───────────────────────────────────────────────── */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+/* ─── Mobile Responsiveness ───────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .nav-buttons { display: flex; gap: 4px; }
+  .nav-btn { padding: 4px 8px; font-size: 12px; margin: 0; }
+  .page-header { flex-direction: column; align-items: flex-start; }
+  .kpi-row { grid-template-columns: repeat(2, 1fr); }
+  .two-col { grid-template-columns: 1fr; }
+  .skills-grid { grid-template-columns: 1fr; }
+  .subtab-btn { padding: 8px 12px; font-size: 12px; }
+  .panel { padding: 0; }
+}
