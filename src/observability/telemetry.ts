@@ -89,6 +89,7 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   DurableHookTriggered: 'orchestrator',
   ExecutorVerifiedSetBinding: 'executor',
   ScopedTokenMinted: 'executor',
+  HandlerTokenSource: 'executor',
   OrchestratorPlanCreated: 'orchestrator',
   PlanClassification: 'orchestrator',
   PlanGenerated: 'orchestrator',
@@ -166,12 +167,20 @@ function buildTraceDetail(event: TelemetryEvent): string {
   if (!p) return event.name;
 
   if (p['deployment']) parts.push(`model: ${p['deployment']}`);
+  if (p['model']) parts.push(`model: ${p['model']}`);
   if (p['toolName']) parts.push(`tool: ${p['toolName']}`);
   if (p['totalTokens']) parts.push(`tokens: ${p['totalTokens']}`);
   if (p['promptTokens']) parts.push(`prompt: ${p['promptTokens']}`);
   if (p['completionTokens']) parts.push(`completion: ${p['completionTokens']}`);
   if (p['result']) parts.push(`result: ${p['result']}`);
   if (p['skillDomain']) parts.push(`skill: ${p['skillDomain']}`);
+  if (p['method']) parts.push(`method: ${p['method']}`);
+  if (p['scopedTokenMethod']) parts.push(`method: ${p['scopedTokenMethod']}`);
+  if (p['scope']) parts.push(`scope: ${p['scope']}`);
+  if (p['scopedTokenScope']) parts.push(`scope: ${p['scopedTokenScope']}`);
+  if (p['acquisition']) parts.push(`acquisition: ${p['acquisition']}`);
+  if (p['source']) parts.push(`source: ${p['source']}`);
+  if (p['handler']) parts.push(`handler: ${p['handler']}`);
 
   return parts.length > 0 ? parts.join(', ') : event.name;
 }
