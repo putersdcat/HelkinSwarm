@@ -62,7 +62,9 @@ export type TelemetryEventName =
   | 'HandlerTokenSource'
   | 'OboSessionBootstrapped'
   | 'SubAgentSpawned'
-  | 'MultiRoundDispatch';
+  | 'MultiRoundDispatch'
+  | 'DiscoveryQueryExecuted'
+  | 'DiscoveryToolSubsetSelected';
 
 // ---------------------------------------------------------------------------
 // Session Tracer — maps events to trace phases for Dev Console (#140)
@@ -96,6 +98,8 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   OboSessionBootstrapped: 'executor',
   SubAgentSpawned: 'subagent',
   MultiRoundDispatch: 'tool-dispatch',
+  DiscoveryQueryExecuted: 'tool-dispatch',
+  DiscoveryToolSubsetSelected: 'orchestrator',
   BotMessageReceived: 'bot-receive',
   PromptBuilt: 'prompt-build',
   ReplySent: 'reply-send',
@@ -181,6 +185,8 @@ function buildTraceDetail(event: TelemetryEvent): string {
   if (p['acquisition']) parts.push(`acquisition: ${p['acquisition']}`);
   if (p['source']) parts.push(`source: ${p['source']}`);
   if (p['handler']) parts.push(`handler: ${p['handler']}`);
+  if (p['query']) parts.push(`query: ${p['query']}`);
+  if (p['selectedTools']) parts.push(`selected: ${p['selectedTools']}`);
 
   return parts.length > 0 ? parts.join(', ') : event.name;
 }

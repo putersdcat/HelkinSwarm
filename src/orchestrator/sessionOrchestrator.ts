@@ -410,6 +410,17 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       const maxToolRounds = Math.min(input.toolBudget ?? 5, 10);
       const allToolSchemas = toolRegistry.toFunctionSchemas();
       const selectiveFollowUpSchemas = deriveSelectiveFollowUpToolSchemas(toolResults?.results ?? []);
+      if (selectiveFollowUpSchemas) {
+        trackEvent({
+          name: 'DiscoveryToolSubsetSelected',
+          correlationId,
+          userId: input.state.userId,
+          properties: {
+            toolCount: selectiveFollowUpSchemas.length,
+            selectedTools: selectiveFollowUpSchemas.map((tool) => tool.function.name).join(','),
+          },
+        });
+      }
       const initialResultCount = mergedResults.length;
 
       const followUpInput: LlmFollowUpInput = {

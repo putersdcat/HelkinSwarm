@@ -59,6 +59,7 @@ test("outlook_draft_email — creates a draft for boss", async () => {
 - Every orchestrator turn emits structured telemetry: `{ turnId, userId, toolCalls, riskLevel, pipelineMs, modelName }`
 - Test assertions can validate telemetry via the `teamsTestHarness` result
 - Application Insights custom events are the source of truth for production validation
+- For discovery-first routing validation, proof should show: `DiscoveryQueryExecuted` → `DiscoveryToolSubsetSelected` → execution telemetry such as `ToolExecuted`, `SubAgentSpawned`, or `SubAgentToolExecuted`
 
 ## Test Data Isolation
 - Every test user ID is suffixed with the stamp alias: `testUser-{alias}`

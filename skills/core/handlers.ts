@@ -56,8 +56,11 @@ export const helkin_list_skills: ToolHandler = async () => {
 export const helkin_skill_search: ToolHandler = async (args) => {
   const { getDiscoverySkill, getDiscoveryTool, getSkillDiscoveryIndex, searchSkillDiscoveryIndex } = await import('../../src/capabilities/skillDiscoveryIndex.js');
   const { toolRegistry } = await import('../../src/tools/toolRegistry.js');
+  const { trackEvent } = await import('../../src/observability/telemetry.js');
 
   const command = String(args['command'] ?? 'help');
+  const correlationId = String(args['correlationId'] ?? crypto.randomUUID());
+  const userId = typeof args['userId'] === 'string' ? args['userId'] : undefined;
 
   if (command === 'help') {
     return {
@@ -86,6 +89,18 @@ export const helkin_skill_search: ToolHandler = async (args) => {
     const result = searchSkillDiscoveryIndex(query, {
       skillLimit: Number(args['skillLimit'] ?? 5),
       toolLimit: Number(args['toolLimit'] ?? 8),
+    });
+
+    trackEvent({
+      name: 'DiscoveryQueryExecuted',
+      correlationId,
+      userId,
+      properties: {
+        query,
+        skillCount: result.skills.length,
+        toolCount: result.tools.length,
+        selectedTools: result.tools.map((tool) => tool.id).join(','),
+      },
     });
 
     return {
