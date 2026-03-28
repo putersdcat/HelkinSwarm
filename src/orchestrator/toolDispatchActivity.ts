@@ -9,6 +9,7 @@ import { MemoryManager } from '../memory/memoryManager.js';
 import { canInvokeTool } from '../auth/roles.js';
 import { scopedTokenMinter } from '../auth/scopedTokenMinter.js';
 import type { ScopedTokenScope } from '../auth/scopedTokenMinter.js';
+import { mapPrivilegeClassToScopedTokenScope } from '../auth/tokenScopeMapping.js';
 
 export interface ToolDispatchInput {
   toolCalls: Array<{ id: string; name: string; arguments: string }>;
@@ -31,16 +32,6 @@ export interface ToolDispatchResult {
     scopedTokenScope?: ScopedTokenScope;
   }>;
   totalCalls: number;
-}
-
-/** Map privilegeClass to ScopedTokenScope; null = skip minting (#317) */
-function privilegeClassToTokenScope(pc: string | undefined): ScopedTokenScope | null {
-  switch (pc) {
-    case 'read-write': return 'write';
-    case 'create':     return 'write';
-    case 'delete':     return 'delete';
-    default:           return null; // read-only or unknown → skip
-  }
 }
 
 df.app.activity('toolDispatchActivity', {
@@ -110,7 +101,7 @@ df.app.activity('toolDispatchActivity', {
         if (input.conversationId) parsedArgs['conversationId'] = input.conversationId;
 
         // Mint scoped token for non-read-only tools (#317)
-        const tokenScope = privilegeClassToTokenScope(tool.privilegeClass);
+        const tokenScope = mapPrivilegeClassToScopedTokenScope(tool.privilegeClass);
         if (tokenScope) {
           try {
             const domain = tool.handlerModule?.replace('skills/', '') || 'core';

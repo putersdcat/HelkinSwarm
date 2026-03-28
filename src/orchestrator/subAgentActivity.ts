@@ -14,6 +14,7 @@ import { MemoryManager } from '../memory/memoryManager.js';
 import { isPlaceholderScopedToken, scopedTokenMinter } from '../auth/scopedTokenMinter.js';
 import type { ScopedTokenScope } from '../auth/scopedTokenMinter.js';
 import type { StepModel } from './planActivity.js';
+import { mapPrivilegeClassToScopedTokenScope } from '../auth/tokenScopeMapping.js';
 
 export interface SubAgentInput {
   toolName: string;
@@ -51,16 +52,6 @@ function resolvePreferredModel(preferredModel: StepModel | undefined): { deploym
     }
     default:
       return { deploymentName: getModelForTask('fast'), isReasoning: false };
-  }
-}
-
-/** Map privilegeClass to ScopedTokenScope; null = skip minting (#317) */
-function privilegeClassToTokenScope(pc: string | undefined): ScopedTokenScope | null {
-  switch (pc) {
-    case 'read-write': return 'write';
-    case 'create':     return 'write';
-    case 'delete':     return 'delete';
-    default:           return null;
   }
 }
 
@@ -172,7 +163,7 @@ Description: ${input.toolDescription}`;
         let scopedTokenScope: ScopedTokenScope | undefined;
 
         // Mint scoped token for non-read-only tools (#317)
-        const tokenScope = privilegeClassToTokenScope(tool?.privilegeClass);
+        const tokenScope = mapPrivilegeClassToScopedTokenScope(tool?.privilegeClass);
         if (tokenScope) {
           try {
             const domain = tool?.handlerModule?.replace('skills/', '') || 'core';

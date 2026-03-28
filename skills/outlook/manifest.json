@@ -81,7 +81,7 @@
       "risk": "high",
       "dataSensitivity": "pii",
       "allowedModelLane": "any",
-      "requiresConfirmation": false,
+      "requiresConfirmation": true,
       "requiresExecutor": false,
       "externalAutomationCapabilities": [
         {
@@ -225,7 +225,7 @@
       "risk": "high",
       "dataSensitivity": "pii",
       "allowedModelLane": "any",
-      "requiresConfirmation": false,
+      "requiresConfirmation": true,
       "requiresExecutor": false,
       "externalAutomationCapabilities": [
         {

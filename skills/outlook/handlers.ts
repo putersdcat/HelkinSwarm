@@ -242,6 +242,11 @@ const outlookSendEmail: ToolHandler = async (args) => {
 
   if (!response.ok) {
     const errorBody = await response.text();
+    if (response.status === 403 && errorBody.includes('ErrorAccessDenied')) {
+      throw new Error(
+        'Outlook Graph API 403 ErrorAccessDenied — your Outlook link is present, but send permission is not usable yet. Refresh consent with /relink outlook and try again.',
+      );
+    }
     throw new Error(`Graph API ${response.status}: ${errorBody}`);
   }
 
