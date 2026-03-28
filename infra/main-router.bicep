@@ -53,8 +53,10 @@ var roleStorageQueueContributor = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
 var roleStorageTableContributor = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
 var roleAcrPull                 = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 
-// Low Cost Dev Mode derived values (#303)
-var routerLawRetentionDays  = lowCostDevMode ? 7   : 30
+// Low Cost Dev Mode derived values (#303, #341)
+// The router uses a paid Log Analytics workspace as well, so retention stays at
+// the minimum valid 30 days and low-cost savings come from cap/sampling/scale.
+var routerLawRetentionDays  = 30
 var routerLawDailyCapGb     = lowCostDevMode ? json('0.1') : json('-1')
 var routerAppInsSamplingPct = lowCostDevMode ? 10 : 100
 var routerMinReplicas       = lowCostDevMode ? 0  : 1

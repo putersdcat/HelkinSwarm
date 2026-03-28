@@ -110,10 +110,13 @@ var funcName      = 'helkinswarm-func-${userAlias}'
 var botName       = 'helkinswarm-bot-${userAlias}'
 
 // Built-in ARM role definition IDs
-// ─── Low Cost Dev Mode derived values (#303) ───────────────────────────────
-// lowCostDevMode=true: 7-day retention, scale-to-zero, minimal telemetry, 0.1 GB/day LA cap.
-var lawRetentionDays       = lowCostDevMode ? 7   : 30
-var appInsRetentionDays    = lowCostDevMode ? 7   : 30
+// ─── Low Cost Dev Mode derived values (#303, #341) ─────────────────────────
+// Paid Log Analytics workspaces and workspace-based Application Insights can't
+// use the old 7-day profile here; 30 days is the current minimum valid tier.
+// Low Cost Dev Mode therefore keeps retention at 30 days and reduces spend via
+// ingestion caps, sampling, forced minimal telemetry, and scale-to-zero.
+var lawRetentionDays       = 30
+var appInsRetentionDays    = 30
 var funcInstanceMin        = lowCostDevMode ? 0   : 1
 var effectiveTelemetryMode = lowCostDevMode ? 'minimal' : devTelemetryMode
 var lawDailyCapGb          = lowCostDevMode ? json('0.1') : json('-1')  // -1 = no cap

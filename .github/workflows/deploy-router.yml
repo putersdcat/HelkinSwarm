@@ -21,7 +21,7 @@ on:
           - 'false'
           - 'true'
       LOW_COST_DEV_MODE:
-        description: 'Enable Low Cost Dev Mode: 0.1 GB/day Log Analytics ingestion cap, minimal App Insights sampling. (#303)'
+        description: 'Enable Low Cost Dev Mode: 30-day minimum-valid retention, 0.1 GB/day Log Analytics ingestion cap, minimal App Insights sampling. (#303, #341)'
         required: false
         type: boolean
         default: false
@@ -116,7 +116,7 @@ jobs:
               userPrincipalId=${{ vars.USER_PRINCIPAL_ID }} \
               createOAuthConnection=${{ github.event.inputs.CREATE_OAUTH_CONNECTION || 'false' }} \
               delegatedAuthClientSecret="$OAUTH_SECRET" \
-              lowCostDevMode=${{ github.event.inputs.LOW_COST_DEV_MODE || 'true' }} \
+              lowCostDevMode=${{ github.event.inputs.LOW_COST_DEV_MODE || 'false' }} \
             --query 'properties.outputs' -o json)
           echo "routerEndpoint=$(echo $RESULT | jq -r '.routerEndpoint.value')" >> "$GITHUB_OUTPUT"
           echo "routerHostName=$(echo $RESULT | jq -r '.routerHostName.value')" >> "$GITHUB_OUTPUT"

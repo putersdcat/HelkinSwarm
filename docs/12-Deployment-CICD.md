@@ -37,7 +37,7 @@ All workflows use **OIDC federation** (no secrets stored in GitHub).
 Key parameter (propagated everywhere):
 ```bicep
 param euResidencyMode bool = false   // ← default = global frontier performance
-param lowCostDevMode bool = false     // ← reduces retention, sampling, scale floor (#303)
+param lowCostDevMode bool = false     // ← reduces ingestion cap/sampling/scale floor; retention stays at 30-day paid minimum (#303, #341)
 ```
 
 Changing `euResidencyMode` and pushing to `main` automatically switches the entire LLM, embeddings, memory, and routing layer. Activating `lowCostDevMode` requires triggering a manual `workflow_dispatch` with `LOW_COST_DEV_MODE=true` (push-triggered deploys always default to `false` to preserve existing resource state).

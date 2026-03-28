@@ -134,12 +134,14 @@ Key environment variables set via Bicep and propagated to the Function App:
 
 ### Low Cost Dev Mode (`lowCostDevMode`, #303)
 
-Added in #303. A single Bicep boolean param controls a bundle of cost-reduction settings designed for personal dev use.
+Added in #303 and corrected in #341. A single Bicep boolean param controls a bundle of cost-reduction settings designed for personal dev use.
+
+Because HelkinSwarm uses a paid Log Analytics workspace plus workspace-based Application Insights, the original 7-day retention profile turned out to be deployment-invalid. Low Cost Dev Mode now keeps retention at the minimum valid 30 days and reduces cost through ingestion caps, sampling, minimal telemetry, and scale-to-zero.
 
 | Setting | Normal | Low Cost Dev Mode |
 |---------|--------|-------------------|
-| Log Analytics retention | 30 days | 7 days (minimum) |
-| App Insights retention | 30 days | 7 days |
+| Log Analytics retention | 30 days | 30 days (minimum valid on current paid tier) |
+| App Insights retention | 30 days | 30 days (workspace-based minimum valid) |
 | Log Analytics daily ingestion cap | unlimited | 0.1 GB/day |
 | App Insights sampling | 100% | 10% (~90% ingestion reduction) |
 | `DEV_TELEMETRY_MODE` override | from param | forced `minimal` |

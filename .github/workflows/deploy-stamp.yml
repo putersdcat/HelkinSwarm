@@ -57,7 +57,7 @@ on:
         type: boolean
         default: false
       LOW_COST_DEV_MODE:
-        description: "Enable Low Cost Dev Mode: 7-day log retention, scale-to-zero, minimal telemetry, 0.1 GB/day Log Analytics cap. (#303)"
+        description: "Enable Low Cost Dev Mode: 30-day minimum-valid retention, scale-to-zero, minimal telemetry, 0.1 GB/day Log Analytics cap. (#303, #341)"
         required: false
         type: boolean
         default: false
@@ -296,7 +296,7 @@ jobs:
             routerUamiId="${{ vars.ROUTER_UAMI_ID }}"
             createOAuthConnection=${OAUTH_UPDATE_SHOULD_RUN}
             delegatedAuthClientSecret="$DELEGATED_SECRET"
-            lowCostDevMode=${{ github.event.inputs.LOW_COST_DEV_MODE || 'true' }}
+            lowCostDevMode=${{ github.event.inputs.LOW_COST_DEV_MODE || 'false' }}
           )
 
           DEPLOY_CMD+=(--output json)
