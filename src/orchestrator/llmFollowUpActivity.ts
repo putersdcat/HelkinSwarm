@@ -52,6 +52,11 @@ export interface LlmFollowUpInput {
   }>;
 }
 
+const FOLLOW_UP_EXECUTION_PROMPT =
+  'You are continuing an in-progress tool workflow. Do not stop at intermediate retrieval results when the user requested a later action. ' +
+  'If the request is not yet fulfilled and more tools are available, call the next required tool. ' +
+  'Only answer with a final natural-language response when the full user intent is satisfied or you can explain a specific blocker.';
+
 df.app.activity('llmFollowUpActivity', {
   handler: async (input: LlmFollowUpInput): Promise<LlmResult> => {
     const routing = getModelRouting();
@@ -125,6 +130,9 @@ df.app.activity('llmFollowUpActivity', {
 
     // Build the full conversation: original messages + assistant tool_calls + tool results
     const messages: ChatMessage[] = [
+      ...(input.enableRetry && input.tools?.length
+        ? [{ role: 'system' as const, content: FOLLOW_UP_EXECUTION_PROMPT }]
+        : []),
       // Original system + user messages
       ...input.originalMessages.map((m) => ({
         role: m.role as 'system' | 'user' | 'assistant' | 'tool',
