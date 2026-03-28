@@ -8,7 +8,11 @@ import {
   type ConversationReference,
 } from 'botbuilder';
 import { buildConfirmationCard, type ConfirmationCardData } from '../bot/confirmationCards.js';
-import { getConversationReference } from '../bot/conversationStore.js';
+import {
+  claimOutboundArtifact,
+  getConversationReference,
+  releaseOutboundArtifactClaim,
+} from '../bot/conversationStore.js';
 import { getEnvConfig } from '../config/envConfig.js';
 
 export interface SendConfirmationCardInput {
@@ -23,6 +27,7 @@ export interface SendConfirmationCardInput {
 export interface SendConfirmationCardResult {
   sent: boolean;
   error?: string;
+  skippedDuplicate?: boolean;
 }
 
 let adapterInstance: CloudAdapter | undefined;
@@ -41,42 +46,73 @@ function getAdapter(): CloudAdapter {
   return adapterInstance;
 }
 
+export async function sendConfirmationCard(
+  input: SendConfirmationCardInput,
+): Promise<SendConfirmationCardResult> {
+  let resolvedConversationId = input.userId;
+  let deliveredToUser = false;
+  try {
+    const conversationReference = await getConversationReference(input.userId);
+    if (!conversationReference) {
+      return { sent: false, error: 'No conversation reference found' };
+    }
+
+    const conversationId = conversationReference.conversation?.id ?? input.userId;
+    resolvedConversationId = conversationId;
+    const claimed = await claimOutboundArtifact(
+      conversationId,
+      input.userId,
+      'confirmation-card',
+      input.sessionInstanceId,
+    );
+    if (!claimed) {
+      console.warn(
+        `[sendConfirmationCardActivity] Duplicate confirmation card suppressed for sessionInstanceId=${input.sessionInstanceId}`,
+      );
+      return { sent: true, skippedDuplicate: true };
+    }
+
+    const adapter = getAdapter();
+    const appId = getEnvConfig().microsoftAppId;
+
+    const cardData: ConfirmationCardData = {
+      correlationId: input.correlationId,
+      userId: input.userId,
+      toolName: input.toolName,
+      risk: input.risk,
+      description: input.description,
+      sessionInstanceId: input.sessionInstanceId,
+    };
+
+    const card = buildConfirmationCard(cardData);
+
+    await adapter.continueConversationAsync(
+      appId,
+      conversationReference as ConversationReference,
+      async (context) => {
+        await context.sendActivity({ attachments: [card] });
+        deliveredToUser = true;
+      },
+    );
+
+    return { sent: true };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    try {
+      if (!deliveredToUser) {
+        await releaseOutboundArtifactClaim(resolvedConversationId, 'confirmation-card', input.sessionInstanceId);
+      }
+    } catch {
+      // Ignore cleanup failures — original send error is more important.
+    }
+    // eslint-disable-next-line no-console
+    console.error('[sendConfirmationCardActivity] Failed to send card:', message);
+    return { sent: false, error: message };
+  }
+}
+
 df.app.activity('sendConfirmationCardActivity', {
   handler: async (input: SendConfirmationCardInput): Promise<SendConfirmationCardResult> => {
-    try {
-      const conversationReference = await getConversationReference(input.userId);
-      if (!conversationReference) {
-        return { sent: false, error: 'No conversation reference found' };
-      }
-
-      const adapter = getAdapter();
-      const appId = getEnvConfig().microsoftAppId;
-
-      const cardData: ConfirmationCardData = {
-        correlationId: input.correlationId,
-        userId: input.userId,
-        toolName: input.toolName,
-        risk: input.risk,
-        description: input.description,
-        sessionInstanceId: input.sessionInstanceId,
-      };
-
-      const card = buildConfirmationCard(cardData);
-
-      await adapter.continueConversationAsync(
-        appId,
-        conversationReference as ConversationReference,
-        async (context) => {
-          await context.sendActivity({ attachments: [card] });
-        },
-      );
-
-      return { sent: true };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      // eslint-disable-next-line no-console
-      console.error('[sendConfirmationCardActivity] Failed to send card:', message);
-      return { sent: false, error: message };
-    }
+    return sendConfirmationCard(input);
   },
 });

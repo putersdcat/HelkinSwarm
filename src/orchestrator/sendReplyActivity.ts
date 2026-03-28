@@ -9,9 +9,11 @@ import {
   type ConversationReference,
 } from 'botbuilder';
 import {
+  claimOutboundArtifact,
   getConversationReference,
   getPendingAckId,
   clearPendingAckId,
+  releaseOutboundArtifactClaim,
 } from '../bot/conversationStore.js';
 import { cacheSentMessage } from '../bot/sentMessageCache.js';
 import { getEnvConfig } from '../config/envConfig.js';
@@ -78,6 +80,8 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
   const correlationId = input.correlationId ?? input.userId;
   recordSubstage(correlationId, 'send-reply', input.userId);
   console.log(`[sendReplyActivity] START correlationId=${correlationId} fastPath=${SENDREPLY_FAST_PATH} hasPassthroughRef=${!!input.conversationReference}`);
+  let deliveredToUser = false;
+  let resolvedConversationId = input.userId;
   try {
     const replyChunks = splitReplyIntoChunks(input.message);
 
@@ -89,6 +93,22 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
       ?? await getConversationReference(input.userId);
     if (!conversationReference) {
       throw new Error(`No ConversationReference found for userId=${input.userId}`);
+    }
+    const conversationId = (conversationReference as ConversationReference).conversation?.id ?? input.userId;
+    resolvedConversationId = conversationId;
+
+    let outboundClaimed = false;
+    if (input.correlationId && !SENDREPLY_FAST_PATH) {
+      outboundClaimed = await claimOutboundArtifact(
+        conversationId,
+        input.userId,
+        'reply',
+        input.correlationId,
+      );
+      if (!outboundClaimed) {
+        console.warn(`[sendReplyActivity] Duplicate reply suppressed for correlationId=${input.correlationId}`);
+        return { success: true };
+      }
     }
 
     // In fast-path mode, skip Cosmos ack lookup and just send a new message
@@ -112,22 +132,35 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
             // Cache under ack ID so reply-with-quote can resolve full text (#166)
             cacheSentMessage(ackActivityId, replyChunks[0]!.text);
             firstChunkSent = true;
+            deliveredToUser = true;
           } catch (err) {
-            console.warn(
-              `[sendReplyActivity] Ack update failed for userId=${input.userId}; falling back to new message send: ${err instanceof Error ? err.message : err}`,
-            );
-            const response = await turnContext.sendActivity({
-              type: ActivityTypes.Message,
-              text: replyChunks[0]!.text,
-              textFormat: 'markdown',
-            });
-            if (response?.id) {
-              cacheSentMessage(response.id, replyChunks[0]!.text);
+            // Timeout means the update HTTP call is still in-flight and may yet succeed.
+            // Sending a fallback message would cause a duplicate if the update completes (#329).
+            const isTimeout = err instanceof Error && err.name === 'TimeoutError';
+            if (isTimeout) {
+              console.warn(
+                `[sendReplyActivity] Ack update timed out for userId=${input.userId}; skipping fallback to avoid duplicate reply (#329)`,
+              );
+              // The in-flight update will likely complete — treat the first chunk as sent.
+              firstChunkSent = true;
+              deliveredToUser = true;
+            } else {
+              console.warn(
+                `[sendReplyActivity] Ack update failed for userId=${input.userId}; falling back to new message send: ${err instanceof Error ? err.message : err}`,
+              );
+              const response = await turnContext.sendActivity({
+                type: ActivityTypes.Message,
+                text: replyChunks[0]!.text,
+                textFormat: 'markdown',
+              });
+              if (response?.id) {
+                cacheSentMessage(response.id, replyChunks[0]!.text);
+              }
+              firstChunkSent = true;
+              deliveredToUser = true;
             }
-            firstChunkSent = true;
           }
 
-          const conversationId = (conversationReference as ConversationReference).conversation?.id ?? input.userId;
           if (input.correlationId && !SENDREPLY_FAST_PATH) {
             await clearPendingAckId(conversationId, input.correlationId);
           }
@@ -141,6 +174,7 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
             if (response?.id) {
               cacheSentMessage(response.id, chunk.text);
             }
+            deliveredToUser = true;
           }
         } else {
           // No ack stored (e.g. first reply after container restart) — fall back to new message
@@ -153,6 +187,7 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
             if (response?.id) {
               cacheSentMessage(response.id, chunk.text);
             }
+            deliveredToUser = true;
           }
         }
       },
@@ -167,6 +202,13 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
     return { success: true };
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
+    try {
+      if (input.correlationId && !deliveredToUser) {
+        await releaseOutboundArtifactClaim(resolvedConversationId, 'reply', input.correlationId);
+      }
+    } catch {
+      // Ignore cleanup failures — original send error is more important.
+    }
     // Log prominently so it surfaces in Function App logs / Application Insights
     console.error('[sendReplyActivity] FATAL: Proactive reply to Teams failed:', message);
     if (input.correlationId) {

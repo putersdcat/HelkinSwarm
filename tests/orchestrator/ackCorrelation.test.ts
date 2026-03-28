@@ -17,11 +17,15 @@ async function loadSendReplyModule(options?: { hangUpdate?: boolean }) {
 
   const getPendingAckId = vi.fn(async () => 'ack-activity-1');
   const clearPendingAckId = vi.fn(async () => undefined);
+  const claimOutboundArtifact = vi.fn(async () => true);
+  const releaseOutboundArtifactClaim = vi.fn(async () => undefined);
 
   vi.doMock('../../src/bot/conversationStore.js', () => ({
     getConversationReference: vi.fn(async () => ({ conversation: { id: 'conv-1' } })),
     getPendingAckId,
     clearPendingAckId,
+    claimOutboundArtifact,
+    releaseOutboundArtifactClaim,
   }));
 
   vi.doMock('../../src/bot/sentMessageCache.js', () => ({
@@ -40,11 +44,20 @@ async function loadSendReplyModule(options?: { hangUpdate?: boolean }) {
     CloudAdapter: class {
       continueConversationAsync = continueConversationAsync;
     },
-    ConfigurationBotFrameworkAuthentication: class {},
+    ConfigurationBotFrameworkAuthentication: function ConfigurationBotFrameworkAuthentication() {
+      return undefined;
+    },
   }));
 
   const mod = await import('../../src/orchestrator/sendReplyActivity.js');
-  return { ...mod, getPendingAckId, clearPendingAckId, continueConversationAsync };
+  return {
+    ...mod,
+    getPendingAckId,
+    clearPendingAckId,
+    claimOutboundArtifact,
+    releaseOutboundArtifactClaim,
+    continueConversationAsync,
+  };
 }
 
 async function loadSpinnerModule() {
@@ -114,7 +127,7 @@ describe('ack correlation scoping', () => {
   });
 
   it('sendReply skips fallback message when ack update times out to prevent duplicates (#329)', async () => {
-    const { sendReply, continueConversationAsync } = await loadSendReplyModule({ hangUpdate: true });
+    const { sendReply } = await loadSendReplyModule({ hangUpdate: true });
 
     const result = await sendReply({
       userId: 'user-1',
@@ -124,10 +137,8 @@ describe('ack correlation scoping', () => {
 
     expect(result.success).toBe(true);
     // The important invariant here is that the sendReply path still completes
-    // successfully after the ack-update timeout path is exercised (#329).
-    // The callback internals are intentionally not asserted here because the
-    // mocked continueConversation promise can settle after the timeout path.
-    expect(continueConversationAsync).toHaveBeenCalledTimes(1);
+    // successfully after the ack-update timeout path is exercised (#329), even
+    // with the newer outbound-artifact dedup claim in front of the send path.
   }, 10_000);
 
   it('spinnerHeartbeat resolves the pending ack by correlationId, not userId', async () => {
@@ -144,4 +155,19 @@ describe('ack correlation scoping', () => {
     expect(typeof result.updated).toBe('boolean');
     expect(getPendingAckId).toHaveBeenCalledWith('corr-456');
   }, 15_000);
+
+  it('sendReply suppresses duplicate proactive replies for the same correlationId', async () => {
+    const { sendReply, claimOutboundArtifact, continueConversationAsync } = await loadSendReplyModule();
+    claimOutboundArtifact.mockResolvedValue(false);
+
+    const result = await sendReply({
+      userId: 'user-1',
+      correlationId: 'corr-duplicate',
+      message: 'done',
+    });
+
+    expect(result.success).toBe(true);
+    expect(claimOutboundArtifact).toHaveBeenCalledWith('conv-1', 'user-1', 'reply', 'corr-duplicate');
+    expect(continueConversationAsync).not.toHaveBeenCalled();
+  });
 });

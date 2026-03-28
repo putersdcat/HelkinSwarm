@@ -28,8 +28,28 @@ interface PendingAckDocument {
   createdAt: string;
 }
 
+export type OutboundArtifactKind = 'reply' | 'confirmation-card';
+
+interface OutboundArtifactDocument {
+  /** Document id — 'outbound-{kind}-{dedupKey}' */
+  id: string;
+  /** Partition key — same conversation id as related conversation reference */
+  conversationId: string;
+  userId: string;
+  kind: OutboundArtifactKind;
+  dedupKey: string;
+  createdAt: string;
+}
+
 export function makePendingAckDocumentId(correlationId: string): string {
   return `ack-${correlationId}`;
+}
+
+export function makeOutboundArtifactDocumentId(
+  kind: OutboundArtifactKind,
+  dedupKey: string,
+): string {
+  return `outbound-${kind}-${dedupKey}`;
 }
 
 /** Upsert the ConversationReference for a user. Called on every inbound message. */
@@ -111,6 +131,59 @@ export async function clearPendingAckId(
   const container = getContainer(CONTAINER_NAME);
   try {
     await container.item(makePendingAckDocumentId(correlationId), conversationId).delete();
+  } catch {
+    // Already gone — safe to ignore
+  }
+}
+
+/**
+ * Claim a user-visible outbound side effect (reply, confirmation card) so
+ * Durable retries/replays do not emit duplicates.
+ * Returns true when the caller owns the claim, false when a prior attempt already claimed it.
+ */
+export async function claimOutboundArtifact(
+  conversationId: string,
+  userId: string,
+  kind: OutboundArtifactKind,
+  dedupKey: string,
+): Promise<boolean> {
+  const container = getContainer(CONTAINER_NAME);
+  const doc: OutboundArtifactDocument = {
+    id: makeOutboundArtifactDocumentId(kind, dedupKey),
+    conversationId,
+    userId,
+    kind,
+    dedupKey,
+    createdAt: new Date().toISOString(),
+  };
+
+  try {
+    await container.items.create(doc);
+    return true;
+  } catch (err) {
+    const statusCode = typeof err === 'object' && err !== null && 'code' in err
+      ? Number((err as { code?: unknown }).code)
+      : typeof err === 'object' && err !== null && 'statusCode' in err
+        ? Number((err as { statusCode?: unknown }).statusCode)
+        : undefined;
+    if (statusCode === 409) {
+      return false;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Release an outbound-artifact claim when the send failed before anything was delivered.
+ */
+export async function releaseOutboundArtifactClaim(
+  conversationId: string,
+  kind: OutboundArtifactKind,
+  dedupKey: string,
+): Promise<void> {
+  const container = getContainer(CONTAINER_NAME);
+  try {
+    await container.item(makeOutboundArtifactDocumentId(kind, dedupKey), conversationId).delete();
   } catch {
     // Already gone — safe to ignore
   }
