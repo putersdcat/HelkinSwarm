@@ -95,6 +95,23 @@
           "query"
         ]
       },
+      "aliases": [
+        "search github issues",
+        "find issue"
+      ],
+      "discoveryTerms": [
+        "issue search",
+        "pr search",
+        "repository backlog"
+      ],
+      "useWhen": [
+        "the user needs to find issues or pull requests before reading or updating them"
+      ],
+      "typicalInputs": [
+        "memory in:title label:bug",
+        "is:pr discovery layer"
+      ],
+      "returnsSummaryShape": "matching issue or pull-request summaries",
       "privilegeClass": "read-only",
       "requiresSubAgent": false
     },
@@ -322,6 +339,21 @@
   "shortName": "github",
   "displayName": "GitHub",
   "shortDescription": "Issue tracking, PR management, milestones, and repository operations",
+  "discoveryHints": [
+    "issues",
+    "pull requests",
+    "milestones",
+    "repository backlog"
+  ],
+  "orchestratorUseCases": [
+    "read and search issues or pull requests",
+    "create, update, and comment on repository work items"
+  ],
+  "recommendedEntryTools": [
+    "github_search_issues",
+    "github_list_issues",
+    "github_get_issue"
+  ],
   "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/github.png",
   "deploymentScenario": "personal-user-centric",
   "onboardingMethod": "automatic-agentic",

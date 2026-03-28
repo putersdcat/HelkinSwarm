@@ -301,6 +301,23 @@
   "shortName": "core",
   "displayName": "Core",
   "shortDescription": "System health, skill management, cost monitoring, and user preferences",
+  "discoveryHints": [
+    "system health",
+    "skill discovery",
+    "skill management",
+    "preferences",
+    "identity and role introspection"
+  ],
+  "orchestratorUseCases": [
+    "discover which skill or tool should handle a broader user request",
+    "inspect current runtime state or user role",
+    "manage installed skills and stored preferences"
+  ],
+  "recommendedEntryTools": [
+    "helkin_skill_search",
+    "helkin_health_check",
+    "helkin_list_skills"
+  ],
   "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/core.png",
   "deploymentScenario": "personal-user-centric",
   "onboardingMethod": "automatic-agentic",

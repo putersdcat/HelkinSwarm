@@ -34,6 +34,24 @@
           "location"
         ]
       },
+      "aliases": [
+        "get forecast",
+        "check weather"
+      ],
+      "discoveryTerms": [
+        "forecast",
+        "temperature",
+        "conditions"
+      ],
+      "useWhen": [
+        "the user asks for weather or forecast information for a place"
+      ],
+      "typicalInputs": [
+        "Berlin",
+        "52.52,13.41",
+        "weather in Amsterdam"
+      ],
+      "returnsSummaryShape": "current conditions or forecast summary for the requested location",
       "privilegeClass": "read-only",
       "requiresSubAgent": false
     }
@@ -41,6 +59,17 @@
   "shortName": "weather",
   "displayName": "Weather",
   "shortDescription": "Current weather conditions and forecasts",
+  "discoveryHints": [
+    "weather",
+    "forecast",
+    "temperature"
+  ],
+  "orchestratorUseCases": [
+    "answer weather and forecast questions for locations"
+  ],
+  "recommendedEntryTools": [
+    "weather_get"
+  ],
   "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/weather.png",
   "deploymentScenario": "personal-user-centric",
   "onboardingMethod": "automatic-agentic",

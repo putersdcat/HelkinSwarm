@@ -32,6 +32,23 @@
           "query"
         ]
       },
+      "aliases": [
+        "web lookup",
+        "internet search"
+      ],
+      "discoveryTerms": [
+        "current information",
+        "recent news",
+        "online search"
+      ],
+      "useWhen": [
+        "the user needs fresh public-web information that is not already in the local skill set"
+      ],
+      "typicalInputs": [
+        "latest Azure OpenAI pricing",
+        "SpaceX Starship launch 2026"
+      ],
+      "returnsSummaryShape": "top web search results with titles, urls, and snippets",
       "privilegeClass": "read-only",
       "requiresSubAgent": false
     }
@@ -39,6 +56,18 @@
   "shortName": "web",
   "displayName": "Web Search",
   "shortDescription": "Perform internet searches via Brave Search API",
+  "discoveryHints": [
+    "web search",
+    "fresh public information",
+    "news",
+    "research"
+  ],
+  "orchestratorUseCases": [
+    "look up recent public information on the open web"
+  ],
+  "recommendedEntryTools": [
+    "web_search"
+  ],
   "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/web.png",
   "deploymentScenario": "personal-user-centric",
   "onboardingMethod": "automatic-agentic",

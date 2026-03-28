@@ -43,8 +43,36 @@
           "messageId"
         ]
       },
+      "aliases": [
+        "get reactions",
+        "check message reactions"
+      ],
+      "discoveryTerms": [
+        "teams reactions",
+        "emoji reactions",
+        "chat reactions"
+      ],
+      "useWhen": [
+        "the user asks who reacted to a Teams message or what reactions a message received"
+      ],
+      "typicalInputs": [
+        "message reactions in this chat",
+        "reactions for message 1234567890123"
+      ],
+      "returnsSummaryShape": "reaction counts plus reactor identities and timestamps",
       "privilegeClass": "read-only",
       "requiresSubAgent": true
     }
+  ],
+  "discoveryHints": [
+    "teams chat",
+    "message reactions",
+    "emoji reactions"
+  ],
+  "orchestratorUseCases": [
+    "inspect reactions on Teams chat messages"
+  ],
+  "recommendedEntryTools": [
+    "teams_get_message_reactions"
   ]
 }

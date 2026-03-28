@@ -219,6 +219,25 @@
           "query"
         ]
       },
+      "aliases": [
+        "search email",
+        "find email",
+        "search mailbox"
+      ],
+      "discoveryTerms": [
+        "email lookup",
+        "find latest email",
+        "mail search"
+      ],
+      "useWhen": [
+        "the user asks to find or summarize matching messages before taking action"
+      ],
+      "typicalInputs": [
+        "from:alice@example.com",
+        "subject:meeting",
+        "hasAttachment:true"
+      ],
+      "returnsSummaryShape": "matching email summaries with ids for follow-up read or reply",
       "privilegeClass": "read-only",
       "requiresSubAgent": true
     },
@@ -336,6 +355,22 @@
   "shortName": "outlook",
   "displayName": "Outlook",
   "shortDescription": "Email and calendar management via Microsoft Graph",
+  "discoveryHints": [
+    "email",
+    "mailbox",
+    "calendar",
+    "meeting",
+    "reply to latest email"
+  ],
+  "orchestratorUseCases": [
+    "find, read, summarize, reply to, or send email",
+    "inspect upcoming meetings and create calendar events"
+  ],
+  "recommendedEntryTools": [
+    "outlook_search_emails",
+    "outlook_list_emails",
+    "outlook_list_calendar_events"
+  ],
   "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/outlook.png",
   "deploymentScenario": "personal-user-centric",
   "onboardingMethod": "post-install-link",
