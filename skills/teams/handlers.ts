@@ -9,7 +9,9 @@
 import type { ToolHandler } from '../../src/capabilities/capabilityLoader.js';
 import { z } from 'zod';
 import { getGraphTokenForUser } from '../../src/auth/graphTokenHelper.js';
+import { isPlaceholderScopedToken } from '../../src/auth/scopedTokenMinter.js';
 import { registerHandler } from '../../src/capabilities/capabilityLoader.js';
+import { trackEvent } from '../../src/observability/telemetry.js';
 
 // ---------------------------------------------------------------------------
 // Constants & helpers
@@ -22,9 +24,50 @@ const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
  * Prefers scoped token injected by orchestrator (#318); falls back to legacy getGraphTokenForUser.
  */
 async function resolveToken(args: Record<string, unknown>): Promise<string> {
-  if (typeof args['_scopedToken'] === 'string') return args['_scopedToken'];
+  const correlationId = typeof args['correlationId'] === 'string' ? args['correlationId'] : 'teams-handler';
+  const userId = typeof args['userId'] === 'string' ? args['userId'] : undefined;
+  const scopedToken = typeof args['_scopedToken'] === 'string' ? args['_scopedToken'] : undefined;
+
+  if (scopedToken && !isPlaceholderScopedToken(scopedToken)) {
+    trackEvent({
+      name: 'HandlerTokenSource',
+      correlationId,
+      userId,
+      properties: {
+        handler: 'teams',
+        source: 'scoped',
+        scope: String(args['_scopedTokenScope'] ?? 'unknown'),
+        method: String(args['_scopedTokenMethod'] ?? 'unknown'),
+      },
+    });
+    return scopedToken;
+  }
+
+  if (scopedToken && isPlaceholderScopedToken(scopedToken)) {
+    trackEvent({
+      name: 'HandlerTokenSource',
+      correlationId,
+      userId,
+      properties: {
+        handler: 'teams',
+        source: 'legacy-fallback',
+        reason: 'placeholder-scoped-token',
+        scope: String(args['_scopedTokenScope'] ?? 'unknown'),
+      },
+    });
+  }
+
   const token = await getGraphTokenForUser(args['userId'] as string);
   if (!token) throw new Error('No Graph token available. Please run /link first to connect your Microsoft account.');
+  trackEvent({
+    name: 'HandlerTokenSource',
+    correlationId,
+    userId,
+    properties: {
+      handler: 'teams',
+      source: 'legacy',
+    },
+  });
   return token;
 }
 

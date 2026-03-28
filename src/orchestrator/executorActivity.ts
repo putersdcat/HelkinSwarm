@@ -43,6 +43,9 @@ export interface ExecutorResult {
   toolName: string;
   result?: unknown;
   error?: string;
+  scopedTokenMinted?: boolean;
+  scopedTokenMethod?: 'obo' | 'placeholder';
+  scopedTokenScope?: string;
   correlationId: string;
   executedAt: string;
 }
@@ -239,8 +242,10 @@ df.app.activity('executorActivity', {
       const enrichedArgs = {
         ...input.arguments,
         userId: input.userId,
+        correlationId: input.correlationId,
         _scopedToken: scopedToken.token,
         _scopedTokenScope: scopedToken.scope,
+        _scopedTokenMethod: scopedToken.method,
       };
       const result = await handler(enrichedArgs);
 
@@ -265,6 +270,9 @@ df.app.activity('executorActivity', {
         action: input.action,
         toolName: input.toolName,
         result,
+        scopedTokenMinted: true,
+        scopedTokenMethod: scopedToken.method,
+        scopedTokenScope: scopedToken.scope,
         correlationId: input.correlationId,
         executedAt,
       };

@@ -25,6 +25,8 @@ import type { QuotedContext } from '../bot/quotedContext.js';
 import { buildModelOverrideDisclosure, formatTelemetryFooter } from './turnTelemetry.js';
 import type { TurnTelemetryData, TelemetrySpan } from './turnTelemetry.js';
 import { getEnvConfig } from '../config/envConfig.js';
+import { trackEvent } from '../observability/telemetry.js';
+import { resolveExecutionHint, sortToolCallsByPlan } from './planExecutionHints.js';
 
 export interface SessionInput {
   state: OverseerState;
@@ -130,6 +132,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
   // Counters for telemetry footer (#321)
   let subAgentSpawnCount = 0;
+  let scopedTokenMintCount = 0;
 
   // 3. If LLM returned tool calls, run the safety pipeline
   let toolResults: ToolDispatchResult | null = null;
@@ -152,7 +155,10 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     });
 
     // Truncate tool calls to the adaptive budget
-    const toolCallsForDispatch = llmResult.toolCalls.slice(0, budget);
+    const toolCallsForDispatch = sortToolCallsByPlan(
+      llmResult.toolCalls.slice(0, budget),
+      planResult.steps,
+    );
 
     // Determine aggregate risk from the tool registry
     const isLowRiskOnly = toolCallsForDispatch.every((tc: { name: string }) => {
@@ -251,7 +257,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
       for (const tc of toolCallsForDispatch) {
         const def = toolRegistry.get(tc.name);
-        if (def?.requiresSubAgent) {
+        const executionHint = resolveExecutionHint(tc.name, def, planResult.steps);
+        if (executionHint.useSubAgent) {
           subAgentCalls.push(tc);
         } else {
           directCalls.push(tc);
@@ -262,6 +269,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       const subAgentResults: ToolDispatchResult['results'] = [];
       for (const tc of subAgentCalls) {
         const def = toolRegistry.get(tc.name);
+        const executionHint = resolveExecutionHint(tc.name, def, planResult.steps);
         const subInput: SubAgentInput = {
           toolName: tc.name,
           toolDescription: def?.description ?? tc.name,
@@ -271,6 +279,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           correlationId,
           sessionId: input.state.userId,
           userId: input.state.userId,
+          round: 'initial',
+          preferredModel: executionHint.preferredModel,
+          planStepOrder: executionHint.stepOrder,
         };
         const subResult: SubAgentResult = yield context.df.callActivity('subAgentActivity', subInput);
         subAgentSpawnCount++;
@@ -281,6 +292,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           result: subResult.output,
           error: subResult.error,
           requiresExecutor: false,
+          scopedTokenMinted: subResult.scopedTokenMinted,
+          scopedTokenMethod: subResult.scopedTokenMethod,
+          scopedTokenScope: subResult.scopedTokenScope,
         });
       }
 
@@ -338,6 +352,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           result: execResult.result,
           error: execResult.error,
           requiresExecutor: true,
+          scopedTokenMinted: execResult.scopedTokenMinted,
+          scopedTokenMethod: execResult.scopedTokenMethod,
+          scopedTokenScope: execResult.scopedTokenScope as 'read' | 'write' | 'delete' | 'admin' | undefined,
         };
       }
 
@@ -345,6 +362,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         results: mergedResults,
         totalCalls: mergedResults.length,
       };
+      scopedTokenMintCount += mergedResults.filter((result) => result.scopedTokenMinted).length;
       spans.push({ label: 'tools', durationMs: context.df.currentUtcDateTime.getTime() - toolDispatchStart });
 
       // 3b. Multi-round tool dispatch loop (#253)
@@ -436,7 +454,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         );
 
         // Allow low + medium risk tools in multi-round; block high-risk / executor (#319)
-        const roundCallsForDispatch = followUp.toolCalls.filter(
+        const roundCallsForDispatch = sortToolCallsByPlan(followUp.toolCalls, planResult.steps).filter(
           (tc: { name: string }) => {
             const def = toolRegistry.get(tc.name);
             return def && def.risk !== 'high' && !def.requiresExecutor;
@@ -471,17 +489,32 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         const roundDirectCalls: typeof roundCallsForDispatch = [];
         for (const tc of roundCallsForDispatch) {
           const def = toolRegistry.get(tc.name);
-          if (def?.requiresSubAgent) {
+          const executionHint = resolveExecutionHint(tc.name, def, planResult.steps);
+          if (executionHint.useSubAgent) {
             roundSubAgentCalls.push(tc);
           } else {
             roundDirectCalls.push(tc);
           }
         }
 
+        trackEvent({
+          name: 'MultiRoundDispatch',
+          correlationId,
+          userId: input.state.userId,
+          properties: {
+            round: toolRound,
+            toolCount: roundCallsForDispatch.length,
+            subAgentCount: roundSubAgentCalls.length,
+            directCount: roundDirectCalls.length,
+            planComplexity: planResult.complexity,
+          },
+        });
+
         // Execute sub-agent calls (#319)
         const roundSubResults: ToolDispatchResult['results'] = [];
         for (const tc of roundSubAgentCalls) {
           const def = toolRegistry.get(tc.name);
+          const executionHint = resolveExecutionHint(tc.name, def, planResult.steps);
           const subInput: SubAgentInput = {
             toolName: tc.name,
             toolDescription: def?.description ?? tc.name,
@@ -491,6 +524,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             correlationId,
             sessionId: input.state.userId,
             userId: input.state.userId,
+            round: 'followup',
+            preferredModel: executionHint.preferredModel,
+            planStepOrder: executionHint.stepOrder,
           };
           const subResult: SubAgentResult = yield context.df.callActivity('subAgentActivity', subInput);
           subAgentSpawnCount++;
@@ -501,6 +537,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             result: subResult.output,
             error: subResult.error,
             requiresExecutor: false,
+            scopedTokenMinted: subResult.scopedTokenMinted,
+            scopedTokenMethod: subResult.scopedTokenMethod,
+            scopedTokenScope: subResult.scopedTokenScope,
           });
           console.log(`[sessionOrchestrator] Multi-round ${toolRound}: sub-agent spawn for ${tc.name} (#319)`);
         }
@@ -537,6 +576,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         // Accumulate into overall tool results for telemetry
         toolResults.results.push(...roundResults.results);
         toolResults.totalCalls += roundResults.results.length;
+        scopedTokenMintCount += roundResults.results.filter((result) => result.scopedTokenMinted).length;
 
         // On the last allowed round, don't pass tools — force a text response
         const isLastRound = toolRound >= maxToolRounds;
@@ -606,6 +646,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       safetyPassed,
       planComplexity: planResult.complexity,
       subAgentCount: subAgentSpawnCount > 0 ? subAgentSpawnCount : undefined,
+      scopedTokenMintCount: scopedTokenMintCount > 0 ? scopedTokenMintCount : undefined,
     };
     replyMessage += formatTelemetryFooter(envConfig.devTelemetryMode, telemetryData);
   }

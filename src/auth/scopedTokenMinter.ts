@@ -41,6 +41,7 @@ export interface ScopedToken {
   token: string;
   expiresAt: string;
   scope: ScopedTokenScope;
+  method: 'obo' | 'placeholder';
   targetResource: string;
   toolName: string;
   correlationId: string;
@@ -94,6 +95,7 @@ export class ScopedTokenMinter {
         token: oboResult.accessToken,
         expiresAt: oboResult.expiresOn.toISOString(),
         scope: effectiveScope,
+        method: 'obo',
         targetResource: request.targetResource,
         toolName: request.toolName,
         correlationId: request.correlationId,
@@ -115,6 +117,7 @@ export class ScopedTokenMinter {
       token,
       expiresAt,
       scope: effectiveScope,
+      method: 'placeholder',
       targetResource: request.targetResource,
       toolName: request.toolName,
       correlationId: request.correlationId,
@@ -176,3 +179,8 @@ export class ScopedTokenError extends Error {
 // ---------------------------------------------------------------------------
 
 export const scopedTokenMinter = new ScopedTokenMinter();
+
+/** Whether a scoped token is a local placeholder envelope rather than a real provider token. */
+export function isPlaceholderScopedToken(token: string | undefined): boolean {
+  return typeof token === 'string' && token.startsWith('placeholder_');
+}

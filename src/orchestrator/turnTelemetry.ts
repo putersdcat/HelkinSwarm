@@ -24,6 +24,8 @@ export interface TurnTelemetryData {
   planComplexity?: 'simple' | 'compound' | 'complex';
   /** Number of sub-agent sessions spawned this turn (#321). */
   subAgentCount?: number;
+  /** Number of scoped tokens successfully minted across execution paths this turn (#321). */
+  scopedTokenMintCount?: number;
 }
 
 // USD per 1M tokens (blended input/output average). (#254, #260)
@@ -156,6 +158,7 @@ export function formatTelemetryFooter(
   if (mode === 'standard') {
     const extraParts = [
       data.subAgentCount ? `sa:${data.subAgentCount}` : '',
+      data.scopedTokenMintCount ? `tok:${data.scopedTokenMintCount}` : '',
       data.planComplexity && data.planComplexity !== 'simple' ? `plan:${data.planComplexity}` : '',
     ].filter(Boolean).join('|');
     const extra = extraParts ? `|${extraParts}` : '';
@@ -183,6 +186,7 @@ export function formatTelemetryFooter(
 
   parts.push(`safe:${data.safetyPassed ? '✓' : '✗'}`);
   if (data.subAgentCount) parts.push(`sa:${data.subAgentCount}`);
+  if (data.scopedTokenMintCount) parts.push(`tok:${data.scopedTokenMintCount}`);
   if (data.planComplexity && data.planComplexity !== 'simple') parts.push(`plan:${data.planComplexity}`);
   parts.push(`${moneyEmoji}${costStr}`);
   parts.push(`🕐${uptime}`);

@@ -85,6 +85,18 @@ describe('formatTelemetryFooter', () => {
     expect(result).toContain('corr:abcdef12');
   });
 
+  it('standard mode includes sub-agent, token mint, and plan details when present', () => {
+    const result = formatTelemetryFooter('standard', {
+      ...baseTelemetry,
+      subAgentCount: 2,
+      scopedTokenMintCount: 3,
+      planComplexity: 'complex',
+    });
+    expect(result).toContain('sa:2');
+    expect(result).toContain('tok:3');
+    expect(result).toContain('plan:complex');
+  });
+
   it('verbose mode includes safety and tool names', () => {
     const data: TurnTelemetryData = {
       ...baseTelemetry,
@@ -96,5 +108,19 @@ describe('formatTelemetryFooter', () => {
     expect(result).toContain('github_search_repos');
     expect(result).toContain('$');
     expect(result).toContain('corr:abcdef12');
+  });
+
+  it('verbose mode includes scoped token count when present', () => {
+    const data: TurnTelemetryData = {
+      ...baseTelemetry,
+      toolCalls: ['outlook_send_email'],
+      subAgentCount: 1,
+      scopedTokenMintCount: 1,
+      planComplexity: 'compound',
+    };
+    const result = formatTelemetryFooter('verbose', data);
+    expect(result).toContain('sa:1');
+    expect(result).toContain('tok:1');
+    expect(result).toContain('plan:compound');
   });
 });

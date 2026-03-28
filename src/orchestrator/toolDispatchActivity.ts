@@ -26,6 +26,9 @@ export interface ToolDispatchResult {
     result?: unknown;
     error?: string;
     requiresExecutor: boolean;
+    scopedTokenMinted?: boolean;
+    scopedTokenMethod?: 'obo' | 'placeholder';
+    scopedTokenScope?: ScopedTokenScope;
   }>;
   totalCalls: number;
 }
@@ -98,8 +101,12 @@ df.app.activity('toolDispatchActivity', {
       // Low/medium risk — dispatch to handler
       try {
         const parsedArgs = JSON.parse(call.arguments) as Record<string, unknown>;
+        let scopedTokenMinted = false;
+        let scopedTokenMethod: 'obo' | 'placeholder' | undefined;
+        let scopedTokenScope: ScopedTokenScope | undefined;
         // Inject session context (userId, conversationId) so handlers can access it without cross-boundary imports
         parsedArgs['userId'] = input.userId;
+        parsedArgs['correlationId'] = input.correlationId;
         if (input.conversationId) parsedArgs['conversationId'] = input.conversationId;
 
         // Mint scoped token for non-read-only tools (#317)
@@ -116,6 +123,10 @@ df.app.activity('toolDispatchActivity', {
             });
             parsedArgs['_scopedToken'] = scopedToken.token;
             parsedArgs['_scopedTokenScope'] = scopedToken.scope;
+            parsedArgs['_scopedTokenMethod'] = scopedToken.method;
+            scopedTokenMinted = true;
+            scopedTokenMethod = scopedToken.method;
+            scopedTokenScope = scopedToken.scope;
           } catch {
             // Non-fatal: handler falls back to legacy token acquisition (#318)
           }
@@ -153,6 +164,9 @@ df.app.activity('toolDispatchActivity', {
           success: true,
           result,
           requiresExecutor: false,
+          scopedTokenMinted,
+          scopedTokenMethod,
+          scopedTokenScope,
         });
       } catch (err) {
         trackEvent({ name: 'ToolExecuted', correlationId: input.correlationId, userId: input.userId, properties: {

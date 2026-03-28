@@ -11,8 +11,9 @@ import { getHandler } from '../capabilities/capabilityLoader.js';
 import { trackEvent } from '../observability/telemetry.js';
 import type { ChatMessage } from '../llm/foundryClient.js';
 import { MemoryManager } from '../memory/memoryManager.js';
-import { scopedTokenMinter } from '../auth/scopedTokenMinter.js';
+import { isPlaceholderScopedToken, scopedTokenMinter } from '../auth/scopedTokenMinter.js';
 import type { ScopedTokenScope } from '../auth/scopedTokenMinter.js';
+import type { StepModel } from './planActivity.js';
 
 export interface SubAgentInput {
   toolName: string;
@@ -23,6 +24,9 @@ export interface SubAgentInput {
   correlationId: string;
   sessionId: string;
   userId: string;
+  round?: 'initial' | 'followup';
+  preferredModel?: StepModel;
+  planStepOrder?: number;
 }
 
 export interface SubAgentResult {
@@ -32,6 +36,22 @@ export interface SubAgentResult {
   error?: string;
   tokensUsed: number;
   correlationId: string;
+  scopedTokenMinted?: boolean;
+  scopedTokenMethod?: 'obo' | 'placeholder';
+  scopedTokenScope?: ScopedTokenScope;
+}
+
+function resolvePreferredModel(preferredModel: StepModel | undefined): { deploymentName: string; isReasoning: boolean } {
+  switch (preferredModel) {
+    case 'reasoning':
+      return { deploymentName: getModelForTask('reasoning'), isReasoning: true };
+    case 'primary': {
+      const routing = getModelRouting();
+      return { deploymentName: routing.lane.primary, isReasoning: routing.lane.primary.includes('reasoning') || routing.lane.primary.startsWith('o') };
+    }
+    default:
+      return { deploymentName: getModelForTask('fast'), isReasoning: false };
+  }
 }
 
 /** Map privilegeClass to ScopedTokenScope; null = skip minting (#317) */
@@ -48,11 +68,11 @@ df.app.activity('subAgentActivity', {
   handler: async (input: SubAgentInput): Promise<SubAgentResult> => {
     // Create a client using the secondary (fast) model — fresh routing, no shared state
     const baseRouting = getModelRouting();
-    const secondaryModel = getModelForTask('fast');
+    const { deploymentName: secondaryModel, isReasoning } = resolvePreferredModel(input.preferredModel);
     const client = new FoundryClient({
       ...baseRouting,
       deploymentName: secondaryModel,
-      isReasoning: false,
+      isReasoning,
     });
 
     const tool = toolRegistry.get(input.toolName);
@@ -68,6 +88,20 @@ df.app.activity('subAgentActivity', {
         correlationId: input.correlationId,
       };
     }
+
+    // Emit spawn-boundary telemetry (#321)
+    trackEvent({
+      name: 'SubAgentSpawned',
+      correlationId: input.correlationId,
+      userId: input.userId,
+      properties: {
+        toolName: input.toolName,
+        model: secondaryModel,
+        privilegeClass: tool?.privilegeClass ?? 'unknown',
+        round: input.round ?? 'initial',
+        planStepOrder: input.planStepOrder ?? -1,
+      },
+    });
 
     // Build minimal context — ONLY what the sub-agent needs for this one tool
     const systemPrompt = `You are a tool-use sub-agent. You have exactly one task: call the provided tool.
@@ -132,6 +166,10 @@ Description: ${input.toolDescription}`;
 
         const parsedArgs = JSON.parse(tc.function.arguments) as Record<string, unknown>;
         parsedArgs['userId'] = input.userId;
+        parsedArgs['correlationId'] = input.correlationId;
+        let scopedTokenMinted = false;
+        let scopedTokenMethod: 'obo' | 'placeholder' | undefined;
+        let scopedTokenScope: ScopedTokenScope | undefined;
 
         // Mint scoped token for non-read-only tools (#317)
         const tokenScope = privilegeClassToTokenScope(tool?.privilegeClass);
@@ -145,8 +183,14 @@ Description: ${input.toolDescription}`;
               userId: input.userId,
               correlationId: input.correlationId,
             });
-            parsedArgs['_scopedToken'] = scopedToken.token;
+            if (!isPlaceholderScopedToken(scopedToken.token)) {
+              parsedArgs['_scopedToken'] = scopedToken.token;
+            }
             parsedArgs['_scopedTokenScope'] = scopedToken.scope;
+            parsedArgs['_scopedTokenMethod'] = scopedToken.method;
+            scopedTokenMinted = true;
+            scopedTokenMethod = scopedToken.method;
+            scopedTokenScope = scopedToken.scope;
           } catch {
             // Non-fatal: handler falls back to legacy token acquisition (#318)
           }
@@ -164,6 +208,8 @@ Description: ${input.toolDescription}`;
             model: secondaryModel,
             privilegeClass: tool?.privilegeClass ?? 'unknown',
             scopedTokenScope: String(parsedArgs['_scopedTokenScope'] ?? 'none'),
+            scopedTokenMethod: String(parsedArgs['_scopedTokenMethod'] ?? 'none'),
+            round: input.round ?? 'initial',
           },
         });
 
@@ -181,6 +227,9 @@ Description: ${input.toolDescription}`;
           output: handlerResult,
           tokensUsed,
           correlationId: input.correlationId,
+          scopedTokenMinted,
+          scopedTokenMethod,
+          scopedTokenScope,
         };
       }
 
