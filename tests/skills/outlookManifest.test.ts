@@ -7,7 +7,7 @@ type ToolEntry = {
 };
 
 describe('outlook manifest safety flags', () => {
-  it('requires confirmation for high-risk Outlook mutation tools', () => {
+  it('keeps send mail opt-out while calendar creation still requires confirmation', () => {
     const manifest = JSON.parse(readFileSync('skills/outlook/manifest.json', 'utf8')) as {
       tools: ToolEntry[];
     };
@@ -15,7 +15,7 @@ describe('outlook manifest safety flags', () => {
     const send = manifest.tools.find((tool) => tool.name === 'outlook_send_email');
     const createEvent = manifest.tools.find((tool) => tool.name === 'outlook_create_calendar_event');
 
-    expect(send?.requiresConfirmation).toBe(true);
+    expect(send?.requiresConfirmation).toBe(false);
     expect(createEvent?.requiresConfirmation).toBe(true);
   });
 });

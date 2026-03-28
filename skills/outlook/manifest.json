@@ -77,11 +77,11 @@
     },
     {
       "name": "outlook_send_email",
-      "description": "Send an email on behalf of the user. Requires linked account (OBO). High risk — requires confirmation.",
+      "description": "Send an email on behalf of the user. Requires linked account (OBO). High risk, but manifest-configured to skip extra confirmation for this personal environment.",
       "risk": "high",
       "dataSensitivity": "pii",
       "allowedModelLane": "any",
-      "requiresConfirmation": true,
+      "requiresConfirmation": false,
       "requiresExecutor": false,
       "externalAutomationCapabilities": [
         {
