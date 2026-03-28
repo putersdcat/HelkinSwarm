@@ -5,6 +5,8 @@
 import {
   CloudAdapter,
   ConfigurationBotFrameworkAuthentication,
+  MemoryStorage,
+  TeamsSSOTokenExchangeMiddleware,
   type TurnContext,
   type Activity,
 } from 'botbuilder';
@@ -44,6 +46,20 @@ export function createAdapter(): HelkinSwarmAdapter {
   });
 
   sharedAdapter = new HelkinSwarmAdapter(auth);
+
+  // Teams SSO token exchange must be processed through the Bot Framework
+  // middleware path so the exchange is performed against the OAuth connection
+  // and deduplicated across concurrent clients. Without this, signin/tokenExchange
+  // invokes bypass the supported exchange flow and fall back to legacy OAuth-card
+  // behavior more often than they should (#349 / #330).
+  if (env.botOAuthConnectionName) {
+    sharedAdapter.use(
+      new TeamsSSOTokenExchangeMiddleware(
+        new MemoryStorage(),
+        env.botOAuthConnectionName,
+      ),
+    );
+  }
 
   // Global error handler — log with correlation ID and fail fast.
   // Do NOT attempt another sendActivity() here: when the outbound Bot Framework
