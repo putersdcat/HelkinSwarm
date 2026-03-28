@@ -39,6 +39,58 @@
       "requiresSubAgent": false
     },
     {
+      "name": "helkin_skill_search",
+      "description": "Discovery-only capability browser for installed skills and tools. Supports help, search, describe_skill, describe_tool, and list_domains. Use this to narrow the skill/tool universe before selecting execution tools.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "enum": [
+              "help",
+              "search",
+              "describe_skill",
+              "describe_tool",
+              "list_domains"
+            ],
+            "description": "Discovery operation to run. Use help for usage guidance."
+          },
+          "query": {
+            "type": "string",
+            "description": "Natural-language discovery query for command=search."
+          },
+          "skillId": {
+            "type": "string",
+            "description": "Skill domain for command=describe_skill."
+          },
+          "toolName": {
+            "type": "string",
+            "description": "Tool name for command=describe_tool."
+          },
+          "skillLimit": {
+            "type": "number",
+            "description": "Optional maximum number of matching skills to return for search (default: 5)."
+          },
+          "toolLimit": {
+            "type": "number",
+            "description": "Optional maximum number of matching tools to return for search (default: 8)."
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
+    },
+    {
       "name": "helkin_get_costs",
       "description": "Returns current month Azure spend breakdown by resource. Requires Azure Cost Management access.",
       "risk": "low",

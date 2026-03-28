@@ -53,6 +53,153 @@ export const helkin_list_skills: ToolHandler = async () => {
   };
 };
 
+export const helkin_skill_search: ToolHandler = async (args) => {
+  const { getDiscoverySkill, getDiscoveryTool, getSkillDiscoveryIndex, searchSkillDiscoveryIndex } = await import('../../src/capabilities/skillDiscoveryIndex.js');
+  const { toolRegistry } = await import('../../src/tools/toolRegistry.js');
+
+  const command = String(args['command'] ?? 'help');
+
+  if (command === 'help') {
+    return {
+      status: 'success',
+      command: 'help',
+      usage: [
+        'command=help',
+        'command=search query="email search github issue"',
+        'command=describe_skill skillId="outlook"',
+        'command=describe_tool toolName="outlook_search_emails"',
+        'command=list_domains',
+      ],
+      notes: [
+        'Discovery-only tool — it never executes skills directly.',
+        'Use search first, then describe_skill or describe_tool for more detail.',
+      ],
+    };
+  }
+
+  if (command === 'search') {
+    const query = String(args['query'] ?? '').trim();
+    if (!query) {
+      return { status: 'error', message: 'query is required when command=search.' };
+    }
+
+    const result = searchSkillDiscoveryIndex(query, {
+      skillLimit: Number(args['skillLimit'] ?? 5),
+      toolLimit: Number(args['toolLimit'] ?? 8),
+    });
+
+    return {
+      status: 'success',
+      command: 'search',
+      query,
+      generatedAt: result.generatedAt,
+      skills: result.skills.map((hit) => {
+        const skill = getDiscoverySkill(hit.id);
+        return {
+          domain: hit.domain,
+          displayName: skill?.displayName ?? hit.id,
+          shortDescription: skill?.shortDescription ?? '',
+          recommendedEntryTools: skill?.recommendedEntryTools ?? [],
+          score: hit.score,
+          matchReasons: hit.matchReasons,
+        };
+      }),
+      tools: result.tools.map((hit) => {
+        const tool = getDiscoveryTool(hit.id);
+        return {
+          name: hit.id,
+          domain: hit.domain,
+          description: tool?.description ?? '',
+          risk: tool?.risk ?? 'low',
+          allowedModelLane: tool?.allowedModelLane ?? 'any',
+          safetyCompatible: tool ? toolRegistry.isAllowedBySafetyMode(tool.name) : false,
+          score: hit.score,
+          matchReasons: hit.matchReasons,
+        };
+      }),
+    };
+  }
+
+  if (command === 'describe_skill') {
+    const skillId = String(args['skillId'] ?? '').trim();
+    if (!skillId) {
+      return { status: 'error', message: 'skillId is required when command=describe_skill.' };
+    }
+
+    const skill = getDiscoverySkill(skillId);
+    if (!skill) {
+      return { status: 'not-found', message: `No skill found for '${skillId}'.`, skillId };
+    }
+
+    return {
+      status: 'success',
+      command: 'describe_skill',
+      skill: skill.domain,
+      displayName: skill.displayName,
+      shortDescription: skill.shortDescription,
+      discoveryHints: skill.discoveryHints,
+      orchestratorUseCases: skill.orchestratorUseCases,
+      recommendedEntryTools: skill.recommendedEntryTools,
+      modelAffinity: skill.modelAffinity ?? null,
+      toolNames: skill.toolNames,
+      toolCount: skill.toolCount,
+    };
+  }
+
+  if (command === 'describe_tool') {
+    const toolName = String(args['toolName'] ?? '').trim();
+    if (!toolName) {
+      return { status: 'error', message: 'toolName is required when command=describe_tool.' };
+    }
+
+    const tool = getDiscoveryTool(toolName);
+    if (!tool) {
+      return { status: 'not-found', message: `No tool found for '${toolName}'.`, toolName };
+    }
+
+    return {
+      status: 'success',
+      command: 'describe_tool',
+      toolName: tool.name,
+      domain: tool.domain,
+      description: tool.description,
+      risk: tool.risk,
+      dataSensitivity: tool.dataSensitivity,
+      allowedModelLane: tool.allowedModelLane,
+      requiresConfirmation: tool.requiresConfirmation,
+      requiresExecutor: tool.requiresExecutor,
+      requiresSubAgent: tool.requiresSubAgent,
+      privilegeClass: tool.privilegeClass,
+      aliases: tool.aliases,
+      discoveryTerms: tool.discoveryTerms,
+      useWhen: tool.useWhen,
+      avoidWhen: tool.avoidWhen,
+      typicalInputs: tool.typicalInputs,
+      returnsSummaryShape: tool.returnsSummaryShape ?? null,
+      safetyCompatible: toolRegistry.isAllowedBySafetyMode(tool.name),
+    };
+  }
+
+  if (command === 'list_domains') {
+    const index = getSkillDiscoveryIndex();
+    return {
+      status: 'success',
+      command: 'list_domains',
+      domains: index.skills.map((skill) => ({
+        domain: skill.domain,
+        displayName: skill.displayName,
+        shortDescription: skill.shortDescription,
+        toolCount: skill.toolCount,
+      })),
+    };
+  }
+
+  return {
+    status: 'error',
+    message: `Unknown command '${command}'. Use command=help for supported operations.`,
+  };
+};
+
 export const helkin_get_costs: ToolHandler = async (_args) => {
   const { getBearerToken } = await import('../../src/auth/identity.js');
   const { getEnvConfig } = await import('../../src/config/envConfig.js');

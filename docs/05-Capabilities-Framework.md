@@ -175,6 +175,7 @@ The `core` skill is always present and cannot be uninstalled. It provides Helkin
 |------|------|-------------|
 | `helkin_health_check` | low | Returns bot version, runtime health, and component status |
 | `helkin_list_skills` | low | Lists all loaded skill manifests and their domains |
+| `helkin_skill_search` | low | Discovery-only skill/tool browser with `help`, `search`, `describe_skill`, `describe_tool`, and `list_domains` for narrowing the capability surface before execution |
 | `helkin_get_costs` | low | Queries Azure Cost Management for real MTD spend in the stamp resource group (#232) |
 | `helkin_test_confirmation` | medium | Sends a test Adaptive Card confirmation to verify the verification pipeline end-to-end |
 | `helkin_save_preferences` | low | Persists user preferences to Cosmos DB skill vault |
