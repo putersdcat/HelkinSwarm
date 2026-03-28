@@ -158,4 +158,36 @@ describe('teamsTestHarnessQuery helpers', () => {
       kind: 'adaptive-card',
     });
   });
+
+  it('derives bundle correlation from nearby ack messages when the anchor has none', () => {
+    const ackMessages: HarnessRawMessage[] = [
+      {
+        id: 'h1',
+        createdDateTime: '2026-03-26T08:00:00.000Z',
+        from: { user: { displayName: 'Eric', id: 'u1' } },
+        body: { content: 'Bundle validation request', contentType: 'text' },
+      },
+      {
+        id: 'b1',
+        createdDateTime: '2026-03-26T08:00:01.000Z',
+        from: { application: { displayName: 'HelkinSwarm', id: 'bot1' } },
+        body: { content: '<p>⌛ Just a moment... <code>[corr:bf6f7c70]</code></p>', contentType: 'html' },
+      },
+      {
+        id: 'b2',
+        createdDateTime: '2026-03-26T08:00:05.000Z',
+        from: { application: { displayName: 'HelkinSwarm', id: 'bot1' } },
+        body: { content: '<p>OK</p><p><code>[E2E:5691ms|m:grok-4.1f]</code></p>', contentType: 'html' },
+      },
+    ];
+
+    const bundle = buildHarnessSessionBundle(ackMessages, {
+      aroundContains: 'Bundle validation request',
+      beforeCount: 0,
+      afterCount: 2,
+    });
+
+    expect(bundle.anchor?.id).toBe('h1');
+    expect(bundle.correlationTag).toBe('[corr:bf6f7c70]');
+  });
 });

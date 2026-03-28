@@ -211,6 +211,16 @@ function collectToolHints(messages: NormalizedHarnessMessage[]): string[] {
   return [...hints];
 }
 
+function collectCorrelationCandidates(messages: NormalizedHarnessMessage[]): string[] {
+  const matches = new Set<string>();
+  for (const message of messages) {
+    for (const match of message.correlationMatches) {
+      matches.add(match);
+    }
+  }
+  return [...matches];
+}
+
 function collectCorrelationMatches(text: string): string[] {
   const matches = new Set<string>();
   for (const pattern of CORRELATION_PATTERNS) {
@@ -427,9 +437,13 @@ export function buildHarnessSessionBundle(
     })),
   );
 
+  const nearbyCorrelation = collectCorrelationCandidates(messages)[0] ?? null;
+  const footerCorrelation = collectTelemetryFooters(messages).find((value) => value.toLowerCase().includes('corr:')) ?? null;
+
   const correlationTag = query.correlation
     ?? window.anchor?.correlationMatches[0]
-    ?? collectTelemetryFooters(messages).find((value) => value.toLowerCase().includes('corr:'))
+    ?? nearbyCorrelation
+    ?? footerCorrelation
     ?? null;
 
   return {
