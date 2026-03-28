@@ -12,6 +12,8 @@ df.app.activity('verificationPipelineActivity', {
     trackEvent({ name: 'VerificationPipelineResult', correlationId: input.correlationId, userId: input.userId, properties: {
       passed: result.passed,
       requiresConfirmation: result.requiresConfirmation,
+      policyOverrideApplied: result.policyOverrideApplied ?? false,
+      policyOverrideAuthority: result.policyOverrideAuthority ?? 'none',
       stepCount: result.steps.length,
       toolName: input.toolName,
       risk: input.risk,
@@ -25,6 +27,18 @@ df.app.activity('verificationPipelineActivity', {
         spotCheckTotalIds: spotStep.spotCheckDetails.totalIds,
       } : {}),
     } });
+    if (result.policyOverrideApplied) {
+      trackEvent({
+        name: 'PolicyOverrideApplied',
+        correlationId: input.correlationId,
+        userId: input.userId,
+        properties: {
+          toolName: input.toolName,
+          authority: result.policyOverrideAuthority ?? 'unknown',
+          reason: result.policyOverrideReason ?? 'unspecified',
+        },
+      });
+    }
     return result;
   },
 });

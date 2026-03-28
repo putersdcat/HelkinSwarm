@@ -7,6 +7,8 @@ import { safetyConfig, isConfirmationGated, isReadOnly } from '../config/safetyC
 import { promptShields, type ShieldResult } from '../llm/promptShields.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import type { ScopedToken } from '../auth/scopedTokenMinter.js';
+import { getConfirmationBypassRule } from '../config/stampPolicy.js';
+import type { HelkinAuthority } from '../auth/roles.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -73,6 +75,9 @@ export interface VerificationResult {
   verifiedSet?: VerifiedSet;
   /** SHA-256 of the canonical verified set JSON (#266). */
   verifiedSetHash?: string;
+  policyOverrideApplied?: boolean;
+  policyOverrideAuthority?: HelkinAuthority;
+  policyOverrideReason?: string;
 }
 
 export interface VerificationStepResult {
@@ -152,10 +157,24 @@ export async function runVerificationPipeline(input: VerificationInput): Promise
       return makeResult(true, input.correlationId, steps, true, undefined, undefined, verifiedSet, verifiedSetHash);
     }
 
-    // Per-tool opt-out: when ALL tools in the batch declare requiresConfirmation:false,
-    // skip the confirmation card even in confirmation-gated mode (#302).
-    if (input.skipConfirmation) {
-      return makeResult(true, input.correlationId, steps, false, undefined, undefined, verifiedSet, verifiedSetHash);
+    const toolNames = input.toolName.split(',').map((name) => name.trim()).filter(Boolean);
+    const policyBypass = await getConfirmationBypassRule(input.userId, toolNames);
+
+    // Per-tool opt-out or explicit stamp policy exception (#302, #346).
+    if (input.skipConfirmation || policyBypass.applies) {
+      return makeResult(
+        true,
+        input.correlationId,
+        steps,
+        false,
+        undefined,
+        undefined,
+        verifiedSet,
+        verifiedSetHash,
+        policyBypass.applies,
+        policyBypass.authority,
+        policyBypass.reason,
+      );
     }
 
     if (input.confirmationResponse === 'approved') {
@@ -537,8 +556,23 @@ function makeResult(
   confirmedAt?: string,
   verifiedSet?: VerifiedSet,
   verifiedSetHash?: string,
+  policyOverrideApplied?: boolean,
+  policyOverrideAuthority?: HelkinAuthority,
+  policyOverrideReason?: string,
 ): VerificationResult {
-  return { passed, correlationId, steps, requiresConfirmation, confirmedAt, error, verifiedSet, verifiedSetHash };
+  return {
+    passed,
+    correlationId,
+    steps,
+    requiresConfirmation,
+    confirmedAt,
+    error,
+    verifiedSet,
+    verifiedSetHash,
+    policyOverrideApplied,
+    policyOverrideAuthority,
+    policyOverrideReason,
+  };
 }
 
 // ---------------------------------------------------------------------------

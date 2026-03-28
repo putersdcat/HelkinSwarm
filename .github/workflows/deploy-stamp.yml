@@ -272,6 +272,7 @@ jobs:
           QUOTA_STRATEGY="${{ github.event.inputs.QUOTA_STRATEGY || 'maximize' }}"
           QUOTA_MAX_TPM_CEILING="${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '400000' }}"
           MODEL_QUOTA_OVERRIDES_JSON='${{ github.event.inputs.MODEL_QUOTA_OVERRIDES_JSON || '' }}'
+          STAMP_POLICY_OUTLOOK_SEND_BYPASS="${{ (github.event.inputs.USER_ALIAS || vars.USER_ALIAS) == vars.USER_ALIAS && 'true' || 'false' }}"
 
           echo "ℹ️ CICD principal object id: ${CICD_PRINCIPAL_ID}"
 
@@ -297,6 +298,7 @@ jobs:
             createOAuthConnection=${OAUTH_UPDATE_SHOULD_RUN}
             delegatedAuthClientSecret="$DELEGATED_SECRET"
             lowCostDevMode=${{ github.event.inputs.LOW_COST_DEV_MODE || 'false' }}
+            stampPolicyAllowOutlookSendWithoutConfirmation=${STAMP_POLICY_OUTLOOK_SEND_BYPASS}
           )
 
           DEPLOY_CMD+=(--output json)

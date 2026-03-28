@@ -61,6 +61,15 @@ No connection strings, client secrets, or PATs ever appear in source or config f
 - Delegated identity is required for any skill that touches personal data — this directly powers skill-specific memory vaults (0i) and future virtual employees (0j).
 - SkillForge uses GitHub App tokens exclusively — never user tokens.
 
+### Role and Policy Authority
+
+Current application-level authority is layered:
+
+- `guest` → ordinary tool use only
+- `owner` → ordinary tool use + policy override + high-risk policy override
+
+Policy exception authority is intentionally stricter than ordinary tool access so stamp-local safety exceptions can be tightly scoped and auditable.
+
 ### What NOT to Do
 
 - ❌ Never store any secret (token, key, password) in code, .env, or Bicep.

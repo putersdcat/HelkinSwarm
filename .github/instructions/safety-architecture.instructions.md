@@ -74,6 +74,7 @@ For `high` risk operations:
 - ✅ Default to `confirmation-gated` safety mode
 - ✅ Implement emergency stop as an instant kill of all user operations
 - ✅ Apply Azure Content Safety (Prompt Shields) before every LLM interaction
+- ✅ Express stamp-local safety exceptions through stamp policy, not by editing shared manifests
 
 ## Never
 
@@ -83,6 +84,7 @@ For `high` risk operations:
 - ❌ Do NOT Skip any step of the five-step pipeline
 - ❌ Do NOT Default to `full-destructive` mode
 - ❌ Do NOT Store safety mode in a cookie or local state — persist in user profile (Cosmos)
+- ❌ Do NOT Encode stamp-specific confirmation bypasses in shared manifests
 
 ---
 

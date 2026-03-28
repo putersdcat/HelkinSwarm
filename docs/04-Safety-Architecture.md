@@ -52,6 +52,24 @@ It enforces, in strict order:
 
 All steps are mandatory. Failure at any step aborts the turn and notifies the user.
 
+### Stamp-Local Policy Precedence
+
+When stamp-local policy is present, confirmation behavior resolves in this order:
+
+1. **Global safety mode** — `read-only` still blocks writes outright.
+2. **Role / authority checks** — the caller must hold the authority required by the exception policy.
+3. **Stamp-local policy** — explicit, auditable exceptions may relax confirmation for a specific tool on a specific stamp.
+4. **Shared manifest defaults** — shared manifests remain the safe baseline and are no longer the system of record for personal stamp exceptions.
+
+Fail-closed rule:
+- malformed or unknown policy input never relaxes behavior
+- missing authority never relaxes behavior
+- absent policy falls back to global safety + manifest defaults
+
+Migration rule:
+- do **not** patch shared manifests for personal or stamp-local confirmation preferences
+- move those exceptions into the stamp-policy layer and keep shared manifests aligned to the safe baseline
+
 ### Layered Defense-in-Depth
 
 Safety is not a single checkpoint — it is enforced at **every layer** of the stack by heuristic code, never by prompt instructions:

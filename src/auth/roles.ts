@@ -12,6 +12,7 @@ import { isOwnerUserId } from '../bot/maintenanceMode.js';
 // ---------------------------------------------------------------------------
 
 export type HelkinRole = 'owner' | 'guest';
+export type HelkinAuthority = 'tool-use' | 'policy-override' | 'policy-override-high-risk';
 
 /**
  * Privileged operations and their required minimum role.
@@ -51,6 +52,19 @@ export async function getUserRole(userId: string): Promise<HelkinRole> {
   return isOwner ? 'owner' : 'guest';
 }
 
+export async function getUserAuthorities(userId: string): Promise<HelkinAuthority[]> {
+  const role = await getUserRole(userId);
+  if (role === 'owner') {
+    return ['tool-use', 'policy-override', 'policy-override-high-risk'];
+  }
+  return ['tool-use'];
+}
+
+export async function hasAuthority(userId: string, authority: HelkinAuthority): Promise<boolean> {
+  const authorities = await getUserAuthorities(userId);
+  return authorities.includes(authority);
+}
+
 /**
  * Check whether a userId has the required role to invoke a named tool.
  * Returns true if allowed, false if blocked.
@@ -73,10 +87,12 @@ export async function canInvokeTool(userId: string, toolName: string): Promise<b
  */
 export async function getRoleSummary(userId: string): Promise<{
   role: HelkinRole;
+  authorities: HelkinAuthority[];
   privilegedTools: string[];
   description: string;
 }> {
   const role = await getUserRole(userId);
+  const authorities = await getUserAuthorities(userId);
   const privilegedTools = Object.entries(ROLE_REQUIREMENTS)
     .filter(([, required]) => required === 'owner')
     .map(([toolName]) => toolName);
@@ -88,6 +104,7 @@ export async function getRoleSummary(userId: string): Promise<{
 
   return {
     role,
+    authorities,
     privilegedTools: role === 'owner' ? privilegedTools : [],
     description: descriptions[role],
   };

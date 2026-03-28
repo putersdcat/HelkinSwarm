@@ -32,6 +32,10 @@ vi.mock('../../src/tools/toolRegistry.js', () => ({
   },
 }));
 
+vi.mock('../../src/bot/maintenanceMode.js', () => ({
+  isOwnerUserId: vi.fn(async (userId: string) => userId === 'owner-user'),
+}));
+
 // Mock capabilityLoader used by domain verifiers
 const mockGetHandler = vi.fn().mockReturnValue(undefined);
 vi.mock('../../src/capabilities/capabilityLoader.js', () => ({
@@ -42,6 +46,7 @@ vi.mock('../../src/capabilities/capabilityLoader.js', () => ({
 // Import after mocks
 // ---------------------------------------------------------------------------
 const { runVerificationPipeline, buildVerifiedSet, hashVerifiedSet } = await import('../../src/orchestrator/verificationPipeline.js');
+const { resetStampPolicyForTests } = await import('../../src/config/stampPolicy.js');
 
 function makeInput(overrides: Partial<VerificationInput> = {}): VerificationInput {
   return {
@@ -63,6 +68,8 @@ function makeInput(overrides: Partial<VerificationInput> = {}): VerificationInpu
 describe('spot-check verification', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    delete process.env['STAMP_POLICY_ALLOW_OUTLOOK_SEND_WITHOUT_CONFIRMATION'];
+    resetStampPolicyForTests();
   });
 
   describe('policy: disabled', () => {
@@ -388,6 +395,38 @@ describe('spot-check verification', () => {
       );
       expect(result.passed).toBe(true);
       expect(result.requiresConfirmation).toBe(false);
+    });
+
+    it('stamp policy can bypass confirmation for configured owner override', async () => {
+      process.env['STAMP_POLICY_ALLOW_OUTLOOK_SEND_WITHOUT_CONFIRMATION'] = 'true';
+      resetStampPolicyForTests();
+      const result = await runVerificationPipeline(
+        makeInput({
+          toolName: 'outlook_send_email',
+          userId: 'owner-user',
+          risk: 'high',
+          skipConfirmation: false,
+        }),
+      );
+      expect(result.passed).toBe(true);
+      expect(result.requiresConfirmation).toBe(false);
+      expect(result.policyOverrideApplied).toBe(true);
+      expect(result.policyOverrideAuthority).toBe('policy-override-high-risk');
+    });
+
+    it('stamp policy does not bypass confirmation for guests', async () => {
+      process.env['STAMP_POLICY_ALLOW_OUTLOOK_SEND_WITHOUT_CONFIRMATION'] = 'true';
+      resetStampPolicyForTests();
+      const result = await runVerificationPipeline(
+        makeInput({
+          toolName: 'outlook_send_email',
+          userId: 'guest-user',
+          risk: 'high',
+          skipConfirmation: false,
+        }),
+      );
+      expect(result.requiresConfirmation).toBe(true);
+      expect(result.policyOverrideApplied).not.toBe(true);
     });
   });
 });

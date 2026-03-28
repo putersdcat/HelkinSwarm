@@ -64,7 +64,8 @@ export type TelemetryEventName =
   | 'SubAgentSpawned'
   | 'MultiRoundDispatch'
   | 'DiscoveryQueryExecuted'
-  | 'DiscoveryToolSubsetSelected';
+  | 'DiscoveryToolSubsetSelected'
+  | 'PolicyOverrideApplied';
 
 // ---------------------------------------------------------------------------
 // Session Tracer — maps events to trace phases for Dev Console (#140)
@@ -100,6 +101,7 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   MultiRoundDispatch: 'tool-dispatch',
   DiscoveryQueryExecuted: 'tool-dispatch',
   DiscoveryToolSubsetSelected: 'orchestrator',
+  PolicyOverrideApplied: 'orchestrator',
   BotMessageReceived: 'bot-receive',
   PromptBuilt: 'prompt-build',
   ReplySent: 'reply-send',
@@ -187,6 +189,7 @@ function buildTraceDetail(event: TelemetryEvent): string {
   if (p['handler']) parts.push(`handler: ${p['handler']}`);
   if (p['query']) parts.push(`query: ${p['query']}`);
   if (p['selectedTools']) parts.push(`selected: ${p['selectedTools']}`);
+  if (p['authority']) parts.push(`authority: ${p['authority']}`);
 
   return parts.length > 0 ? parts.join(', ') : event.name;
 }

@@ -93,6 +93,9 @@ param devTelemetryMode string = 'verbose'
 @description('Low Cost Dev Mode — reduces Log Analytics retention, telemetry verbosity, and scale floor to minimise dev spend. (#303)')
 param lowCostDevMode bool = false
 
+@description('Enable the stamp-local Outlook send confirmation bypass policy for the primary developer stamp only.')
+param stampPolicyAllowOutlookSendWithoutConfirmation bool = false
+
 
 // ─── Variables ──────────────────────────────────────────────────────────────
 
@@ -598,6 +601,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'AZURE_SUBSCRIPTION_ID', value: subscription().subscriptionId }
         { name: 'AZURE_RESOURCE_GROUP', value: resourceGroup().name }
         { name: 'MAINTENANCE_MODE', value: 'false' }
+        { name: 'STAMP_POLICY_ALLOW_OUTLOOK_SEND_WITHOUT_CONFIRMATION', value: string(stampPolicyAllowOutlookSendWithoutConfirmation) }
 
         // ── Dev telemetry (spec 0n, #174) ──
         { name: 'DEV_TELEMETRY_MODE', value: effectiveTelemetryMode }
