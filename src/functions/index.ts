@@ -21,6 +21,7 @@ import './tabDashboard.js';
 import './tabSessions.js';
 import './tabDevConsole.js';
 import './tabSkills.js';
+import './tabBootstrapObo.js';
 
 // Orchestrator + activity registrations (Phase 2)
 import '../orchestrator/overseer.js';

@@ -98,6 +98,38 @@
   var _userOid = null;
   var _cachedToken = null;
   var _ssoAttempted = false;
+  var _oboBootstrapAttempted = false;
+  var _oboBootstrapPromise = null;
+
+  function bootstrapOboFromTabToken(token) {
+    if (!token) return Promise.resolve(null);
+    if (_oboBootstrapPromise) return _oboBootstrapPromise;
+    if (_oboBootstrapAttempted) return Promise.resolve(null);
+    _oboBootstrapAttempted = true;
+
+    _oboBootstrapPromise = fetch(TAB_API_BASE + "/bootstrap-obo", {
+      method: "POST",
+      headers: {
+        "x-helkinswarm-user-id": _userOid,
+        "Authorization": "Bearer " + token
+      }
+    }).then(function (resp) {
+      if (!resp.ok) {
+        return resp.json().catch(function () { return {}; }).then(function (body) {
+          throw new Error(body && body.error ? body.error : ("Tab OBO bootstrap error: " + resp.status));
+        });
+      }
+      return resp.json();
+    }).then(function (body) {
+      console.info("[HelkinSwarmTab] OBO bootstrap status:", body && body.status);
+      return body;
+    }).catch(function (err) {
+      console.warn("[HelkinSwarmTab] OBO bootstrap failed:", err && err.message ? err.message : err);
+      return null;
+    });
+
+    return _oboBootstrapPromise;
+  }
 
   function getAadToken() {
     if (_cachedToken) return Promise.resolve(_cachedToken);
@@ -105,7 +137,7 @@
     _ssoAttempted = true;
     return microsoftTeams.authentication.getAuthToken().then(function (token) {
       _cachedToken = token;
-      return token;
+      return bootstrapOboFromTabToken(token).then(function () { return token; });
     }).catch(function () {
       return null;
     });

@@ -8,6 +8,7 @@ export interface OboBootstrapInput {
   userId: string;
   assertion: string;
   correlationId: string;
+  source?: 'teams-token-exchange' | 'teams-tab-sso';
 }
 
 export interface OboBootstrapResult {
@@ -22,6 +23,7 @@ export interface OboBootstrapResult {
 export async function bootstrapOboSession(
   input: OboBootstrapInput,
 ): Promise<OboBootstrapResult> {
+  const source = input.source ?? 'teams-token-exchange';
   const result = await acquireTokenOnBehalfOf({
     userId: input.userId,
     assertion: input.assertion,
@@ -36,7 +38,7 @@ export async function bootstrapOboSession(
     tenantId: result.account?.tenantId,
     bootstrappedAt: new Date().toISOString(),
     lastCorrelationId: input.correlationId,
-    source: 'teams-token-exchange',
+    source,
   });
 
   trackEvent({

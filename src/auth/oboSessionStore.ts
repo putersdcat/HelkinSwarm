@@ -14,7 +14,7 @@ export interface OboSessionRecord {
   bootstrappedAt: string;
   updatedAt: string;
   lastCorrelationId?: string;
-  source: 'teams-token-exchange';
+  source: 'teams-token-exchange' | 'teams-tab-sso';
 }
 
 function getDocId(userId: string): string {
