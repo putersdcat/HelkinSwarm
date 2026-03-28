@@ -55,6 +55,8 @@ export interface LlmFollowUpInput {
 const FOLLOW_UP_EXECUTION_PROMPT =
   'You are continuing an in-progress tool workflow. Do not stop at intermediate retrieval results when the user requested a later action. ' +
   'If the request is not yet fulfilled and more tools are available, call the next required tool. ' +
+  'A discovery/search result that only identifies candidate tools is NOT fulfillment when the user asked you to send, reply, create, update, or delete something. ' +
+  'After discovery narrows the tool set, call the concrete discovered tool that completes the user intent. ' +
   'Only answer with a final natural-language response when the full user intent is satisfied or you can explain a specific blocker.';
 
 df.app.activity('llmFollowUpActivity', {
