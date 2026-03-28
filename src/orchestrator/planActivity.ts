@@ -180,8 +180,21 @@ export async function plan(input: PlanInput): Promise<PlanResult> {
   );
 
   trackEvent({
+    name: 'OrchestratorPlanCreated',
+    correlationId,
+    userId: input.userId,
+    properties: {
+      complexity,
+      stepCount: steps.length,
+      modelPairings: steps.map((step) => `${step.order}:${step.model}`).join(','),
+      subAgentCount: steps.filter((step) => step.useSubAgent).length,
+    },
+  });
+
+  trackEvent({
     name: 'PlanGenerated',
     correlationId,
+    userId: input.userId,
     properties: {
       complexity,
       stepCount: steps.length,

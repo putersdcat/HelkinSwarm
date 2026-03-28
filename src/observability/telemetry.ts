@@ -55,6 +55,7 @@ export type TelemetryEventName =
   | 'BotMessageReceived'
   | 'PromptBuilt'
   | 'ReplySent'
+  | 'OrchestratorPlanCreated'
   | 'PlanClassification'
   | 'PlanGenerated'
   | 'PlanParseError'
@@ -88,6 +89,7 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   DurableHookTriggered: 'orchestrator',
   ExecutorVerifiedSetBinding: 'executor',
   ScopedTokenMinted: 'executor',
+  OrchestratorPlanCreated: 'orchestrator',
   PlanClassification: 'orchestrator',
   PlanGenerated: 'orchestrator',
   OboSessionBootstrapped: 'executor',
