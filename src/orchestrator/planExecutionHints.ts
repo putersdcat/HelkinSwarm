@@ -18,14 +18,29 @@ export interface ToolExecutionHint {
   matchedPlanStep: boolean;
 }
 
+export interface ToolExecutionResultLike {
+  toolName: string;
+  success: boolean;
+}
+
+export interface PlanDispatchBatch {
+  selectedCalls: PlannedToolCall[];
+  deferredCalls: PlannedToolCall[];
+  readyStepOrders: number[];
+  readyToolHints: string[];
+  planConstrained: boolean;
+}
+
 /** Resolve execution hints for a tool from the generated plan. */
 export function resolveExecutionHint(
   toolName: string,
   toolDefinition: ToolDefinitionLike | undefined,
   planSteps: readonly PlanStep[] | null | undefined,
+  completedStepOrders: readonly number[] = [],
 ): ToolExecutionHint {
+  const completed = new Set(completedStepOrders);
   const matchingStep = planSteps
-    ?.filter((step) => step.toolHint === toolName)
+    ?.filter((step) => step.toolHint === toolName && !completed.has(step.order))
     .sort((a, b) => a.order - b.order)[0];
 
   return {
@@ -44,10 +59,11 @@ export function resolveExecutionHint(
 export function sortToolCallsByPlan(
   toolCalls: readonly PlannedToolCall[],
   planSteps: readonly PlanStep[] | null | undefined,
+  completedStepOrders: readonly number[] = [],
 ): PlannedToolCall[] {
   return toolCalls
     .map((call, index) => {
-      const hint = resolveExecutionHint(call.name, undefined, planSteps);
+      const hint = resolveExecutionHint(call.name, undefined, planSteps, completedStepOrders);
       return {
         call,
         index,
@@ -61,4 +77,112 @@ export function sortToolCallsByPlan(
       return left.index - right.index;
     })
     .map((entry) => entry.call);
+}
+
+/**
+ * Select the subset of tool calls that match the next ready planned step(s).
+ * When a plan has matched tool hints remaining, only the ready lowest-order
+ * step(s) are selected for dispatch; later-step calls are deferred.
+ */
+export function selectReadyToolCallsByPlan(
+  toolCalls: readonly PlannedToolCall[],
+  planSteps: readonly PlanStep[] | null | undefined,
+  completedStepOrders: readonly number[] = [],
+): PlanDispatchBatch {
+  if (!planSteps || planSteps.length === 0) {
+    return {
+      selectedCalls: [...toolCalls],
+      deferredCalls: [],
+      readyStepOrders: [],
+      readyToolHints: [],
+      planConstrained: false,
+    };
+  }
+
+  const completed = new Set(completedStepOrders);
+  const remainingMatchedSteps = planSteps
+    .filter((step) => !!step.toolHint && !completed.has(step.order));
+
+  if (remainingMatchedSteps.length === 0) {
+    return {
+      selectedCalls: [...toolCalls],
+      deferredCalls: [],
+      readyStepOrders: [],
+      readyToolHints: [],
+      planConstrained: false,
+    };
+  }
+
+  const readySteps = remainingMatchedSteps
+    .filter((step) => (step.dependsOn ?? []).every((dep) => completed.has(dep)));
+
+  if (readySteps.length === 0) {
+    return {
+      selectedCalls: [],
+      deferredCalls: [...toolCalls],
+      readyStepOrders: [],
+      readyToolHints: [],
+      planConstrained: true,
+    };
+  }
+
+  const nextOrder = Math.min(...readySteps.map((step) => step.order));
+  const readyHints = [...new Set(
+    readySteps
+      .filter((step) => step.order === nextOrder)
+      .map((step) => step.toolHint)
+      .filter((toolHint): toolHint is string => typeof toolHint === 'string' && toolHint.length > 0),
+  )];
+
+  if (readyHints.length === 0) {
+    return {
+      selectedCalls: [...toolCalls],
+      deferredCalls: [],
+      readyStepOrders: [nextOrder],
+      readyToolHints: [],
+      planConstrained: false,
+    };
+  }
+
+  const readyHintSet = new Set(readyHints);
+  const selectedCalls = toolCalls.filter((call) => readyHintSet.has(call.name));
+  const deferredCalls = toolCalls.filter((call) => !readyHintSet.has(call.name));
+
+  return {
+    selectedCalls,
+    deferredCalls,
+    readyStepOrders: readySteps.filter((step) => step.order === nextOrder).map((step) => step.order),
+    readyToolHints: readyHints,
+    planConstrained: true,
+  };
+}
+
+/**
+ * Mark matched plan steps complete based on successful tool executions.
+ * For repeated tool names, completion advances in plan order.
+ */
+export function collectCompletedPlanStepOrders(
+  results: readonly ToolExecutionResultLike[],
+  planSteps: readonly PlanStep[] | null | undefined,
+  completedStepOrders: readonly number[] = [],
+): number[] {
+  if (!planSteps || planSteps.length === 0) {
+    return [...completedStepOrders].sort((a, b) => a - b);
+  }
+
+  const completed = new Set(completedStepOrders);
+
+  for (const result of results) {
+    if (!result.success) continue;
+
+    const matchingStep = planSteps
+      .filter((step) => step.toolHint === result.toolName && !completed.has(step.order))
+      .sort((a, b) => a.order - b.order)[0];
+
+    if (matchingStep) {
+      completed.add(matchingStep.order);
+    }
+  }
+
+  return [...completed].sort((a, b) => a - b);
 }

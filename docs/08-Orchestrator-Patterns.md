@@ -45,6 +45,7 @@ Handles one complete turn:
 - Builds the prompt (persona + history + tools + model profile)
 - **Classifies request complexity** (simple/compound/complex) using structural message analysis only — no domain or tool-name heuristics (#324)
 - For compound/complex requests: calls the fast model to generate a structured execution plan; injects plan as a system message before the main LLM call
+- For planned requests: dispatches only the **next dependency-ready plan step(s)** each round, so the plan materially constrains execution order, model pairing, and sub-agent fan-out instead of acting as advisory text only
 - For simple requests: planning is skipped entirely (zero overhead)
 - Calls the LLM (global frontier model by default)
 - Dispatches tool calls

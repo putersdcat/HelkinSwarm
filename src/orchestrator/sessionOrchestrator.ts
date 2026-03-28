@@ -31,7 +31,12 @@ import {
   getHighestMultiRoundRisk,
   shouldSkipConfirmationForMultiRound,
 } from './multiRoundPolicy.js';
-import { resolveExecutionHint, sortToolCallsByPlan } from './planExecutionHints.js';
+import {
+  collectCompletedPlanStepOrders,
+  resolveExecutionHint,
+  selectReadyToolCallsByPlan,
+  sortToolCallsByPlan,
+} from './planExecutionHints.js';
 
 export interface SessionInput {
   state: OverseerState;
@@ -145,6 +150,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   let responseContent = llmResult.content;
 
   if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
+    let completedPlanStepOrders: number[] = [];
+
     // Compute adaptive tool budget (#139)
     const domains = new Set(
       llmResult.toolCalls.map((tc: { name: string }) => {
@@ -163,22 +170,32 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     const toolCallsForDispatch = sortToolCallsByPlan(
       llmResult.toolCalls.slice(0, budget),
       planResult.steps,
+      completedPlanStepOrders,
     );
 
+    const initialPlanBatch = selectReadyToolCallsByPlan(
+      toolCallsForDispatch,
+      planResult.steps,
+      completedPlanStepOrders,
+    );
+    const gatedToolCallsForDispatch = initialPlanBatch.selectedCalls.length > 0
+      ? initialPlanBatch.selectedCalls
+      : toolCallsForDispatch;
+
     // Determine aggregate risk from the tool registry
-    const isLowRiskOnly = toolCallsForDispatch.every((tc: { name: string }) => {
+    const isLowRiskOnly = gatedToolCallsForDispatch.every((tc: { name: string }) => {
       const def = toolRegistry.get(tc.name);
       return def?.risk === 'low';
     });
 
     // Any tool with declarative requiresConfirmation must trigger the pipeline regardless of risk (#247)
-    const anyDeclarativeConfirmation = toolCallsForDispatch.some((tc: { name: string }) =>
+    const anyDeclarativeConfirmation = gatedToolCallsForDispatch.some((tc: { name: string }) =>
       toolRegistry.get(tc.name)?.requiresConfirmation === true,
     );
 
     // Per-tool opt-out: if ALL tools in the batch have requiresConfirmation:false,
     // skip the confirmation card even for medium/high risk (#302).
-    const allToolsSkipConfirmation = toolCallsForDispatch.every((tc: { name: string }) =>
+    const allToolsSkipConfirmation = gatedToolCallsForDispatch.every((tc: { name: string }) =>
       toolRegistry.get(tc.name)?.requiresConfirmation === false,
     );
 
@@ -188,7 +205,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
     if (!isLowRiskOnly || anyDeclarativeConfirmation) {
       // Determine the highest risk level among requested tools
-      const highestRisk = toolCallsForDispatch.some((tc: { name: string }) =>
+      const highestRisk = gatedToolCallsForDispatch.some((tc: { name: string }) =>
         toolRegistry.get(tc.name)?.risk === 'high') ? 'high' as const : 'medium' as const;
 
       // Run pre-execution verification pipeline (steps 1-4: schema, data min, spot check, shields)
@@ -196,9 +213,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         correlationId,
         sessionId: input.state.userId,
         userId: input.state.userId,
-        toolName: toolCallsForDispatch.map((tc: { name: string }) => tc.name).join(', '),
+          toolName: gatedToolCallsForDispatch.map((tc: { name: string }) => tc.name).join(', '),
         risk: highestRisk,
-        rawOutput: toolCallsForDispatch,
+          rawOutput: gatedToolCallsForDispatch,
         originalQuery: input.userMessage,
         skipConfirmation: allToolsSkipConfirmation,
       });
@@ -215,9 +232,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         // Steps 1-4 passed but human confirmation required for medium/high risk
         const cardInput: SendConfirmationCardInput = {
           userId: input.state.userId,
-          toolName: toolCallsForDispatch.map((tc: { name: string }) => tc.name).join(', '),
+          toolName: gatedToolCallsForDispatch.map((tc: { name: string }) => tc.name).join(', '),
           risk: highestRisk,
-          description: `Execute ${toolCallsForDispatch.length} tool(s): ${toolCallsForDispatch.map((tc: { name: string }) => tc.name).join(', ')}`,
+          description: `Execute ${gatedToolCallsForDispatch.length} tool(s): ${gatedToolCallsForDispatch.map((tc: { name: string }) => tc.name).join(', ')}`,
           correlationId,
           sessionInstanceId: context.df.instanceId,
         };
@@ -260,9 +277,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       const subAgentCalls: typeof toolCallsForDispatch = [];
       const directCalls: typeof toolCallsForDispatch = [];
 
-      for (const tc of toolCallsForDispatch) {
+      for (const tc of gatedToolCallsForDispatch) {
         const def = toolRegistry.get(tc.name);
-        const executionHint = resolveExecutionHint(tc.name, def, planResult.steps);
+        const executionHint = resolveExecutionHint(tc.name, def, planResult.steps, completedPlanStepOrders);
         if (executionHint.useSubAgent) {
           subAgentCalls.push(tc);
         } else {
@@ -274,7 +291,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       const subAgentResults: ToolDispatchResult['results'] = [];
       for (const tc of subAgentCalls) {
         const def = toolRegistry.get(tc.name);
-        const executionHint = resolveExecutionHint(tc.name, def, planResult.steps);
+        const executionHint = resolveExecutionHint(tc.name, def, planResult.steps, completedPlanStepOrders);
         const subInput: SubAgentInput = {
           toolName: tc.name,
           toolDescription: def?.description ?? tc.name,
@@ -367,6 +384,11 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         results: mergedResults,
         totalCalls: mergedResults.length,
       };
+      completedPlanStepOrders = collectCompletedPlanStepOrders(
+        mergedResults.map((result) => ({ toolName: result.toolName, success: result.success })),
+        planResult.steps,
+        completedPlanStepOrders,
+      );
       scopedTokenMintCount += mergedResults.filter((result) => result.scopedTokenMinted).length;
       spans.push({ label: 'tools', durationMs: context.df.currentUtcDateTime.getTime() - toolDispatchStart });
 
@@ -385,7 +407,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         originalMessages: promptWithPlan.messages,
         assistantToolCallMessage: {
           content: llmResult.content,
-          toolCalls: toolCallsForDispatch,
+            toolCalls: gatedToolCallsForDispatch,
         },
         toolResults: toolResults?.results ?? [],
         correlationId,
@@ -427,7 +449,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             originalMessages: promptWithPlan.messages,
             assistantToolCallMessage: {
               content: llmResult.content,
-              toolCalls: toolCallsForDispatch,
+              toolCalls: gatedToolCallsForDispatch,
             },
             toolResults: toolResults?.results.slice(0, initialResultCount) ?? [],
             correlationId,
@@ -464,7 +486,19 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         // Multi-round policy: allow low/medium tools freely, and allow only the
         // subset of high-risk tools that explicitly skip confirmation and do not
         // require the executor path in the current environment.
-        const roundCallsForDispatch = sortToolCallsByPlan(followUp.toolCalls, planResult.steps).filter(
+        const sortedRoundCalls = sortToolCallsByPlan(
+          followUp.toolCalls,
+          planResult.steps,
+          completedPlanStepOrders,
+        );
+        const roundPlanBatch = selectReadyToolCallsByPlan(
+          sortedRoundCalls,
+          planResult.steps,
+          completedPlanStepOrders,
+        );
+        const roundCallsForDispatch = (roundPlanBatch.selectedCalls.length > 0
+          ? roundPlanBatch.selectedCalls
+          : sortedRoundCalls).filter(
           (tc: { name: string }) => {
             const def = toolRegistry.get(tc.name);
             return canExecuteInMultiRound(def);
@@ -503,7 +537,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         const roundDirectCalls: typeof roundCallsForDispatch = [];
         for (const tc of roundCallsForDispatch) {
           const def = toolRegistry.get(tc.name);
-          const executionHint = resolveExecutionHint(tc.name, def, planResult.steps);
+          const executionHint = resolveExecutionHint(tc.name, def, planResult.steps, completedPlanStepOrders);
           if (executionHint.useSubAgent) {
             roundSubAgentCalls.push(tc);
           } else {
@@ -528,7 +562,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         const roundSubResults: ToolDispatchResult['results'] = [];
         for (const tc of roundSubAgentCalls) {
           const def = toolRegistry.get(tc.name);
-          const executionHint = resolveExecutionHint(tc.name, def, planResult.steps);
+          const executionHint = resolveExecutionHint(tc.name, def, planResult.steps, completedPlanStepOrders);
           const subInput: SubAgentInput = {
             toolName: tc.name,
             toolDescription: def?.description ?? tc.name,
@@ -579,6 +613,11 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           results: [...roundSubResults, ...(roundDirectResults?.results ?? [])],
           totalCalls: roundSubResults.length + (roundDirectResults?.results.length ?? 0),
         };
+        completedPlanStepOrders = collectCompletedPlanStepOrders(
+          roundResults.results.map((result) => ({ toolName: result.toolName, success: result.success })),
+          planResult.steps,
+          completedPlanStepOrders,
+        );
 
         // Accumulate this turn for conversation history
         additionalTurns.push({
@@ -600,7 +639,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           originalMessages: promptWithPlan.messages,
           assistantToolCallMessage: {
             content: llmResult.content,
-            toolCalls: toolCallsForDispatch,
+            toolCalls: gatedToolCallsForDispatch,
           },
           toolResults: toolResults?.results.slice(0, initialResultCount) ?? [],
           correlationId,

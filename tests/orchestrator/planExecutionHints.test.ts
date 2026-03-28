@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { resolveExecutionHint, sortToolCallsByPlan } from '../../src/orchestrator/planExecutionHints.js';
+import {
+  collectCompletedPlanStepOrders,
+  resolveExecutionHint,
+  selectReadyToolCallsByPlan,
+  sortToolCallsByPlan,
+} from '../../src/orchestrator/planExecutionHints.js';
 import type { PlanStep } from '../../src/orchestrator/planActivity.js';
 
 const planSteps: PlanStep[] = [
@@ -52,5 +57,48 @@ describe('sortToolCallsByPlan', () => {
       'github_create_issue',
       'helkin_health_check',
     ]);
+  });
+});
+
+describe('selectReadyToolCallsByPlan', () => {
+  it('dispatches only the next ready planned step and defers later steps', () => {
+    const batch = selectReadyToolCallsByPlan([
+      { id: '2', name: 'github_create_issue', arguments: '{}' },
+      { id: '1', name: 'outlook_search_emails', arguments: '{}' },
+    ], planSteps, []);
+
+    expect(batch.planConstrained).toBe(true);
+    expect(batch.readyToolHints).toEqual(['outlook_search_emails']);
+    expect(batch.selectedCalls.map((call) => call.name)).toEqual(['outlook_search_emails']);
+    expect(batch.deferredCalls.map((call) => call.name)).toEqual(['github_create_issue']);
+  });
+
+  it('advances to the dependent step after the earlier step completes', () => {
+    const batch = selectReadyToolCallsByPlan([
+      { id: '2', name: 'github_create_issue', arguments: '{}' },
+      { id: '1', name: 'outlook_search_emails', arguments: '{}' },
+    ], planSteps, [1]);
+
+    expect(batch.readyToolHints).toEqual(['github_create_issue']);
+    expect(batch.selectedCalls.map((call) => call.name)).toEqual(['github_create_issue']);
+  });
+});
+
+describe('collectCompletedPlanStepOrders', () => {
+  it('marks matched successful tools complete in plan order', () => {
+    const completed = collectCompletedPlanStepOrders([
+      { toolName: 'outlook_search_emails', success: true },
+    ], planSteps, []);
+
+    expect(completed).toEqual([1]);
+  });
+
+  it('ignores failed executions and preserves already completed steps', () => {
+    const completed = collectCompletedPlanStepOrders([
+      { toolName: 'github_create_issue', success: false },
+      { toolName: 'github_create_issue', success: true },
+    ], planSteps, [1]);
+
+    expect(completed).toEqual([1, 2]);
   });
 });

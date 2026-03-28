@@ -9,4 +9,12 @@ describe('sessionOrchestrator plan context preservation', () => {
     expect(matches.length).toBeGreaterThanOrEqual(3);
     expect(source).not.toContain('originalMessages: prompt.messages');
   });
+
+  it('tracks completed plan steps and constrains dispatch to ready planned calls first', () => {
+    const source = readFileSync('src/orchestrator/sessionOrchestrator.ts', 'utf8');
+
+    expect(source).toContain('let completedPlanStepOrders: number[] = [];');
+    expect(source).toContain('selectReadyToolCallsByPlan(');
+    expect(source).toContain('collectCompletedPlanStepOrders(');
+  });
 });
