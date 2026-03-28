@@ -1049,23 +1049,47 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       );
 
       if (token) {
+        const linkCorrelationId = `link-${crypto.randomUUID()}`;
+        let oboBootstrapError: string | undefined;
         try {
           const { bootstrapOboSession } = await import('../auth/oboSessionBootstrap.js');
           await bootstrapOboSession({
             userId: pendingLinkChallenge.userId,
             assertion: token,
-            correlationId: `link-${crypto.randomUUID()}`,
+            correlationId: linkCorrelationId,
+          });
+          trackEvent({
+            name: 'HandlerTokenSource',
+            correlationId: linkCorrelationId,
+            userId: pendingLinkChallenge.userId,
+            properties: {
+              handler: pendingLinkChallenge.skillDomain,
+              source: 'magic-code-obo-bootstrap-succeeded',
+            },
           });
         } catch (err) {
+          oboBootstrapError = err instanceof Error ? err.message : String(err);
           console.error(
             `[HelkinSwarmBot] OBO bootstrap from magic-code redemption failed for userId=${pendingLinkChallenge.userId}:`,
             err,
           );
+          trackEvent({
+            name: 'HandlerTokenSource',
+            correlationId: linkCorrelationId,
+            userId: pendingLinkChallenge.userId,
+            properties: {
+              handler: pendingLinkChallenge.skillDomain,
+              source: 'magic-code-obo-bootstrap-failed',
+              error: oboBootstrapError,
+            },
+          });
         }
 
         clearPendingLinkChallenge(pendingLinkChallenge.userId);
         await context.sendActivity(
-          `✅ **${pendingLinkChallenge.skillDomain}** linked successfully. You can now use its delegated features.`,
+          oboBootstrapError
+            ? `✅ **${pendingLinkChallenge.skillDomain}** linked successfully, but OBO bootstrap failed: ${oboBootstrapError}`
+            : `✅ **${pendingLinkChallenge.skillDomain}** linked successfully. You can now use its delegated features.`,
         );
         return true;
       }
