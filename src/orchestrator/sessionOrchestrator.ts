@@ -374,7 +374,10 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       const initialResultCount = mergedResults.length;
 
       const followUpInput: LlmFollowUpInput = {
-        originalMessages: prompt.messages,
+        // Preserve plan-injected system guidance across follow-up rounds (#340 regression).
+        // Using the pre-plan prompt here causes compound requests to forget remaining
+        // steps after the first tool call (e.g. search -> read -> reply chains).
+        originalMessages: promptWithPlan.messages,
         assistantToolCallMessage: {
           content: llmResult.content,
           toolCalls: toolCallsForDispatch,
@@ -416,7 +419,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           });
           // Force a text response by not passing tools on the retry
           const truncRetryInput: LlmFollowUpInput = {
-            originalMessages: prompt.messages,
+            originalMessages: promptWithPlan.messages,
             assistantToolCallMessage: {
               content: llmResult.content,
               toolCalls: toolCallsForDispatch,
@@ -583,7 +586,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
         // Call follow-up again with full conversation history
         const roundFollowUpInput: LlmFollowUpInput = {
-          originalMessages: prompt.messages,
+          originalMessages: promptWithPlan.messages,
           assistantToolCallMessage: {
             content: llmResult.content,
             toolCalls: toolCallsForDispatch,
