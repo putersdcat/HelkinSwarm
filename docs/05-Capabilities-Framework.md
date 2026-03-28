@@ -123,6 +123,13 @@ The discovery index is rebuilt from the currently loaded manifests on every succ
 
 If index generation fails, the loader now fails closed for that reload pass rather than keeping a silently stale discovery dataset alive.
 
+The orchestrator now uses a **discovery-first tool presentation model**:
+- the initial hop gets an intentionally small core tool surface
+- `helkin_skill_search` is the bridge from that small surface into the wider skill library
+- when discovery returns likely matches, the follow-up hop receives only the narrowed tool subset plus the core tools
+
+This keeps safety filtering intact because the narrowed subset is still derived from the safety-filtered registry rather than bypassing it.
+
 ### Central Tool Registry
 
 Location: `src/tools/toolRegistry.ts`

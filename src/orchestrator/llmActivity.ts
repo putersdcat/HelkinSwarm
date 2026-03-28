@@ -34,7 +34,7 @@ export interface LlmResult {
 const LLM_FAST_PATH = !!(process.env['LLM_FAST_PATH'] ?? '');
 
 df.app.activity('llmActivity', {
-  handler: async (input: PromptResult & { correlationId?: string; userId?: string; modelOverride?: string; imageUrls?: string[] }): Promise<LlmResult> => {
+  handler: async (input: PromptResult & { correlationId?: string; userId?: string; modelOverride?: string; imageUrls?: string[]; tools?: Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }> }): Promise<LlmResult> => {
     const routing = getModelRouting();
     const correlationId = input.correlationId ?? crypto.randomUUID();
     recordSubstage(correlationId, 'llm', input.userId ?? 'unknown');
@@ -125,7 +125,7 @@ df.app.activity('llmActivity', {
     });
 
     // Get OpenAI-compatible function schemas from tool registry
-    const tools = toolRegistry.toFunctionSchemas();
+    const tools = input.tools ?? toolRegistry.toFunctionSchemas();
 
     trackEvent({ name: 'LlmCallStarted', correlationId, properties: { deployment: deploymentName, toolCount: tools.length } });
     console.log(`[llmActivity] correlationId=${correlationId} deployment=${deploymentName} toolCount=${tools.length} toolNames=${tools.map(t => t.function.name).join(',')}`);

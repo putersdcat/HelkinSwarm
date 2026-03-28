@@ -1,0 +1,79 @@
+import { beforeEach, describe, expect, it } from 'vitest';
+
+async function seedRegistry(): Promise<void> {
+  process.env['AZURE_CONTENT_SAFETY_ENDPOINT'] = 'https://example.cognitiveservices.azure.com';
+  process.env['AZURE_CONTENT_SAFETY_KEY'] = 'test-key';
+
+  const { toolRegistry } = await import('../../src/tools/toolRegistry.js');
+  toolRegistry.clear();
+  toolRegistry.register({
+    name: 'helkin_skill_search',
+    description: 'discover tools',
+    risk: 'low',
+    dataSensitivity: 'non-pii',
+    requiresConfirmation: false,
+    requiresExecutor: false,
+    requiresSubAgent: false,
+    privilegeClass: 'read-only',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  });
+  toolRegistry.register({
+    name: 'helkin_health_check',
+    description: 'health',
+    risk: 'low',
+    dataSensitivity: 'non-pii',
+    requiresConfirmation: false,
+    requiresExecutor: false,
+    requiresSubAgent: false,
+    privilegeClass: 'read-only',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  });
+  toolRegistry.register({
+    name: 'outlook_search_emails',
+    description: 'search email',
+    risk: 'low',
+    dataSensitivity: 'pii',
+    requiresConfirmation: false,
+    requiresExecutor: false,
+    requiresSubAgent: true,
+    privilegeClass: 'read-only',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  });
+}
+
+describe('discoveryToolInjection', () => {
+  beforeEach(async () => {
+    await seedRegistry();
+  });
+
+  it('keeps the initial discovery-first tool surface core-only', async () => {
+    const { getDiscoveryFirstToolSchemas } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const initial = getDiscoveryFirstToolSchemas();
+    expect(initial.map((tool) => tool.function.name)).toEqual([
+      'helkin_skill_search',
+      'helkin_health_check',
+    ]);
+  });
+
+  it('narrows second-hop tool schemas from discovery search results', async () => {
+    const { deriveSelectiveFollowUpToolSchemas } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const tools = deriveSelectiveFollowUpToolSchemas([
+      {
+        toolName: 'helkin_skill_search',
+        success: true,
+        result: {
+          tools: [{ name: 'outlook_search_emails' }],
+          skills: [],
+        },
+      },
+    ]);
+
+    expect(tools?.map((tool) => tool.function.name)).toEqual([
+      'helkin_skill_search',
+      'helkin_health_check',
+      'outlook_search_emails',
+    ]);
+  });
+});

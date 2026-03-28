@@ -16,6 +16,7 @@ import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { recordOrchestratorStage, recordSubstage } from '../observability/orchestratorStageHealth.js';
+import { getDiscoveryFirstToolDefinitions } from './discoveryToolInjection.js';
 
 export interface BuildPromptInput {
   state: OverseerState;
@@ -121,10 +122,10 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   // Build tool summary for the system prompt — safety-filtered (#210)
   mark('pre-tools');
   recordSubstage(correlationId, 'build-prompt:tool-summary', state.userId);
-  const tools = toolRegistry.getSafetyFiltered();
+  const tools = getDiscoveryFirstToolDefinitions();
   mark('post-tools');
   const toolSummary = tools.length > 0
-    ? `Available tools: ${tools.map((t) => `${t.name} (${t.description})`).join('; ')}`
+    ? `Initial tool surface: ${tools.map((t) => `${t.name} (${t.description})`).join('; ')}. Use helkin_skill_search first when you need non-core skills or a narrower tool subset.`
     : '';
 
   // Inject model identity so the LLM knows what it's running on (#131)
@@ -297,7 +298,14 @@ function buildDegradedPrompt(input: BuildPromptInput): PromptResult {
   ].filter(Boolean).join('\n\n');
   const messages: PromptResult['messages'] = [
     { role: 'system', content: systemPrompt },
-    { role: 'user', content: input.userMessage },
   ];
+  // Preserve quoted-reply context even in degraded mode (#329)
+  if (input.quotedContext) {
+    const q = input.quotedContext;
+    const confidence = q.mayBeTruncated ? ' (may be truncated)' : '';
+    const quoteBlock = `[Replying to a previous message${confidence}]\n"${q.text}"`;
+    messages.push({ role: 'user' as const, content: quoteBlock });
+  }
+  messages.push({ role: 'user', content: input.userMessage });
   return { systemPrompt, messages, estimatedTokens: estimateTokens(systemPrompt + input.userMessage) };
 }

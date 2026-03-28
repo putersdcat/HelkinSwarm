@@ -37,6 +37,10 @@ import {
   selectReadyToolCallsByPlan,
   sortToolCallsByPlan,
 } from './planExecutionHints.js';
+import {
+  deriveSelectiveFollowUpToolSchemas,
+  getDiscoveryFirstToolSchemas,
+} from './discoveryToolInjection.js';
 
 export interface SessionInput {
   state: OverseerState;
@@ -131,7 +135,14 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   spanStart = context.df.currentUtcDateTime.getTime();
   const llmResult: LlmResult = yield context.df.callActivity(
     'llmActivity',
-    { ...promptWithPlan, correlationId, userId: input.state.userId, modelOverride: input.modelOverride, imageUrls: input.imageUrls },
+    {
+      ...promptWithPlan,
+      correlationId,
+      userId: input.state.userId,
+      modelOverride: input.modelOverride,
+      imageUrls: input.imageUrls,
+      tools: getDiscoveryFirstToolSchemas(),
+    },
   );
   spans.push({ label: 'llm', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
 
@@ -398,6 +409,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       // Max rounds from toolBudget or default 5, capped at 10.
       const maxToolRounds = Math.min(input.toolBudget ?? 5, 10);
       const allToolSchemas = toolRegistry.toFunctionSchemas();
+      const selectiveFollowUpSchemas = deriveSelectiveFollowUpToolSchemas(toolResults?.results ?? []);
       const initialResultCount = mergedResults.length;
 
       const followUpInput: LlmFollowUpInput = {
@@ -413,7 +425,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         correlationId,
         modelOverride: input.modelOverride,
         enableRetry: true,
-        tools: allToolSchemas,
+        tools: selectiveFollowUpSchemas ?? allToolSchemas,
       };
       spanStart = context.df.currentUtcDateTime.getTime();
       let followUp: LlmResult = yield context.df.callActivity('llmFollowUpActivity', followUpInput);
@@ -645,7 +657,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           correlationId,
           modelOverride: input.modelOverride,
           enableRetry: !isLastRound,
-          tools: !isLastRound ? allToolSchemas : undefined,
+          tools: !isLastRound ? (selectiveFollowUpSchemas ?? allToolSchemas) : undefined,
           additionalTurns,
         };
         followUp = yield context.df.callActivity('llmFollowUpActivity', roundFollowUpInput);
