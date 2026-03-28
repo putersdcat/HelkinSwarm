@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { CapabilityManifestSchema } from './manifestSchema.js';
 import type { CapabilityManifest, MaintenanceTask } from './manifestSchema.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
+import { clearSkillDiscoveryIndex, rebuildSkillDiscoveryIndex } from './skillDiscoveryIndex.js';
 
 // ---------------------------------------------------------------------------
 // Tool handler type — async function that executes a tool
@@ -105,6 +106,7 @@ export async function loadCapabilities(
 ): Promise<LoadResult> {
   const result: LoadResult = { skillsLoaded: 0, toolsRegistered: 0, errors: [] };
   manifestRegistry.clear();
+  clearSkillDiscoveryIndex();
 
   for (const root of skillsRoots) {
     let entries: string[];
@@ -161,6 +163,8 @@ export async function loadCapabilities(
       }
     }
   }
+
+  rebuildSkillDiscoveryIndex(getAllManifests());
 
   return result;
 }

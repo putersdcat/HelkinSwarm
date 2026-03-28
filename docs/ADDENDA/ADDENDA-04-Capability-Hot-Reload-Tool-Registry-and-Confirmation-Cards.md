@@ -128,6 +128,12 @@ function validateOutputSchema(toolName: string, schema: unknown): void {
 }
 ```
 
+Hot-reload now has one more derived artifact to keep consistent:
+
+- the **manifest-derived skill discovery index**
+
+On every successful load/reload, the runtime clears the previous discovery dataset and rebuilds it from the freshly validated manifests. This ensures future discovery-first routing work cannot keep serving stale tool/skill metadata after `/reload skills`, periodic reload, or SkillForge-driven manifest changes.
+
 ### 2.3 Hot-Reload Trigger
 
 ```typescript

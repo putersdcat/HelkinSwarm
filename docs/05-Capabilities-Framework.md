@@ -113,7 +113,15 @@ At startup (and on hot-reload after SkillForge merge):
 1. Scans all `skills/*/manifest.json` files
 2. Validates them against the central schema
 3. Registers every tool in the Tool Registry
-4. Applies model-specific masks from active profiles (0b)
+4. Rebuilds the manifest-derived skill discovery index used by the discovery-layer backlog work
+5. Applies model-specific masks from active profiles (0b)
+
+The discovery index is rebuilt from the currently loaded manifests on every successful capability load. That means:
+- startup loads get a fresh index automatically
+- `/reload skills` invalidates stale discovery data and rebuilds it from disk
+- periodic hot-reload keeps the index aligned with SkillForge or manifest changes
+
+If index generation fails, the loader now fails closed for that reload pass rather than keeping a silently stale discovery dataset alive.
 
 ### Central Tool Registry
 
