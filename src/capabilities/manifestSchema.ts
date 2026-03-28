@@ -39,6 +39,13 @@ export const MaintenanceTask = z.object({
 });
 export type MaintenanceTask = z.infer<typeof MaintenanceTask>;
 
+export const ModelAffinity = z.object({
+  discovery: z.enum(['fast', 'reasoning', 'primary']).optional(),
+  execution: z.enum(['fast', 'reasoning', 'primary']).optional(),
+  synthesis: z.enum(['fast', 'reasoning', 'primary']).optional(),
+}).strict();
+export type ModelAffinity = z.infer<typeof ModelAffinity>;
+
 export const SoftOnboarding = z.object({
   preferredAddress: z.string().optional(),
   responseStyle: z.enum(['concise', 'long']).optional(),
@@ -58,6 +65,12 @@ export const ToolManifestEntry = z.object({
   privilegeClass: PrivilegeClass.default('read-only'),
   externalAutomationCapabilities: z.array(ExternalAutomationCapability).default([]),
   longTermMemorySchema: z.array(z.string()).default([]),
+  aliases: z.array(z.string().min(1)).default([]),
+  discoveryTerms: z.array(z.string().min(1)).default([]),
+  useWhen: z.array(z.string().min(1)).default([]),
+  avoidWhen: z.array(z.string().min(1)).default([]),
+  typicalInputs: z.array(z.string().min(1)).default([]),
+  returnsSummaryShape: z.string().min(1).optional(),
   inputSchema: z.record(z.unknown()).optional(),
   outputSchema: z.record(z.unknown()).optional(),
 });
@@ -88,6 +101,10 @@ export const CapabilityManifestSchema = z.object({
   dependencies: z.array(z.string()).optional(),
   requiredPermissions: z.array(z.string()).optional(),
   externalAccountsNeeded: z.array(z.string()).optional(),
+  discoveryHints: z.array(z.string().min(1)).default([]),
+  orchestratorUseCases: z.array(z.string().min(1)).default([]),
+  modelAffinity: ModelAffinity.optional(),
+  recommendedEntryTools: z.array(z.string().min(1)).default([]),
   softOnboarding: SoftOnboarding.optional(),
   maintenanceTasks: z.array(MaintenanceTask).optional(),
 });
