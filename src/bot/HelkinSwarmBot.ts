@@ -1049,6 +1049,20 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       );
 
       if (token) {
+        try {
+          const { bootstrapOboSession } = await import('../auth/oboSessionBootstrap.js');
+          await bootstrapOboSession({
+            userId: pendingLinkChallenge.userId,
+            assertion: token,
+            correlationId: `link-${crypto.randomUUID()}`,
+          });
+        } catch (err) {
+          console.error(
+            `[HelkinSwarmBot] OBO bootstrap from magic-code redemption failed for userId=${pendingLinkChallenge.userId}:`,
+            err,
+          );
+        }
+
         clearPendingLinkChallenge(pendingLinkChallenge.userId);
         await context.sendActivity(
           `✅ **${pendingLinkChallenge.skillDomain}** linked successfully. You can now use its delegated features.`,
