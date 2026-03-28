@@ -3,7 +3,8 @@
 
 import { z } from 'zod';
 import { isReadOnly } from '../config/safetyConfig.js';
-import { acquireTokenOnBehalfOf } from './oboTokenProvider.js';
+import { acquireCachedTokenForUser, acquireTokenOnBehalfOf } from './oboTokenProvider.js';
+import { loadOboSession } from './oboSessionStore.js';
 import { trackEvent } from '../observability/telemetry.js';
 
 // ---------------------------------------------------------------------------
@@ -88,6 +89,7 @@ export class ScopedTokenMinter {
         domain,
         scope: effectiveScope,
         method: 'obo',
+        acquisition: 'assertion',
         scopeCount: String(graphScopes.length),
       } });
 
@@ -102,6 +104,52 @@ export class ScopedTokenMinter {
       };
     }
 
+    // Silent OBO from the persisted MSAL cache after Teams token-exchange bootstrap (#330)
+    if (graphScopes.length > 0) {
+      const session = await loadOboSession(request.userId);
+      if (session) {
+        try {
+          const oboResult = await acquireCachedTokenForUser({
+            userId: request.userId,
+            scopes: graphScopes,
+            correlationId: request.correlationId,
+            homeAccountId: session.homeAccountId,
+            localAccountId: session.localAccountId,
+          });
+
+          trackEvent({ name: 'ScopedTokenMinted', correlationId: request.correlationId, properties: {
+            toolName: request.toolName,
+            domain,
+            scope: effectiveScope,
+            method: 'obo',
+            acquisition: 'silent',
+            scopeCount: String(graphScopes.length),
+          } });
+
+          return {
+            token: oboResult.accessToken,
+            expiresAt: oboResult.expiresOn.toISOString(),
+            scope: effectiveScope,
+            method: 'obo',
+            targetResource: request.targetResource,
+            toolName: request.toolName,
+            correlationId: request.correlationId,
+          };
+        } catch (err) {
+          trackEvent({
+            name: 'HandlerTokenSource',
+            correlationId: request.correlationId,
+            userId: request.userId,
+            properties: {
+              handler: request.toolName,
+              source: 'obo-cache-miss',
+              error: err instanceof Error ? err.message : String(err),
+            },
+          });
+        }
+      }
+    }
+
     // Fallback: placeholder token (for tools that don't need Graph/OBO)
     const expiresAt = new Date(Date.now() + this.ttlSeconds * 1000).toISOString();
     const token = this.generatePlaceholderToken(request, effectiveScope, expiresAt);
@@ -111,6 +159,7 @@ export class ScopedTokenMinter {
       domain,
       scope: effectiveScope,
       method: 'placeholder',
+      acquisition: 'fallback',
     } });
 
     return {

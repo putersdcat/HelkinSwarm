@@ -59,7 +59,7 @@ export type TelemetryEventName =
   | 'PlanGenerated'
   | 'PlanParseError'
   | 'HandlerTokenSource'
-  | 'OrchestratorPlanCreated'
+  | 'OboSessionBootstrapped'
   | 'SubAgentSpawned'
   | 'MultiRoundDispatch';
 
@@ -88,7 +88,9 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   DurableHookTriggered: 'orchestrator',
   ExecutorVerifiedSetBinding: 'executor',
   ScopedTokenMinted: 'executor',
-  OrchestratorPlanCreated: 'orchestrator',
+  PlanClassification: 'orchestrator',
+  PlanGenerated: 'orchestrator',
+  OboSessionBootstrapped: 'executor',
   SubAgentSpawned: 'subagent',
   MultiRoundDispatch: 'tool-dispatch',
   BotMessageReceived: 'bot-receive',

@@ -9,7 +9,7 @@
 // 4. Refresh tokens survive container restarts (stored in Cosmos cache).
 
 import { ConfidentialClientApplication } from '@azure/msal-node';
-import type { AuthenticationResult, Configuration } from '@azure/msal-node';
+import type { AuthenticationResult, Configuration, AccountInfo } from '@azure/msal-node';
 import { createCosmosCachePlugin } from './msalCachePlugin.js';
 import { getEnvConfig } from '../config/envConfig.js';
 
@@ -30,6 +30,15 @@ export interface OboTokenResult {
   accessToken: string;
   expiresOn: Date;
   scopes: string[];
+  account?: AccountInfo | null;
+}
+
+export interface CachedOboTokenRequest {
+  userId: string;
+  scopes: string[];
+  correlationId: string;
+  homeAccountId?: string;
+  localAccountId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -105,7 +114,65 @@ export async function acquireTokenOnBehalfOf(
     accessToken: result.accessToken,
     expiresOn: result.expiresOn ?? new Date(Date.now() + 300_000),
     scopes: result.scopes,
+    account: result.account,
   };
+}
+
+/**
+ * Acquire a delegated downstream token silently from the persisted MSAL cache.
+ * Requires an OBO bootstrap to have already seeded the cache for this user/session.
+ */
+export async function acquireCachedTokenForUser(
+  request: CachedOboTokenRequest,
+): Promise<OboTokenResult> {
+  const client = getMsalClient(request.userId);
+  const tokenCache = client.getTokenCache();
+
+  const account = await resolveAccount(tokenCache, request);
+  if (!account) {
+    throw new OboError(
+      `No cached OBO account found for user ${request.userId}`,
+      'no_cached_account',
+    );
+  }
+
+  const result = await client.acquireTokenSilent({
+    account,
+    scopes: request.scopes.map((s) => s.startsWith('https://') ? s : `https://graph.microsoft.com/${s}`),
+    correlationId: request.correlationId,
+  });
+
+  if (!result) {
+    throw new OboError(
+      `Silent OBO acquisition returned null for user ${request.userId}`,
+      'no_result',
+    );
+  }
+
+  return {
+    accessToken: result.accessToken,
+    expiresOn: result.expiresOn ?? new Date(Date.now() + 300_000),
+    scopes: result.scopes,
+    account: result.account,
+  };
+}
+
+async function resolveAccount(
+  tokenCache: Pick<ReturnType<ConfidentialClientApplication['getTokenCache']>, 'getAccountByHomeId' | 'getAccountByLocalId' | 'getAllAccounts'>,
+  request: CachedOboTokenRequest,
+): Promise<AccountInfo | null> {
+  if (request.homeAccountId) {
+    const byHomeId = await tokenCache.getAccountByHomeId(request.homeAccountId);
+    if (byHomeId) return byHomeId;
+  }
+
+  if (request.localAccountId) {
+    const byLocalId = await tokenCache.getAccountByLocalId(request.localAccountId);
+    if (byLocalId) return byLocalId;
+  }
+
+  const allAccounts = await tokenCache.getAllAccounts();
+  return allAccounts[0] ?? null;
 }
 
 // ---------------------------------------------------------------------------

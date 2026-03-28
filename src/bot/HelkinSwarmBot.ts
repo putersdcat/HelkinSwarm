@@ -253,10 +253,27 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
   ): Promise<void> {
     const userId = context.activity.from.aadObjectId ?? 'unknown';
     const connectionName = (context.activity.value as Record<string, unknown>)?.connectionName;
-    const hasToken = !!(context.activity.value as Record<string, unknown>)?.token;
+    const exchangeToken = (context.activity.value as Record<string, unknown>)?.token;
+    const hasToken = typeof exchangeToken === 'string' && exchangeToken.length > 0;
     console.error(
       `[HelkinSwarmBot] SSO token exchange for userId=${userId}, connection=${String(connectionName)}, hasToken=${hasToken}`,
     );
+
+    if (hasToken) {
+      try {
+        const { bootstrapOboSession } = await import('../auth/oboSessionBootstrap.js');
+        const bootstrap = await bootstrapOboSession({
+          userId,
+          assertion: exchangeToken as string,
+          correlationId: `sso-${crypto.randomUUID()}`,
+        });
+        console.error(
+          `[HelkinSwarmBot] OBO session bootstrapped for userId=${userId}; scopes=${bootstrap.scopes.join(' ')} expiresOn=${bootstrap.expiresOn}`,
+        );
+      } catch (err) {
+        console.error(`[HelkinSwarmBot] OBO bootstrap failed for userId=${userId}:`, err);
+      }
+    }
 
     // Verify the exchange succeeded by immediately attempting to retrieve the token (#252)
     try {
