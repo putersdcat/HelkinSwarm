@@ -296,7 +296,7 @@ jobs:
             routerUamiId="${{ vars.ROUTER_UAMI_ID }}"
             createOAuthConnection=${OAUTH_UPDATE_SHOULD_RUN}
             delegatedAuthClientSecret="$DELEGATED_SECRET"
-            lowCostDevMode=${{ github.event.inputs.LOW_COST_DEV_MODE || 'false' }}
+            lowCostDevMode=${{ github.event.inputs.LOW_COST_DEV_MODE || 'true' }}
           )
 
           DEPLOY_CMD+=(--output json)

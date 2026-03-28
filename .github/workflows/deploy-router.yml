@@ -116,7 +116,7 @@ jobs:
               userPrincipalId=${{ vars.USER_PRINCIPAL_ID }} \
               createOAuthConnection=${{ github.event.inputs.CREATE_OAUTH_CONNECTION || 'false' }} \
               delegatedAuthClientSecret="$OAUTH_SECRET" \
-              lowCostDevMode=${{ github.event.inputs.LOW_COST_DEV_MODE || 'false' }} \
+              lowCostDevMode=${{ github.event.inputs.LOW_COST_DEV_MODE || 'true' }} \
             --query 'properties.outputs' -o json)
           echo "routerEndpoint=$(echo $RESULT | jq -r '.routerEndpoint.value')" >> "$GITHUB_OUTPUT"
           echo "routerHostName=$(echo $RESULT | jq -r '.routerHostName.value')" >> "$GITHUB_OUTPUT"

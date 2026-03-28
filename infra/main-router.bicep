@@ -54,8 +54,10 @@ var roleStorageTableContributor = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
 var roleAcrPull                 = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 
 // Low Cost Dev Mode derived values (#303)
+var routerLawRetentionDays  = lowCostDevMode ? 7   : 30
 var routerLawDailyCapGb     = lowCostDevMode ? json('0.1') : json('-1')
 var routerAppInsSamplingPct = lowCostDevMode ? 10 : 100
+var routerMinReplicas       = lowCostDevMode ? 0  : 1
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  1. USER-ASSIGNED MANAGED IDENTITY (global bot identity — fresh, not Alpha)
@@ -75,7 +77,7 @@ resource routerLaw 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   location: location
   properties: {
     sku: { name: 'PerGB2018' }
-    retentionInDays: 30  // PerGB2018 minimum; 30 days included in ingestion price
+    retentionInDays: routerLawRetentionDays
     workspaceCapping: {
       dailyQuotaGb: routerLawDailyCapGb
     }
@@ -253,7 +255,7 @@ resource routerFunc 'Microsoft.App/containerApps@2024-03-01' = {
         }
       ]
       scale: {
-        minReplicas: 1
+        minReplicas: routerMinReplicas
         maxReplicas: 3
       }
     }
