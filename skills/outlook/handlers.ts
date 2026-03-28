@@ -253,6 +253,56 @@ const outlookSendEmail: ToolHandler = async (args) => {
   return { success: true, message: `Email sent to ${to.join(', ')}` };
 };
 
+const outlookReplyToLatestEmail: ToolHandler = async (args) => {
+  z.string().parse(args['userId']);
+  const sender = z.string().parse(args['sender']);
+  const comment = z.string().parse(args['comment']);
+  const replyAll = z.boolean().default(false).parse(args['replyAll'] ?? false);
+  const folder = z.string().optional().parse(args['folder']);
+
+  const folderSegment = folder
+    ? `/mailFolders/${FOLDER_MAP[folder.toLowerCase()] ?? folder}/`
+    : '/';
+  const searchPath = `/me${folderSegment}messages?$search=${encodeURIComponent(`"from:${sender}"`)}&$top=1&$select=id,subject,from,receivedDateTime`;
+
+  const token = await resolveToken(args);
+  const latest = await graphFetch(token, searchPath, MessageListSchema);
+  const target = latest.value[0];
+  if (!target) {
+    throw new Error(`No recent email found from ${sender}.`);
+  }
+
+  const action = replyAll ? 'replyAll' : 'reply';
+  const response = await fetch(`${GRAPH_BASE}/me/messages/${encodeURIComponent(target.id)}/${action}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ comment }),
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    if (response.status === 403 && errorBody.includes('ErrorAccessDenied')) {
+      throw new Error(
+        'Outlook Graph API 403 ErrorAccessDenied — your Outlook link is present, but send permission is not usable yet. Refresh consent with /relink outlook and try again.',
+      );
+    }
+    throw new Error(`Graph API ${response.status}: ${errorBody}`);
+  }
+
+  return {
+    success: true,
+    action,
+    repliedToMessageId: target.id,
+    sender: target.from?.emailAddress?.address ?? sender,
+    subject: target.subject,
+    receivedAt: target.receivedDateTime,
+    message: `Replied to the latest email from ${target.from?.emailAddress?.address ?? sender}`,
+  };
+};
+
 const outlookSearchEmails: ToolHandler = async (args) => {
   // Issue #311: Replaced /search/query (Exchange search index — latency, misses)
   // with /me/messages?$search= (direct mailbox query, reliable for sender/subject search).
@@ -368,6 +418,7 @@ export const handlers: Record<string, ToolHandler> = {
   outlook_list_emails: outlookListEmails,
   outlook_read_email: outlookReadEmail,
   outlook_send_email: outlookSendEmail,
+  outlook_reply_to_latest_email: outlookReplyToLatestEmail,
   outlook_search_emails: outlookSearchEmails,
   outlook_list_calendar_events: outlookListCalendarEvents,
   outlook_create_calendar_event: outlookCreateCalendarEvent,

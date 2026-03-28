@@ -13,9 +13,11 @@ describe('outlook manifest safety flags', () => {
     };
 
     const send = manifest.tools.find((tool) => tool.name === 'outlook_send_email');
+    const replyLatest = manifest.tools.find((tool) => tool.name === 'outlook_reply_to_latest_email');
     const createEvent = manifest.tools.find((tool) => tool.name === 'outlook_create_calendar_event');
 
     expect(send?.requiresConfirmation).toBe(false);
+    expect(replyLatest?.requiresConfirmation).toBe(false);
     expect(createEvent?.requiresConfirmation).toBe(true);
   });
 });

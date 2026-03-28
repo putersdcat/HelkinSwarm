@@ -141,6 +141,52 @@
       "requiresSubAgent": true
     },
     {
+      "name": "outlook_reply_to_latest_email",
+      "description": "Find the most recent email from a sender and reply in-thread with the provided comment. Use this for requests like 'reply to the latest email from alice@example.com'. High risk, but manifest-configured to skip extra confirmation for this personal environment.",
+      "risk": "high",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [
+        {
+          "type": "conversation-threading",
+          "action": "Reply within the existing Outlook thread while preserving subject/history"
+        }
+      ],
+      "longTermMemorySchema": [
+        "common_recipients",
+        "email_signature_style"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "sender": {
+            "type": "string",
+            "description": "Email address or sender string to match, e.g. 'alice@example.com'"
+          },
+          "comment": {
+            "type": "string",
+            "description": "Reply text/comment to send in-thread"
+          },
+          "replyAll": {
+            "type": "boolean",
+            "description": "Reply to all recipients instead of only the original sender (default: false)"
+          },
+          "folder": {
+            "type": "string",
+            "description": "Optional folder to search: inbox, archive, sentitems, drafts"
+          }
+        },
+        "required": [
+          "sender",
+          "comment"
+        ]
+      },
+      "privilegeClass": "create",
+      "requiresSubAgent": true
+    },
+    {
       "name": "outlook_search_emails",
       "description": "Search emails across the user's mailbox using KQL (keyword query language). Returns matching messages.",
       "risk": "low",
