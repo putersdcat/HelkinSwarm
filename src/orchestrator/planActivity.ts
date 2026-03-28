@@ -45,37 +45,14 @@ export interface PlanInput {
 }
 
 // ---------------------------------------------------------------------------
-// Classification (no LLM call — pure heuristics)
+// Classification (no LLM call — structural message analysis only)
 // ---------------------------------------------------------------------------
+// Removed in #324: detectDomains() and domainKeywords map.
+// Classification must NOT sniff tool names, domain prefixes, or hard-coded keywords.
+// It uses only structural signals (sequential connectors, sentence count) to decide
+// whether the request needs an LLM planning call.
 
-/** Detect domains referenced by the user message based on registered tool keywords. */
-function detectDomains(message: string, toolNames: string[]): Set<string> {
-  const msgLower = message.toLowerCase();
-  const domains = new Set<string>();
-  for (const name of toolNames) {
-    const parts = name.split('_');
-    const domain = parts.length > 1 ? parts[0] : 'core';
-    // Check if the user message references this domain's keywords
-    if (msgLower.includes(domain)) {
-      domains.add(domain);
-    }
-  }
-  // Also detect common intent signals
-  const domainKeywords: Record<string, string[]> = {
-    outlook: ['email', 'mail', 'inbox', 'calendar', 'meeting', 'appointment', 'schedule'],
-    teams: ['teams', 'chat', 'message', 'reaction'],
-    github: ['github', 'issue', 'repo', 'repository', 'pr', 'pull request', 'commit'],
-    web: ['search', 'browse', 'website', 'web', 'url', 'bing'],
-  };
-  for (const [domain, keywords] of Object.entries(domainKeywords)) {
-    if (keywords.some(kw => msgLower.includes(kw))) {
-      domains.add(domain);
-    }
-  }
-  return domains;
-}
-
-/** Count action verbs that suggest multiple steps. */
+/** Count sequential/chaining connectors that suggest multi-step intent. */
 function countActionSignals(message: string): number {
   const msgLower = message.toLowerCase();
   const connectors = ['then', 'after that', 'and also', 'next', 'finally', 'first', 'second', 'third', 'followed by'];
@@ -86,18 +63,16 @@ function countActionSignals(message: string): number {
   return count;
 }
 
-export function classifyComplexity(message: string, toolNames: string[]): RequestComplexity {
-  const domains = detectDomains(message, toolNames);
-  const actionSignals = countActionSignals(message);
+export function classifyComplexity(message: string): RequestComplexity {
+  const connectorCount = countActionSignals(message);
 
-  // Multi-domain or many sequential actions → complex
-  if (domains.size >= 2 && actionSignals >= 1) return 'complex';
-  if (actionSignals >= 2) return 'complex';
+  // Multiple sequential/chaining signals → complex
+  if (connectorCount >= 2) return 'complex';
 
-  // Single domain with some chaining → compound
-  if (domains.size >= 1 && actionSignals >= 1) return 'compound';
+  // At least one chaining signal → compound
+  if (connectorCount >= 1) return 'compound';
 
-  // Default: simple
+  // Default: simple (single question, greeting, etc.)
   return 'simple';
 }
 
@@ -178,7 +153,7 @@ async function generatePlan(
 export async function plan(input: PlanInput): Promise<PlanResult> {
   const { userMessage, correlationId, availableToolNames } = input;
 
-  const complexity = classifyComplexity(userMessage, availableToolNames);
+  const complexity = classifyComplexity(userMessage);
 
   trackEvent({
     name: 'PlanClassification',

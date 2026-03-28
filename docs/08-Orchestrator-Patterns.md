@@ -43,6 +43,9 @@ Handles one complete turn:
 - Loads just-in-time skill memory vaults (0i)
 - Applies Hydra-Net multimodal embeddings if needed (0k)
 - Builds the prompt (persona + history + tools + model profile)
+- **Classifies request complexity** (simple/compound/complex) using structural message analysis only — no domain or tool-name heuristics (#324)
+- For compound/complex requests: calls the fast model to generate a structured execution plan; injects plan as a system message before the main LLM call
+- For simple requests: planning is skipped entirely (zero overhead)
 - Calls the LLM (global frontier model by default)
 - Dispatches tool calls
 - Runs the full safety/verification pipeline (0e)

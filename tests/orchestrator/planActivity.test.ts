@@ -1,36 +1,29 @@
 import { describe, it, expect } from 'vitest';
 import { classifyComplexity } from '../../src/orchestrator/planActivity.js';
 
-const TOOL_NAMES = [
-  'outlook_list_emails', 'outlook_send_email', 'outlook_read_email',
-  'github_create_issue', 'web_search', 'weather_get_forecast',
-  'teams_get_message_reactions', 'core_help',
-];
-
 describe('classifyComplexity', () => {
   it('returns simple for a basic question', () => {
-    expect(classifyComplexity('What is the weather today?', TOOL_NAMES)).toBe('simple');
+    expect(classifyComplexity('What is the weather today?')).toBe('simple');
   });
 
   it('returns simple for greetings', () => {
-    expect(classifyComplexity('Hello, how are you?', TOOL_NAMES)).toBe('simple');
+    expect(classifyComplexity('Hello, how are you?')).toBe('simple');
   });
 
-  it('returns compound for single-domain chained request', () => {
-    expect(classifyComplexity('Find my latest email and then forward it', TOOL_NAMES)).toBe('compound');
+  it('returns compound for chained request with connector', () => {
+    expect(classifyComplexity('Find my latest email and then forward it')).toBe('compound');
   });
 
-  it('returns complex for multi-domain request', () => {
+  it('returns compound for single-connector cross-domain request', () => {
+    // Single connector ("then") → compound. Domain count is irrelevant (#324).
     expect(classifyComplexity(
       'Search my email for the project update, then create a GitHub issue with the summary',
-      TOOL_NAMES,
-    )).toBe('complex');
+    )).toBe('compound');
   });
 
   it('returns complex for many sequential steps', () => {
     expect(classifyComplexity(
       'First check the weather, then search the web for flights, and finally send me an email with the results',
-      TOOL_NAMES,
     )).toBe('complex');
   });
 });
