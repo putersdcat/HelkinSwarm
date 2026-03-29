@@ -19,5 +19,7 @@ describe('skillForgePrototypeActivity', () => {
     expect(result.summary).toContain('handler scaffold');
     expect(result.summary).toContain('test scaffold');
     expect(result.reviewTitle).toContain('SkillForge prototype');
+    expect(result.branchName).toBe('skillforge/forge-create-a-receipts-parser-skill');
+    expect(result.summary).toContain('Suggested branch: skillforge/forge-create-a-receipts-parser-skill');
   });
 });

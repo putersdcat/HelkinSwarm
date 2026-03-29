@@ -17,6 +17,7 @@ export interface SkillForgePrototypeResult {
   skillId: string;
   displayName: string;
   summary: string;
+  branchName: string;
   files: Array<{
     path: string;
     content: string;
@@ -51,6 +52,7 @@ export function buildSkillForgePrototype(input: SkillForgePrototypeInput): Skill
   const manifestPath = `${skillDir}/manifest.json`;
   const handlersPath = `${skillDir}/handlers.ts`;
   const testPath = `tests/skills/${skillId}.test.ts`;
+  const branchName = `skillforge/${skillId}`;
 
   const manifestContent = JSON.stringify({
     domain: skillId,
@@ -140,6 +142,8 @@ export function buildSkillForgePrototype(input: SkillForgePrototypeInput): Skill
     `- \`${testPath}\` — test scaffold`,
     '',
     `Suggested review title: ${reviewTitle}`,
+    `Suggested branch: ${branchName}`,
+    'Review body preview prepared for handoff.',
     '',
     'Next step: review the scaffold, replace placeholder logic, and keep the skill disabled until human approval.',
   ].join('\n');
@@ -148,6 +152,7 @@ export function buildSkillForgePrototype(input: SkillForgePrototypeInput): Skill
     skillId,
     displayName,
     summary,
+    branchName,
     reviewTitle,
     reviewBody,
     files: [
