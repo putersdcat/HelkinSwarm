@@ -53,6 +53,7 @@ Changing `euResidencyMode` and pushing to `main` automatically switches the enti
 | `EU_RESIDENCY_MODE` | `false` | EU DataZoneStandard toggle |
 | `CREATE_OAUTH_CONNECTION` | `false` | Recreate GraphOAuth Bot Service connection |
 | `LOW_COST_DEV_MODE` | `false` | Activate Low Cost Dev Mode cost controls (#303) |
+| `DIRTY_DEV_MODE` | `false` | Disable paid Log Analytics/App Insights for the dev stamp (#382) |
 
 
 ### Docker & Container Apps Flow

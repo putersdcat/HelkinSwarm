@@ -61,6 +61,11 @@ on:
         required: false
         type: boolean
         default: false
+      DIRTY_DEV_MODE:
+        description: "Enable Dirty Dev Mode: disable paid Log Analytics/App Insights for the stamp and set Container Apps logs destination to none. (#382)"
+        required: false
+        type: boolean
+        default: false
 
 # Only one stamp deployment at a time per alias
 concurrency:
@@ -298,6 +303,7 @@ jobs:
             createOAuthConnection=${OAUTH_UPDATE_SHOULD_RUN}
             delegatedAuthClientSecret="$DELEGATED_SECRET"
             lowCostDevMode=${{ github.event.inputs.LOW_COST_DEV_MODE || 'false' }}
+            dirtyDevMode=${{ github.event.inputs.DIRTY_DEV_MODE || 'false' }}
             stampPolicyAllowOutlookSendWithoutConfirmation=${STAMP_POLICY_OUTLOOK_SEND_BYPASS}
           )
 
@@ -537,7 +543,7 @@ jobs:
             }' > foundry-capacity-summary.json
 
       - name: Emit post-deploy quota telemetry
-        if: steps.changes.outputs.infraChanged == 'true'
+        if: steps.changes.outputs.infraChanged == 'true' && (github.event.inputs.DIRTY_DEV_MODE || 'false') != 'true'
         run: |
           CONNECTION_STRING=$(az resource show \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
@@ -829,6 +835,8 @@ jobs:
           | **ACR** | \`${{ needs.deploy-infra.outputs.acr-login-server }}\` |
           | **Image Tag** | \`${{ github.sha }}\` |
           | **EU Residency** | \`${{ github.event.inputs.EU_RESIDENCY_MODE }}\` |
+          | **Low Cost Dev Mode** | \`${{ github.event.inputs.LOW_COST_DEV_MODE || 'false' }}\` |
+          | **Dirty Dev Mode** | \`${{ github.event.inputs.DIRTY_DEV_MODE || 'false' }}\` |
           | **Commit** | \`${{ github.sha }}\` |
           | **Triggered by** | \`${{ github.actor }}\` |
           | **Timestamp** | \`$(date -u +"%Y-%m-%dT%H:%M:%SZ")\` |

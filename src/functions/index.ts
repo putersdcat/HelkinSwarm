@@ -4,7 +4,14 @@
 
 // *** Must be first import — initialises Azure Monitor / App Insights SDK ***
 import { useAzureMonitor } from '@azure/monitor-opentelemetry';
-useAzureMonitor();
+const dirtyDevMode = process.env['DIRTY_DEV_MODE']?.toLowerCase() === 'true';
+const appInsightsConnectionString = process.env['APPLICATIONINSIGHTS_CONNECTION_STRING'];
+
+if (!dirtyDevMode && appInsightsConnectionString) {
+  useAzureMonitor();
+} else {
+  console.warn('[observability] Azure Monitor exporter disabled for this runtime instance');
+}
 
 import './health.js';
 import './messages.js';

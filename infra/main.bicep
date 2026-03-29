@@ -93,6 +93,9 @@ param devTelemetryMode string = 'verbose'
 @description('Low Cost Dev Mode — reduces Log Analytics retention, telemetry verbosity, and scale floor to minimise dev spend. (#303)')
 param lowCostDevMode bool = false
 
+@description('Dirty Dev Mode — disables paid Azure observability for the stamp (no Log Analytics persistence, no Application Insights resource, no Azure Monitor exporter). Intended for short-lived personal dev stamps only. (#382)')
+param dirtyDevMode bool = false
+
 @description('Enable the stamp-local Outlook send confirmation bypass policy for the primary developer stamp only.')
 param stampPolicyAllowOutlookSendWithoutConfirmation bool = false
 
@@ -124,6 +127,7 @@ var funcInstanceMin        = lowCostDevMode ? 0   : 1
 var effectiveTelemetryMode = lowCostDevMode ? 'minimal' : devTelemetryMode
 var lawDailyCapGb          = lowCostDevMode ? json('0.1') : json('-1')  // -1 = no cap
 var appInsSamplingPct      = lowCostDevMode ? 10  : 100
+var appLogsDestination     = dirtyDevMode ? 'none' : 'log-analytics'
 
 var roleKvSecretsUser           = '4633458b-17de-408a-b874-0445c86b69e6'
 var roleKvAdmin                 = '00482a5a-887f-4fb3-b363-3b7fe8e74483'
@@ -153,7 +157,7 @@ var allIdentityObjs = union(stampIdentityObj, routerIdentityObj)
 //  1. LOG ANALYTICS WORKSPACE
 // ═══════════════════════════════════════════════════════════════════════════
 
-resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
+resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (!dirtyDevMode) {
   name: lawName
   location: location
   properties: {
@@ -169,7 +173,7 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
 //  2. APPLICATION INSIGHTS (spec 13)
 // ═══════════════════════════════════════════════════════════════════════════
 
-resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
+resource appInsights 'Microsoft.Insights/components@2020-02-02' = if (!dirtyDevMode) {
   name: appInsName
   location: location
   kind: 'web'
@@ -491,13 +495,17 @@ resource containerAppsEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: caeName
   location: location
   properties: {
-    appLogsConfiguration: {
-      destination: 'log-analytics'
-      logAnalyticsConfiguration: {
-        customerId: logAnalytics.properties.customerId
-        sharedKey: logAnalytics.listKeys().primarySharedKey
-      }
-    }
+    appLogsConfiguration: dirtyDevMode
+      ? {
+          destination: appLogsDestination
+        }
+      : {
+          destination: appLogsDestination
+          logAnalyticsConfiguration: {
+            customerId: logAnalytics!.properties.customerId
+            sharedKey: logAnalytics!.listKeys().primarySharedKey
+          }
+        }
     workloadProfiles: [
       { name: 'Consumption', workloadProfileType: 'Consumption' }
     ]
@@ -533,7 +541,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
       acrUseManagedIdentityCreds: true
       acrUserManagedIdentityID: uami.id
       healthCheckPath: '/api/health'
-      appSettings: [
+      appSettings: concat([
         // ── Functions runtime ──
         { name: 'FUNCTIONS_WORKER_RUNTIME', value: 'node' }
         { name: 'FUNCTIONS_EXTENSION_VERSION', value: '~4' }
@@ -588,11 +596,9 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'GITHUB_APP_INSTALLATION_ID', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=GitHubInstallationId)' }
         { name: 'GITHUB_APP_PRIVATE_KEY',     value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=GitHubAppPrivateKey)' }
 
-        // ── Observability (spec 13) ──
-        { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights.properties.ConnectionString }
-
         // ── Stamp identity ──
         { name: 'USER_ALIAS', value: userAlias }
+        { name: 'DIRTY_DEV_MODE', value: string(dirtyDevMode) }
 
         // ── Feature toggles ──
         { name: 'SKILLFORGE_ENABLED', value: 'true' }
@@ -605,7 +611,10 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
 
         // ── Dev telemetry (spec 0n, #174) ──
         { name: 'DEV_TELEMETRY_MODE', value: effectiveTelemetryMode }
-      ]
+      ], dirtyDevMode ? [] : [
+        // ── Observability (spec 13) ──
+        { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights!.properties.ConnectionString }
+      ])
     }
   }
 }
@@ -781,7 +790,7 @@ resource roleCostMgmtUami 'Microsoft.Authorization/roleAssignments@2022-04-01' =
 //  13. P0 ALERTING RULES (spec 13)
 // ═══════════════════════════════════════════════════════════════════════════
 
-resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if (alertEmail != '') {
+resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if (!dirtyDevMode && alertEmail != '') {
   name: 'helkinswarm-ag-${userAlias}'
   location: 'global'
   properties: {
@@ -797,7 +806,7 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if (alertEma
   }
 }
 
-resource alertEmergencyStop 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = {
+resource alertEmergencyStop 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (!dirtyDevMode) {
   name: 'helkinswarm-alert-estop-${userAlias}'
   location: location
   properties: {
@@ -824,7 +833,7 @@ resource alertEmergencyStop 'Microsoft.Insights/scheduledQueryRules@2023-03-15-p
   }
 }
 
-resource alertRateLimit 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = {
+resource alertRateLimit 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (!dirtyDevMode) {
   name: 'helkinswarm-alert-ratelimit-${userAlias}'
   location: location
   properties: {
@@ -851,7 +860,7 @@ resource alertRateLimit 'Microsoft.Insights/scheduledQueryRules@2023-03-15-previ
   }
 }
 
-resource alertVerificationFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = {
+resource alertVerificationFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (!dirtyDevMode) {
   name: 'helkinswarm-alert-verify-${userAlias}'
   location: location
   properties: {
@@ -878,7 +887,7 @@ resource alertVerificationFailure 'Microsoft.Insights/scheduledQueryRules@2023-0
   }
 }
 
-resource alertPromptShield 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = {
+resource alertPromptShield 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (!dirtyDevMode) {
   name: 'helkinswarm-alert-shield-${userAlias}'
   location: location
   properties: {
@@ -905,7 +914,7 @@ resource alertPromptShield 'Microsoft.Insights/scheduledQueryRules@2023-03-15-pr
   }
 }
 
-resource alertOrchestratorFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = {
+resource alertOrchestratorFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (!dirtyDevMode) {
   name: 'helkinswarm-alert-orch-${userAlias}'
   location: location
   properties: {
@@ -932,7 +941,7 @@ resource alertOrchestratorFailure 'Microsoft.Insights/scheduledQueryRules@2023-0
   }
 }
 
-resource alertEuViolation 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = {
+resource alertEuViolation 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (!dirtyDevMode) {
   name: 'helkinswarm-alert-eu-${userAlias}'
   location: location
   properties: {
@@ -970,6 +979,6 @@ output managedIdentityClientId string = uami.properties.clientId
 output managedIdentityResourceId string = uami.id
 output cosmosEndpoint string = cosmosAccount.properties.documentEndpoint
 output aiEndpoint string = aiServices.properties.endpoint
-output appInsightsConnectionString string = appInsights.properties.ConnectionString
+output appInsightsConnectionString string = dirtyDevMode ? '' : appInsights!.properties.ConnectionString
 output botEndpoint string = 'https://${functionApp.properties.defaultHostName}/api/messages'
 output healthEndpoint string = 'https://${functionApp.properties.defaultHostName}/api/health'

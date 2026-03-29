@@ -44,6 +44,9 @@ const EnvConfigSchema = z.object({
   // Turn-by-turn debug telemetry (spec: 0n-Turn-by-Turn-Debug-Telemetry.md)
   devTelemetryMode: z.enum(['off', 'minimal', 'standard', 'verbose']).default('off'),
 
+  // Dirty dev / observability-off mode (#382)
+  dirtyDevMode: z.boolean().default(false),
+
   // Bot OAuth (#31)
   botOAuthConnectionName: z.string().default('GraphOAuth'),
 
@@ -97,6 +100,7 @@ function loadFromEnv(): EnvConfig {
     skillforgeEnabled: process.env['SKILLFORGE_ENABLED']?.toLowerCase() === 'true',
     devLoopEnabled: process.env['DEVLOOP_ENABLED']?.toLowerCase() === 'true',
     devTelemetryMode: process.env['DEV_TELEMETRY_MODE'] || undefined,
+    dirtyDevMode: process.env['DIRTY_DEV_MODE']?.toLowerCase() === 'true',
     botOAuthConnectionName: process.env['BOT_OAUTH_CONNECTION_NAME'] || undefined,
     entraDelegatedAuthClientId: process.env['ENTRA_DELEGATED_AUTH_CLIENT_ID'] || undefined,
     entraOboClientSecret: process.env['ENTRA_OBO_CLIENT_SECRET'] || undefined,

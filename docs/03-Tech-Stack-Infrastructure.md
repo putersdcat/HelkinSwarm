@@ -153,3 +153,20 @@ Estimated monthly savings when active: ~$11–25 (Container Apps scale-to-zero +
 
 > ⚠️ Scale-to-zero means cold starts (~2–5s extra) for the first message after idle. Acceptable for personal dev use.
 
+### Dirty Dev Mode (`dirtyDevMode`, #382)
+
+For short-lived personal development stamps where cost matters more than retained Azure telemetry history, a second switch disables paid Azure observability outright.
+
+| Setting | Normal | Dirty Dev Mode |
+|---------|--------|----------------|
+| Container Apps environment logs | `log-analytics` | `none` |
+| Log Analytics workspace | deployed | not deployed |
+| Application Insights resource | deployed | not deployed |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | set | omitted |
+| Azure Monitor exporter | enabled | disabled at runtime |
+| Query-based Azure Monitor alerts | enabled | not created |
+
+**Activation**: Trigger `deploy-stamp.yml` with `DIRTY_DEV_MODE=true`.
+
+> ⚠️ This mode is intentionally blunt. You keep live log streaming from Container Apps, but you lose retained Log Analytics/App Insights history and Azure Monitor query alerts for that stamp.
+
