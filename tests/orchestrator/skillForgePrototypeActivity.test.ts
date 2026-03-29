@@ -20,6 +20,8 @@ describe('skillForgePrototypeActivity', () => {
     expect(result.summary).toContain('test scaffold');
     expect(result.reviewTitle).toContain('SkillForge prototype');
     expect(result.branchName).toBe('skillforge/forge-create-a-receipts-parser-skill');
+    expect(result.persistedBundlePath).toBeNull();
     expect(result.summary).toContain('Branch + review-body handoff metadata prepared in the prototype bundle.');
+    expect(result.summary).toContain('Persisted bundle path will be included when storage is available.');
   });
 });

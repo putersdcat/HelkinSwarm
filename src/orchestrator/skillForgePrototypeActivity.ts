@@ -1,5 +1,6 @@
 import * as df from 'durable-functions';
 import { z } from 'zod';
+import { persistSkillForgeBundle } from './skillForgeBundleStore.js';
 
 const SkillForgeInputSchema = z.object({
   idea: z.string().min(1),
@@ -18,6 +19,7 @@ export interface SkillForgePrototypeResult {
   displayName: string;
   summary: string;
   branchName: string;
+  persistedBundlePath: string | null;
   files: Array<{
     path: string;
     content: string;
@@ -143,6 +145,7 @@ export function buildSkillForgePrototype(input: SkillForgePrototypeInput): Skill
     '',
     `Suggested review title: ${reviewTitle}`,
     'Branch + review-body handoff metadata prepared in the prototype bundle.',
+    'Persisted bundle path will be included when storage is available.',
     '',
     'Next step: review the scaffold, replace placeholder logic, and keep the skill disabled until human approval.',
   ].join('\n');
@@ -152,6 +155,7 @@ export function buildSkillForgePrototype(input: SkillForgePrototypeInput): Skill
     displayName,
     summary,
     branchName,
+    persistedBundlePath: null,
     reviewTitle,
     reviewBody,
     files: [
@@ -164,6 +168,27 @@ export function buildSkillForgePrototype(input: SkillForgePrototypeInput): Skill
 
 df.app.activity('skillForgePrototypeActivity', {
   handler: async (input: SkillForgePrototypeInput): Promise<SkillForgePrototypeResult> => {
-    return buildSkillForgePrototype(input);
+    const result = buildSkillForgePrototype(input);
+    const persistedBundlePath = await persistSkillForgeBundle({
+      userId: input.userId,
+      skillId: result.skillId,
+      correlationId: input.correlationId,
+      payload: {
+        skillId: result.skillId,
+        displayName: result.displayName,
+        branchName: result.branchName,
+        reviewTitle: result.reviewTitle,
+        reviewBody: result.reviewBody,
+        files: result.files,
+      },
+    });
+
+    return {
+      ...result,
+      persistedBundlePath,
+      summary: persistedBundlePath
+        ? `${result.summary}\n\nPersisted bundle: \`${persistedBundlePath}\``
+        : result.summary,
+    };
   },
 });
