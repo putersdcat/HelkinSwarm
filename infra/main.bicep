@@ -595,7 +595,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'USER_ALIAS', value: userAlias }
 
         // ── Feature toggles ──
-        { name: 'SKILLFORGE_ENABLED', value: 'false' }
+        { name: 'SKILLFORGE_ENABLED', value: 'true' }
         { name: 'SKILLFORGE_ACR_IMAGE', value: '' }
         { name: 'SKILLFORGE_RESOURCE_GROUP', value: resourceGroup().name }
         { name: 'AZURE_SUBSCRIPTION_ID', value: subscription().subscriptionId }
