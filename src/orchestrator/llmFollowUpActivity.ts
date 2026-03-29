@@ -191,7 +191,7 @@ df.app.activity('llmFollowUpActivity', {
         arguments: tc.function.arguments,
       })) ?? [];
 
-      if (!llmContent && retryToolCalls.length > 0 && retryTools) {
+      if (retryToolCalls.length > 0 && retryTools) {
         console.log(`[llmFollowUpActivity] LLM requested ${retryToolCalls.length} retry tool call(s) (#182).`);
         return {
           content: llmContent ?? '',
