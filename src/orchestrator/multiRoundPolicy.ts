@@ -9,16 +9,15 @@ export interface MultiRoundToolLike {
 /**
  * Multi-round tool policy:
  * - executor-backed tools are never allowed here
- * - low/medium-risk tools are allowed
- * - high-risk tools are allowed only when they explicitly skip confirmation
- *   in the current environment, otherwise they must stay on the guarded path
+ * - non-executor tools are allowed to reach verification
+ * - verification remains the deciding gate for medium/high-risk actions
+ * - stamp policy may allow a high-risk tool to proceed without an interactive
+ *   confirmation card even when the shared manifest still declares
+ *   requiresConfirmation: true
  */
 export function canExecuteInMultiRound(tool: MultiRoundToolLike | undefined): boolean {
   if (!tool) return false;
   if (tool.requiresExecutor) return false;
-  if (tool.risk === 'high') {
-    return tool.requiresConfirmation === false;
-  }
   return true;
 }
 

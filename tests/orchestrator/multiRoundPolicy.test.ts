@@ -6,11 +6,11 @@ import {
 } from '../../src/orchestrator/multiRoundPolicy.js';
 
 describe('multiRoundPolicy', () => {
-  it('allows low and medium tools, and only allows high-risk tools when they skip confirmation and do not require executor', () => {
+  it('allows all non-executor tools to reach verification, including high-risk tools', () => {
     expect(canExecuteInMultiRound({ risk: 'low', requiresConfirmation: false, requiresExecutor: false })).toBe(true);
     expect(canExecuteInMultiRound({ risk: 'medium', requiresConfirmation: false, requiresExecutor: false })).toBe(true);
     expect(canExecuteInMultiRound({ risk: 'high', requiresConfirmation: false, requiresExecutor: false })).toBe(true);
-    expect(canExecuteInMultiRound({ risk: 'high', requiresConfirmation: true, requiresExecutor: false })).toBe(false);
+    expect(canExecuteInMultiRound({ risk: 'high', requiresConfirmation: true, requiresExecutor: false })).toBe(true);
     expect(canExecuteInMultiRound({ risk: 'high', requiresConfirmation: false, requiresExecutor: true })).toBe(false);
   });
 
