@@ -244,6 +244,44 @@
       '<span class="config-value">' + value + '</span></div>';
   }
 
+  function badgeForStatus(status) {
+    if (status === "ready" || status === "success") return "badge-ok";
+    if (status === "blocked" || status === "action-required") return "badge-warn";
+    if (status === "not-installed" || status === "error") return "badge-error";
+    return "badge-info";
+  }
+
+  function renderInlineTags(items, cls) {
+    if (!items || items.length === 0) return '<span class="muted">\u2014</span>';
+    return items.map(function (item) {
+      return '<span class="inline-tag' + (cls ? ' ' + cls : '') + '">' + esc(item) + '</span>';
+    }).join(' ');
+  }
+
+  function renderSkillInspection(result) {
+    if (!result) {
+      return '<p class="empty-state">Choose a skill action to inspect onboarding, dependency, or lifecycle state.</p>';
+    }
+
+    return '<div class="inspection-card">' +
+      '<div class="inspection-head"><strong>' + esc(result.skillId || 'skill') + '</strong>' +
+      ' <span class="badge ' + badgeForStatus(result.status) + '">' + esc(result.status || 'info') + '</span></div>' +
+      '<p>' + esc(result.message || 'No message returned.') + '</p>' +
+      (result.onboardingMethod ? configRow('Onboarding', '<span class="badge badge-info">' + esc(result.onboardingMethod) + '</span>') : '') +
+      (result.lifecycleRules ? configRow('Lifecycle', '<span class="badge badge-info">' + esc(result.lifecycleRules) + '</span>') : '') +
+      (result.dependencies ? configRow('Dependencies', renderInlineTags(result.dependencies)) : '') +
+      (result.missingDependencies ? configRow('Missing', renderInlineTags(result.missingDependencies, 'inline-tag-warn')) : '') +
+      (result.blockingDependents ? configRow('Blocked By', renderInlineTags(result.blockingDependents, 'inline-tag-warn')) : '') +
+      (result.requiredPermissions ? configRow('Permissions', renderInlineTags(result.requiredPermissions)) : '') +
+      (result.externalAccountsNeeded ? configRow('Accounts', renderInlineTags(result.externalAccountsNeeded)) : '') +
+      (result.externalAccountsToClose ? configRow('Close First', renderInlineTags(result.externalAccountsToClose, 'inline-tag-warn')) : '') +
+      (result.steps && result.steps.length ? '<div class="card-section"><h3>Activation Steps</h3><ol class="mini-steps">' + result.steps.map(function (step) {
+        return '<li>' + esc(step) + '</li>';
+      }).join('') + '</ol></div>' : '') +
+      (result.nextStep ? '<div class="card-section"><h3>Next Step</h3><pre>' + esc(result.nextStep) + '</pre></div>' : '') +
+      '</div>';
+  }
+
   // ─── Sub-tab panel renderer ──────────────────────────────────────────────
 
   function renderSubtabPanel(panelId, tabs, dataPromise, renderers, opts) {
@@ -753,8 +791,9 @@
   function renderSkillsLibrary() {
     var tabs = [
       { key: "installed", label: "Installed" },
-      { key: "catalog", label: "All Skills" },
-      { key: "connections", label: "Connections" }
+      { key: "manage", label: "Manage" },
+      { key: "connections", label: "Connections" },
+      { key: "catalog", label: "Catalog" }
     ];
 
     renderSubtabPanel("panel-skills-library", tabs, apiCall("skills"), {
@@ -765,8 +804,26 @@
           kpiTile("Total Tools", data.totalTools) +
           '</div>' +
           '<div class="skills-grid">' +
-          (installed.length > 0 ? installed.map(renderSkillCard).join("") : '<p class="empty-state">No skills installed.</p>') +
+          (installed.length > 0 ? installed.map(function (skill) { return renderSkillCard(skill, true); }).join("") : '<p class="empty-state">No skills installed.</p>') +
           '</div>';
+      },
+      manage: function (data) {
+        var skills = data.skills || [];
+        return '<div class="kpi-row">' +
+          kpiTile("Manageable", skills.length, "kpi-ok") +
+          kpiTile("Reload Scope", "User-only") +
+          kpiTile("Mode", "Inspect / Prepare") +
+          '</div>' +
+          '<div class="card"><h2>Management Actions</h2>' +
+          '<p>This surface now exposes real readiness and uninstall-impact checks plus owner-only skill reload. Actual enable/disable persistence is still a follow-on backend capability and is shown honestly as such.</p>' +
+          '<div class="manage-toolbar"><button class="cmd-btn cmd-btn-primary" id="skills-reload-btn">Reload Skills</button><span id="skills-reload-status" class="muted"></span></div>' +
+          '</div>' +
+          '<div class="skills-grid manage-grid">' +
+          (skills.length > 0 ? skills.map(renderManageSkillCard).join('') : '<p class="empty-state">No skills found.</p>') +
+          '</div>' +
+          '<div class="card"><h2>Inspection Result</h2><div id="skill-inspection-panel">' +
+          '<p class="empty-state">Choose a skill action to inspect onboarding, dependencies, lifecycle rules, or uninstall blockers.</p>' +
+          '</div></div>';
       },
       catalog: function (data) {
         var skills = data.skills || [];
@@ -776,8 +833,9 @@
           kpiTile("Installed", skills.filter(function (s) { return s.installed; }).length, "kpi-ok") +
           kpiTile("Available", skills.filter(function (s) { return !s.installed; }).length) +
           '</div>' +
+          '<div class="card"><h2>Catalog Mode</h2><p>Browse all currently loaded manifests. Use the <strong>Manage</strong> tab for readiness checks, dependency impact, and owner-only reload operations.</p></div>' +
           '<div class="skills-grid">' +
-          (skills.length > 0 ? skills.map(renderSkillCard).join("") : '<p class="empty-state">No skills.</p>') +
+          (skills.length > 0 ? skills.map(function (skill) { return renderSkillCard(skill, false); }).join("") : '<p class="empty-state">No skills.</p>') +
           '</div>';
       },
       connections: function (data) {
@@ -787,18 +845,67 @@
           (oauth.length > 0 ?
             oauth.map(function (s) {
               return healthRow(s.installed ? "ok" : "warn", s.displayName,
-                s.installed ? "Connected \u2014 " + s.toolCount + " tools" : "Not linked");
+                s.installed ? "Linkable \u2014 " + s.toolCount + " tools" : "Not linked");
             }).join("") :
             '<p class="empty-state">No skills require OAuth.</p>') +
+          '</div>' +
+          '<div class="card"><h2>Connection Notes</h2>' +
+          '<p>The Skills tab currently shows connection requirements and routes you to chat commands like <code>/link outlook</code>. Fine-grained linked/unlinked state per skill remains constrained by the shared auth runtime and will be tightened in follow-on work.</p>' +
           '</div>';
       }
     }, {
       title: "Skills Library",
-      _refreshFn: renderSkillsLibrary
+      statusBadge: function () {
+        return '<span class="badge badge-info">Management mode</span>';
+      },
+      _refreshFn: renderSkillsLibrary,
+      afterRender: function (key, data, container) {
+        if (key !== "manage") return;
+
+        var resultPanel = container.querySelector("#skill-inspection-panel");
+        var reloadBtn = container.querySelector("#skills-reload-btn");
+        var reloadStatus = container.querySelector("#skills-reload-status");
+
+        function setInspectionBusy(text) {
+          if (resultPanel) resultPanel.innerHTML = '<p class="empty-state">' + esc(text) + '</p>';
+        }
+
+        container.querySelectorAll(".skill-action-btn").forEach(function (btn) {
+          btn.addEventListener("click", function () {
+            var skillId = btn.getAttribute("data-skill");
+            var action = btn.getAttribute("data-action");
+            if (!skillId || !action) return;
+            setInspectionBusy(action === "install" ? "Inspecting activation steps..." : "Inspecting uninstall impact...");
+            apiPost("skills/" + encodeURIComponent(skillId) + "/" + (action === "install" ? "install-readiness" : "uninstall-impact"))
+              .then(function (result) {
+                if (resultPanel) resultPanel.innerHTML = renderSkillInspection(result);
+              })
+              .catch(function (err) {
+                if (resultPanel) resultPanel.innerHTML = '<p class="error-msg">' + esc(err.message) + '</p>';
+              });
+          });
+        });
+
+        if (reloadBtn) {
+          reloadBtn.addEventListener("click", function () {
+            reloadBtn.disabled = true;
+            if (reloadStatus) reloadStatus.textContent = "Reloading...";
+            apiPost("skills/reload")
+              .then(function (result) {
+                if (reloadStatus) reloadStatus.textContent = result.message || "Reloaded.";
+                renderSkillsLibrary();
+              })
+              .catch(function (err) {
+                if (reloadStatus) reloadStatus.textContent = err.message;
+                reloadBtn.disabled = false;
+              });
+          });
+        }
+      }
     });
   }
 
-  function renderSkillCard(s) {
+  function renderSkillCard(s, showMetadata) {
     var badge = s.installed ? '<span class="badge badge-ok">Installed</span>' : '<span class="badge">Available</span>';
     var linkBadge = s.linkRequired ? ' <span class="badge badge-warn">OAuth</span>' : '';
     var tools = (s.toolNames || []).map(function (t) { return '<code>' + esc(t) + '</code>'; }).join(', ');
@@ -807,7 +914,36 @@
       '<img src="' + esc(s.iconUrl) + '" alt="" class="skill-icon" width="32" height="32" />' +
       '<div><h3>' + esc(s.displayName) + '</h3>' + badge + linkBadge + '</div></div>' +
       '<p>' + esc(s.shortDescription) + '</p>' +
-      '<p class="muted">' + s.toolCount + ' tool' + (s.toolCount !== 1 ? 's' : '') + ': ' + tools + '</p></div>';
+      '<p class="muted">' + s.toolCount + ' tool' + (s.toolCount !== 1 ? 's' : '') + ': ' + tools + '</p>' +
+      (showMetadata ? '<div class="skill-meta">' +
+        configRow('Onboarding', '<span class="badge badge-info">' + esc(s.onboardingMethod) + '</span>') +
+        configRow('Lifecycle', '<span class="badge badge-info">' + esc(s.lifecycleRules) + '</span>') +
+        configRow('Dependencies', renderInlineTags(s.dependencies)) +
+        configRow('Permissions', renderInlineTags(s.requiredPermissions)) +
+        configRow('Accounts', renderInlineTags(s.externalAccountsNeeded)) +
+        '</div>' : '') +
+      '</div>';
+  }
+
+  function renderManageSkillCard(s) {
+    return '<div class="card skill-card manage-card">' +
+      '<div class="skill-card-header">' +
+      '<img src="' + esc(s.iconUrl) + '" alt="" class="skill-icon" width="32" height="32" />' +
+      '<div><h3>' + esc(s.displayName) + '</h3>' +
+      '<span class="badge badge-ok">Loaded</span>' +
+      (s.linkRequired ? ' <span class="badge badge-warn">OAuth</span>' : '') +
+      '</div></div>' +
+      '<p>' + esc(s.shortDescription) + '</p>' +
+      '<div class="manage-actions">' +
+      '<button class="cmd-btn cmd-btn-primary skill-action-btn" data-action="install" data-skill="' + esc(s.domain) + '">Check Activation</button>' +
+      '<button class="cmd-btn skill-action-btn" data-action="uninstall" data-skill="' + esc(s.domain) + '">Check Uninstall Impact</button>' +
+      '</div>' +
+      '<div class="skill-facts">' +
+      '<span class="inline-tag">' + esc(s.onboardingMethod) + '</span> ' +
+      '<span class="inline-tag">' + esc(s.lifecycleRules) + '</span> ' +
+      '<span class="inline-tag">' + esc(String(s.maintenanceTaskCount)) + ' maintenance</span>' +
+      '</div>' +
+      '</div>';
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

@@ -374,120 +374,23 @@ export const helkin_skill_catalog: ToolHandler = async (args) => {
 };
 
 export const helkin_uninstall_skill: ToolHandler = async (args) => {
-  const { getManifest, getDependentsOf } = await import('../../src/capabilities/capabilityLoader.js');
+  const { inspectSkillUninstall } = await import('../../src/capabilities/capabilityLoader.js');
 
   const skillId = args['skillId'] as string | undefined;
   if (!skillId) {
     return { status: 'error', message: 'skillId is required.' };
   }
-
-  const manifest = getManifest(skillId);
-  if (!manifest) {
-    return { status: 'error', message: `Skill '${skillId}' is not installed or not recognised.` };
-  }
-
-  // Bidirectional dependency check — block if any installed skill depends on this one (#200)
-  const dependents = getDependentsOf(skillId);
-  if (dependents.length > 0) {
-    return {
-      status: 'blocked',
-      skillId,
-      message: `Cannot uninstall '${skillId}' — the following installed skills depend on it: ${dependents.join(', ')}. Uninstall those first.`,
-      blockingDependents: dependents,
-    };
-  }
-
-  const lifecycleRules = manifest.lifecycleRules ?? 'keep-credentials';
-  const externalAccounts = manifest.externalAccountsNeeded ?? [];
-
-  if (lifecycleRules === 'close-external-account') {
-    return {
-      status: 'action-required',
-      skillId,
-      message: `⚠️ Skill '${skillId}' uses external account(s): ${externalAccounts.join(', ')}. Close those accounts manually before uninstalling, then call helkin_forget_skill to remove stored memories.`,
-      lifecycleRules,
-      externalAccountsToClose: externalAccounts,
-    };
-  }
-
-  return {
-    status: 'ready',
-    skillId,
-    message: `Skill '${skillId}' has no blocking dependents and requires no external account closure. Call helkin_forget_skill to remove its stored memories.`,
-    lifecycleRules,
-    nextStep: `helkin_forget_skill({ skillId: '${skillId}' })`,
-  };
+  return inspectSkillUninstall(skillId);
 };
 
 export const helkin_install_skill: ToolHandler = async (args) => {
-  const { getManifest, getAllManifests, getDependenciesOf } = await import('../../src/capabilities/capabilityLoader.js');
+  const { inspectSkillInstall } = await import('../../src/capabilities/capabilityLoader.js');
 
   const skillId = args['skillId'] as string | undefined;
   if (!skillId) {
     return { status: 'error', message: 'skillId is required.' };
   }
-
-  const manifest = getManifest(skillId);
-  if (!manifest) {
-    // Skill not yet installed — list what's available
-    const available = getAllManifests().map(m => ({ id: m.domain, displayName: m.displayName, onboardingMethod: m.onboardingMethod }));
-    return {
-      status: 'not-installed',
-      skillId,
-      message: `Skill '${skillId}' is not currently installed. Currently installed skills: ${available.map(s => s.id).join(', ')}.`,
-      availableSkills: available,
-    };
-  }
-
-  // Check dependencies — any missing?
-  const requiredDeps = getDependenciesOf(skillId);
-  const missingDeps = requiredDeps.filter(dep => !getManifest(dep));
-
-  const externalAccounts = manifest.externalAccountsNeeded ?? [];
-  const requiredPermissions = manifest.requiredPermissions ?? [];
-  const onboardingMethod = manifest.onboardingMethod;
-  const softOnboarding = manifest.softOnboarding;
-
-  if (missingDeps.length > 0) {
-    return {
-      status: 'blocked',
-      skillId,
-      message: `Skill '${skillId}' requires these dependencies which are not installed: ${missingDeps.join(', ')}. Install them first.`,
-      missingDependencies: missingDeps,
-      allDependencies: requiredDeps,
-    };
-  }
-
-  const steps: string[] = [];
-
-  if (onboardingMethod === 'post-install-link' || onboardingMethod === 'both') {
-    const linkName = manifest.linkConfig?.connectionName ?? skillId;
-    steps.push(`Complete OAuth authorisation via /link (connection: ${linkName})`);
-  } else if (onboardingMethod === 'automatic-agentic') {
-    steps.push('Automatic onboarding — no user action required.');
-  }
-
-  if (externalAccounts.length > 0) {
-    steps.push(`Create external account(s): ${externalAccounts.join(', ')}`);
-  }
-  if (requiredPermissions.length > 0) {
-    steps.push(`Grant permissions: ${requiredPermissions.join(', ')}`);
-  }
-  if (softOnboarding) {
-    steps.push('Complete first-run preference questions (soft onboarding).');
-  }
-
-  return {
-    status: 'ready',
-    skillId,
-    displayName: manifest.displayName,
-    onboardingMethod,
-    dependencies: requiredDeps,
-    externalAccountsNeeded: externalAccounts,
-    requiredPermissions,
-    steps: steps.length > 0 ? steps : ['No setup required — skill is ready to use.'],
-    message: `Skill '${skillId}' is installed. ${steps.length > 0 ? 'Complete the steps listed to activate it.' : 'Ready to use.'}`,
-  };
+  return inspectSkillInstall(skillId);
 };
 
 export const helkin_whoami: ToolHandler = async (args) => {

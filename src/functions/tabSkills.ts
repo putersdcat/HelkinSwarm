@@ -9,8 +9,14 @@ import {
   type HttpResponseInit,
 } from '@azure/functions';
 import { isOwnerUserId } from '../bot/maintenanceMode.js';
-import { getSkillCatalog } from '../capabilities/capabilityLoader.js';
+import {
+  getSkillCatalog,
+  inspectSkillInstall,
+  inspectSkillUninstall,
+  loadCapabilities,
+} from '../capabilities/capabilityLoader.js';
 import { validateTabTokenFromRequest } from '../auth/tabTokenValidator.js';
+import { toolRegistry } from '../tools/toolRegistry.js';
 
 const TAB_CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': 'https://helkinswarmtabsst.z20.web.core.windows.net',
@@ -59,6 +65,114 @@ app.http('tab-skills', {
       jsonBody: {
         skills: catalog,
         totalTools: catalog.reduce((sum, s) => sum + s.toolCount, 0),
+      },
+    };
+  },
+});
+
+async function authenticateOwner(req: HttpRequest): Promise<{ ok: true; userId: string } | { ok: false; response: HttpResponseInit }> {
+  let userId: string;
+  try {
+    userId = (await validateTabTokenFromRequest(req)).oid;
+  } catch (err) {
+    return {
+      ok: false,
+      response: {
+        status: 401,
+        headers: TAB_CORS_HEADERS,
+        jsonBody: { error: err instanceof Error ? err.message : 'Authentication required.' },
+      },
+    };
+  }
+
+  if (!(await isOwnerUserId(userId))) {
+    return {
+      ok: false,
+      response: { status: 403, headers: TAB_CORS_HEADERS, jsonBody: { error: 'Owner-only endpoint.' } },
+    };
+  }
+
+  return { ok: true, userId };
+}
+
+app.http('tab-skill-install-readiness', {
+  methods: ['POST', 'OPTIONS'],
+  authLevel: 'anonymous',
+  route: 'tab/skills/{skillId}/install-readiness',
+  handler: async (req: HttpRequest): Promise<HttpResponseInit> => {
+    if (req.method === 'OPTIONS') {
+      return { status: 204, headers: TAB_CORS_HEADERS };
+    }
+
+    const auth = await authenticateOwner(req);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    const skillId = req.params.skillId;
+    if (!skillId) {
+      return { status: 400, headers: TAB_CORS_HEADERS, jsonBody: { error: 'skillId required.' } };
+    }
+
+    return {
+      status: 200,
+      headers: TAB_CORS_HEADERS,
+      jsonBody: inspectSkillInstall(skillId),
+    };
+  },
+});
+
+app.http('tab-skill-uninstall-impact', {
+  methods: ['POST', 'OPTIONS'],
+  authLevel: 'anonymous',
+  route: 'tab/skills/{skillId}/uninstall-impact',
+  handler: async (req: HttpRequest): Promise<HttpResponseInit> => {
+    if (req.method === 'OPTIONS') {
+      return { status: 204, headers: TAB_CORS_HEADERS };
+    }
+
+    const auth = await authenticateOwner(req);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    const skillId = req.params.skillId;
+    if (!skillId) {
+      return { status: 400, headers: TAB_CORS_HEADERS, jsonBody: { error: 'skillId required.' } };
+    }
+
+    return {
+      status: 200,
+      headers: TAB_CORS_HEADERS,
+      jsonBody: inspectSkillUninstall(skillId),
+    };
+  },
+});
+
+app.http('tab-skills-reload', {
+  methods: ['POST', 'OPTIONS'],
+  authLevel: 'anonymous',
+  route: 'tab/skills/reload',
+  handler: async (req: HttpRequest): Promise<HttpResponseInit> => {
+    if (req.method === 'OPTIONS') {
+      return { status: 204, headers: TAB_CORS_HEADERS };
+    }
+
+    const auth = await authenticateOwner(req);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    toolRegistry.clear();
+    const result = await loadCapabilities();
+
+    return {
+      status: 200,
+      headers: TAB_CORS_HEADERS,
+      jsonBody: {
+        status: 'success',
+        message: `Reloaded ${result.skillsLoaded} skills and ${result.toolsRegistered} tools.`,
+        ...result,
       },
     };
   },

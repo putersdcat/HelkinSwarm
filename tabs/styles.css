@@ -319,6 +319,25 @@ code {
 .skill-card h3 { margin: 0; font-size: 15px; font-weight: 600; }
 .skill-card p { margin: 0; font-size: 13px; }
 .skill-card .muted { color: var(--muted); font-size: 11px; }
+.skill-meta { margin-top: 4px; }
+.manage-grid { margin-top: 0; }
+.manage-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.manage-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+.skill-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.inline-tag {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: var(--accent-light);
+  color: var(--accent);
+}
+.inline-tag-warn { background: var(--warn-bg); color: var(--warn); }
+.inspection-card { display: flex; flex-direction: column; gap: 8px; }
+.inspection-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.card-section h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin: 8px 0 4px; }
+.mini-steps { padding-left: 18px; margin: 0; }
+.mini-steps li { margin: 6px 0; font-size: 13px; }
 
 /* ─── Trace Tree (#140) ───────────────────────────────────────────────── */
 .trace-tree { margin: 12px 0; }
