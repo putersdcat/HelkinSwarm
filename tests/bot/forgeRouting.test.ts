@@ -6,6 +6,7 @@ describe('HelkinSwarmBot /forge routing', () => {
     const source = readFileSync('src/bot/HelkinSwarmBot.ts', 'utf8');
 
     expect(source).toContain('buildSkillForgePrototype');
+    expect(source).toContain('SkillForge accepted the request. Preparing the prototype bundle');
     expect(source).toContain('prototype.summary');
     expect(source).toContain('splitReplyIntoChunks(prototype.summary)');
     expect(source).toContain('await context.sendActivity({');

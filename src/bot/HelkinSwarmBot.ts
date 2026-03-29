@@ -695,6 +695,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       }
 
       const correlationId = crypto.randomUUID();
+      await context.sendActivity({
+        type: ActivityTypes.Message,
+        text: '⚙️ SkillForge accepted the request. Preparing the prototype bundle... ',
+        textFormat: 'markdown',
+      });
+
       const { buildSkillForgePrototype } = await import('../orchestrator/skillForgePrototypeActivity.js');
       const prototype = buildSkillForgePrototype({
         idea,
