@@ -15,6 +15,7 @@ import {
 import { getDirectChatModelIncompatibilityReason, getModelRouting } from '../llm/modelRouter.js';
 import type { ChatMessage, ChatCompletionResponse, ToolDefinition } from '../llm/foundryClient.js';
 import type { LlmResult } from './llmActivity.js';
+import { synthesizeDeterministicFollowUpToolCall } from './discoveryToolInjection.js';
 
 export interface LlmFollowUpInput {
   /** Original conversation messages (system + user). */
@@ -191,14 +192,28 @@ df.app.activity('llmFollowUpActivity', {
         arguments: tc.function.arguments,
       })) ?? [];
 
-      if (retryToolCalls.length > 0 && retryTools) {
-        console.log(`[llmFollowUpActivity] LLM requested ${retryToolCalls.length} retry tool call(s) (#182).`);
+      const latestUserMessage = [...input.originalMessages]
+        .reverse()
+        .find((message) => message.role === 'user')?.content ?? '';
+      const synthesizedToolCall = retryToolCalls.length === 0 && retryTools
+        ? synthesizeDeterministicFollowUpToolCall(latestUserMessage, retryTools)
+        : null;
+      const effectiveRetryToolCalls = synthesizedToolCall
+        ? [{
+            id: crypto.randomUUID(),
+            name: synthesizedToolCall.name,
+            arguments: JSON.stringify(synthesizedToolCall.arguments),
+          }]
+        : retryToolCalls;
+
+      if (effectiveRetryToolCalls.length > 0 && retryTools) {
+        console.log(`[llmFollowUpActivity] LLM requested ${effectiveRetryToolCalls.length} retry tool call(s) (#182).`);
         return {
           content: llmContent ?? '',
           model: response.model,
           tokensUsed: response.usage.totalTokens,
           promptTokens: response.usage.promptTokens,
-          toolCalls: retryToolCalls,
+          toolCalls: effectiveRetryToolCalls,
           finishReason: choice.finishReason,
           operationalNotices: buildSuccessfulFailoverNotices(response.failoverSteps),
         };

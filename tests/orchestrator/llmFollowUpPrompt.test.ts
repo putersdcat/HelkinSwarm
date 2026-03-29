@@ -13,7 +13,8 @@ describe('llmFollowUpActivity execution prompt', () => {
   it('preserves follow-up tool calls even when the model also returns text', () => {
     const source = readFileSync('src/orchestrator/llmFollowUpActivity.ts', 'utf8');
 
-    expect(source).toContain('if (retryToolCalls.length > 0 && retryTools)');
+    expect(source).toContain('const effectiveRetryToolCalls = synthesizedToolCall');
+    expect(source).toContain('if (effectiveRetryToolCalls.length > 0 && retryTools)');
     expect(source).not.toContain('if (!llmContent && retryToolCalls.length > 0 && retryTools)');
   });
 });

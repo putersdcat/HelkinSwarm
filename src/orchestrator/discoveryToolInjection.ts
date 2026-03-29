@@ -1,6 +1,11 @@
 import { toolRegistry } from '../tools/toolRegistry.js';
 import type { ToolDefinition } from '../llm/foundryClient.js';
 
+export type DeterministicFollowUpToolCall = {
+  name: string;
+  arguments: Record<string, unknown>;
+};
+
 type ToolResult = {
   toolName: string;
   success: boolean;
@@ -14,6 +19,37 @@ type DiscoverySearchResultShape = {
 
 function isCoreTool(name: string): boolean {
   return name.startsWith('helkin_');
+}
+
+function splitRecipients(raw: string): string[] {
+  return raw
+    .split(/,|\sand\s/i)
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+}
+
+function parseQuotedSendEmailIntent(userMessage: string): DeterministicFollowUpToolCall | null {
+  const match = userMessage.match(
+    /send an? email to\s+(.+?)\s+with subject\s+["“'`](.+?)["”'`]\s+and body\s+["“'`](.+?)["”'`]/i,
+  );
+
+  if (!match) return null;
+
+  const [, rawRecipients, subject, body] = match;
+  const to = splitRecipients(rawRecipients);
+  if (to.length === 0 || !subject.trim() || !body.trim()) {
+    return null;
+  }
+
+  return {
+    name: 'outlook_send_email',
+    arguments: {
+      to,
+      subject: subject.trim(),
+      body: body.trim(),
+      bodyType: 'text',
+    },
+  };
 }
 
 export function getDiscoveryFirstToolSchemas(): ToolDefinition[] {
@@ -49,6 +85,21 @@ export function getForcedDiscoveryFollowUpToolChoice(
 
   if (/(reply|respond)/.test(normalized) && toolNames.has('outlook_reply_to_latest_email')) {
     return { type: 'function', function: { name: 'outlook_reply_to_latest_email' } };
+  }
+
+  return null;
+}
+
+export function synthesizeDeterministicFollowUpToolCall(
+  userMessage: string,
+  tools: ToolDefinition[] | null | undefined,
+): DeterministicFollowUpToolCall | null {
+  if (!tools || tools.length === 0) return null;
+
+  const toolNames = new Set(tools.map((tool) => tool.function.name));
+
+  if (toolNames.has('outlook_send_email')) {
+    return parseQuotedSendEmailIntent(userMessage);
   }
 
   return null;

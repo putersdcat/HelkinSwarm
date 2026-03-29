@@ -101,4 +101,32 @@ describe('discoveryToolInjection', () => {
 
     expect(choice).toEqual({ type: 'function', function: { name: 'outlook_send_email' } });
   });
+
+  it('synthesizes a deterministic send-email follow-up call for explicit quoted send intents', async () => {
+    const { synthesizeDeterministicFollowUpToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const call = synthesizeDeterministicFollowUpToolCall(
+      'Send an email to eric@example.com with subject "Hello" and body "World"',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_send_email',
+            description: 'send email',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(call).toEqual({
+      name: 'outlook_send_email',
+      arguments: {
+        to: ['eric@example.com'],
+        subject: 'Hello',
+        body: 'World',
+        bodyType: 'text',
+      },
+    });
+  });
 });
