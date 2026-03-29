@@ -113,6 +113,7 @@
   var _userOid = null;
   var _cachedToken = null;
   var _ssoAttempted = false;
+  var _aadTokenPromise = null;
   var _resolvedTabApiBase = null;
   var _tabApiBasePromise = null;
   var _oboBootstrapAttempted = false;
@@ -205,14 +206,18 @@
 
   function getAadToken() {
     if (_cachedToken) return Promise.resolve(_cachedToken);
+    if (_aadTokenPromise) return _aadTokenPromise;
     if (_ssoAttempted) return Promise.resolve(null);
     _ssoAttempted = true;
-    return microsoftTeams.authentication.getAuthToken().then(function (token) {
+    _aadTokenPromise = microsoftTeams.authentication.getAuthToken().then(function (token) {
       _cachedToken = token;
       return bootstrapOboFromTabToken(token).then(function () { return token; });
     }).catch(function () {
       return null;
+    }).finally(function () {
+      _aadTokenPromise = null;
     });
+    return _aadTokenPromise;
   }
 
   function apiCall(endpoint) {
