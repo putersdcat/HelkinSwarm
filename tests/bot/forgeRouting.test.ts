@@ -7,7 +7,7 @@ describe('HelkinSwarmBot /forge routing', () => {
 
     expect(source).toContain('buildSkillForgePrototype');
     expect(source).toContain('prototype.summary');
-    expect(source).toContain('SkillForge failed before it could start');
+    expect(source).toContain('splitReplyIntoChunks(prototype.summary)');
     expect(source).toContain('SkillForge failed before it could start');
   });
 });

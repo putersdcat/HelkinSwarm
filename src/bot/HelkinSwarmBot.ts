@@ -56,6 +56,7 @@ import { buildSkillLinkSigninCard, buildSkillRelinkSigninCard } from './linkCard
 import { extractMessageReferenceId, extractMessageReferencePreview } from './messageReference.js';
 import type { QuotedContext } from './quotedContext.js';
 import { trackEvent } from '../observability/telemetry.js';
+import { splitReplyIntoChunks } from '../orchestrator/replyChunking.js';
 
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
@@ -701,10 +702,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         correlationId,
       });
 
-      await this.sendFreshMessage(context, {
-        text: prototype.summary,
-        textFormat: 'markdown',
-      });
+      for (const chunk of splitReplyIntoChunks(prototype.summary)) {
+        await this.sendFreshMessage(context, {
+          text: chunk.text,
+          textFormat: 'markdown',
+        });
+      }
     } catch (err) {
       console.error(`[HelkinSwarmBot] /forge failed before handoff: ${err instanceof Error ? err.message : err}`);
       await this.sendFreshMessage(context, {
