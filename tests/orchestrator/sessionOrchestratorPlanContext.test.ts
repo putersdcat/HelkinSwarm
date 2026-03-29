@@ -17,4 +17,12 @@ describe('sessionOrchestrator plan context preservation', () => {
     expect(source).toContain('selectReadyToolCallsByPlan(');
     expect(source).toContain('collectCompletedPlanStepOrders(');
   });
+
+  it('can bypass the first follow-up model call when discovery already identified an explicit send tool', () => {
+    const source = readFileSync('src/orchestrator/sessionOrchestrator.ts', 'utf8');
+
+    expect(source).toContain('const deterministicFollowUpToolCall = synthesizeDeterministicFollowUpToolCall(');
+    expect(source).toContain("let followUp: LlmResult = deterministicFollowUpToolCall");
+    expect(source).toContain("finishReason: 'tool_calls'");
+  });
 });

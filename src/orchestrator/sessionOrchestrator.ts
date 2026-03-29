@@ -42,6 +42,7 @@ import {
   getForcedDiscoveryFollowUpToolChoice,
   getDiscoveryFirstToolSchemas,
   shouldForceDiscoveryToolSearch,
+  synthesizeDeterministicFollowUpToolCall,
 } from './discoveryToolInjection.js';
 
 export interface SessionInput {
@@ -415,6 +416,10 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       const maxToolRounds = Math.min(input.toolBudget ?? 5, 10);
       const allToolSchemas = toolRegistry.toFunctionSchemas();
       const selectiveFollowUpSchemas = deriveSelectiveFollowUpToolSchemas(toolResults?.results ?? []);
+      const deterministicFollowUpToolCall = synthesizeDeterministicFollowUpToolCall(
+        input.userMessage,
+        selectiveFollowUpSchemas,
+      );
       if (selectiveFollowUpSchemas) {
         trackEvent({
           name: 'DiscoveryToolSubsetSelected',
@@ -445,7 +450,21 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         toolChoice: getForcedDiscoveryFollowUpToolChoice(input.userMessage, selectiveFollowUpSchemas) ?? undefined,
       };
       spanStart = context.df.currentUtcDateTime.getTime();
-      let followUp: LlmResult = yield context.df.callActivity('llmFollowUpActivity', followUpInput);
+      let followUp: LlmResult = deterministicFollowUpToolCall
+        ? {
+            content: '',
+            model: llmResult.model,
+            tokensUsed: 0,
+            promptTokens: 0,
+            toolCalls: [{
+              id: crypto.randomUUID(),
+              name: deterministicFollowUpToolCall.name,
+              arguments: JSON.stringify(deterministicFollowUpToolCall.arguments),
+            }],
+            finishReason: 'tool_calls',
+            operationalNotices: [],
+          }
+        : yield context.df.callActivity('llmFollowUpActivity', followUpInput);
       cumulativeTokensUsed += followUp.tokensUsed;
       cumulativePromptTokens += followUp.promptTokens;
       for (const notice of followUp.operationalNotices ?? []) {
