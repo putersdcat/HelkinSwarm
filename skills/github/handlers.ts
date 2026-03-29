@@ -74,6 +74,19 @@ const GitHubCommentSchema = z.object({
   html_url: z.string(),
 }).passthrough();
 
+const GitHubContentItemSchema = z.object({
+  sha: z.string(),
+  path: z.string(),
+}).passthrough();
+
+const GitHubPutFileResultSchema = z.object({
+  content: GitHubContentItemSchema.nullable().optional(),
+  commit: z.object({
+    sha: z.string(),
+    html_url: z.string().nullable().optional(),
+  }).passthrough().optional(),
+}).passthrough();
+
 const GitHubSearchResultSchema = z.object({
   total_count: z.number(),
   items: z.array(GitHubIssueSchema),
@@ -120,6 +133,26 @@ async function ghFetchWithPagination<T>(
 
   const data: unknown = await response.json();
   return { data: schema.parse(data), hasNextPage };
+}
+
+async function ghFetchAllow404<T>(
+  url: string,
+  schema: z.ZodType<T>,
+): Promise<T | null> {
+  const h = await headers();
+  const response = await fetch(url, { headers: h });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`GitHub API ${response.status}: ${errorBody}`);
+  }
+
+  const data: unknown = await response.json();
+  return schema.parse(data);
 }
 
 
@@ -353,6 +386,66 @@ export const github_add_comment: ToolHandler = async (args) => {
     comment_id: comment.id,
     issue_number: issueNumber,
     url: comment.html_url,
+  };
+};
+
+// ---------------------------------------------------------------------------
+// Tool: github_push_files
+// ---------------------------------------------------------------------------
+
+const GitHubPushFileInputSchema = z.object({
+  path: z.string().min(1),
+  content: z.string(),
+});
+
+export const github_push_files: ToolHandler = async (args) => {
+  const files = z.array(GitHubPushFileInputSchema).parse(args['files'] ?? []);
+  if (files.length === 0) return { error: 'files is required' };
+
+  const message = String(args['message'] ?? '').trim();
+  if (!message) return { error: 'message is required' };
+
+  const branch = String(args['branch'] ?? 'main').trim() || 'main';
+  const h = await headers();
+  const results: Array<{ path: string; action: 'created' | 'updated'; sha: string }> = [];
+
+  for (const file of files) {
+    const existing = await ghFetchAllow404(
+      `${API_BASE}/contents/${file.path}?ref=${encodeURIComponent(branch)}`,
+      GitHubContentItemSchema,
+    );
+
+    const payload: Record<string, unknown> = {
+      message,
+      content: Buffer.from(file.content, 'utf8').toString('base64'),
+      branch,
+    };
+    if (existing?.sha) {
+      payload['sha'] = existing.sha;
+    }
+
+    const result = await ghFetch(
+      `${API_BASE}/contents/${file.path}`,
+      GitHubPutFileResultSchema,
+      {
+        method: 'PUT',
+        headers: { ...h, 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+    );
+
+    results.push({
+      path: result.content?.path ?? file.path,
+      action: existing ? 'updated' : 'created',
+      sha: result.commit?.sha ?? result.content?.sha ?? '',
+    });
+  }
+
+  return {
+    status: 'ok',
+    branch,
+    message,
+    files: results,
   };
 };
 

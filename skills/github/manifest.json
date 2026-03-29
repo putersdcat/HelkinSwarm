@@ -306,6 +306,64 @@
       "requiresSubAgent": false
     },
     {
+      "name": "github_push_files",
+      "description": "Create or update multiple files directly in the HelkinSwarm repository on a target branch (default: main). Use for controlled promotion of generated artifacts into tracked repository content.",
+      "risk": "high",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": true,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [
+        {
+          "type": "github-contents-api",
+          "action": "createOrUpdateFiles"
+        }
+      ],
+      "longTermMemorySchema": [
+        "promotion_commit_patterns"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "branch": {
+            "type": "string",
+            "description": "Branch to write to (default: main)"
+          },
+          "message": {
+            "type": "string",
+            "description": "Commit message used for each file write"
+          },
+          "files": {
+            "type": "array",
+            "description": "Files to create or update in the repository",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "Repository-relative file path"
+                },
+                "content": {
+                  "type": "string",
+                  "description": "UTF-8 file content"
+                }
+              },
+              "required": [
+                "path",
+                "content"
+              ]
+            }
+          }
+        },
+        "required": [
+          "message",
+          "files"
+        ]
+      },
+      "privilegeClass": "create",
+      "requiresSubAgent": true
+    },
+    {
       "name": "github_list_milestones",
       "description": "List milestones in the HelkinSwarm repository for prioritization context.",
       "risk": "low",
