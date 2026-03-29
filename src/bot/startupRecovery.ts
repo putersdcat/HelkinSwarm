@@ -11,18 +11,13 @@ import {
 } from 'botbuilder';
 import {
   getConversationReference,
-  getStaleAcks,
-  clearPendingAckId,
 } from './conversationStore.js';
 import {
   getUnprocessedIntents,
   hasIdempotencyKey,
 } from '../orchestrator/pendingIntentStore.js';
 import { getEnvConfig } from '../config/envConfig.js';
-import { trackEvent } from '../observability/telemetry.js';
-
-// Stale ack threshold — acks older than this are considered dangling (5 minutes)
-const STALE_ACK_THRESHOLD_MS = 5 * 60 * 1000;
+import { recoverStaleAcks } from './staleAckRecovery.js';
 
 let adapterInstance: CloudAdapter | undefined;
 
@@ -40,42 +35,6 @@ function getAdapter(): CloudAdapter {
 }
 
 /**
- * Replace a dangling "⌛ Working on it..." ack with a recovery message.
- * Called on startup if stale ack documents are found in Cosmos.
- */
-async function recoverStaleAck(
-  conversationId: string,
-  ackActivityId: string,
-  userId: string,
-  correlationId: string,
-): Promise<void> {
-  const adapter = getAdapter();
-  const appId = getEnvConfig().microsoftAppId;
-  const conversationReference = await getConversationReference(userId);
-
-  if (!conversationReference) {
-    // No conversation reference — can only clear the ack document
-    await clearPendingAckId(conversationId, correlationId);
-    return;
-  }
-
-  await adapter.continueConversationAsync(
-    appId,
-    conversationReference as ConversationReference,
-    async (turnContext) => {
-      await turnContext.updateActivity({
-        type: ActivityTypes.Message,
-        id: ackActivityId,
-        text: '⚠️ Your previous message was interrupted by a service restart. Please resend it if you still need a response.',
-        textFormat: 'markdown',
-      });
-    },
-  );
-
-  await clearPendingAckId(conversationId, correlationId);
-}
-
-/**
  * Run startup recovery: clean up stale acks + replay pending intents.
  * Called from index.ts after a delay to allow the runtime to stabilize.
  */
@@ -84,29 +43,8 @@ export async function runStartupRecovery(): Promise<void> {
 
   // --- Phase 1: Clean up stale pending acks (#191) ---
   try {
-    const staleAcks = await getStaleAcks(STALE_ACK_THRESHOLD_MS);
-
-    for (const ack of staleAcks) {
-      try {
-        await recoverStaleAck(ack.conversationId, ack.activityId, ack.userId, ack.correlationId);
-
-        stats.staleAcks++;
-        trackEvent({
-          name: 'StaleAckRecovered',
-          correlationId: ack.activityId,
-          userId: ack.userId,
-          properties: { ackActivityId: ack.activityId },
-        });
-      } catch (err) {
-        // Individual ack recovery failure — clear the document anyway to avoid infinite retry
-        console.warn(`[startupRecovery] Failed to recover stale ack for userId=${ack.userId}:`, err);
-        try {
-          await clearPendingAckId(ack.conversationId, ack.correlationId);
-        } catch {
-          // Nothing more we can do
-        }
-      }
-    }
+    const staleAckStats = await recoverStaleAcks();
+    stats.staleAcks = staleAckStats.recovered + staleAckStats.clearedWithoutReference;
   } catch (err) {
     console.warn('[startupRecovery] Stale ack query failed:', err);
   }

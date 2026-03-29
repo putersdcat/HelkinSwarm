@@ -28,6 +28,13 @@ interface PendingAckDocument {
   createdAt: string;
 }
 
+export interface PendingAckSnapshot {
+  pendingAcks: number;
+  oldestPendingAgeMs: number | null;
+  stalePendingAcks: number;
+  oldestStalePendingAgeMs: number | null;
+}
+
 export type OutboundArtifactKind = 'reply' | 'confirmation-card';
 
 interface OutboundArtifactDocument {
@@ -203,4 +210,39 @@ export async function getStaleAcks(maxAgeMs: number): Promise<PendingAckDocument
     })
     .fetchAll();
   return resources;
+}
+
+export async function getPendingAckSnapshot(maxAgeMs: number): Promise<PendingAckSnapshot> {
+  const container = getContainer(CONTAINER_NAME);
+  const cutoff = new Date(Date.now() - maxAgeMs).toISOString();
+  const { resources } = await container.items
+    .query<PendingAckDocument>({
+      query: `SELECT * FROM c WHERE STARTSWITH(c.id, 'ack-')`,
+    })
+    .fetchAll();
+
+  const now = Date.now();
+  const ages = resources
+    .map((doc) => {
+      const createdAtMs = Date.parse(doc.createdAt);
+      return Number.isNaN(createdAtMs) ? null : now - createdAtMs;
+    })
+    .filter((age): age is number => age !== null)
+    .sort((a, b) => b - a);
+
+  const staleAges = resources
+    .filter((doc) => doc.createdAt < cutoff)
+    .map((doc) => {
+      const createdAtMs = Date.parse(doc.createdAt);
+      return Number.isNaN(createdAtMs) ? null : now - createdAtMs;
+    })
+    .filter((age): age is number => age !== null)
+    .sort((a, b) => b - a);
+
+  return {
+    pendingAcks: resources.length,
+    oldestPendingAgeMs: ages[0] ?? null,
+    stalePendingAcks: staleAges.length,
+    oldestStalePendingAgeMs: staleAges[0] ?? null,
+  };
 }

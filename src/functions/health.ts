@@ -6,6 +6,8 @@ import { APP_VERSION } from '../config/version.js';
 import { getMessagePathSnapshot } from '../observability/messagePathHealth.js';
 import { getLlmAggregateHealth, getLlmHealthSnapshot } from '../llm/llmHealthTracker.js';
 import { getOrchestratorStageSnapshot } from '../observability/orchestratorStageHealth.js';
+import { getPendingAckSnapshot } from '../bot/conversationStore.js';
+import { STALE_ACK_THRESHOLD_MS } from '../bot/staleAckRecovery.js';
 
 interface HealthResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -49,6 +51,10 @@ interface HealthResponse {
       lastSuccessAt: string | null;
       lastFailureAt: string | null;
       lastFailureReason: string | null;
+      pendingAcks: number;
+      oldestPendingAckAgeMs: number | null;
+      stalePendingAcks: number;
+      oldestStalePendingAckAgeMs: number | null;
     };
   };
 }
@@ -85,15 +91,21 @@ export async function healthHandler(
   const env = getEnvConfig();
   const memoryStatus = await checkMemoryStatus();
   const messagePath = await getMessagePathSnapshot();
+  const pendingAckSnapshot = await getPendingAckSnapshot(STALE_ACK_THRESHOLD_MS);
   const llmHealth = getLlmAggregateHealth();
   const llmSnapshot = getLlmHealthSnapshot();
   const orchestratorSnapshot = await getOrchestratorStageSnapshot();
 
-  const runtimeStatus = messagePath.status === 'error' ? 'error' : 'ok';
+  const effectiveMessagePathStatus: HealthResponse['components']['messagePath'] =
+    pendingAckSnapshot.stalePendingAcks > 0 && messagePath.status === 'ok'
+      ? 'degraded'
+      : messagePath.status;
+
+  const runtimeStatus = effectiveMessagePathStatus === 'error' ? 'error' : 'ok';
   const overallStatus: HealthResponse['status'] =
     runtimeStatus === 'error' || llmHealth === 'down'
       ? 'unhealthy'
-      : memoryStatus === 'error' || messagePath.status === 'degraded' || llmHealth === 'degraded'
+      : memoryStatus === 'error' || effectiveMessagePathStatus === 'degraded' || llmHealth === 'degraded'
         ? 'degraded'
         : 'healthy';
 
@@ -107,7 +119,7 @@ export async function healthHandler(
       overseer: 'ok',
       llm: llmHealth,
       memory: memoryStatus,
-      messagePath: messagePath.status,
+      messagePath: effectiveMessagePathStatus,
       safetyMode: env.safetyMode,
       euResidencyMode: env.euResidencyMode,
     },
@@ -120,6 +132,10 @@ export async function healthHandler(
         lastSuccessAt: messagePath.lastSuccessAt,
         lastFailureAt: messagePath.lastFailureAt,
         lastFailureReason: messagePath.lastFailureReason,
+        pendingAcks: pendingAckSnapshot.pendingAcks,
+        oldestPendingAckAgeMs: pendingAckSnapshot.oldestPendingAgeMs,
+        stalePendingAcks: pendingAckSnapshot.stalePendingAcks,
+        oldestStalePendingAckAgeMs: pendingAckSnapshot.oldestStalePendingAgeMs,
       },
     },
   };
