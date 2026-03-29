@@ -670,45 +670,66 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     userAlias: string,
     messageText: string,
   ): Promise<void> {
-    if (!this.durableClient) return;
-
-    if (!(await isOwnerUserId(userId))) {
-      await context.sendActivity('⛔ Owner-only command.');
+    if (!this.durableClient) {
+      await context.sendActivity('Internal error: orchestrator client not available. Please try again.');
       return;
     }
 
-    const idea = messageText.slice(6).trim();
+    try {
+      if (!(await isOwnerUserId(userId))) {
+        await context.sendActivity('⛔ Owner-only command.');
+        return;
+      }
 
-    if (!getEnvConfig().skillforgeEnabled) {
-      await context.sendActivity('⚙️ SkillForge is not enabled (set SKILLFORGE_ENABLED=true to activate).');
-      return;
+      const idea = messageText.slice(6).trim();
+
+      if (!getEnvConfig().skillforgeEnabled) {
+        await context.sendActivity('⚙️ SkillForge is not enabled (set SKILLFORGE_ENABLED=true to activate).');
+        return;
+      }
+
+      if (!idea) {
+        await context.sendActivity('Usage: /forge <idea>');
+        return;
+      }
+
+      const correlationId = crypto.randomUUID();
+      const ackResponse = await context.sendActivity('⌛ Working on SkillForge prototype...');
+      if (ackResponse?.id) {
+        const conversationId = context.activity.conversation?.id ?? userId;
+        await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
+      }
+
+      try {
+        await this.raiseToOverseer(
+          context,
+          userId,
+          userAlias,
+          idea,
+          undefined,
+          undefined,
+          undefined,
+          correlationId.slice(0, 8),
+          undefined,
+          correlationId,
+          { idea },
+        );
+      } catch (err) {
+        const conversationReference = TurnContextClass.getConversationReference(context.activity);
+        const { trackingId } = await createPendingIntent({
+          userId,
+          messageText: idea,
+          conversationReferenceJson: JSON.stringify(conversationReference),
+        });
+        await context.sendActivity(
+          `⏳ SkillForge prototype request queued (tracking: ${trackingId}). I'll retry the handoff when the orchestrator is reachable.`,
+        );
+        console.error(`[HelkinSwarmBot] Queued SkillForge pending intent ${trackingId}: ${err instanceof Error ? err.message : err}`);
+      }
+    } catch (err) {
+      console.error(`[HelkinSwarmBot] /forge failed before handoff: ${err instanceof Error ? err.message : err}`);
+      await context.sendActivity('⚠️ SkillForge failed before it could start. Please try again in a moment.');
     }
-
-    if (!idea) {
-      await context.sendActivity('Usage: /forge <idea>');
-      return;
-    }
-
-    const correlationId = crypto.randomUUID();
-    const ackResponse = await context.sendActivity('⌛ Working on SkillForge prototype...');
-    if (ackResponse?.id) {
-      const conversationId = context.activity.conversation?.id ?? userId;
-      await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
-    }
-
-    await this.raiseToOverseer(
-      context,
-      userId,
-      userAlias,
-      idea,
-      undefined,
-      undefined,
-      undefined,
-      correlationId.slice(0, 8),
-      undefined,
-      correlationId,
-      { idea },
-    );
   }
 
   /** /heavy or /light — force a specific model tier for one turn (owner-only). */

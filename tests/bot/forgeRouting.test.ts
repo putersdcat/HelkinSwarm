@@ -8,5 +8,7 @@ describe('HelkinSwarmBot /forge routing', () => {
     expect(source).toContain("'⌛ Working on SkillForge prototype...'");
     expect(source).toContain('{ idea }');
     expect(source).toContain('skillForgeRequest?: NewMessageEvent[\'skillForgeRequest\']');
+    expect(source).toContain('SkillForge prototype request queued');
+    expect(source).toContain('SkillForge failed before it could start');
   });
 });
