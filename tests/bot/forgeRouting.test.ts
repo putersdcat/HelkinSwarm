@@ -5,11 +5,10 @@ describe('HelkinSwarmBot /forge routing', () => {
   it('passes a structured skillForgeRequest into raiseToOverseer', () => {
     const source = readFileSync('src/bot/HelkinSwarmBot.ts', 'utf8');
 
-    expect(source).toContain('buildSkillForgePrototype');
-    expect(source).toContain('SkillForge accepted the request. Preparing the prototype bundle');
-    expect(source).toContain('prototype.summary');
-    expect(source).toContain('splitReplyIntoChunks(prototype.summary)');
-    expect(source).toContain('await context.sendActivity({');
+    expect(source).toContain('⌛ Working on it... (⚙️ SkillForge)');
+    expect(source).toContain('await savePendingAckId');
+    expect(source).toContain('await this.raiseToOverseer(');
+    expect(source).toContain('skillForgeRequest');
     expect(source).toContain('SkillForge failed before it could start');
   });
 });

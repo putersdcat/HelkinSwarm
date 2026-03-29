@@ -56,7 +56,6 @@ import { buildSkillLinkSigninCard, buildSkillRelinkSigninCard } from './linkCard
 import { extractMessageReferenceId, extractMessageReferencePreview } from './messageReference.js';
 import type { QuotedContext } from './quotedContext.js';
 import { trackEvent } from '../observability/telemetry.js';
-import { splitReplyIntoChunks } from '../orchestrator/replyChunking.js';
 
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
@@ -668,7 +667,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
   private async handleForge(
     context: TurnContext,
     userId: string,
-    _userAlias: string,
+    userAlias: string,
     messageText: string,
   ): Promise<void> {
     if (!this.durableClient) {
@@ -695,26 +694,25 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       }
 
       const correlationId = crypto.randomUUID();
-      await context.sendActivity({
-        type: ActivityTypes.Message,
-        text: '⚙️ SkillForge accepted the request. Preparing the prototype bundle... ',
-        textFormat: 'markdown',
-      });
-
-      const { buildSkillForgePrototype } = await import('../orchestrator/skillForgePrototypeActivity.js');
-      const prototype = buildSkillForgePrototype({
-        idea,
-        userId,
-        correlationId,
-      });
-
-      for (const chunk of splitReplyIntoChunks(prototype.summary)) {
-        await context.sendActivity({
-          type: ActivityTypes.Message,
-          text: chunk.text,
-          textFormat: 'markdown',
-        });
+      const ackResponse = await context.sendActivity('⌛ Working on it... (⚙️ SkillForge)');
+      if (ackResponse?.id) {
+        const conversationId = context.activity.conversation?.id ?? userId;
+        await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
       }
+
+      await this.raiseToOverseer(
+        context,
+        userId,
+        userAlias,
+        idea,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        correlationId,
+        { idea },
+      );
     } catch (err) {
       console.error(`[HelkinSwarmBot] /forge failed before handoff: ${err instanceof Error ? err.message : err}`);
       await context.sendActivity({
