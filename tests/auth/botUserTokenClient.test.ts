@@ -32,10 +32,32 @@ vi.mock('botframework-connector', () => ({
 // Import after mocks are set up
 const {
   checkUserTokenForConnection,
+  checkUserTokenForTurnContext,
   signOutUserFromConnection,
+  signOutUserFromTurnContext,
   redeemMagicCodeForConnection,
+  redeemMagicCodeForTurnContext,
   redeemMagicCodeWithFallbackForConnection,
+  getSignInLinkForTurnContext,
 } = await import('../../src/auth/botUserTokenClient.js');
+
+function makeTurnContext() {
+  const key = Symbol('UserTokenClient');
+  return {
+    activity: {
+      from: { id: 'turn-user' },
+      channelId: 'msteams',
+    },
+    adapter: {
+      UserTokenClientKey: key,
+    },
+    turnState: new Map([[key, {
+      getUserToken: mockGetUserToken,
+      signOutUser: mockSignOutUser,
+      getSignInResource: mockGetSignInResource,
+    }]]),
+  };
+}
 
 describe('botUserTokenClient', () => {
   beforeEach(() => {
@@ -69,6 +91,17 @@ describe('botUserTokenClient', () => {
     });
   });
 
+  describe('checkUserTokenForTurnContext', () => {
+    it('prefers the turn-state user token client when available', async () => {
+      mockGetUserToken.mockResolvedValue({ token: 'turn-token' });
+
+      const result = await checkUserTokenForTurnContext(makeTurnContext() as never, 'GraphOAuth');
+
+      expect(result).toBe('turn-token');
+      expect(mockGetUserToken).toHaveBeenCalledWith('turn-user', 'GraphOAuth', 'msteams', '');
+    });
+  });
+
   describe('signOutUserFromConnection', () => {
     it('calls signOutUser with correct parameters', async () => {
       mockSignOutUser.mockResolvedValue(undefined);
@@ -76,6 +109,16 @@ describe('botUserTokenClient', () => {
       await signOutUserFromConnection('user-1', 'msteams', 'GraphOAuth');
 
       expect(mockSignOutUser).toHaveBeenCalledWith('user-1', 'GraphOAuth', 'msteams');
+    });
+  });
+
+  describe('signOutUserFromTurnContext', () => {
+    it('uses the turn-state user token client when available', async () => {
+      mockSignOutUser.mockResolvedValue(undefined);
+
+      await signOutUserFromTurnContext(makeTurnContext() as never, 'GraphOAuth');
+
+      expect(mockSignOutUser).toHaveBeenCalledWith('turn-user', 'GraphOAuth', 'msteams');
     });
   });
 
@@ -95,6 +138,32 @@ describe('botUserTokenClient', () => {
       const result = await redeemMagicCodeForConnection('user-1', 'msteams', 'GraphOAuth', 'bad-code');
 
       expect(result).toBeUndefined();
+    });
+  });
+
+  describe('redeemMagicCodeForTurnContext', () => {
+    it('uses the turn-state user token client when available', async () => {
+      mockGetUserToken.mockResolvedValue({ token: 'turn-code-token' });
+
+      const result = await redeemMagicCodeForTurnContext(
+        makeTurnContext() as never,
+        'GraphOAuth',
+        'abc123',
+      );
+
+      expect(result).toBe('turn-code-token');
+      expect(mockGetUserToken).toHaveBeenCalledWith('turn-user', 'GraphOAuth', 'msteams', 'abc123');
+    });
+  });
+
+  describe('getSignInLinkForTurnContext', () => {
+    it('uses the turn-state user token client when available', async () => {
+      mockGetSignInResource.mockResolvedValue({ signInLink: 'https://token.botframework.com/direct' });
+
+      const result = await getSignInLinkForTurnContext(makeTurnContext() as never, 'GraphOAuth');
+
+      expect(result).toBe('https://token.botframework.com/direct');
+      expect(mockGetSignInResource).toHaveBeenCalled();
     });
   });
 

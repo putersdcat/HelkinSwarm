@@ -40,10 +40,11 @@ import { createPendingIntent } from '../orchestrator/pendingIntentStore.js';
 import { createHash } from 'node:crypto';
 import { getBearerToken } from '../auth/identity.js';
 import {
-  checkUserTokenForConnection,
-  getSignInLinkForActivity,
+  checkUserTokenForTurnContext,
+  getSignInLinkForTurnContext,
   redeemMagicCodeWithFallbackForConnection,
-  signOutUserFromConnection,
+  redeemMagicCodeForTurnContext,
+  signOutUserFromTurnContext,
 } from '../auth/botUserTokenClient.js';
 import { extractBotFrameworkAuthCode } from '../auth/magicCode.js';
 import {
@@ -913,9 +914,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     // /link <skill> status — check link status
     if (subcommand === 'status') {
-      const channelUserId = context.activity.from.id;
-      const channelId = context.activity.channelId ?? '';
-      const existingToken = await checkUserTokenForConnection(channelUserId, channelId, connectionName);
+      const existingToken = await checkUserTokenForTurnContext(context, connectionName);
       if (existingToken) {
         await context.sendActivity(`✅ **${manifest.domain}** is linked.`);
       } else {
@@ -929,7 +928,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     // /link <skill> — initiate OAuth
     const channelUserId = context.activity.from.id;
     const channelId = context.activity.channelId ?? '';
-    const existingToken = await checkUserTokenForConnection(channelUserId, channelId, connectionName);
+    const existingToken = await checkUserTokenForTurnContext(context, connectionName);
 
     if (existingToken) {
       await context.sendActivity(
@@ -986,9 +985,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
 
     try {
-      const channelUserId = context.activity.from.id;
-      const channelId = context.activity.channelId ?? '';
-      await signOutUserFromConnection(channelUserId, channelId, manifest.linkConfig.connectionName);
+      await signOutUserFromTurnContext(context, manifest.linkConfig.connectionName);
       await this.clearLocalSkillLinkState(userId);
       await context.sendActivity(`✅ **${manifest.domain}** unlinked. Credentials revoked.`);
       console.error(`[HelkinSwarmBot] User unlinked skill=${manifest.domain} userId=${userId}`);
@@ -1027,9 +1024,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     // Unlink first (silently)
     try {
-      const channelUserId = context.activity.from.id;
-      const channelId = context.activity.channelId ?? '';
-      await signOutUserFromConnection(channelUserId, channelId, manifest.linkConfig.connectionName);
+      await signOutUserFromTurnContext(context, manifest.linkConfig.connectionName);
       console.error(`[HelkinSwarmBot] Relink: unlinked skill=${manifest.domain} userId=${userId}`);
     } catch {
       // Ignore unlink failure — proceed to link anyway
@@ -1075,7 +1070,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     connectionName: string,
   ): Promise<string | undefined> {
     try {
-      return await getSignInLinkForActivity(connectionName, context.activity);
+      return await getSignInLinkForTurnContext(context, connectionName);
     } catch {
       return undefined;
     }
@@ -1090,6 +1085,11 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     const channelId = context.activity.channelId ?? '';
 
     try {
+      const directTurnToken = await redeemMagicCodeForTurnContext(
+        context,
+        pendingLinkChallenge.connectionName,
+        authCode,
+      );
       const redemption = await redeemMagicCodeWithFallbackForConnection(
         pendingLinkChallenge.connectionName,
         authCode,
@@ -1103,7 +1103,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
           { userId: channelUserId, channelId },
         ],
       );
-      const token = redemption?.token;
+      const token = directTurnToken ?? redemption?.token;
 
       if (token) {
         const linkCorrelationId = `link-${crypto.randomUUID()}`;

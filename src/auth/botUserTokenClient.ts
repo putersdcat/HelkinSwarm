@@ -1,4 +1,4 @@
-import { ConfigurationBotFrameworkAuthentication, type Activity } from 'botbuilder';
+import { ConfigurationBotFrameworkAuthentication, type Activity, type TurnContext } from 'botbuilder';
 import { ClaimsIdentity } from 'botframework-connector';
 import type { UserTokenClient } from 'botframework-connector';
 import { getEnvConfig } from '../config/envConfig.js';
@@ -9,6 +9,19 @@ export interface TokenIdentityTuple {
 }
 
 let authInstance: ConfigurationBotFrameworkAuthentication | undefined;
+
+function getTurnUserTokenClient(context: TurnContext): UserTokenClient | undefined {
+  const adapter = context.adapter as {
+    UserTokenClientKey?: symbol | string;
+  };
+  const key = adapter.UserTokenClientKey;
+  if (key === undefined) {
+    return undefined;
+  }
+
+  const candidate = context.turnState.get(key);
+  return candidate as UserTokenClient | undefined;
+}
 
 function getBotFrameworkAuthentication(): ConfigurationBotFrameworkAuthentication {
   if (!authInstance) {
@@ -41,6 +54,15 @@ export async function getSignInLinkForActivity(
   return resource.signInLink;
 }
 
+export async function getSignInLinkForTurnContext(
+  context: TurnContext,
+  connectionName: string,
+): Promise<string | undefined> {
+  const tokenClient = getTurnUserTokenClient(context) ?? await createBotUserTokenClient();
+  const resource = await tokenClient.getSignInResource(connectionName, context.activity, '');
+  return resource.signInLink;
+}
+
 export async function redeemMagicCodeForConnection(
   userId: string,
   channelId: string,
@@ -49,6 +71,21 @@ export async function redeemMagicCodeForConnection(
 ): Promise<string | undefined> {
   const tokenClient = await createBotUserTokenClient();
   const result = await tokenClient.getUserToken(userId, connectionName, channelId, magicCode);
+  return result?.token;
+}
+
+export async function redeemMagicCodeForTurnContext(
+  context: TurnContext,
+  connectionName: string,
+  magicCode: string,
+): Promise<string | undefined> {
+  const tokenClient = getTurnUserTokenClient(context) ?? await createBotUserTokenClient();
+  const result = await tokenClient.getUserToken(
+    context.activity.from.id,
+    connectionName,
+    context.activity.channelId ?? '',
+    magicCode,
+  );
   return result?.token;
 }
 
@@ -107,6 +144,27 @@ export async function checkUserTokenForConnection(
   }
 }
 
+export async function checkUserTokenForTurnContext(
+  context: TurnContext,
+  connectionName: string,
+): Promise<string | undefined> {
+  try {
+    const tokenClient = getTurnUserTokenClient(context) ?? await createBotUserTokenClient();
+    const result = await tokenClient.getUserToken(
+      context.activity.from.id,
+      connectionName,
+      context.activity.channelId ?? '',
+      '',
+    );
+    return result?.token;
+  } catch (err) {
+    console.error(
+      `[botUserTokenClient] checkUserTokenForTurnContext failed: userId=${context.activity.from.id}, channelId=${context.activity.channelId ?? ''}, connection=${connectionName}, error=${err instanceof Error ? err.message : String(err)}`,
+    );
+    return undefined;
+  }
+}
+
 export async function signOutUserFromConnection(
   userId: string,
   channelId: string,
@@ -114,4 +172,16 @@ export async function signOutUserFromConnection(
 ): Promise<void> {
   const tokenClient = await createBotUserTokenClient();
   await tokenClient.signOutUser(userId, connectionName, channelId);
+}
+
+export async function signOutUserFromTurnContext(
+  context: TurnContext,
+  connectionName: string,
+): Promise<void> {
+  const tokenClient = getTurnUserTokenClient(context) ?? await createBotUserTokenClient();
+  await tokenClient.signOutUser(
+    context.activity.from.id,
+    connectionName,
+    context.activity.channelId ?? '',
+  );
 }
