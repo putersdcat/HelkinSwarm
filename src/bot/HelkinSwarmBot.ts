@@ -694,11 +694,10 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       }
 
       const correlationId = crypto.randomUUID();
-      const ackResponse = await context.sendActivity('⌛ Working on SkillForge prototype...');
-      if (ackResponse?.id) {
-        const conversationId = context.activity.conversation?.id ?? userId;
-        await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
-      }
+      await this.sendFreshMessage(context, {
+        text: '⚙️ SkillForge prototype request accepted. Preparing scaffold...',
+        textFormat: 'markdown',
+      });
 
       try {
         await this.raiseToOverseer(
@@ -721,14 +720,18 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
           messageText: idea,
           conversationReferenceJson: JSON.stringify(conversationReference),
         });
-        await context.sendActivity(
-          `⏳ SkillForge prototype request queued (tracking: ${trackingId}). I'll retry the handoff when the orchestrator is reachable.`,
-        );
+        await this.sendFreshMessage(context, {
+          text: `⏳ SkillForge prototype request queued (tracking: ${trackingId}). I'll retry the handoff when the orchestrator is reachable.`,
+          textFormat: 'markdown',
+        });
         console.error(`[HelkinSwarmBot] Queued SkillForge pending intent ${trackingId}: ${err instanceof Error ? err.message : err}`);
       }
     } catch (err) {
       console.error(`[HelkinSwarmBot] /forge failed before handoff: ${err instanceof Error ? err.message : err}`);
-      await context.sendActivity('⚠️ SkillForge failed before it could start. Please try again in a moment.');
+      await this.sendFreshMessage(context, {
+        text: '⚠️ SkillForge failed before it could start. Please try again in a moment.',
+        textFormat: 'markdown',
+      });
     }
   }
 
