@@ -34,7 +34,7 @@ export interface LlmResult {
 const LLM_FAST_PATH = !!(process.env['LLM_FAST_PATH'] ?? '');
 
 df.app.activity('llmActivity', {
-  handler: async (input: PromptResult & { correlationId?: string; userId?: string; modelOverride?: string; imageUrls?: string[]; tools?: Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }> }): Promise<LlmResult> => {
+  handler: async (input: PromptResult & { correlationId?: string; userId?: string; modelOverride?: string; imageUrls?: string[]; tools?: Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }>; toolChoice?: 'auto' | 'none' | { type: 'function'; function: { name: string } } }): Promise<LlmResult> => {
     const routing = getModelRouting();
     const correlationId = input.correlationId ?? crypto.randomUUID();
     recordSubstage(correlationId, 'llm', input.userId ?? 'unknown');
@@ -134,7 +134,7 @@ df.app.activity('llmActivity', {
       const response: ChatCompletionResponse = await client.chatCompletion({
         messages,
         tools: tools.length > 0 ? tools : undefined,
-        toolChoice: tools.length > 0 ? 'auto' : undefined,
+        toolChoice: tools.length > 0 ? (input.toolChoice ?? 'auto') : undefined,
         maxTokens: 4096,
         temperature: 0.7,
         correlationId,

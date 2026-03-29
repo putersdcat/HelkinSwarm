@@ -29,6 +29,11 @@ export function getDiscoveryFirstToolDefinitions(): Array<{ name: string; descri
     .map((tool) => ({ name: tool.name, description: tool.description }));
 }
 
+export function shouldForceDiscoveryToolSearch(userMessage: string): boolean {
+  const normalized = userMessage.toLowerCase();
+  return /(send|reply|email|mail|calendar|meeting|schedule|github|repo|issue|pull request|weather|web search|search the web)/.test(normalized);
+}
+
 export function deriveSelectiveFollowUpToolSchemas(
   toolResults: ToolResult[],
 ): ToolDefinition[] | null {

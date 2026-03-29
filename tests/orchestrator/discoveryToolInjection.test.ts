@@ -76,4 +76,12 @@ describe('discoveryToolInjection', () => {
       'outlook_search_emails',
     ]);
   });
+
+  it('forces discovery for external action intents only', async () => {
+    const { shouldForceDiscoveryToolSearch } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    expect(shouldForceDiscoveryToolSearch('Send an email to Eric')).toBe(true);
+    expect(shouldForceDiscoveryToolSearch('Create a calendar event for tomorrow')).toBe(true);
+    expect(shouldForceDiscoveryToolSearch('hello there')).toBe(false);
+  });
 });

@@ -40,6 +40,7 @@ import {
 import {
   deriveSelectiveFollowUpToolSchemas,
   getDiscoveryFirstToolSchemas,
+  shouldForceDiscoveryToolSearch,
 } from './discoveryToolInjection.js';
 
 export interface SessionInput {
@@ -142,6 +143,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       modelOverride: input.modelOverride,
       imageUrls: input.imageUrls,
       tools: getDiscoveryFirstToolSchemas(),
+      toolChoice: shouldForceDiscoveryToolSearch(input.userMessage)
+        ? { type: 'function', function: { name: 'helkin_skill_search' } }
+        : 'auto',
     },
   );
   spans.push({ label: 'llm', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
