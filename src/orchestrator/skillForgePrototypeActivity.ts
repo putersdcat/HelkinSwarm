@@ -142,8 +142,7 @@ export function buildSkillForgePrototype(input: SkillForgePrototypeInput): Skill
     `- \`${testPath}\` — test scaffold`,
     '',
     `Suggested review title: ${reviewTitle}`,
-    `Suggested branch: ${branchName}`,
-    'Review body preview prepared for handoff.',
+    'Branch + review-body handoff metadata prepared in the prototype bundle.',
     '',
     'Next step: review the scaffold, replace placeholder logic, and keep the skill disabled until human approval.',
   ].join('\n');
