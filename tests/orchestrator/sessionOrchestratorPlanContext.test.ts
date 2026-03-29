@@ -33,4 +33,12 @@ describe('sessionOrchestrator plan context preservation', () => {
     expect(source).toContain('const allowMoreFollowUpTools = !isLastRound && !shouldForceFinalTextResponse;');
     expect(source).toContain('enableRetry: allowMoreFollowUpTools');
   });
+
+  it('short-circuits SkillForge requests into the dedicated prototype activity', () => {
+    const source = readFileSync('src/orchestrator/sessionOrchestrator.ts', 'utf8');
+
+    expect(source).toContain("if (input.skillForgeRequest) {");
+    expect(source).toContain("callActivity('skillForgePrototypeActivity'");
+    expect(source).toContain("model: 'skillforge-prototype'");
+  });
 });

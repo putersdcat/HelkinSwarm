@@ -582,6 +582,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     correlationTag?: string,
     quotedContext?: QuotedContext,
     correlationId?: string,
+    skillForgeRequest?: NewMessageEvent['skillForgeRequest'],
   ): Promise<void> {
     const client = this.durableClient!;
     const eventCorrelationId = correlationId ?? crypto.randomUUID();
@@ -614,6 +615,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       conversationReference,
       userId,
       userAlias,
+      ...(skillForgeRequest !== undefined ? { skillForgeRequest } : {}),
       correlationId: eventCorrelationId,
       ...(modelOverride !== undefined ? { modelOverride } : {}),
       ...(imageUrls && imageUrls.length > 0 ? { imageUrls } : {}),
@@ -687,8 +689,26 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return;
     }
 
-    await context.sendActivity(`⚙️ SkillForge: routing "${idea}" to the orchestrator...`);
-    await this.raiseToOverseer(context, userId, userAlias, idea);
+    const correlationId = crypto.randomUUID();
+    const ackResponse = await context.sendActivity('⌛ Working on SkillForge prototype...');
+    if (ackResponse?.id) {
+      const conversationId = context.activity.conversation?.id ?? userId;
+      await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
+    }
+
+    await this.raiseToOverseer(
+      context,
+      userId,
+      userAlias,
+      idea,
+      undefined,
+      undefined,
+      undefined,
+      correlationId.slice(0, 8),
+      undefined,
+      correlationId,
+      { idea },
+    );
   }
 
   /** /heavy or /light — force a specific model tier for one turn (owner-only). */

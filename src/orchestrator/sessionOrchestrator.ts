@@ -48,6 +48,9 @@ import {
 export interface SessionInput {
   state: OverseerState;
   userMessage: string;
+  skillForgeRequest?: {
+    idea: string;
+  };
   conversationReference: Partial<ConversationReference>;
   correlationId: string;
   /** Optional model override: 'primary', 'secondary', or a direct deployment name (#217). */
@@ -89,6 +92,37 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   const userMessageForLlm = input.devLoopContext?.isDevLoop
     ? input.devLoopContext.body
     : canonicalizedMessage;
+
+  if (input.skillForgeRequest) {
+    const prototype = yield context.df.callActivity('skillForgePrototypeActivity', {
+      idea: input.skillForgeRequest.idea,
+      userId: input.state.userId,
+      correlationId,
+    });
+
+    const replyInput: SendReplyInput = {
+      userId: input.state.userId,
+      message: prototype.summary,
+      correlationId,
+      conversationReference: input.conversationReference,
+    };
+    const replyResult: SendReplyResult = yield context.df.callActivity(
+      'sendReplyActivity',
+      replyInput,
+    );
+
+    return {
+      response: prototype.summary,
+      cleanResponse: prototype.summary,
+      tokensUsed: 0,
+      promptTokens: 0,
+      model: 'skillforge-prototype',
+      toolCalls: [],
+      toolResults: null,
+      replySent: replyResult.success,
+      safetyPassed: true,
+    } satisfies SessionResult;
+  }
 
   // 1. Build prompt (persona + summary + user message)
   const promptInput: BuildPromptInput = {

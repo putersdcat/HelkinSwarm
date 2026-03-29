@@ -42,6 +42,9 @@ export interface NewMessageEvent {
   conversationReference: Partial<ConversationReference>;
   userId: string;
   userAlias: string;
+  skillForgeRequest?: {
+    idea: string;
+  };
   /** Full correlation ID for end-to-end stage tracing (#327). */
   correlationId?: string;
   /** Optional model override: 'primary', 'secondary', or a direct deployment name (e.g. 'o4-mini'). */
@@ -89,11 +92,13 @@ function* processTurn(
   const sessionInput: SessionInput = {
     state,
     userMessage: event.userMessage,
+    ...(event.skillForgeRequest ? { skillForgeRequest: event.skillForgeRequest } : {}),
     conversationReference: event.conversationReference,
     correlationId,
     modelOverride: event.modelOverride,
     imageUrls: event.imageUrls,
     devLoopContext: event.devLoopContext,
+    quotedContext: event.quotedContext,
   };
 
   // Guard: race sub-orchestrator against a 5-minute timeout (#211)
