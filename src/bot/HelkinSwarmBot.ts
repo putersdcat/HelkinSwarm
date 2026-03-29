@@ -703,14 +703,16 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       });
 
       for (const chunk of splitReplyIntoChunks(prototype.summary)) {
-        await this.sendFreshMessage(context, {
+        await context.sendActivity({
+          type: ActivityTypes.Message,
           text: chunk.text,
           textFormat: 'markdown',
         });
       }
     } catch (err) {
       console.error(`[HelkinSwarmBot] /forge failed before handoff: ${err instanceof Error ? err.message : err}`);
-      await this.sendFreshMessage(context, {
+      await context.sendActivity({
+        type: ActivityTypes.Message,
         text: '⚠️ SkillForge failed before it could start. Please try again in a moment.',
         textFormat: 'markdown',
       });
