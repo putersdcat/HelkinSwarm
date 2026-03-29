@@ -10,5 +10,10 @@ describe('global tab SPA runtime stamp routing', () => {
     expect(source).toContain('users[_userOid]');
     expect(source).toContain('normalizeEndpointToTabApiBase(entry.endpoint)');
     expect(source).toContain('No stamp mapping exists for this Teams user.');
+    expect(source).toContain('This user\'s HelkinSwarm stamp is disabled.');
+    expect(source).toContain('isLocalDevFallbackAllowed()');
+    expect(source).toContain('hostname === "localhost"');
+    expect(source).toContain('hostname === "127.0.0.1"');
+    expect(source).toContain('Tab unavailable');
   });
 });

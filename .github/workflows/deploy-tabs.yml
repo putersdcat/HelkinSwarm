@@ -145,17 +145,6 @@ jobs:
           sleep 90
           echo "✅ Propagation wait complete"
 
-      - name: Inject API base URL into SPA
-        env:
-          TAB_API_BASE: ${{ vars.TAB_API_BASE }}
-        run: |
-          if [ -f "tabs/app.js" ] && [ -n "$TAB_API_BASE" ]; then
-            sed -i "s|{{TAB_API_BASE}}|${TAB_API_BASE}|g" tabs/app.js
-            echo "✅ Injected TAB_API_BASE: $TAB_API_BASE"
-          elif [ -f "tabs/app.js" ]; then
-            echo "⚠️ TAB_API_BASE not set — SPA API calls will fail until vars.TAB_API_BASE is configured"
-          fi
-
       - name: Inject cache-busting asset version
         env:
           TAB_ASSET_VERSION: ${{ github.sha }}
@@ -163,6 +152,15 @@ jobs:
           if [ -f "tabs/index.html" ]; then
             sed -i "s|{{TAB_ASSET_VERSION}}|${TAB_ASSET_VERSION}|g" tabs/index.html
             echo "✅ Injected TAB_ASSET_VERSION: $TAB_ASSET_VERSION"
+          fi
+
+      - name: Verify production tab host keeps runtime stamp routing enabled
+        run: |
+          if grep -q "{{TAB_API_BASE}}" tabs/app.js; then
+            echo "✅ Production tab build keeps TAB_API_BASE unset so runtime user-map routing is authoritative"
+          else
+            echo "❌ tabs/app.js no longer contains the TAB_API_BASE placeholder. The hosted tab SPA must not inject a single-stamp fallback."
+            exit 1
           fi
 
       - name: Publish public user-map for runtime stamp resolution

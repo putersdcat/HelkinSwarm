@@ -7,8 +7,10 @@
 (function () {
   "use strict";
 
-  // Legacy single-stamp fallback — kept for local/dev recovery only.
-  // Production multi-stamp routing should resolve user -> stamp via user-map.json.
+  // Legacy single-stamp fallback marker.
+  // Production multi-stamp routing must resolve user -> stamp via user-map.json.
+  // The deploy-tabs workflow intentionally leaves this placeholder untouched so
+  // hosted tab builds do not silently fall back to one stamp.
   var TAB_API_BASE = "{{TAB_API_BASE}}";
   var USER_MAP_URL = "user-map.json";
 
@@ -132,6 +134,13 @@
     return TAB_API_BASE.replace(/\/$/, "");
   }
 
+  function isLocalDevFallbackAllowed() {
+    if (typeof window === "undefined" || !window.location) return false;
+    var protocol = window.location.protocol;
+    var hostname = (window.location.hostname || "").toLowerCase();
+    return protocol === "file:" || hostname === "localhost" || hostname === "127.0.0.1";
+  }
+
   function resolveTabApiBase() {
     if (_resolvedTabApiBase) return Promise.resolve(_resolvedTabApiBase);
     if (_tabApiBasePromise) return _tabApiBasePromise;
@@ -161,7 +170,7 @@
       })
       .catch(function (err) {
         var fallback = getFallbackTabApiBase();
-        if (fallback) {
+        if (fallback && isLocalDevFallbackAllowed()) {
           console.warn("[HelkinSwarmTab] user-map resolution failed; using fallback TAB_API_BASE:", err && err.message ? err.message : err);
           _resolvedTabApiBase = fallback;
           return fallback;
@@ -1193,6 +1202,12 @@
       var loading = document.getElementById("loading");
       if (loading) loading.remove();
       router.render();
+    }).catch(function (err) {
+      var loading = document.getElementById("loading");
+      if (loading) {
+        loading.innerHTML = '<div class="card"><h1>Tab unavailable</h1>' +
+          '<p>' + esc(err && err.message ? err.message : 'Tab routing failed.') + '</p></div>';
+      }
     });
   }).catch(function () {
     var loading = document.getElementById("loading");
