@@ -127,7 +127,7 @@ var funcInstanceMin        = lowCostDevMode ? 0   : 1
 var effectiveTelemetryMode = lowCostDevMode ? 'minimal' : devTelemetryMode
 var lawDailyCapGb          = lowCostDevMode ? json('0.1') : json('-1')  // -1 = no cap
 var appInsSamplingPct      = lowCostDevMode ? 10  : 100
-var appLogsDestination     = dirtyDevMode ? 'none' : 'log-analytics'
+var appLogsDestination     = dirtyDevMode ? 'azure-monitor' : 'log-analytics'
 
 var roleKvSecretsUser           = '4633458b-17de-408a-b874-0445c86b69e6'
 var roleKvAdmin                 = '00482a5a-887f-4fb3-b363-3b7fe8e74483'

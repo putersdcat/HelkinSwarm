@@ -159,7 +159,7 @@ For short-lived personal development stamps where cost matters more than retaine
 
 | Setting | Normal | Dirty Dev Mode |
 |---------|--------|----------------|
-| Container Apps environment logs | `log-analytics` | `none` |
+| Container Apps environment logs | `log-analytics` | `azure-monitor` (with no diagnostic settings) |
 | Log Analytics workspace | deployed | not deployed |
 | Application Insights resource | deployed | not deployed |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | set | omitted |
@@ -168,5 +168,5 @@ For short-lived personal development stamps where cost matters more than retaine
 
 **Activation**: Trigger `deploy-stamp.yml` with `DIRTY_DEV_MODE=true`.
 
-> ⚠️ This mode is intentionally blunt. You keep live log streaming from Container Apps, but you lose retained Log Analytics/App Insights history and Azure Monitor query alerts for that stamp.
+> ⚠️ This mode is intentionally blunt. It avoids the paid Log Analytics workspace by switching the Container Apps environment to `azure-monitor` without diagnostic settings. You keep live log streaming, but you lose retained Log Analytics/App Insights history and Azure Monitor query alerts for that stamp.
 

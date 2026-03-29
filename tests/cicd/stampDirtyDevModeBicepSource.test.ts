@@ -6,7 +6,7 @@ describe('stamp dirty dev mode bicep wiring', () => {
     const source = readFileSync('infra/main.bicep', 'utf8');
 
     expect(source).toContain('param dirtyDevMode bool = false');
-    expect(source).toContain("var appLogsDestination     = dirtyDevMode ? 'none' : 'log-analytics'");
+    expect(source).toContain("var appLogsDestination     = dirtyDevMode ? 'azure-monitor' : 'log-analytics'");
     expect(source).toContain("resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (!dirtyDevMode)");
     expect(source).toContain("resource appInsights 'Microsoft.Insights/components@2020-02-02' = if (!dirtyDevMode)");
     expect(source).toContain("destination: appLogsDestination");

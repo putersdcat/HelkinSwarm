@@ -62,7 +62,7 @@ on:
         type: boolean
         default: false
       DIRTY_DEV_MODE:
-        description: "Enable Dirty Dev Mode: disable paid Log Analytics/App Insights for the stamp and set Container Apps logs destination to none. (#382)"
+        description: "Enable Dirty Dev Mode: disable paid Log Analytics/App Insights for the stamp and switch Container Apps logs to azure-monitor without diagnostic sinks. (#382)"
         required: false
         type: boolean
         default: false
