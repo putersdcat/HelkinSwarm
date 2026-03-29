@@ -2,7 +2,6 @@
 // Spec ref: 05-Capabilities-Framework.md
 // Each export matches a tool name from manifest.json.
 
-import { z } from 'zod';
 import type { ToolHandler } from '../../src/capabilities/capabilityLoader.js';
 
 export const helkin_health_check: ToolHandler = async (_args) => {
@@ -216,122 +215,8 @@ export const helkin_skill_search: ToolHandler = async (args) => {
 };
 
 export const helkin_get_costs: ToolHandler = async (_args) => {
-  const { getBearerToken } = await import('../../src/auth/identity.js');
-  const { getEnvConfig } = await import('../../src/config/envConfig.js');
-
-  const config = getEnvConfig();
-  const subscriptionId = config.azureSubscriptionId;
-  const resourceGroup = config.azureResourceGroup;
-
-  if (!subscriptionId || !resourceGroup) {
-    return {
-      status: 'unavailable',
-      message: 'Azure subscription context not configured (AZURE_SUBSCRIPTION_ID / AZURE_RESOURCE_GROUP missing).',
-    };
-  }
-
-  let token: string;
-  try {
-    token = await getBearerToken('https://management.azure.com/.default');
-  } catch (err) {
-    return {
-      status: 'error',
-      message: `Failed to acquire Azure management token: ${err instanceof Error ? err.message : String(err)}`,
-    };
-  }
-
-  const url =
-    `https://management.azure.com/subscriptions/${encodeURIComponent(subscriptionId)}` +
-    `/resourceGroups/${encodeURIComponent(resourceGroup)}` +
-    `/providers/Microsoft.CostManagement/query?api-version=2023-11-01`;
-
-  const body = {
-    type: 'ActualCost',
-    dataSet: {
-      granularity: 'None',
-      aggregation: { totalCost: { name: 'Cost', function: 'Sum' } },
-      grouping: [{ type: 'Dimension', name: 'ServiceName' }],
-    },
-    timeframe: 'MonthToDate',
-  };
-
-  let response: Response;
-  try {
-    response = await fetch(url, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-  } catch (err) {
-    return {
-      status: 'error',
-      message: `Cost Management API request failed: ${err instanceof Error ? err.message : String(err)}`,
-    };
-  }
-
-  if (!response.ok) {
-    const text = await response.text().catch(() => '');
-    if (response.status === 403) {
-      return {
-        status: 'forbidden',
-        message: 'Cost Management Reader role not yet assigned to the managed identity. Re-deploy infra/main.bicep to apply.',
-      };
-    }
-    return {
-      status: 'error',
-      message: `Cost Management API: ${response.status} ${response.statusText}`,
-      detail: text.substring(0, 400),
-    };
-  }
-
-  const CostResultSchema = z.object({
-    properties: z.object({
-      columns: z.array(z.object({ name: z.string(), type: z.string() })).optional(),
-      rows: z.array(z.array(z.unknown())).optional(),
-    }).optional(),
-  });
-
-  const raw: unknown = await response.json();
-  const parsed = CostResultSchema.safeParse(raw);
-  if (!parsed.success || !parsed.data.properties) {
-    return { status: 'error', message: 'Unexpected Cost Management API response shape.' };
-  }
-
-  const columns = parsed.data.properties.columns ?? [];
-  const rows = parsed.data.properties.rows ?? [];
-
-  if (rows.length === 0) {
-    return { status: 'success', message: 'No cost data for the current billing period.', period: 'MonthToDate', resourceGroup };
-  }
-
-  const costIdx = columns.findIndex(c => c.name === 'Cost');
-  const currencyIdx = columns.findIndex(c => c.name === 'Currency');
-  const serviceIdx = columns.findIndex(c => c.name === 'ServiceName');
-
-  let totalCost = 0;
-  let currency = 'USD';
-  const breakdown: Array<{ service: string; cost: number }> = [];
-
-  for (const row of rows) {
-    const cost = typeof row[costIdx] === 'number' ? (row[costIdx] as number) : 0;
-    const svc = typeof row[serviceIdx] === 'string' ? (row[serviceIdx] as string) : 'Unknown';
-    if (typeof row[currencyIdx] === 'string') currency = row[currencyIdx] as string;
-    totalCost += cost;
-    if (cost > 0) {
-      breakdown.push({ service: svc, cost: Math.round(cost * 100) / 100 });
-    }
-  }
-
-  breakdown.sort((a, b) => b.cost - a.cost);
-
-  return {
-    status: 'success',
-    period: 'MonthToDate',
-    resourceGroup,
-    currency,
-    totalCost: Math.round(totalCost * 100) / 100,
-    breakdown,
-  };
+  const { getAzureResourceGroupCostSummary } = await import('../../src/integrations/azureCostManagement.js');
+  return getAzureResourceGroupCostSummary();
 };
 
 export const helkin_test_confirmation: ToolHandler = async (_args) => {

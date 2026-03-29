@@ -31,6 +31,19 @@
     return new Date(iso).toLocaleString();
   }
 
+  function fmtMoney(amount, currency) {
+    if (typeof amount !== "number") return "\u2014";
+    try {
+      return new Intl.NumberFormat(undefined, {
+        style: "currency",
+        currency: currency || "USD",
+        maximumFractionDigits: 2
+      }).format(amount);
+    } catch (_) {
+      return (currency || "USD") + " " + amount.toFixed(2);
+    }
+  }
+
   var PHASE_ICONS = {
     "llm-call": "\uD83E\uDD16", "tool-dispatch": "\uD83D\uDD27", "verification": "\uD83D\uDEE1\uFE0F",
     "memory": "\uD83E\uDDE0", "reply-send": "\uD83D\uDCAC", "orchestrator": "\u2699\uFE0F",
@@ -391,13 +404,14 @@
     var tabs = [
       { key: "overview", label: "Overview" },
       { key: "health", label: "Health" },
+      { key: "costs", label: "Costs" },
       { key: "config", label: "Config" },
       { key: "sessions", label: "Sessions" },
       { key: "dev", label: "Dev" }
     ];
 
-    var dataP = Promise.all([apiCall("dashboard"), apiCall("dev-console")]).then(function (r) {
-      return { dash: r[0], dev: r[1] };
+    var dataP = Promise.all([apiCall("dashboard"), apiCall("dev-console"), apiCall("costs")]).then(function (r) {
+      return { dash: r[0], dev: r[1], costs: r[2] };
     });
 
     renderSubtabPanel("panel-control-center", tabs, dataP, {
@@ -462,6 +476,52 @@
           healthRow("ok", "Orchestrator", d.dash.activeSessions + " active sessions") +
           healthRow(relay.pending > 5 ? "warn" : "ok", "IDE Relay", relay.total + " / " + relay.pending + " pending") +
           healthRow("ok", "Cosmos DB", mem.totalVaults + " vaults") +
+          '</div>';
+      },
+      costs: function (d) {
+        var data = d.costs || {};
+        if (data.status !== "success") {
+          return '<div class="card"><h2>Azure Costs</h2>' +
+            '<p class="error-msg">' + esc(data.message || 'Cost data unavailable.') + '</p>' +
+            (data.detail ? '<pre>' + esc(data.detail) + '</pre>' : '') +
+            '</div>';
+        }
+
+        var breakdown = data.breakdown || [];
+        var daily = data.daily || [];
+        var top = breakdown.slice(0, 8);
+        var maxServiceCost = top.reduce(function (max, item) { return Math.max(max, item.cost || 0); }, 0) || 1;
+        var recentDaily = daily.slice(-14);
+        var maxDailyCost = recentDaily.reduce(function (max, item) { return Math.max(max, item.cost || 0); }, 0) || 1;
+
+        return '<div class="kpi-row">' +
+          kpiTile('Period', data.period || 'MonthToDate') +
+          kpiTile('Resource Group', data.resourceGroup || '\u2014') +
+          kpiTile('Total Spend', fmtMoney(data.totalCost, data.currency), 'kpi-ok') +
+          kpiTile('Services', breakdown.length) +
+          '</div>' +
+          '<div class="two-col">' +
+          '<div class="card"><h2>Top Services</h2>' +
+          (top.length > 0 ? top.map(function (item) {
+            var width = Math.max(8, Math.round((item.cost / maxServiceCost) * 100));
+            return '<div class="cost-row">' +
+              '<div class="cost-row-header"><span>' + esc(item.service) + '</span><strong>' + esc(fmtMoney(item.cost, data.currency)) + '</strong></div>' +
+              '<div class="cost-bar"><span class="cost-bar-fill" style="width:' + width + '%"></span></div>' +
+              '</div>';
+          }).join('') : '<p class="empty-state">No cost breakdown data.</p>') +
+          '</div>' +
+          '<div class="card"><h2>Daily Trend (Last 14 Days)</h2>' +
+          (recentDaily.length > 0 ? recentDaily.map(function (item) {
+            var width = Math.max(6, Math.round((item.cost / maxDailyCost) * 100));
+            return '<div class="cost-row">' +
+              '<div class="cost-row-header"><span>' + esc(item.date) + '</span><strong>' + esc(fmtMoney(item.cost, data.currency)) + '</strong></div>' +
+              '<div class="cost-bar cost-bar-daily"><span class="cost-bar-fill" style="width:' + width + '%"></span></div>' +
+              '</div>';
+          }).join('') : '<p class="empty-state">No daily cost data yet.</p>') +
+          '</div></div>' +
+          '<div class="card"><h2>Notes</h2>' +
+          '<p>Current scope shows month-to-date spend for the active stamp resource group with service breakdowns and daily trend bars.</p>' +
+          '<p class="muted">Filters, model-level slices, and richer charts remain follow-on work under the broader Costs UI backlog.</p>' +
           '</div>';
       },
       config: function (d) {

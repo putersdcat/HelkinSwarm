@@ -18,6 +18,7 @@ import './staleSessionCleanupTimer.js';
 import './pendingIntentReplayTimer.js';
 import './tabGetStarted.js';
 import './tabDashboard.js';
+import './tabCosts.js';
 import './tabSessions.js';
 import './tabDevConsole.js';
 import './tabSkills.js';
