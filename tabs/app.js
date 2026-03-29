@@ -326,6 +326,39 @@
     }).join(' ');
   }
 
+  function errorMessageOf(value, fallback) {
+    if (!value) return fallback;
+    if (typeof value === 'string') return value;
+    if (value && typeof value.message === 'string') return value.message;
+    return fallback;
+  }
+
+  function toSettledPayload(result, requiredLabel) {
+    if (result && result.status === 'fulfilled') {
+      return { ok: true, value: result.value, error: null };
+    }
+
+    var error = errorMessageOf(result && result.reason, requiredLabel + ' unavailable.');
+    if (requiredLabel) {
+      throw new Error(error);
+    }
+
+    return { ok: false, value: null, error: error };
+  }
+
+  function renderWarningList(messages) {
+    var items = (messages || []).filter(Boolean);
+    if (!items.length) return '';
+    return '<div class="card"><h2>Partial Data Warnings</h2><ul class="mini-steps">' +
+      items.map(function (msg) { return '<li>' + esc(msg) + '</li>'; }).join('') +
+      '</ul></div>';
+  }
+
+  function hideEmbeddedNav() {
+    var nav = document.getElementById('nav');
+    if (nav) nav.style.display = 'none';
+  }
+
   function buildSkillIconDataUrl(skill) {
     var seed = (skill && (skill.domain || skill.displayName || skill.shortDescription) || 'skill');
     var initials = ((skill && (skill.displayName || skill.domain)) || 'S')
@@ -441,8 +474,16 @@
       { key: "help", label: "Help" }
     ];
 
-    var dataP = Promise.all([apiCall("get-started"), apiCall("skills"), apiCall("dashboard")]).then(function (r) {
-      return { gs: r[0], skills: r[1], dash: r[2] };
+    var dataP = Promise.allSettled([apiCall("get-started"), apiCall("skills"), apiCall("dashboard")]).then(function (results) {
+      var gs = toSettledPayload(results[0], 'Get Started data');
+      var skills = toSettledPayload(results[1], '');
+      var dash = toSettledPayload(results[2], '');
+      return {
+        gs: gs.value,
+        skills: skills.value || { skills: [] },
+        dash: dash.value || {},
+        _warnings: [skills.error, dash.error].filter(Boolean)
+      };
     });
 
     renderSubtabPanel("panel-get-started", tabs, dataP, {
@@ -484,6 +525,7 @@
           '<p style="margin-top:8px;color:var(--muted);font-size:13px">' +
           'Active capabilities: <strong>' + esc(gs.capabilitiesCount) + '</strong> tools across ' +
           '<strong>' + esc(skillCount) + '</strong> skills.</p></div>' +
+          renderWarningList(d._warnings) +
           '<div class="card"><h2>Active Skills</h2>' +
           '<div class="skill-list">' +
           (gs.activeSkills || []).map(function (s) {
@@ -598,8 +640,16 @@
       { key: "dev", label: "Dev" }
     ];
 
-    var dataP = Promise.all([apiCall("dashboard"), apiCall("dev-console"), apiCall("costs")]).then(function (r) {
-      return { dash: r[0], dev: r[1], costs: r[2] };
+    var dataP = Promise.allSettled([apiCall("dashboard"), apiCall("dev-console"), apiCall("costs")]).then(function (results) {
+      var dash = toSettledPayload(results[0], 'Control Center dashboard');
+      var dev = toSettledPayload(results[1], '');
+      var costs = toSettledPayload(results[2], '');
+      return {
+        dash: dash.value,
+        dev: dev.value || {},
+        costs: costs.value || { status: 'error', message: costs.error || 'Cost data unavailable.' },
+        _warnings: [dev.error, costs.error].filter(Boolean)
+      };
     });
 
     renderSubtabPanel("panel-control-center", tabs, dataP, {
@@ -631,7 +681,8 @@
           configRow("EU Residency", data.euResidencyMode ? '<span class="badge badge-info">ON</span>' : '<span class="badge">OFF</span>') +
           configRow("Maintenance", data.maintenanceMode ? '<span class="badge badge-warn">ACTIVE</span>' : '<span class="badge badge-ok">OFF</span>') +
           configRow("Skills", (data.capabilities.activeSkills || []).length + " loaded") +
-          '</div></div>';
+          '</div></div>' +
+          renderWarningList(d._warnings);
       },
       health: function (d) {
         var llm = d.dev.llmHealth || { aggregate: "ok", models: [] };
@@ -1129,6 +1180,7 @@
   }).then(function (ctx) {
     var thm = ctx.app && ctx.app.theme;
     applyTheme(thm === "dark" ? "dark" : thm === "contrast" ? "contrast" : "default");
+    hideEmbeddedNav();
     _userOid = ctx.user && ctx.user.id;
     if (!_userOid) {
       showError("loading", "User context unavailable.");
