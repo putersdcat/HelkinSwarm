@@ -4,6 +4,8 @@ export interface PendingLinkChallenge {
   connectionName: string;
   replyToActivityId: string;
   conversationId: string;
+  channelUserId?: string;
+  channelId?: string;
   createdAtMs: number;
   expiresAtMs: number;
 }
@@ -14,6 +16,8 @@ export interface RegisterPendingLinkChallengeInput {
   connectionName: string;
   replyToActivityId: string;
   conversationId?: string;
+  channelUserId?: string;
+  channelId?: string;
 }
 
 const PENDING_LINK_CHALLENGE_TTL_MS = 10 * 60 * 1000;

@@ -42,7 +42,7 @@ import { getBearerToken } from '../auth/identity.js';
 import {
   checkUserTokenForConnection,
   getSignInLinkForActivity,
-  redeemMagicCodeForConnection,
+  redeemMagicCodeWithFallbackForConnection,
   signOutUserFromConnection,
 } from '../auth/botUserTokenClient.js';
 import { extractBotFrameworkAuthCode } from '../auth/magicCode.js';
@@ -56,6 +56,7 @@ import { buildSkillLinkSigninCard, buildSkillRelinkSigninCard } from './linkCard
 import { extractMessageReferenceId, extractMessageReferencePreview } from './messageReference.js';
 import type { QuotedContext } from './quotedContext.js';
 import { trackEvent } from '../observability/telemetry.js';
+import { clearOboSession } from '../auth/oboSessionStore.js';
 
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
@@ -954,6 +955,8 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         connectionName,
         replyToActivityId: sentActivityId,
         conversationId: context.activity.conversation?.id,
+        channelUserId,
+        channelId,
       });
     }
   }
@@ -986,6 +989,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       const channelUserId = context.activity.from.id;
       const channelId = context.activity.channelId ?? '';
       await signOutUserFromConnection(channelUserId, channelId, manifest.linkConfig.connectionName);
+      await this.clearLocalSkillLinkState(userId);
       await context.sendActivity(`✅ **${manifest.domain}** unlinked. Credentials revoked.`);
       console.error(`[HelkinSwarmBot] User unlinked skill=${manifest.domain} userId=${userId}`);
     } catch (err) {
@@ -1019,6 +1023,8 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return;
     }
 
+    await this.clearLocalSkillLinkState(userId);
+
     // Unlink first (silently)
     try {
       const channelUserId = context.activity.from.id;
@@ -1051,8 +1057,17 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         connectionName: manifest.linkConfig.connectionName,
         replyToActivityId: sentActivityId,
         conversationId: context.activity.conversation?.id,
+        channelUserId: context.activity.from.id,
+        channelId: context.activity.channelId ?? '',
       });
     }
+  }
+
+  private async clearLocalSkillLinkState(userId: string): Promise<void> {
+    await Promise.all([
+      clearPendingLinkChallenge(userId),
+      clearOboSession(userId),
+    ]);
   }
 
   private async getSkillSignInLink(
@@ -1075,16 +1090,32 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     const channelId = context.activity.channelId ?? '';
 
     try {
-      const token = await redeemMagicCodeForConnection(
-        channelUserId,
-        channelId,
+      const redemption = await redeemMagicCodeWithFallbackForConnection(
         pendingLinkChallenge.connectionName,
         authCode,
+        [
+          ...(pendingLinkChallenge.channelUserId !== undefined
+            ? [{
+                userId: pendingLinkChallenge.channelUserId,
+                channelId: pendingLinkChallenge.channelId ?? channelId,
+              }]
+            : []),
+          { userId: channelUserId, channelId },
+        ],
       );
+      const token = redemption?.token;
 
       if (token) {
         const linkCorrelationId = `link-${crypto.randomUUID()}`;
         let oboBootstrapError: string | undefined;
+        if (
+          redemption !== undefined &&
+          (redemption.userId !== channelUserId || redemption.channelId !== channelId)
+        ) {
+          console.info(
+            `[HelkinSwarmBot] Magic code redeemed using stored tuple for userId=${pendingLinkChallenge.userId}: redeemedUserId=${redemption.userId} redeemedChannelId=${redemption.channelId} currentUserId=${channelUserId} currentChannelId=${channelId}`,
+          );
+        }
         try {
           const { bootstrapOboSession } = await import('../auth/oboSessionBootstrap.js');
           await bootstrapOboSession({

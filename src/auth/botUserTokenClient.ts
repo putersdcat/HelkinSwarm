@@ -3,6 +3,11 @@ import { ClaimsIdentity } from 'botframework-connector';
 import type { UserTokenClient } from 'botframework-connector';
 import { getEnvConfig } from '../config/envConfig.js';
 
+export interface TokenIdentityTuple {
+  userId: string;
+  channelId: string;
+}
+
 let authInstance: ConfigurationBotFrameworkAuthentication | undefined;
 
 function getBotFrameworkAuthentication(): ConfigurationBotFrameworkAuthentication {
@@ -45,6 +50,44 @@ export async function redeemMagicCodeForConnection(
   const tokenClient = await createBotUserTokenClient();
   const result = await tokenClient.getUserToken(userId, connectionName, channelId, magicCode);
   return result?.token;
+}
+
+export async function redeemMagicCodeWithFallbackForConnection(
+  connectionName: string,
+  magicCode: string,
+  identities: TokenIdentityTuple[],
+): Promise<(TokenIdentityTuple & { token: string }) | undefined> {
+  const tokenClient = await createBotUserTokenClient();
+  const seen = new Set<string>();
+
+  for (const identity of identities) {
+    const key = `${identity.userId}::${identity.channelId}`;
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+
+    try {
+      const result = await tokenClient.getUserToken(
+        identity.userId,
+        connectionName,
+        identity.channelId,
+        magicCode,
+      );
+      if (result?.token) {
+        return {
+          ...identity,
+          token: result.token,
+        };
+      }
+    } catch (err) {
+      console.warn(
+        `[botUserTokenClient] redeemMagicCodeWithFallbackForConnection failed: userId=${identity.userId}, channelId=${identity.channelId}, connection=${connectionName}, error=${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  return undefined;
 }
 
 export async function checkUserTokenForConnection(

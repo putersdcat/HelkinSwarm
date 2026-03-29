@@ -34,6 +34,7 @@ const {
   checkUserTokenForConnection,
   signOutUserFromConnection,
   redeemMagicCodeForConnection,
+  redeemMagicCodeWithFallbackForConnection,
 } = await import('../../src/auth/botUserTokenClient.js');
 
 describe('botUserTokenClient', () => {
@@ -94,6 +95,58 @@ describe('botUserTokenClient', () => {
       const result = await redeemMagicCodeForConnection('user-1', 'msteams', 'GraphOAuth', 'bad-code');
 
       expect(result).toBeUndefined();
+    });
+  });
+
+  describe('redeemMagicCodeWithFallbackForConnection', () => {
+    it('uses the first identity tuple that yields a token', async () => {
+      mockGetUserToken
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ token: 'fallback-token' });
+
+      const result = await redeemMagicCodeWithFallbackForConnection('GraphOAuth', 'abc123', [
+        { userId: 'user-original', channelId: 'msteams' },
+        { userId: 'user-current', channelId: 'msteams' },
+      ]);
+
+      expect(result).toEqual({
+        userId: 'user-current',
+        channelId: 'msteams',
+        token: 'fallback-token',
+      });
+      expect(mockGetUserToken).toHaveBeenNthCalledWith(
+        1,
+        'user-original',
+        'GraphOAuth',
+        'msteams',
+        'abc123',
+      );
+      expect(mockGetUserToken).toHaveBeenNthCalledWith(
+        2,
+        'user-current',
+        'GraphOAuth',
+        'msteams',
+        'abc123',
+      );
+    });
+
+    it('skips duplicate identity tuples and continues after token client errors', async () => {
+      mockGetUserToken
+        .mockRejectedValueOnce(new Error('temporary failure'))
+        .mockResolvedValueOnce({ token: 'recovered-token' });
+
+      const result = await redeemMagicCodeWithFallbackForConnection('GraphOAuth', 'abc123', [
+        { userId: 'user-1', channelId: 'msteams' },
+        { userId: 'user-1', channelId: 'msteams' },
+        { userId: 'user-2', channelId: 'emulator' },
+      ]);
+
+      expect(result).toEqual({
+        userId: 'user-2',
+        channelId: 'emulator',
+        token: 'recovered-token',
+      });
+      expect(mockGetUserToken).toHaveBeenCalledTimes(2);
     });
   });
 });

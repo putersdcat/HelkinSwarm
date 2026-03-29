@@ -14,12 +14,16 @@ describe('pendingLinkChallengeStore', () => {
       skillDomain: 'outlook',
       connectionName: 'GraphOAuth',
       replyToActivityId: 'activity-123',
+      channelUserId: '29:user-a',
+      channelId: 'msteams',
     }, nowMs);
 
     await expect(getPendingLinkChallengeForReply('user-a', 'activity-123', nowMs + 1_000)).resolves.toMatchObject({
       skillDomain: 'outlook',
       connectionName: 'GraphOAuth',
       replyToActivityId: 'activity-123',
+      channelUserId: '29:user-a',
+      channelId: 'msteams',
     });
     await expect(getPendingLinkChallengeForReply('user-a', 'activity-999', nowMs + 1_000)).resolves.toBeUndefined();
     await expect(getPendingLinkChallengeForReply('user-b', 'activity-123', nowMs + 1_000)).resolves.toBeUndefined();
@@ -34,6 +38,8 @@ describe('pendingLinkChallengeStore', () => {
       skillDomain: 'outlook',
       connectionName: 'GraphOAuth',
       replyToActivityId: 'activity-expire',
+      channelUserId: '29:user-expire',
+      channelId: 'msteams',
     }, nowMs);
 
     await expect(getPendingLinkChallengeForReply('user-expire', 'activity-expire', nowMs + (10 * 60 * 1000) + 1)).resolves.toBeUndefined();
@@ -46,6 +52,8 @@ describe('pendingLinkChallengeStore', () => {
       skillDomain: 'outlook',
       connectionName: 'GraphOAuth',
       replyToActivityId: 'activity-original',
+      channelUserId: '29:user-fallback',
+      channelId: 'msteams',
     }, nowMs);
 
     // Strict match fails for wrong replyToId
@@ -55,6 +63,8 @@ describe('pendingLinkChallengeStore', () => {
     await expect(getPendingLinkChallengeForUser('user-fallback', nowMs + 1_000)).resolves.toMatchObject({
       skillDomain: 'outlook',
       replyToActivityId: 'activity-original',
+      channelUserId: '29:user-fallback',
+      channelId: 'msteams',
     });
 
     // Unknown user returns undefined
