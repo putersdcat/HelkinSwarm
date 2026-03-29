@@ -25,4 +25,12 @@ describe('sessionOrchestrator plan context preservation', () => {
     expect(source).toContain("let followUp: LlmResult = deterministicFollowUpToolCall");
     expect(source).toContain("finishReason: 'tool_calls'");
   });
+
+  it('forces a text-only wrap-up after a successful high-risk follow-up action', () => {
+    const source = readFileSync('src/orchestrator/sessionOrchestrator.ts', 'utf8');
+
+    expect(source).toContain("const shouldForceFinalTextResponse = highestRoundRisk === 'high'");
+    expect(source).toContain('const allowMoreFollowUpTools = !isLastRound && !shouldForceFinalTextResponse;');
+    expect(source).toContain('enableRetry: allowMoreFollowUpTools');
+  });
 });

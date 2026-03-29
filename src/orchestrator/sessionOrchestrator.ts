@@ -679,8 +679,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         toolResults.totalCalls += roundResults.results.length;
         scopedTokenMintCount += roundResults.results.filter((result) => result.scopedTokenMinted).length;
 
+        const shouldForceFinalTextResponse = highestRoundRisk === 'high'
+          && roundResults.results.some((result) => result.success);
+
         // On the last allowed round, don't pass tools — force a text response
         const isLastRound = toolRound >= maxToolRounds;
+        const allowMoreFollowUpTools = !isLastRound && !shouldForceFinalTextResponse;
 
         // Call follow-up again with full conversation history
         const roundFollowUpInput: LlmFollowUpInput = {
@@ -692,9 +696,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           toolResults: toolResults?.results.slice(0, initialResultCount) ?? [],
           correlationId,
           modelOverride: input.modelOverride,
-          enableRetry: !isLastRound,
-          tools: !isLastRound ? (selectiveFollowUpSchemas ?? allToolSchemas) : undefined,
-          toolChoice: !isLastRound
+          enableRetry: allowMoreFollowUpTools,
+          tools: allowMoreFollowUpTools ? (selectiveFollowUpSchemas ?? allToolSchemas) : undefined,
+          toolChoice: allowMoreFollowUpTools
             ? (getForcedDiscoveryFollowUpToolChoice(input.userMessage, selectiveFollowUpSchemas) ?? undefined)
             : undefined,
           additionalTurns,
