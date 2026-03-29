@@ -17,7 +17,15 @@ interface OrchestratorStageDocument extends ActiveTurnStage {
 const SESSIONS_CONTAINER = 'sessions';
 const STAGE_TTL_SECONDS = 15 * 60;
 const STAGE_IO_TIMEOUT_MS = 1_000;
+const STAGE_TTL_MS = STAGE_TTL_SECONDS * 1_000;
 const activeTurns = new Map<string, ActiveTurnStage>();
+
+function isStageEntryFresh(
+  entry: Pick<ActiveTurnStage, 'startedAtMs' | 'updatedAtMs'>,
+  nowMs: number,
+): boolean {
+  return nowMs - Math.max(entry.startedAtMs, entry.updatedAtMs) < STAGE_TTL_MS;
+}
 
 function makeStageDocId(correlationId: string): string {
   return `stage-${correlationId}`;
@@ -129,6 +137,7 @@ export async function getOrchestratorStageSnapshot(nowMs = Date.now()): Promise<
       .fetchAll(), STAGE_IO_TIMEOUT_MS);
 
     const turns = resources
+      .filter((entry) => isStageEntryFresh(entry, nowMs))
       .map((entry) => ({
         correlationId: entry.correlationId,
         userId: entry.userId,
@@ -145,6 +154,7 @@ export async function getOrchestratorStageSnapshot(nowMs = Date.now()): Promise<
     };
   } catch {
     const turns = Array.from(activeTurns.values())
+      .filter((entry) => isStageEntryFresh(entry, nowMs))
       .map((entry) => ({
         correlationId: entry.correlationId,
         userId: entry.userId,

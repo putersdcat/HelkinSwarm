@@ -31,4 +31,13 @@ describe('orchestratorStageHealth', () => {
     expect(snapshot.oldestAgeMs).toBeNull();
     expect(snapshot.turns).toEqual([]);
   });
+
+  it('filters out stale stage entries once they age beyond the stage TTL', async () => {
+    await recordOrchestratorStage('corr-stale', 'build-prompt', 'user-1', 1_000);
+
+    const snapshot = await getOrchestratorStageSnapshot(901_001);
+    expect(snapshot.activeTurns).toBe(0);
+    expect(snapshot.oldestAgeMs).toBeNull();
+    expect(snapshot.turns).toEqual([]);
+  });
 });
