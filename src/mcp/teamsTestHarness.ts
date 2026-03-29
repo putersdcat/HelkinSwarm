@@ -355,6 +355,15 @@ async function getRecentChatMessages(chatId: string, count: number): Promise<Gra
   return msgsResp.value;
 }
 
+async function fetchRuntimeHealth(): Promise<unknown> {
+  try {
+    const resp = await fetch(STAMP_HEALTH_URL);
+    return await resp.json();
+  } catch (error) {
+    return { error: String(error) };
+  }
+}
+
 function escapeKqlLiteral(value: string): string {
   return value.replace(/'/g, "''");
 }
@@ -1031,18 +1040,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
 
     case 'teams_test_correlate_runtime': {
-      const resp = await fetch(STAMP_HEALTH_URL);
-      if (!resp.ok) {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify({ error: `Health endpoint returned ${resp.status}` }),
-            },
-          ],
-        };
-      }
-      const health = await resp.json();
+      const health = await fetchRuntimeHealth();
       return {
         content: [{ type: 'text', text: JSON.stringify(health, null, 2) }],
       };
@@ -1061,16 +1059,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         );
       }
 
-      // Step 1: Correlate runtime health
-      let health: unknown;
-      try {
-        const resp = await fetch(STAMP_HEALTH_URL);
-        health = await resp.json();
-      } catch (e) {
-        health = { error: String(e) };
-      }
-
-      // Step 2: Send message + poll for bot reply
+      const runtimeBefore = await fetchRuntimeHealth();
       const sent = await sendPlainChatMessage(settings.chatId, message);
       const reply = await waitForBotReplyAfter(
         settings.chatId,
@@ -1078,6 +1067,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         timeoutSeconds,
         { botUserId: settings.botUserId, botDisplayNameHint: BOT_DISPLAY_NAME_HINT },
       );
+      const runtimeAfter = await fetchRuntimeHealth();
+
+      const recentMessages = await getRecentChatMessages(settings.chatId, 25);
+      const messageWindow = getHarnessMessageWindow(recentMessages, {
+        aroundMessageId: sent.id,
+        beforeCount: 1,
+        afterCount: 4,
+      });
 
       const correlationId = `MCP-${Date.now().toString(16).toUpperCase()}`;
       return {
@@ -1087,9 +1084,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             text: JSON.stringify(
               {
                 passed: reply.botReply !== null,
+                sentMessageId: sent.id,
+                sentAt: sent.createdDateTime ?? null,
                 botReply: reply.botReply ?? null,
                 elapsed: reply.elapsed,
-                runtime: health,
+                runtimeBefore,
+                runtimeAfter,
+                messageWindow,
                 correlationId,
               },
               null,
@@ -1119,13 +1120,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         );
       }
 
-      let health: unknown;
-      try {
-        const resp = await fetch(STAMP_HEALTH_URL);
-        health = await resp.json();
-      } catch (e) {
-        health = { error: String(e) };
-      }
+      const runtimeBefore = await fetchRuntimeHealth();
 
       const sent = await sendQuotedReplyMessage(settings.chatId, messageId, message, quotedPreview);
       const reply = await waitForBotReplyAfter(
@@ -1134,6 +1129,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         timeoutSeconds,
         { botUserId: settings.botUserId, botDisplayNameHint: BOT_DISPLAY_NAME_HINT },
       );
+      const runtimeAfter = await fetchRuntimeHealth();
+
+      const recentMessages = await getRecentChatMessages(settings.chatId, 25);
+      const messageWindow = getHarnessMessageWindow(recentMessages, {
+        aroundMessageId: sent.id,
+        beforeCount: 1,
+        afterCount: 4,
+      });
 
       return {
         content: [
@@ -1147,7 +1150,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 sentAt: sent.createdDateTime ?? null,
                 botReply: reply.botReply ?? null,
                 elapsed: reply.elapsed,
-                runtime: health,
+                runtimeBefore,
+                runtimeAfter,
+                messageWindow,
                 correlationId: `MCP-${Date.now().toString(16).toUpperCase()}`,
               },
               null,
