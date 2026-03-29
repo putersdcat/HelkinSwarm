@@ -50,10 +50,11 @@ app.http('messages', {
     const activity = (await req.json()) as Activity;
 
     // Teams retries the webhook POST if 200 isn't returned within ~15s (#300).
-    // Use Promise.race with a 9s timeout to guarantee we reply before Teams retries.
+    // Use Promise.race with a 14s timeout so normal slash-command / immediate-reply
+    // turns get more time to complete before we fall back to background execution.
     // If the handler is still running when the timeout fires, processing continues
     // in the background (Container Apps keeps the Node.js process alive).
-    const EARLY_RESPONSE_MS = 9_000;
+    const EARLY_RESPONSE_MS = 14_000;
 
     const adapterPromise = adapter.processActivityForFunctions(
       authHeader,
