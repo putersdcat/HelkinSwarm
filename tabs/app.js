@@ -7,8 +7,10 @@
 (function () {
   "use strict";
 
-  // Per-stamp API base — substituted at deploy time by deploy-tabs.yml
+  // Legacy single-stamp fallback — kept for local/dev recovery only.
+  // Production multi-stamp routing should resolve user -> stamp via user-map.json.
   var TAB_API_BASE = "{{TAB_API_BASE}}";
+  var USER_MAP_URL = "user-map.json";
 
   // ─── Utilities ───────────────────────────────────────────────────────────
 
@@ -111,8 +113,63 @@
   var _userOid = null;
   var _cachedToken = null;
   var _ssoAttempted = false;
+  var _resolvedTabApiBase = null;
+  var _tabApiBasePromise = null;
   var _oboBootstrapAttempted = false;
   var _oboBootstrapPromise = null;
+
+  function normalizeEndpointToTabApiBase(endpoint) {
+    if (!endpoint || typeof endpoint !== "string") return null;
+    var trimmed = endpoint.replace(/\/$/, "");
+    if (/\/api\/tab$/i.test(trimmed)) return trimmed;
+    if (/\/api\/messages$/i.test(trimmed)) return trimmed.replace(/\/api\/messages$/i, "/api/tab");
+    return null;
+  }
+
+  function getFallbackTabApiBase() {
+    if (!TAB_API_BASE || TAB_API_BASE.indexOf("{{") !== -1) return null;
+    return TAB_API_BASE.replace(/\/$/, "");
+  }
+
+  function resolveTabApiBase() {
+    if (_resolvedTabApiBase) return Promise.resolve(_resolvedTabApiBase);
+    if (_tabApiBasePromise) return _tabApiBasePromise;
+
+    _tabApiBasePromise = fetch(USER_MAP_URL, { cache: "no-store" })
+      .then(function (resp) {
+        if (!resp.ok) throw new Error("User map unavailable: " + resp.status);
+        return resp.json();
+      })
+      .then(function (body) {
+        var users = body && body.users ? body.users : null;
+        var entry = users && _userOid ? users[_userOid] : null;
+        if (!entry) {
+          throw new Error("No stamp mapping exists for this Teams user.");
+        }
+        if (entry.enabled === false) {
+          throw new Error("This user's HelkinSwarm stamp is disabled.");
+        }
+
+        var resolved = normalizeEndpointToTabApiBase(entry.endpoint);
+        if (!resolved) {
+          throw new Error("User stamp endpoint is not a valid tab API source.");
+        }
+
+        _resolvedTabApiBase = resolved;
+        return resolved;
+      })
+      .catch(function (err) {
+        var fallback = getFallbackTabApiBase();
+        if (fallback) {
+          console.warn("[HelkinSwarmTab] user-map resolution failed; using fallback TAB_API_BASE:", err && err.message ? err.message : err);
+          _resolvedTabApiBase = fallback;
+          return fallback;
+        }
+        throw err;
+      });
+
+    return _tabApiBasePromise;
+  }
 
   function bootstrapOboFromTabToken(token) {
     if (!token) return Promise.resolve(null);
@@ -120,12 +177,14 @@
     if (_oboBootstrapAttempted) return Promise.resolve(null);
     _oboBootstrapAttempted = true;
 
-    _oboBootstrapPromise = fetch(TAB_API_BASE + "/bootstrap-obo", {
-      method: "POST",
-      headers: {
-        "x-helkinswarm-user-id": _userOid,
-        "Authorization": "Bearer " + token
-      }
+    _oboBootstrapPromise = resolveTabApiBase().then(function (apiBase) {
+      return fetch(apiBase + "/bootstrap-obo", {
+        method: "POST",
+        headers: {
+          "x-helkinswarm-user-id": _userOid,
+          "Authorization": "Bearer " + token
+        }
+      });
     }).then(function (resp) {
       if (!resp.ok) {
         return resp.json().catch(function () { return {}; }).then(function (body) {
@@ -158,10 +217,12 @@
 
   function apiCall(endpoint) {
     if (!_userOid) return Promise.reject(new Error("Not authenticated."));
-    return getAadToken().then(function (token) {
+    return Promise.all([getAadToken(), resolveTabApiBase()]).then(function (values) {
+      var token = values[0];
+      var apiBase = values[1];
       if (!token) throw new Error("Authentication required \u2014 Teams SSO token unavailable.");
       var headers = { "x-helkinswarm-user-id": _userOid, "Authorization": "Bearer " + token };
-      return fetch(TAB_API_BASE + "/" + endpoint, { headers: headers });
+      return fetch(apiBase + "/" + endpoint, { headers: headers });
     }).then(function (resp) {
       if (resp.status === 503) {
         return resp.json().then(function (body) {
@@ -175,10 +236,12 @@
 
   function apiPost(endpoint) {
     if (!_userOid) return Promise.reject(new Error("Not authenticated."));
-    return getAadToken().then(function (token) {
+    return Promise.all([getAadToken(), resolveTabApiBase()]).then(function (values) {
+      var token = values[0];
+      var apiBase = values[1];
       if (!token) throw new Error("Authentication required.");
       var headers = { "x-helkinswarm-user-id": _userOid, "Authorization": "Bearer " + token };
-      return fetch(TAB_API_BASE + "/" + endpoint, { method: "POST", headers: headers });
+      return fetch(apiBase + "/" + endpoint, { method: "POST", headers: headers });
     }).then(function (resp) {
       if (!resp.ok) throw new Error("Tab API error: " + resp.status);
       return resp.json();
@@ -1033,14 +1096,16 @@
     microsoftTeams.app.registerOnThemeChangeHandler(function (theme) {
       applyTheme(theme === "dark" ? "dark" : theme === "contrast" ? "contrast" : "default");
     });
-    var loading = document.getElementById("loading");
-    if (loading) loading.remove();
-    router.render();
+    return resolveTabApiBase().then(function () {
+      var loading = document.getElementById("loading");
+      if (loading) loading.remove();
+      router.render();
+    });
   }).catch(function () {
     var loading = document.getElementById("loading");
     if (loading) {
-      loading.innerHTML = '<div class="card"><h1>Authentication required</h1>' +
-        '<p>Open this tab inside a signed-in Teams session.</p></div>';
+      loading.innerHTML = '<div class="card"><h1>Tab unavailable</h1>' +
+        '<p>Open this tab inside a signed-in Teams session with a mapped HelkinSwarm stamp.</p></div>';
     }
   });
 })();

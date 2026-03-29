@@ -18,13 +18,15 @@
 name: Deploy Tab Host
 
 on:
-  workflow_dispatch:  # push trigger disabled to save Actions quota (#279)
-  # push:
-  #   paths:
-  #     - 'tabs/**'
-  #     - 'infra/main-tabs.bicep'
-  #   branches:
-  #     - main
+  workflow_dispatch:
+  push:
+    paths:
+      - 'tabs/**'
+      - 'config/user-map.json'
+      - 'infra/main-tabs.bicep'
+      - '.github/workflows/deploy-tabs.yml'
+    branches:
+      - main
 
 concurrency:
   group: deploy-tabs
@@ -153,6 +155,18 @@ jobs:
           elif [ -f "tabs/app.js" ]; then
             echo "⚠️ TAB_API_BASE not set — SPA API calls will fail until vars.TAB_API_BASE is configured"
           fi
+
+      - name: Publish public user-map for runtime stamp resolution
+        run: |
+          if [ ! -f "config/user-map.json" ]; then
+            echo "❌ config/user-map.json not found"
+            exit 1
+          fi
+
+          jq '{ version, users: (.users | with_entries(.value |= { alias, endpoint, enabled })) }' \
+            config/user-map.json > tabs/user-map.json
+
+          echo "✅ Published tabs/user-map.json with trimmed public stamp routing data"
 
       - name: Upload SPA assets to $web container
         run: |
