@@ -26,6 +26,11 @@ export function isColdStarting(): boolean {
   return Date.now() - containerStartTime < COLD_START_WINDOW_MS;
 }
 
+/** Returns the current process uptime in milliseconds since the container started. */
+export function getContainerAgeMs(nowMs = Date.now()): number {
+  return Math.max(0, nowMs - containerStartTime);
+}
+
 // ---------------------------------------------------------------------------
 // Cosmos-based deduplication (#149)
 // During rolling deploys, multiple containers may try to send the same notice.

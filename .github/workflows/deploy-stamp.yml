@@ -756,23 +756,26 @@ jobs:
           echo "🏥 Function App hostname: $HOSTNAME"
           echo "fqdn=$HOSTNAME" >> "$GITHUB_OUTPUT"
 
-          # Health check with retries
+          # Health check with retries. The stamp is only considered ready when the
+          # health endpoint reports overall status=healthy, not merely HTTP 200.
           MAX_RETRIES=6
           RETRY=0
           while [ $RETRY -lt $MAX_RETRIES ]; do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$HOSTNAME/api/health" 2>/dev/null || echo "000")
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ Health check passed (HTTP $HTTP_CODE)"
-              curl -s "https://$HOSTNAME/api/health" | jq .
+            HEALTH_JSON=$(curl -s "https://$HOSTNAME/api/health" 2>/dev/null || echo "")
+            HTTP_CODE=$(printf '%s' "$HEALTH_JSON" | jq -r '.status' >/dev/null 2>&1 && echo "200" || echo "000")
+            OVERALL_STATUS=$(printf '%s' "$HEALTH_JSON" | jq -r '.status // empty' 2>/dev/null || echo "")
+            if [ "$HTTP_CODE" = "200" ] && [ "$OVERALL_STATUS" = "healthy" ]; then
+              echo "✅ Health check passed (status=$OVERALL_STATUS)"
+              printf '%s' "$HEALTH_JSON" | jq .
               break
             fi
             RETRY=$((RETRY + 1))
-            echo "⏳ Health check attempt $RETRY/$MAX_RETRIES returned HTTP $HTTP_CODE — retrying in 30s..."
+            echo "⏳ Health check attempt $RETRY/$MAX_RETRIES returned status='${OVERALL_STATUS:-unknown}' — retrying in 30s..."
             sleep 30
           done
 
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "⚠️ Health check did not pass after $MAX_RETRIES attempts (HTTP $HTTP_CODE)"
+          if [ "$HTTP_CODE" != "200" ] || [ "$OVERALL_STATUS" != "healthy" ]; then
+            echo "⚠️ Health check did not reach status=healthy after $MAX_RETRIES attempts (final='${OVERALL_STATUS:-unknown}')"
             echo "   This may be expected on first deploy while the container starts."
           fi
 

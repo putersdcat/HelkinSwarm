@@ -8,6 +8,9 @@ import { getLlmAggregateHealth, getLlmHealthSnapshot } from '../llm/llmHealthTra
 import { getOrchestratorStageSnapshot } from '../observability/orchestratorStageHealth.js';
 import { getPendingAckSnapshot } from '../bot/conversationStore.js';
 import { STALE_ACK_THRESHOLD_MS } from '../bot/staleAckRecovery.js';
+import { getContainerAgeMs } from '../bot/lifecycleNotices.js';
+
+const POST_START_MESSAGE_READINESS_GRACE_MS = 180_000;
 
 interface HealthResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -95,9 +98,18 @@ export async function healthHandler(
   const llmHealth = getLlmAggregateHealth();
   const llmSnapshot = getLlmHealthSnapshot();
   const orchestratorSnapshot = await getOrchestratorStageSnapshot();
+  const containerAgeMs = getContainerAgeMs();
+
+  const startupAcceptanceGap =
+    containerAgeMs < POST_START_MESSAGE_READINESS_GRACE_MS &&
+    messagePath.lastSuccessAt === null &&
+    messagePath.pendingTurns === 0 &&
+    pendingAckSnapshot.pendingAcks === 0;
 
   const effectiveMessagePathStatus: HealthResponse['components']['messagePath'] =
-    pendingAckSnapshot.stalePendingAcks > 0 && messagePath.status === 'ok'
+    startupAcceptanceGap && messagePath.status === 'ok'
+      ? 'degraded'
+      : pendingAckSnapshot.stalePendingAcks > 0 && messagePath.status === 'ok'
       ? 'degraded'
       : messagePath.status;
 
