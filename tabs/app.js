@@ -321,6 +321,39 @@
     }).join(' ');
   }
 
+  function buildSkillIconDataUrl(skill) {
+    var seed = (skill && (skill.domain || skill.displayName || skill.shortDescription) || 'skill');
+    var initials = ((skill && (skill.displayName || skill.domain)) || 'S')
+      .split(/\s+/)
+      .map(function (part) { return part ? part.charAt(0).toUpperCase() : ''; })
+      .join('')
+      .slice(0, 2) || 'S';
+    var hash = 0;
+    for (var i = 0; i < seed.length; i++) {
+      hash = ((hash << 5) - hash) + seed.charCodeAt(i);
+      hash |= 0;
+    }
+    var hue = Math.abs(hash) % 360;
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">' +
+      '<rect width="64" height="64" rx="14" fill="hsl(' + hue + ', 62%, 46%)" />' +
+      '<text x="32" y="38" text-anchor="middle" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#ffffff">' +
+      esc(initials) + '</text></svg>';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+  }
+
+  function wireSkillIconFallbacks(container) {
+    if (!container) return;
+    container.querySelectorAll('.skill-icon').forEach(function (img) {
+      if (img.dataset.fallbackWired === 'true') return;
+      img.dataset.fallbackWired = 'true';
+      img.addEventListener('error', function () {
+        if (img.dataset.fallbackApplied === 'true') return;
+        img.dataset.fallbackApplied = 'true';
+        img.src = img.dataset.fallbackSrc || buildSkillIconDataUrl({ displayName: img.alt || 'Skill' });
+      });
+    });
+  }
+
   function renderSkillInspection(result) {
     if (!result) {
       return '<p class="empty-state">Choose a skill action to inspect onboarding, dependency, or lifecycle state.</p>';
@@ -972,6 +1005,7 @@
       },
       _refreshFn: renderSkillsLibrary,
       afterRender: function (key, data, container) {
+        wireSkillIconFallbacks(container);
         if (key !== "manage") return;
 
         var resultPanel = container.querySelector("#skill-inspection-panel");
@@ -1021,9 +1055,10 @@
     var badge = s.installed ? '<span class="badge badge-ok">Installed</span>' : '<span class="badge">Available</span>';
     var linkBadge = s.linkRequired ? ' <span class="badge badge-warn">OAuth</span>' : '';
     var tools = (s.toolNames || []).map(function (t) { return '<code>' + esc(t) + '</code>'; }).join(', ');
+    var fallbackSrc = buildSkillIconDataUrl(s);
     return '<div class="card skill-card">' +
       '<div class="skill-card-header">' +
-      '<img src="' + esc(s.iconUrl) + '" alt="" class="skill-icon" width="32" height="32" />' +
+      '<img src="' + esc(s.iconUrl) + '" alt="' + esc(s.displayName) + '" class="skill-icon" width="32" height="32" data-fallback-src="' + fallbackSrc + '" />' +
       '<div><h3>' + esc(s.displayName) + '</h3>' + badge + linkBadge + '</div></div>' +
       '<p>' + esc(s.shortDescription) + '</p>' +
       '<p class="muted">' + s.toolCount + ' tool' + (s.toolCount !== 1 ? 's' : '') + ': ' + tools + '</p>' +
@@ -1038,9 +1073,10 @@
   }
 
   function renderManageSkillCard(s) {
+    var fallbackSrc = buildSkillIconDataUrl(s);
     return '<div class="card skill-card manage-card">' +
       '<div class="skill-card-header">' +
-      '<img src="' + esc(s.iconUrl) + '" alt="" class="skill-icon" width="32" height="32" />' +
+      '<img src="' + esc(s.iconUrl) + '" alt="' + esc(s.displayName) + '" class="skill-icon" width="32" height="32" data-fallback-src="' + fallbackSrc + '" />' +
       '<div><h3>' + esc(s.displayName) + '</h3>' +
       '<span class="badge badge-ok">Loaded</span>' +
       (s.linkRequired ? ' <span class="badge badge-warn">OAuth</span>' : '') +
