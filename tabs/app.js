@@ -340,20 +340,42 @@
       { key: "help", label: "Help" }
     ];
 
-    var dataP = Promise.all([apiCall("get-started"), apiCall("skills")]).then(function (r) {
-      return { gs: r[0], skills: r[1] };
+    var dataP = Promise.all([apiCall("get-started"), apiCall("skills"), apiCall("dashboard")]).then(function (r) {
+      return { gs: r[0], skills: r[1], dash: r[2] };
     });
 
     renderSubtabPanel("panel-get-started", tabs, dataP, {
       overview: function (d) {
         var gs = d.gs;
+        var dash = d.dash || {};
+        var skills = d.skills.skills || [];
         var skillCount = (gs.activeSkills || []).length;
+        var oauthSkills = skills.filter(function (s) { return s.linkRequired; });
+        var maintenance = dash.maintenanceMode ? "warn" : "ok";
         return '<div class="kpi-row">' +
+          kpiTile("Version", dash.version || "\u2014") +
           kpiTile("Tools Loaded", gs.capabilitiesCount, "kpi-ok") +
           kpiTile("Active Skills", skillCount) +
+          kpiTile("OAuth Skills", oauthSkills.length, oauthSkills.length > 0 ? "kpi-warn" : "") +
           kpiTile("Safety Mode", gs.safetyMode) +
           kpiTile("SkillForge", gs.skillforgeEnabled ? "Enabled" : "Disabled") +
           '</div>' +
+          '<div class="two-col">' +
+          '<div class="card"><h2>Readiness</h2>' +
+          healthRow(dash.status === "healthy" ? "ok" : "warn", "Runtime", dash.status === "healthy" ? "Healthy" : (dash.status || "Unknown")) +
+          healthRow(maintenance, "Maintenance", dash.maintenanceMode ? "Active" : "Clear") +
+          healthRow(skillCount > 0 ? "ok" : "warn", "Skills Loaded", skillCount + " active skills") +
+          healthRow(oauthSkills.length > 0 ? "warn" : "ok", "Connections", oauthSkills.length > 0 ? oauthSkills.length + " skills still need chat linking as required" : "No OAuth link steps required") +
+          '</div>' +
+          '<div class="card"><h2>Next Best Steps</h2>' +
+          '<div class="cta-list">' +
+          '<button class="cmd-btn cmd-btn-primary tab-nav-btn" data-panel="control-center">Open Control Center</button>' +
+          '<button class="cmd-btn tab-nav-btn" data-panel="skills-library">Open Skills Library</button>' +
+          '<button class="cmd-btn">/status</button>' +
+          '<button class="cmd-btn">/link outlook</button>' +
+          '</div>' +
+          '<p class="muted">Use the Teams chat for commands and the tabs for overview, management, and drill-down.</p>' +
+          '</div></div>' +
           '<div class="card"><h2>What is HelkinSwarm?</h2>' +
           '<p>Your personal sovereign AI copilot in Microsoft Teams. HelkinSwarm orchestrates frontier LLMs, ' +
           'tools, and skills to act as a forward-deployed digital assistant \u2014 a Special Circumstances unit ' +
@@ -375,6 +397,13 @@
             var cls = c.danger ? "cmd-btn cmd-btn-danger" : "cmd-btn";
             return '<button class="' + cls + '">' + esc(c.label) + ' <code>' + esc(c.cmd) + '</code></button>';
           }).join(" ") +
+          '</div>' +
+          '<div class="card"><h2>Control Surfaces</h2>' +
+          '<div class="cta-list">' +
+          '<button class="cmd-btn cmd-btn-primary tab-nav-btn" data-panel="control-center">Go to Control Center</button>' +
+          '<button class="cmd-btn tab-nav-btn" data-panel="skills-library">Go to Skills Library</button>' +
+          '</div>' +
+          '<p class="muted">Tabs are for dashboards and management. Chat is for commands, linking, and actual work execution.</p>' +
           '</div>' +
           '<div class="card"><h2>Common Actions</h2>' +
           '<div class="step-list">' +
@@ -400,8 +429,14 @@
           '<div class="card"><h2>Account Connections</h2>' +
           (oauthSkills.length > 0 ?
             oauthSkills.map(function (s) {
-              return healthRow(s.installed ? "ok" : "warn", s.displayName,
-                s.installed ? "Connected" : "Not linked \u2014 type /link in chat");
+              return '<div class="connection-card">' +
+                '<div class="connection-head"><strong>' + esc(s.displayName) + '</strong><span class="badge badge-warn">/link required</span></div>' +
+                '<p>' + esc(s.shortDescription) + '</p>' +
+                configRow('Onboarding', '<span class="badge badge-info">' + esc(s.onboardingMethod) + '</span>') +
+                configRow('Permissions', renderInlineTags(s.requiredPermissions)) +
+                configRow('External Accounts', renderInlineTags(s.externalAccountsNeeded)) +
+                '<div class="cta-list"><button class="cmd-btn">/link ' + esc(s.domain) + '</button></div>' +
+                '</div>';
             }).join("") :
             '<p class="empty-state">No OAuth-integrated skills.</p>') +
           '</div>';
@@ -426,11 +461,25 @@
           configRow("Model Lanes", "Global (frontier) or EU (DataZone) routing") +
           configRow("Safety Pipeline", "Four-eyes verification for dangerous ops") +
           configRow("SkillForge", "Create custom skills from natural language") +
+          '</div>' +
+          '<div class="card"><h2>Where to go next</h2>' +
+          '<div class="step-list">' +
+          '<div class="step-item"><div class="step-num">A</div><div class="step-body"><h3>Control Center</h3><p>Use it for runtime health, costs, sessions, and diagnostics.</p></div></div>' +
+          '<div class="step-item"><div class="step-num">B</div><div class="step-body"><h3>Skills Library</h3><p>Use it to inspect onboarding, lifecycle rules, uninstall impact, and reload capability manifests.</p></div></div>' +
+          '<div class="step-item"><div class="step-num">C</div><div class="step-body"><h3>Teams Chat</h3><p>Use chat for live commands, linking, and day-to-day work.</p></div></div>' +
           '</div>';
       }
     }, {
       title: "Get Started",
-      _refreshFn: renderGetStarted
+      _refreshFn: renderGetStarted,
+      afterRender: function (_key, _data, container) {
+        container.querySelectorAll('.tab-nav-btn').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var panel = btn.getAttribute('data-panel');
+            if (panel) router.navigate(panel);
+          });
+        });
+      }
     });
   }
 

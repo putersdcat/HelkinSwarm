@@ -324,6 +324,10 @@ code {
 .manage-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .manage-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
 .skill-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.cta-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 0; }
+.connection-card { padding: 12px 0; border-bottom: 1px solid var(--border); }
+.connection-card:last-child { border-bottom: none; }
+.connection-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
 .inline-tag {
   display: inline-block;
   padding: 3px 8px;
@@ -432,6 +436,7 @@ code {
   .kpi-row { grid-template-columns: repeat(2, 1fr); }
   .two-col { grid-template-columns: 1fr; }
   .skills-grid { grid-template-columns: 1fr; }
+  .cta-list { flex-direction: column; align-items: stretch; }
   .subtab-btn { padding: 8px 12px; font-size: 12px; }
   .panel { padding: 0; }
 }
