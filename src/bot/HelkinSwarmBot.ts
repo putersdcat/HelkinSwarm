@@ -667,7 +667,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
   private async handleForge(
     context: TurnContext,
     userId: string,
-    userAlias: string,
+    _userAlias: string,
     messageText: string,
   ): Promise<void> {
     if (!this.durableClient) {
@@ -694,38 +694,17 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       }
 
       const correlationId = crypto.randomUUID();
-      await this.sendFreshMessage(context, {
-        text: '⚙️ SkillForge prototype request accepted. Preparing scaffold...',
-        textFormat: 'markdown',
+      const { buildSkillForgePrototype } = await import('../orchestrator/skillForgePrototypeActivity.js');
+      const prototype = buildSkillForgePrototype({
+        idea,
+        userId,
+        correlationId,
       });
 
-      try {
-        await this.raiseToOverseer(
-          context,
-          userId,
-          userAlias,
-          idea,
-          undefined,
-          undefined,
-          undefined,
-          correlationId.slice(0, 8),
-          undefined,
-          correlationId,
-          { idea },
-        );
-      } catch (err) {
-        const conversationReference = TurnContextClass.getConversationReference(context.activity);
-        const { trackingId } = await createPendingIntent({
-          userId,
-          messageText: idea,
-          conversationReferenceJson: JSON.stringify(conversationReference),
-        });
-        await this.sendFreshMessage(context, {
-          text: `⏳ SkillForge prototype request queued (tracking: ${trackingId}). I'll retry the handoff when the orchestrator is reachable.`,
-          textFormat: 'markdown',
-        });
-        console.error(`[HelkinSwarmBot] Queued SkillForge pending intent ${trackingId}: ${err instanceof Error ? err.message : err}`);
-      }
+      await this.sendFreshMessage(context, {
+        text: prototype.summary,
+        textFormat: 'markdown',
+      });
     } catch (err) {
       console.error(`[HelkinSwarmBot] /forge failed before handoff: ${err instanceof Error ? err.message : err}`);
       await this.sendFreshMessage(context, {
