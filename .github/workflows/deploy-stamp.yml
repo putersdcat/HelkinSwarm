@@ -587,6 +587,41 @@ jobs:
             echo "ℹ️ CICD already has Key Vault Secrets User on stamp vault"
           fi
 
+      - name: Remove paid observability leftovers in dirty dev mode
+        if: steps.changes.outputs.infraChanged == 'true' && (github.event.inputs.DIRTY_DEV_MODE || 'false') == 'true'
+        run: |
+          set +e
+          FUNC_NAME="${{ steps.query.outputs.functionAppName }}"
+
+          if [ -n "$FUNC_NAME" ]; then
+            az functionapp config appsettings delete \
+              --name "$FUNC_NAME" \
+              --resource-group "${{ env.RESOURCE_GROUP }}" \
+              --setting-names APPLICATIONINSIGHTS_CONNECTION_STRING >/dev/null 2>&1 || true
+            echo "✅ Removed APPLICATIONINSIGHTS_CONNECTION_STRING from $FUNC_NAME"
+          fi
+
+          delete_resource() {
+            local name="$1"
+            local type="$2"
+            az resource delete \
+              --resource-group "${{ env.RESOURCE_GROUP }}" \
+              --name "$name" \
+              --resource-type "$type" >/dev/null 2>&1 || true
+          }
+
+          delete_resource "helkinswarm-alert-estop-${{ env.USER_ALIAS }}" "Microsoft.Insights/scheduledQueryRules"
+          delete_resource "helkinswarm-alert-ratelimit-${{ env.USER_ALIAS }}" "Microsoft.Insights/scheduledQueryRules"
+          delete_resource "helkinswarm-alert-verify-${{ env.USER_ALIAS }}" "Microsoft.Insights/scheduledQueryRules"
+          delete_resource "helkinswarm-alert-shield-${{ env.USER_ALIAS }}" "Microsoft.Insights/scheduledQueryRules"
+          delete_resource "helkinswarm-alert-orch-${{ env.USER_ALIAS }}" "Microsoft.Insights/scheduledQueryRules"
+          delete_resource "helkinswarm-alert-eu-${{ env.USER_ALIAS }}" "Microsoft.Insights/scheduledQueryRules"
+          delete_resource "helkinswarm-ag-${{ env.USER_ALIAS }}" "Microsoft.Insights/actionGroups"
+          delete_resource "helkinswarm-appi-${{ env.USER_ALIAS }}" "Microsoft.Insights/components"
+          delete_resource "helkinswarm-law-${{ env.USER_ALIAS }}" "Microsoft.OperationalInsights/workspaces"
+
+          echo "✅ Dirty Dev Mode cleanup pass completed"
+
   # ─────────────────────────────────────────────────────────────────────────
   # 3. Build & Push Container Image
   # ─────────────────────────────────────────────────────────────────────────

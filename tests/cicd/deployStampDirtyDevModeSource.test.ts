@@ -8,5 +8,8 @@ describe('deploy-stamp dirty dev mode wiring', () => {
     expect(source).toContain('DIRTY_DEV_MODE:');
     expect(source).toContain("dirtyDevMode=${{ github.event.inputs.DIRTY_DEV_MODE || 'false' }}");
     expect(source).toContain("(github.event.inputs.DIRTY_DEV_MODE || 'false') != 'true'");
+    expect(source).toContain('Remove paid observability leftovers in dirty dev mode');
+    expect(source).toContain('az functionapp config appsettings delete');
+    expect(source).toContain('helkinswarm-law-${{ env.USER_ALIAS }}');
   });
 });

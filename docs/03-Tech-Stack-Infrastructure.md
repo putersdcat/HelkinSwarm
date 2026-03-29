@@ -170,3 +170,5 @@ For short-lived personal development stamps where cost matters more than retaine
 
 > ⚠️ This mode is intentionally blunt. It avoids the paid Log Analytics workspace by switching the Container Apps environment to `azure-monitor` without diagnostic settings. You keep live log streaming, but you lose retained Log Analytics/App Insights history and Azure Monitor query alerts for that stamp.
 
+When enabled on an existing stamp, the deployment workflow also performs an explicit cleanup pass to remove previously-created Log Analytics, Application Insights, and query-alert resources, because incremental ARM/Bicep deployments do not prune old resources automatically.
+
