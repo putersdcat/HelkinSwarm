@@ -7,41 +7,41 @@ import {
 } from '../../src/auth/pendingLinkChallengeStore.js';
 
 describe('pendingLinkChallengeStore', () => {
-  it('returns the active challenge only for the matching user and quoted reply target', () => {
+  it('returns the active challenge only for the matching user and quoted reply target', async () => {
     const nowMs = 1_000;
-    registerPendingLinkChallenge({
+    await registerPendingLinkChallenge({
       userId: 'user-a',
       skillDomain: 'outlook',
       connectionName: 'GraphOAuth',
       replyToActivityId: 'activity-123',
     }, nowMs);
 
-    expect(getPendingLinkChallengeForReply('user-a', 'activity-123', nowMs + 1_000)).toMatchObject({
+    await expect(getPendingLinkChallengeForReply('user-a', 'activity-123', nowMs + 1_000)).resolves.toMatchObject({
       skillDomain: 'outlook',
       connectionName: 'GraphOAuth',
       replyToActivityId: 'activity-123',
     });
-    expect(getPendingLinkChallengeForReply('user-a', 'activity-999', nowMs + 1_000)).toBeUndefined();
-    expect(getPendingLinkChallengeForReply('user-b', 'activity-123', nowMs + 1_000)).toBeUndefined();
+    await expect(getPendingLinkChallengeForReply('user-a', 'activity-999', nowMs + 1_000)).resolves.toBeUndefined();
+    await expect(getPendingLinkChallengeForReply('user-b', 'activity-123', nowMs + 1_000)).resolves.toBeUndefined();
 
-    clearPendingLinkChallenge('user-a');
+    await clearPendingLinkChallenge('user-a');
   });
 
-  it('expires old challenges automatically', () => {
+  it('expires old challenges automatically', async () => {
     const nowMs = 5_000;
-    registerPendingLinkChallenge({
+    await registerPendingLinkChallenge({
       userId: 'user-expire',
       skillDomain: 'outlook',
       connectionName: 'GraphOAuth',
       replyToActivityId: 'activity-expire',
     }, nowMs);
 
-    expect(getPendingLinkChallengeForReply('user-expire', 'activity-expire', nowMs + (10 * 60 * 1000) + 1)).toBeUndefined();
+    await expect(getPendingLinkChallengeForReply('user-expire', 'activity-expire', nowMs + (10 * 60 * 1000) + 1)).resolves.toBeUndefined();
   });
 
-  it('getPendingLinkChallengeForUser returns challenge regardless of replyToId', () => {
+  it('getPendingLinkChallengeForUser returns challenge regardless of replyToId', async () => {
     const nowMs = 10_000;
-    registerPendingLinkChallenge({
+    await registerPendingLinkChallenge({
       userId: 'user-fallback',
       skillDomain: 'outlook',
       connectionName: 'GraphOAuth',
@@ -49,20 +49,20 @@ describe('pendingLinkChallengeStore', () => {
     }, nowMs);
 
     // Strict match fails for wrong replyToId
-    expect(getPendingLinkChallengeForReply('user-fallback', 'activity-wrong', nowMs + 1_000)).toBeUndefined();
+    await expect(getPendingLinkChallengeForReply('user-fallback', 'activity-wrong', nowMs + 1_000)).resolves.toBeUndefined();
 
     // Fallback returns the challenge regardless
-    expect(getPendingLinkChallengeForUser('user-fallback', nowMs + 1_000)).toMatchObject({
+    await expect(getPendingLinkChallengeForUser('user-fallback', nowMs + 1_000)).resolves.toMatchObject({
       skillDomain: 'outlook',
       replyToActivityId: 'activity-original',
     });
 
     // Unknown user returns undefined
-    expect(getPendingLinkChallengeForUser('user-unknown', nowMs + 1_000)).toBeUndefined();
+    await expect(getPendingLinkChallengeForUser('user-unknown', nowMs + 1_000)).resolves.toBeUndefined();
 
     // Expired challenge returns undefined
-    expect(getPendingLinkChallengeForUser('user-fallback', nowMs + (10 * 60 * 1000) + 1)).toBeUndefined();
+    await expect(getPendingLinkChallengeForUser('user-fallback', nowMs + (10 * 60 * 1000) + 1)).resolves.toBeUndefined();
 
-    clearPendingLinkChallenge('user-fallback');
+    await clearPendingLinkChallenge('user-fallback');
   });
 });

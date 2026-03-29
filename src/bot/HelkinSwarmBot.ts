@@ -368,7 +368,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     // message-reference format differences and is simpler for the user.
     const extractedAuthCode = extractBotFrameworkAuthCode(messageText);
     const pendingLinkChallenge = extractedAuthCode
-      ? getPendingLinkChallengeForUser(userId)
+      ? await getPendingLinkChallengeForUser(userId)
       : undefined;
 
     if (pendingLinkChallenge && extractedAuthCode) {
@@ -948,11 +948,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     const sentActivityId = await this.sendFreshMessage(context, { attachments: [card] });
     const userId = context.activity.from.aadObjectId;
     if (userId && sentActivityId) {
-      registerPendingLinkChallenge({
+      await registerPendingLinkChallenge({
         userId,
         skillDomain: manifest.domain,
         connectionName,
         replyToActivityId: sentActivityId,
+        conversationId: context.activity.conversation?.id,
       });
     }
   }
@@ -1044,11 +1045,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     const sentActivityId = await this.sendFreshMessage(context, { attachments: [card] });
     const aadUserId = context.activity.from.aadObjectId;
     if (aadUserId && sentActivityId) {
-      registerPendingLinkChallenge({
+      await registerPendingLinkChallenge({
         userId: aadUserId,
         skillDomain: manifest.domain,
         connectionName: manifest.linkConfig.connectionName,
         replyToActivityId: sentActivityId,
+        conversationId: context.activity.conversation?.id,
       });
     }
   }
@@ -1117,7 +1119,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
           });
         }
 
-        clearPendingLinkChallenge(pendingLinkChallenge.userId);
+        await clearPendingLinkChallenge(pendingLinkChallenge.userId);
         await context.sendActivity(
           oboBootstrapError
             ? `✅ **${pendingLinkChallenge.skillDomain}** linked successfully, but OBO bootstrap failed: ${oboBootstrapError}`

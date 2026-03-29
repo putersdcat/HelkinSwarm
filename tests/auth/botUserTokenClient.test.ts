@@ -58,6 +58,14 @@ describe('botUserTokenClient', () => {
 
       expect(result).toBeUndefined();
     });
+
+    it('returns undefined when token lookup throws', async () => {
+      mockGetUserToken.mockRejectedValue(new Error('token service unavailable'));
+
+      const result = await checkUserTokenForConnection('user-1', 'msteams', 'GraphOAuth');
+
+      expect(result).toBeUndefined();
+    });
   });
 
   describe('signOutUserFromConnection', () => {

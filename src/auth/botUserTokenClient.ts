@@ -52,9 +52,16 @@ export async function checkUserTokenForConnection(
   channelId: string,
   connectionName: string,
 ): Promise<string | undefined> {
-  const tokenClient = await createBotUserTokenClient();
-  const result = await tokenClient.getUserToken(userId, connectionName, channelId, '');
-  return result?.token;
+  try {
+    const tokenClient = await createBotUserTokenClient();
+    const result = await tokenClient.getUserToken(userId, connectionName, channelId, '');
+    return result?.token;
+  } catch (err) {
+    console.error(
+      `[botUserTokenClient] checkUserTokenForConnection failed: userId=${userId}, channelId=${channelId}, connection=${connectionName}, error=${err instanceof Error ? err.message : String(err)}`,
+    );
+    return undefined;
+  }
 }
 
 export async function signOutUserFromConnection(
