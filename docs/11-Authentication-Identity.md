@@ -31,6 +31,24 @@ The system is built as a **digital body** (0l): the master orchestrator is the b
    - Short-lived OBO access token issued per call.
 5. GitHub operations (SkillForge) use the dedicated GitHub App with installation tokens.
 
+### OBO Bootstrap Sources vs Legacy Bot OAuth Linking
+
+The delegated Graph story currently has **two distinct token paths**, and they are not interchangeable:
+
+| Flow | What it yields today | Seeds `OboSessionStore`? | Expected downstream behavior |
+|---|---|---:|---|
+| Teams `tokenExchange` invoke (`HelkinSwarmBot.handleTeamsSigninTokenExchange`) | Teams SSO assertion exchanged via OBO | ✅ Yes | `scopedTokenMinter` can later mint silent OBO Graph tokens |
+| Teams tab SSO bootstrap (`/api/tab/bootstrap-obo`) | Teams tab bearer token exchanged via OBO | ✅ Yes | `scopedTokenMinter` can later mint silent OBO Graph tokens |
+| Manual `/link` / `/relink` magic-code completion | Bot Framework OAuth connection token from the Bot Token Service | ❌ No | Graph handlers fall back to the legacy cached-token path via `graphTokenHelper.ts` |
+
+Important consequence:
+
+- a successful manual magic-code `/link` **does not currently create an OBO session**
+- therefore `scopedTokenMinter.ts` may still emit `method='placeholder'` for Outlook/Teams Graph tools if no token-exchange or tab-SSO bootstrap has happened
+- the handler can still succeed by using the legacy Bot Framework cached token path, and telemetry should make that source explicit
+
+This is an intentional architectural split until a future change explicitly teaches manual `/link` to seed a usable OBO session.
+
 ### Key Components
 
 | Component                     | Location                              | Responsibility |

@@ -2,8 +2,9 @@
 // Spec ref: 05-Capabilities-Framework.md, 06-Tool-Dispatch-LLM-Layer.md
 // Issue: #117
 //
-// Auth: OBO delegated tokens via Bot Framework OAuth connection (GraphOAuth).
-// The user must run /link first to cache a Graph token in the Bot Token Service.
+// Auth: prefer real scoped/OBO delegated tokens when available.
+// If the scoped token is only a placeholder, fall back to the legacy Bot Framework
+// OAuth connection token cached by manual /link in the Bot Token Service.
 
 import type { ToolHandler } from '../../src/capabilities/capabilityLoader.js';
 import { z } from 'zod';
@@ -20,7 +21,8 @@ const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
 
 /**
  * Resolve a Graph API token from handler args.
- * Prefers scoped token injected by orchestrator (#318); falls back to legacy getGraphTokenForUser.
+ * Prefers scoped token injected by orchestrator (#318).
+ * Falls back to the legacy Bot Framework cached token path when no real OBO/scoped token is available.
  */
 async function resolveToken(args: Record<string, unknown>): Promise<string> {
   const correlationId = typeof args['correlationId'] === 'string' ? args['correlationId'] : 'outlook-handler';
