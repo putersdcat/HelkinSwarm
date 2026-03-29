@@ -156,6 +156,15 @@ jobs:
             echo "⚠️ TAB_API_BASE not set — SPA API calls will fail until vars.TAB_API_BASE is configured"
           fi
 
+      - name: Inject cache-busting asset version
+        env:
+          TAB_ASSET_VERSION: ${{ github.sha }}
+        run: |
+          if [ -f "tabs/index.html" ]; then
+            sed -i "s|{{TAB_ASSET_VERSION}}|${TAB_ASSET_VERSION}|g" tabs/index.html
+            echo "✅ Injected TAB_ASSET_VERSION: $TAB_ASSET_VERSION"
+          fi
+
       - name: Publish public user-map for runtime stamp resolution
         run: |
           if [ ! -f "config/user-map.json" ]; then
@@ -184,7 +193,7 @@ jobs:
               --source tabs/ \
               --auth-mode login \
               --overwrite true \
-              --content-cache-control "public, max-age=3600"
+              --content-cache-control "no-cache, no-store, must-revalidate"
             echo "✅ SPA assets uploaded"
           else
             # No SPA yet — upload a placeholder index.html

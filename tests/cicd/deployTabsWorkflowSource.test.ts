@@ -10,5 +10,7 @@ describe('deploy-tabs workflow', () => {
     expect(source).toContain("- 'config/user-map.json'");
     expect(source).toContain('tabs/user-map.json');
     expect(source).toContain("with_entries(.value |= { alias, endpoint, enabled })");
+    expect(source).toContain('TAB_ASSET_VERSION');
+    expect(source).toContain('no-cache, no-store, must-revalidate');
   });
 });
