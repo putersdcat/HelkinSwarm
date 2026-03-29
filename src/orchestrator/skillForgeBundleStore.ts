@@ -1,4 +1,5 @@
 import { BlobServiceClient } from '@azure/storage-blob';
+import { getCredential } from '../auth/identity.js';
 
 const CONTAINER_NAME = 'helkinswarm-skillforge';
 
@@ -18,11 +19,20 @@ function getBlobServiceClient(): BlobServiceClient | undefined {
   }
 
   const connectionString = process.env['AzureWebJobsStorage'] ?? process.env['AZUREWEBJOBSSTORAGE'];
-  if (!connectionString) {
+  if (connectionString) {
+    blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
+    return blobServiceClient;
+  }
+
+  const accountName = process.env['AzureWebJobsStorage__accountName'];
+  if (!accountName) {
     return undefined;
   }
 
-  blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
+  blobServiceClient = new BlobServiceClient(
+    `https://${accountName}.blob.core.windows.net`,
+    getCredential(),
+  );
   return blobServiceClient;
 }
 
