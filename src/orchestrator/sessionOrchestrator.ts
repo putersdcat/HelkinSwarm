@@ -39,6 +39,7 @@ import {
 } from './planExecutionHints.js';
 import {
   deriveSelectiveFollowUpToolSchemas,
+  getForcedDiscoveryFollowUpToolChoice,
   getDiscoveryFirstToolSchemas,
   shouldForceDiscoveryToolSearch,
 } from './discoveryToolInjection.js';
@@ -441,6 +442,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         modelOverride: input.modelOverride,
         enableRetry: true,
         tools: selectiveFollowUpSchemas ?? allToolSchemas,
+        toolChoice: getForcedDiscoveryFollowUpToolChoice(input.userMessage, selectiveFollowUpSchemas) ?? undefined,
       };
       spanStart = context.df.currentUtcDateTime.getTime();
       let followUp: LlmResult = yield context.df.callActivity('llmFollowUpActivity', followUpInput);
@@ -673,6 +675,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           modelOverride: input.modelOverride,
           enableRetry: !isLastRound,
           tools: !isLastRound ? (selectiveFollowUpSchemas ?? allToolSchemas) : undefined,
+          toolChoice: !isLastRound
+            ? (getForcedDiscoveryFollowUpToolChoice(input.userMessage, selectiveFollowUpSchemas) ?? undefined)
+            : undefined,
           additionalTurns,
         };
         followUp = yield context.df.callActivity('llmFollowUpActivity', roundFollowUpInput);

@@ -34,6 +34,26 @@ export function shouldForceDiscoveryToolSearch(userMessage: string): boolean {
   return /(send|reply|email|mail|calendar|meeting|schedule|github|repo|issue|pull request|weather|web search|search the web)/.test(normalized);
 }
 
+export function getForcedDiscoveryFollowUpToolChoice(
+  userMessage: string,
+  tools: ToolDefinition[] | null | undefined,
+): { type: 'function'; function: { name: string } } | null {
+  if (!tools || tools.length === 0) return null;
+
+  const normalized = userMessage.toLowerCase();
+  const toolNames = new Set(tools.map((tool) => tool.function.name));
+
+  if (/(send|email|mail)/.test(normalized) && toolNames.has('outlook_send_email')) {
+    return { type: 'function', function: { name: 'outlook_send_email' } };
+  }
+
+  if (/(reply|respond)/.test(normalized) && toolNames.has('outlook_reply_to_latest_email')) {
+    return { type: 'function', function: { name: 'outlook_reply_to_latest_email' } };
+  }
+
+  return null;
+}
+
 export function deriveSelectiveFollowUpToolSchemas(
   toolResults: ToolResult[],
 ): ToolDefinition[] | null {

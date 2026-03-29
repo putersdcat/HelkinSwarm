@@ -84,4 +84,21 @@ describe('discoveryToolInjection', () => {
     expect(shouldForceDiscoveryToolSearch('Create a calendar event for tomorrow')).toBe(true);
     expect(shouldForceDiscoveryToolSearch('hello there')).toBe(false);
   });
+
+  it('forces the concrete follow-up action tool when discovery surfaced it', async () => {
+    const { getForcedDiscoveryFollowUpToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const choice = getForcedDiscoveryFollowUpToolChoice('Send an email to Eric', [
+      {
+        type: 'function',
+        function: {
+          name: 'outlook_send_email',
+          description: 'send email',
+          parameters: { type: 'object', properties: {}, required: [] },
+        },
+      },
+    ]);
+
+    expect(choice).toEqual({ type: 'function', function: { name: 'outlook_send_email' } });
+  });
 });

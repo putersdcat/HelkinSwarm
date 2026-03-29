@@ -38,6 +38,7 @@ export interface LlmFollowUpInput {
   enableRetry?: boolean;
   /** Tool definitions to pass when enableRetry is true. */
   tools?: ToolDefinition[];
+  toolChoice?: 'auto' | 'none' | { type: 'function'; function: { name: string } };
   /** Additional assistant+tool turn pairs from retry iterations (#182). */
   additionalTurns?: Array<{
     assistantContent: string;
@@ -173,7 +174,7 @@ df.app.activity('llmFollowUpActivity', {
       const response: ChatCompletionResponse = await client.chatCompletion({
         messages,
         tools: retryTools,
-        toolChoice: retryTools ? 'auto' : undefined,
+        toolChoice: retryTools ? (input.toolChoice ?? 'auto') : undefined,
         maxTokens: 4096,
         temperature: 0.7,
         correlationId,
