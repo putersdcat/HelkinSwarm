@@ -1106,8 +1106,6 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       const token = directTurnToken ?? redemption?.token;
 
       if (token) {
-        const linkCorrelationId = `link-${crypto.randomUUID()}`;
-        let oboBootstrapError: string | undefined;
         if (
           redemption !== undefined &&
           (redemption.userId !== channelUserId || redemption.channelId !== channelId)
@@ -1116,45 +1114,27 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
             `[HelkinSwarmBot] Magic code redeemed using stored tuple for userId=${pendingLinkChallenge.userId}: redeemedUserId=${redemption.userId} redeemedChannelId=${redemption.channelId} currentUserId=${channelUserId} currentChannelId=${channelId}`,
           );
         }
-        try {
-          const { bootstrapOboSession } = await import('../auth/oboSessionBootstrap.js');
-          await bootstrapOboSession({
-            userId: pendingLinkChallenge.userId,
-            assertion: token,
-            correlationId: linkCorrelationId,
-          });
-          trackEvent({
-            name: 'HandlerTokenSource',
-            correlationId: linkCorrelationId,
-            userId: pendingLinkChallenge.userId,
-            properties: {
-              handler: pendingLinkChallenge.skillDomain,
-              source: 'magic-code-obo-bootstrap-succeeded',
-            },
-          });
-        } catch (err) {
-          oboBootstrapError = err instanceof Error ? err.message : String(err);
-          console.error(
-            `[HelkinSwarmBot] OBO bootstrap from magic-code redemption failed for userId=${pendingLinkChallenge.userId}:`,
-            err,
-          );
-          trackEvent({
-            name: 'HandlerTokenSource',
-            correlationId: linkCorrelationId,
-            userId: pendingLinkChallenge.userId,
-            properties: {
-              handler: pendingLinkChallenge.skillDomain,
-              source: 'magic-code-obo-bootstrap-failed',
-              error: oboBootstrapError,
-            },
-          });
-        }
+
+        // Manual `/link` / `/relink` magic-code redemption returns the Bot Framework
+        // OAuth connection token for the linked resource. That is enough for the
+        // current legacy linked-token path, but it is not the same thing as the
+        // Teams SSO assertion used by the real OBO bootstrap flows
+        // (`handleTeamsSigninTokenExchange` and `tab/bootstrap-obo`).
+        // Treating this linked Graph token as an OBO assertion produces misleading
+        // post-link failures even though the user is actually linked successfully.
+        trackEvent({
+          name: 'HandlerTokenSource',
+          correlationId: `link-${crypto.randomUUID()}`,
+          userId: pendingLinkChallenge.userId,
+          properties: {
+            handler: pendingLinkChallenge.skillDomain,
+            source: 'magic-code-linked-token',
+          },
+        });
 
         await clearPendingLinkChallenge(pendingLinkChallenge.userId);
         await context.sendActivity(
-          oboBootstrapError
-            ? `✅ **${pendingLinkChallenge.skillDomain}** linked successfully, but OBO bootstrap failed: ${oboBootstrapError}`
-            : `✅ **${pendingLinkChallenge.skillDomain}** linked successfully. You can now use its delegated features.`,
+          `✅ **${pendingLinkChallenge.skillDomain}** linked successfully. You can now use its delegated features.`,
         );
         return true;
       }
