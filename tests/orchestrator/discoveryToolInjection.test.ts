@@ -186,6 +186,20 @@ describe('discoveryToolInjection', () => {
     expect(shouldForceDiscoveryToolSearch('hello there')).toBe(false);
   });
 
+  it('detects explicit read-only discovery requests and extracts a focused query', async () => {
+    const {
+      buildReadOnlyDiscoveryQuery,
+      isReadOnlyDiscoveryRequest,
+      shouldForceDiscoveryToolSearch,
+    } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const prompt = '/light Use discovery only and tell me which tool you would use to search mailbox emails for issue 423 secondary. Do not execute any non-discovery tools.';
+
+    expect(isReadOnlyDiscoveryRequest(prompt)).toBe(true);
+    expect(buildReadOnlyDiscoveryQuery(prompt)).toBe('search mailbox emails');
+    expect(shouldForceDiscoveryToolSearch(prompt)).toBe(true);
+  });
+
   it('forces the concrete follow-up action tool when discovery surfaced it', async () => {
     const { getForcedDiscoveryFollowUpToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
 
@@ -201,6 +215,34 @@ describe('discoveryToolInjection', () => {
     ]);
 
     expect(choice).toEqual({ type: 'function', function: { name: 'outlook_send_email' } });
+  });
+
+  it('keeps explicit read-only discovery prompts pinned to helkin_skill_search on follow-up', async () => {
+    const { getForcedDiscoveryFollowUpToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const choice = getForcedDiscoveryFollowUpToolChoice(
+      'Use discovery only and tell me which tool you would use to search mailbox emails. Do not execute any non-discovery tools.',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'helkin_skill_search',
+            description: 'discover tools',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_send_email',
+            description: 'send email',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(choice).toEqual({ type: 'function', function: { name: 'helkin_skill_search' } });
   });
 
   it('forces calendar creation when discovery surfaced the event-creation tool', async () => {
@@ -297,6 +339,32 @@ describe('discoveryToolInjection', () => {
 
     expect(isDiscoveryOnlyDeadEnd(toolResults)).toBe(true);
     expect(buildDiscoveryDeadEndResponse('Schedule lunch tomorrow at 12:30')).toContain('have not created an event');
+  });
+
+  it('builds a deterministic read-only discovery response without claiming any action was executed', async () => {
+    const { buildReadOnlyDiscoveryResponse } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const response = buildReadOnlyDiscoveryResponse([
+      {
+        toolName: 'helkin_skill_search',
+        success: true,
+        result: {
+          command: 'search',
+          query: 'search mailbox emails',
+          skills: [{ domain: 'outlook', displayName: 'Outlook', shortDescription: 'Email and calendar management' }],
+          tools: [{
+            name: 'outlook_search_emails',
+            domain: 'outlook',
+            description: 'search email',
+            risk: 'low',
+          }],
+        },
+      },
+    ], 'Use discovery only and tell me which tool you would use to search mailbox emails. Do not execute any non-discovery tools.');
+
+    expect(response).toContain('I stayed in discovery-only mode.');
+    expect(response).toContain('`outlook_search_emails`');
+    expect(response).toContain('No non-discovery tools were executed.');
   });
 
   it('synthesizes a deterministic calendar-event follow-up call for the issue #394 prompt shape', async () => {

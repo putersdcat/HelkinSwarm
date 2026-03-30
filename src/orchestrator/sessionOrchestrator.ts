@@ -38,11 +38,13 @@ import {
   sortToolCallsByPlan,
 } from './planExecutionHints.js';
 import {
+  buildReadOnlyDiscoveryResponse,
   buildDiscoveryDeadEndResponse,
   deriveSelectiveFollowUpToolSchemas,
   getDiscoveryFollowUpModelOverride,
   getForcedDiscoveryFollowUpToolChoice,
   getDiscoveryFirstToolSchemas,
+  isReadOnlyDiscoveryRequest,
   isDiscoveryOnlyDeadEnd,
   shouldForceDiscoveryToolSearch,
   synthesizeDeterministicFollowUpToolCall,
@@ -577,6 +579,10 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       scopedTokenMintCount += mergedResults.filter((result) => result.scopedTokenMinted).length;
       spans.push({ label: 'tools', durationMs: context.df.currentUtcDateTime.getTime() - toolDispatchStart });
 
+      if (isReadOnlyDiscoveryRequest(input.userMessage)) {
+        responseContent = buildReadOnlyDiscoveryResponse(toolResults.results, input.userMessage);
+      } else {
+
       // 3b. Multi-round tool dispatch loop (#253)
       // The LLM can request additional tool calls after seeing results,
       // enabling chained reasoning (e.g. "find my latest email, then forward it").
@@ -954,6 +960,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
       responseContent = followUp.content;
       spans.push({ label: 'followup', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
+      }
     }
   }
 

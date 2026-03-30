@@ -62,6 +62,7 @@ import { clearOboSession } from '../auth/oboSessionStore.js';
 import { recoverStaleAck } from './staleAckRecovery.js';
 import { promoteSkillForgeBundle } from '../orchestrator/skillForgePromotion.js';
 import { renderSkillSearchCommandResponse } from './skillSearchCommand.js';
+import { buildReadOnlyDiscoveryQuery, isReadOnlyDiscoveryRequest } from '../orchestrator/discoveryToolInjection.js';
 
 const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
 
@@ -585,7 +586,10 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     // Use clean message body (without protocol markers) for shields check (#132, #147).
     // DevLoop protocol markers trigger false positives in Prompt Shields.
-    const textForShields = devLoopParsed.isDevLoop ? devLoopParsed.body : messageText;
+    const textForShieldsBase = devLoopParsed.isDevLoop ? devLoopParsed.body : messageText;
+    const textForShields = isReadOnlyDiscoveryRequest(textForShieldsBase)
+      ? buildReadOnlyDiscoveryQuery(textForShieldsBase)
+      : textForShieldsBase;
 
     // Prompt Shields check on incoming user message (spec 0e, step 4)
     const shieldResult = await promptShields.check(textForShields, correlationId);

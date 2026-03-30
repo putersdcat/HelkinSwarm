@@ -19,6 +19,22 @@ type DiscoverySearchResultShape = {
   skills?: Array<{ domain?: string; recommendedEntryTools?: string[] }>;
 };
 
+type ReadOnlyDiscoverySearchResultShape = {
+  command?: string;
+  query?: string;
+  tools?: Array<{
+    name?: string;
+    domain?: string;
+    description?: string;
+    risk?: string;
+  }>;
+  skills?: Array<{
+    domain?: string;
+    displayName?: string;
+    shortDescription?: string;
+  }>;
+};
+
 type DiscoveryModelOverride = 'primary' | 'secondary';
 
 function isCoreTool(name: string): boolean {
@@ -37,6 +53,41 @@ function stripValidationNoise(userMessage: string): string {
     .replace(/^\/(?:heavy|light)\s+/i, '')
     .replace(/\bthis is issue\s+\d+.*$/i, '')
     .trim();
+}
+
+function collapseWhitespace(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+export function isReadOnlyDiscoveryRequest(userMessage: string): boolean {
+  const normalized = stripValidationNoise(userMessage).toLowerCase();
+  const hasReadOnlyConstraint = /(discovery[- ]only|read[- ]only|do not execute|don't execute|without executing|non-discovery tools)/.test(normalized);
+  const hasDiscoveryQuestion = /(which tool would you use|what tool would you use|tell me which tool|tell me what tool|which skill would you use|what skill would you use)/.test(normalized);
+  const hasDiscoveryTopic = /(tool|skill|mailbox|email|calendar|meeting|github|repo|issue|weather|search)/.test(normalized);
+  return hasReadOnlyConstraint && (hasDiscoveryQuestion || hasDiscoveryTopic);
+}
+
+export function buildReadOnlyDiscoveryQuery(userMessage: string): string {
+  const stripped = stripValidationNoise(userMessage);
+  const cleaned = collapseWhitespace(
+    stripped
+      .replace(/\buse\s+(?:read[- ]only|discovery[- ]only|discovery only)\b/ig, '')
+      .replace(/\bstay\s+in\s+(?:read[- ]only|discovery[- ]only|discovery only)\b/ig, '')
+      .replace(/\bkeep\s+to\s+(?:read[- ]only|discovery[- ]only|discovery only)\b/ig, '')
+      .replace(/\b(?:just\s+)?tell me which tool you would use to\b/ig, '')
+      .replace(/\b(?:just\s+)?tell me what tool you would use to\b/ig, '')
+      .replace(/\bwhich tool would you use to\b/ig, '')
+      .replace(/\bwhat tool would you use to\b/ig, '')
+      .replace(/\bwhich skill would you use to\b/ig, '')
+      .replace(/\bwhat skill would you use to\b/ig, '')
+      .replace(/\bdo not execute(?: any)? non-discovery tools\b/ig, '')
+      .replace(/\bdon't execute(?: any)? non-discovery tools\b/ig, '')
+      .replace(/\bwithout executing(?: any)? tools\b/ig, '')
+      .replace(/\bfor issue\s+\d+\s+(?:primary|secondary)\b/ig, '')
+      .replace(/[.]/g, ' '),
+  ).replace(/^(?:and|then)\s+/i, '');
+
+  return cleaned.length > 0 ? cleaned : collapseWhitespace(stripped);
 }
 
 function capitalizePhrase(value: string): string {
@@ -171,6 +222,10 @@ export function getDiscoveryFirstToolDefinitions(): Array<{ name: string; descri
 }
 
 export function shouldForceDiscoveryToolSearch(userMessage: string): boolean {
+  if (isReadOnlyDiscoveryRequest(userMessage)) {
+    return true;
+  }
+
   const normalized = userMessage.toLowerCase();
   return /(send|reply|email|mail|calendar|meeting|schedule|github|repo|issue|pull request|weather|web search|search the web)/.test(normalized);
 }
@@ -183,6 +238,12 @@ export function getForcedDiscoveryFollowUpToolChoice(
 
   const normalized = userMessage.toLowerCase();
   const toolNames = new Set(tools.map((tool) => tool.function.name));
+
+  if (isReadOnlyDiscoveryRequest(userMessage)) {
+    return toolNames.has('helkin_skill_search')
+      ? { type: 'function', function: { name: 'helkin_skill_search' } }
+      : null;
+  }
 
   if (/(send|email|mail)/.test(normalized) && toolNames.has('outlook_send_email')) {
     return { type: 'function', function: { name: 'outlook_send_email' } };
@@ -278,10 +339,61 @@ export function buildDiscoveryDeadEndResponse(userMessage: string): string {
   return 'I searched the installed skills for a matching action, but I did not reach an executable tool from discovery, so I have not changed anything yet. Please restate the request with the exact action and the key details you want me to use.';
 }
 
+export function buildReadOnlyDiscoveryResponse(
+  toolResults: ToolResult[] | null | undefined,
+  userMessage: string,
+): string {
+  const discoveryResult = toolResults?.find((result) =>
+    result.success && result.toolName === 'helkin_skill_search' && isReadOnlyDiscoverySearchResult(result.result),
+  );
+
+  const query = buildReadOnlyDiscoveryQuery(userMessage);
+  const result = isReadOnlyDiscoverySearchResult(discoveryResult?.result)
+    ? discoveryResult.result
+    : undefined;
+  const topTool = result?.tools?.[0];
+  const topSkill = result?.skills?.[0];
+  const alternateTools = (result?.tools ?? [])
+    .slice(1, 4)
+    .map((tool: NonNullable<ReadOnlyDiscoverySearchResultShape['tools']>[number]) => tool.name)
+    .filter((name: string | undefined): name is string => typeof name === 'string' && name.length > 0);
+
+  if (!topTool && !topSkill) {
+    return `I stayed in discovery-only mode and searched for \`${query}\`, but I did not find a strong matching skill or tool. Try a broader request or use \`/skillSearch ${query}\` for a direct read-only lookup.`;
+  }
+
+  const parts = ['I stayed in discovery-only mode.'];
+
+  if (topTool?.name) {
+    const domain = topTool.domain ? ` (${topTool.domain}${topTool.risk ? `, risk: ${topTool.risk}` : ''})` : '';
+    const description = topTool.description ? ` — ${topTool.description}` : '';
+    parts.push(`Best matching tool: \`${topTool.name}\`${domain}${description}.`);
+  }
+
+  if (topSkill?.domain) {
+    const displayName = topSkill.displayName ? `${topSkill.displayName} ` : '';
+    const description = topSkill.shortDescription ? ` — ${topSkill.shortDescription}` : '';
+    parts.push(`Best matching skill: ${displayName}\`${topSkill.domain}\`${description}.`);
+  }
+
+  if (alternateTools.length > 0) {
+    parts.push(`Other likely matches: ${alternateTools.map((toolName: string) => `\`${toolName}\``).join(', ')}.`);
+  }
+
+  parts.push('No non-discovery tools were executed.');
+  return parts.join(' ');
+}
+
 function isDiscoverySearchResult(value: unknown): value is DiscoverySearchResultShape {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
   return Array.isArray(candidate['tools']) || Array.isArray(candidate['skills']);
+}
+
+function isReadOnlyDiscoverySearchResult(value: unknown): value is ReadOnlyDiscoverySearchResultShape {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  return candidate['command'] === 'search' && (Array.isArray(candidate['tools']) || Array.isArray(candidate['skills']));
 }
 
 export function getDiscoveryFollowUpModelOverride(
