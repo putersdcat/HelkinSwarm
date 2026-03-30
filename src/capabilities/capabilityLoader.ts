@@ -3,7 +3,7 @@
 // Issue: #49
 
 import { readFile, readdir, stat } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { CapabilityManifestSchema } from './manifestSchema.js';
 import type { CapabilityManifest, MaintenanceTask } from './manifestSchema.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
@@ -109,22 +109,13 @@ export async function loadCapabilities(
   clearSkillDiscoveryIndex();
 
   for (const root of skillsRoots) {
-    let entries: string[];
-    try {
-      entries = await readdir(root);
-    } catch {
-      // Skills root may not exist yet
-      continue;
-    }
+    const skillDirs = await collectSkillDirectories(root);
 
-    for (const entry of entries) {
-      const skillDir = join(root, entry);
+    for (const skillDir of skillDirs) {
       const manifestPath = join(skillDir, 'manifest.json');
+      const relativeSkillDir = relative(root, skillDir).split(sep).join('/');
 
       try {
-        const dirStat = await stat(skillDir);
-        if (!dirStat.isDirectory()) continue;
-
         const raw = await readFile(manifestPath, 'utf-8');
         const parsed = JSON.parse(raw) as unknown;
         const manifest: CapabilityManifest = CapabilityManifestSchema.parse(parsed);
@@ -143,7 +134,7 @@ export async function loadCapabilities(
             requiresSubAgent: tool.requiresSubAgent,
             requiresConfirmation: tool.requiresConfirmation,
             privilegeClass: tool.privilegeClass,
-            handlerModule: `skills/${manifest.domain}`,
+            handlerModule: `skills/${relativeSkillDir}`,
             inputSchema: tool.inputSchema,
             outputSchema: tool.outputSchema,
           });
@@ -151,7 +142,7 @@ export async function loadCapabilities(
         }
 
         // Load handlers if handlers.js exists
-        await loadHandlers(skillDir, manifest);
+        await loadHandlers(relativeSkillDir, manifest);
 
         result.skillsLoaded++;
       } catch (err) {
@@ -169,16 +160,55 @@ export async function loadCapabilities(
   return result;
 }
 
+async function collectSkillDirectories(root: string, currentDir: string = root): Promise<string[]> {
+  let entries: string[];
+  try {
+    entries = await readdir(currentDir);
+  } catch {
+    return [];
+  }
+
+  const skillDirs: string[] = [];
+
+  for (const entry of entries) {
+    const entryPath = join(currentDir, entry);
+
+    try {
+      const entryStat = await stat(entryPath);
+      if (!entryStat.isDirectory()) {
+        continue;
+      }
+
+      const manifestPath = join(entryPath, 'manifest.json');
+      try {
+        const manifestStat = await stat(manifestPath);
+        if (manifestStat.isFile()) {
+          skillDirs.push(entryPath);
+          continue;
+        }
+      } catch {
+        // No manifest at this level — recurse deeper.
+      }
+
+      skillDirs.push(...await collectSkillDirectories(root, entryPath));
+    } catch {
+      // Ignore entries we cannot stat.
+    }
+  }
+
+  return skillDirs;
+}
+
 /**
  * Dynamically load handler functions from a skill's handlers.js module.
  * Handlers compile to dist/skills/<domain>/handlers.js.
  */
 async function loadHandlers(
-  _skillDir: string,
+  relativeSkillDir: string,
   manifest: CapabilityManifest,
 ): Promise<void> {
-  // Compiled handlers live under dist/skills/<domain>/handlers.js
-  const distSkillDir = join(process.cwd(), 'dist', 'skills', manifest.domain);
+  // Compiled handlers live under dist/skills/<relative skill folder>/handlers.js
+  const distSkillDir = join(process.cwd(), 'dist', 'skills', relativeSkillDir);
   const handlersPath = join(distSkillDir, 'handlers.js');
 
   try {
