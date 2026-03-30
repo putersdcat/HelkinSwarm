@@ -32,11 +32,12 @@ import {
 } from '../llm/modelRouter.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { getCorrelatedAck } from './ackVariants.js';
-import { isColdStarting } from './lifecycleNotices.js';
+import { getContainerAgeMs, isColdStarting } from './lifecycleNotices.js';
 import { loadCapabilities, getManifest, getLinkableSkills } from '../capabilities/capabilityLoader.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { parseDevLoopMessage } from '../devloop/radioProtocol.js';
 import { createPendingIntent } from '../orchestrator/pendingIntentStore.js';
+import { replayPendingIntent } from '../orchestrator/pendingIntentReplay.js';
 import { createHash } from 'node:crypto';
 import { getBearerToken } from '../auth/identity.js';
 import {
@@ -348,7 +349,63 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     // Cold-start guard: block processing for 3s after container start (#142)
     if (isColdStarting()) {
-      await context.sendActivity('⏳ Starting up — please try again in a few seconds.');
+      const coldStartDelayMs = Math.max(500, 3_500 - getContainerAgeMs());
+      try {
+        const conversationReference = TurnContextClass.getConversationReference(context.activity);
+        const { trackingId, intent } = await createPendingIntent({
+          userId,
+          messageText,
+          conversationReferenceJson: JSON.stringify(conversationReference),
+          correlationId,
+          creationReason: 'cold-start-wake-up',
+          userNotified: true,
+        });
+
+        trackEvent({
+          name: 'PolicyOverrideApplied',
+          correlationId,
+          userId,
+          properties: {
+            authority: 'cold-start-wake-up-queue',
+            trackingId,
+            containerAgeMs: getContainerAgeMs(),
+            coldStartDelayMs,
+          },
+        });
+
+        await context.sendActivity(
+          `⏳ HelkinSwarm is waking up from scale-to-zero. I queued this exact message for automatic replay (tracking: ${trackingId}); you do not need to resend it.`,
+        );
+
+        if (this.durableClient) {
+          void (async () => {
+            await new Promise((resolve) => setTimeout(resolve, coldStartDelayMs));
+            try {
+              const replayResult = await replayPendingIntent(
+                this.durableClient!,
+                intent,
+                'cold-start-wake-up',
+              );
+              if (replayResult.outcome !== 'replayed') {
+                console.info(
+                  `[HelkinSwarmBot] Cold-start wake-up replay ${replayResult.outcome} for ${trackingId}: ${replayResult.reason}`,
+                );
+              }
+            } catch (err) {
+              console.warn(
+                `[HelkinSwarmBot] Cold-start wake-up replay failed for ${trackingId}: ${err instanceof Error ? err.message : err}`,
+              );
+            }
+          })();
+        }
+      } catch (err) {
+        console.warn(
+          `[HelkinSwarmBot] Cold-start queueing failed: ${err instanceof Error ? err.message : err}`,
+        );
+        await context.sendActivity(
+          '⏳ HelkinSwarm is still waking up, and I could not queue this message automatically. Please resend it in a few seconds.',
+        );
+      }
       return;
     }
 

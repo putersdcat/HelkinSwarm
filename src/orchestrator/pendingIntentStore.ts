@@ -29,6 +29,7 @@ export type RiskLevel = z.infer<typeof RiskLevelSchema>;
 export const PendingIntentSchema = z.object({
   id: z.string(),
   userId: z.string(),
+  correlationId: z.string().optional(),
   idempotencyKey: z.string(),
   status: PendingIntentStatusSchema,
   timestamp: z.string(),
@@ -69,7 +70,10 @@ export async function createPendingIntent(input: {
   modelOverride?: string;
   devLoopContextJson?: string;
   imageUrls?: string[];
-}): Promise<{ trackingId: string; id: string }> {
+  correlationId?: string;
+  creationReason?: string;
+  userNotified?: boolean;
+}): Promise<{ trackingId: string; id: string; intent: PendingIntent }> {
   const container = getContainer(CONTAINER_NAME);
   const id = randomUUID();
   const trackingId = `PI-${Date.now().toString(36).toUpperCase()}`;
@@ -78,6 +82,7 @@ export async function createPendingIntent(input: {
   const doc: PendingIntent = {
     id,
     userId: input.userId,
+    correlationId: input.correlationId ?? id,
     idempotencyKey,
     status: 'received',
     timestamp: new Date().toISOString(),
@@ -98,15 +103,17 @@ export async function createPendingIntent(input: {
 
   trackEvent({
     name: 'PendingIntentCreated',
-    correlationId: id,
+    correlationId: doc.correlationId ?? id,
     userId: input.userId,
     properties: {
       trackingId,
       textLength: String(input.messageText.length),
+      creationReason: input.creationReason ?? 'overseer-unreachable',
+      userNotified: input.userNotified ?? false,
     },
   });
 
-  return { trackingId, id };
+  return { trackingId, id, intent: doc };
 }
 
 /** Get all unprocessed intents for recovery, ordered by timestamp. */
@@ -137,6 +144,31 @@ export async function markIntentProcessing(id: string, userId: string): Promise<
   await container.item(id, userId).patch([
     { op: 'replace', path: '/status', value: 'processing' },
   ]);
+}
+
+/** Reset an intent back to received so a later replay pass can retry it. */
+export async function markIntentReceived(
+  id: string,
+  userId: string,
+  failureReason?: string,
+): Promise<void> {
+  const container = getContainer(CONTAINER_NAME);
+  const { resource } = await container.item(id, userId).read<PendingIntent>();
+  if (!resource) {
+    return;
+  }
+
+  const nextDoc: PendingIntent = {
+    ...resource,
+    status: 'received',
+    ...(failureReason ? { failureReason } : {}),
+  };
+
+  if (!failureReason) {
+    delete nextDoc.failureReason;
+  }
+
+  await container.item(id, userId).replace(nextDoc);
 }
 
 /** Mark an intent as successfully processed. */

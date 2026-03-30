@@ -45,6 +45,19 @@ graph TD
 5. If long-running, durable hook is registered (0h)  
 6. Final reply sent proactively; ack is replaced in-place
 
+### Scale-to-Zero Wake-Up Behavior
+
+When a message reaches the bot during the first few seconds after a cold start, HelkinSwarm must not silently drop it behind a vague "try again" response.
+
+The current runtime contract is:
+
+1. if the stamp is already warm enough to enter the normal turn path, send the usual correlated ack and route to the overseer
+2. if the message lands during the explicit cold-start guard window, persist the exact turn as a `pendingIntent`
+3. immediately tell the user that the bot is waking up and that the message has been queued for automatic replay
+4. attempt replay as soon as the cold-start window passes, with the existing pending-intent replay path as fallback
+
+This keeps scale-to-zero enabled while making the first post-idle turn truthful and recoverable instead of disposable.
+
 ### Slash Commands (Handled Before Overseer)
 
 | Command               | Access       | Action |
