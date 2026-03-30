@@ -4,17 +4,23 @@ async function loadModule(options?: { duplicate?: boolean }) {
   vi.resetModules();
 
   const continueConversationAsync = vi.fn(async (_appId, _conversationReference, callback) => {
+    const updateActivity = vi.fn(async () => undefined);
     const sendActivity = vi.fn(async () => ({ id: 'card-1' }));
-    await callback({ sendActivity });
+    await callback({ sendActivity, updateActivity });
+    return { sendActivity, updateActivity };
   });
 
   const claimOutboundArtifact = vi.fn(async () => !options?.duplicate);
   const releaseOutboundArtifactClaim = vi.fn(async () => undefined);
+  const getPendingAckId = vi.fn(async () => 'ack-1');
+  const clearPendingAckId = vi.fn(async () => undefined);
   const recordOrchestratorStage = vi.fn(async () => undefined);
 
   vi.doMock('../../src/bot/conversationStore.js', () => ({
     getConversationReference: vi.fn(async () => ({ conversation: { id: 'conv-1' } })),
     claimOutboundArtifact,
+    getPendingAckId,
+    clearPendingAckId,
     releaseOutboundArtifactClaim,
   }));
 
@@ -34,6 +40,7 @@ async function loadModule(options?: { duplicate?: boolean }) {
   }));
 
   vi.doMock('botbuilder', () => ({
+    ActivityTypes: { Message: 'message' },
     CloudAdapter: class {
       continueConversationAsync = continueConversationAsync;
     },
@@ -43,8 +50,10 @@ async function loadModule(options?: { duplicate?: boolean }) {
   const mod = await import('../../src/orchestrator/sendConfirmationCardActivity.js');
   return {
     ...mod,
+    clearPendingAckId,
     claimOutboundArtifact,
     continueConversationAsync,
+    getPendingAckId,
     releaseOutboundArtifactClaim,
     recordOrchestratorStage,
   };
@@ -63,6 +72,8 @@ describe('sendConfirmationCardActivity', () => {
   it('records awaiting-confirmation stage after sending a confirmation card', async () => {
     const {
       sendConfirmationCard,
+      clearPendingAckId,
+      getPendingAckId,
       recordOrchestratorStage,
       continueConversationAsync,
     } = await loadModule();
@@ -76,8 +87,10 @@ describe('sendConfirmationCardActivity', () => {
       sessionInstanceId: 'session-123',
     });
 
-    expect(result.sent).toBe(true);
+    expect(result).toEqual({ sent: true, ackResolved: true });
     expect(continueConversationAsync).toHaveBeenCalledOnce();
+    expect(getPendingAckId).toHaveBeenCalledWith('corr-123');
+    expect(clearPendingAckId).toHaveBeenCalledWith('conv-1', 'corr-123');
     expect(recordOrchestratorStage).toHaveBeenCalledWith(
       'corr-123',
       'awaiting-confirmation',

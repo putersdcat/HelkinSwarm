@@ -3,14 +3,17 @@
 
 import * as df from 'durable-functions';
 import {
+  ActivityTypes,
   CloudAdapter,
   ConfigurationBotFrameworkAuthentication,
   type ConversationReference,
 } from 'botbuilder';
 import { buildConfirmationCard, type ConfirmationCardData } from '../bot/confirmationCards.js';
 import {
+  clearPendingAckId,
   claimOutboundArtifact,
   getConversationReference,
+  getPendingAckId,
   releaseOutboundArtifactClaim,
 } from '../bot/conversationStore.js';
 import { getEnvConfig } from '../config/envConfig.js';
@@ -29,6 +32,7 @@ export interface SendConfirmationCardResult {
   sent: boolean;
   error?: string;
   skippedDuplicate?: boolean;
+  ackResolved?: boolean;
 }
 
 let adapterInstance: CloudAdapter | undefined;
@@ -86,15 +90,37 @@ export async function sendConfirmationCard(
     };
 
     const card = buildConfirmationCard(cardData);
+    const pendingAckId = await getPendingAckId(input.correlationId);
+    let ackResolved = false;
 
     await adapter.continueConversationAsync(
       appId,
       conversationReference as ConversationReference,
       async (context) => {
+        if (pendingAckId) {
+          try {
+            await context.updateActivity({
+              type: ActivityTypes.Message,
+              id: pendingAckId,
+              text: `⏸️ Awaiting your approval above before I continue with ${input.toolName}.`,
+              textFormat: 'markdown',
+            });
+            ackResolved = true;
+          } catch (err) {
+            console.warn(
+              `[sendConfirmationCardActivity] Failed to resolve pending ack for correlationId=${input.correlationId}: ${err instanceof Error ? err.message : err}`,
+            );
+          }
+        }
+
         await context.sendActivity({ attachments: [card] });
         deliveredToUser = true;
       },
     );
+
+    if (pendingAckId) {
+      await clearPendingAckId(conversationId, input.correlationId);
+    }
 
     await recordOrchestratorStage(
       input.correlationId,
@@ -102,7 +128,7 @@ export async function sendConfirmationCard(
       input.userId,
     );
 
-    return { sent: true };
+    return { sent: true, ackResolved };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     try {
