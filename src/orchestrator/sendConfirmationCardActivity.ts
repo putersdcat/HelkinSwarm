@@ -74,6 +74,11 @@ export async function sendConfirmationCard(
       console.warn(
         `[sendConfirmationCardActivity] Duplicate confirmation card suppressed for sessionInstanceId=${input.sessionInstanceId}`,
       );
+      await recordOrchestratorStage(
+        input.correlationId,
+        'awaiting-confirmation',
+        input.userId,
+      );
       return { sent: true, skippedDuplicate: true };
     }
 

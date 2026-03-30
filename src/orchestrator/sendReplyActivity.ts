@@ -107,6 +107,7 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
       );
       if (!outboundClaimed) {
         console.warn(`[sendReplyActivity] Duplicate reply suppressed for correlationId=${input.correlationId}`);
+        await clearOrchestratorStage(correlationId, input.userId);
         return { success: true };
       }
     }

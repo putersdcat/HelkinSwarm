@@ -175,7 +175,7 @@ describe('ack correlation scoping', () => {
   }, 15_000);
 
   it('sendReply suppresses duplicate proactive replies for the same correlationId', async () => {
-    const { sendReply, claimOutboundArtifact, continueConversationAsync } = await loadSendReplyModule();
+    const { sendReply, claimOutboundArtifact, continueConversationAsync, clearOrchestratorStage } = await loadSendReplyModule();
     claimOutboundArtifact.mockResolvedValue(false);
 
     const result = await sendReply({
@@ -187,6 +187,7 @@ describe('ack correlation scoping', () => {
     expect(result.success).toBe(true);
     expect(claimOutboundArtifact).toHaveBeenCalledWith('conv-1', 'user-1', 'reply', 'corr-duplicate');
     expect(continueConversationAsync).not.toHaveBeenCalled();
+    expect(clearOrchestratorStage).toHaveBeenCalledWith('corr-duplicate', 'user-1');
   });
 
   it('sendReply still clears orchestrator stage when SENDREPLY_FAST_PATH is enabled', async () => {

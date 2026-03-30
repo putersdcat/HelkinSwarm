@@ -98,7 +98,7 @@ describe('sendConfirmationCardActivity', () => {
     );
   });
 
-  it('does not overwrite stage health when duplicate confirmation is suppressed', async () => {
+  it('reasserts awaiting-confirmation stage when duplicate confirmation is suppressed', async () => {
     const {
       sendConfirmationCard,
       continueConversationAsync,
@@ -117,6 +117,10 @@ describe('sendConfirmationCardActivity', () => {
     expect(result.sent).toBe(true);
     expect(result.skippedDuplicate).toBe(true);
     expect(continueConversationAsync).not.toHaveBeenCalled();
-    expect(recordOrchestratorStage).not.toHaveBeenCalled();
+    expect(recordOrchestratorStage).toHaveBeenCalledWith(
+      'corr-duplicate',
+      'awaiting-confirmation',
+      'user-1',
+    );
   });
 });
