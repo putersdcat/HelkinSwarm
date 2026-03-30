@@ -58,6 +58,8 @@ The current runtime contract is:
 
 This keeps scale-to-zero enabled while making the first post-idle turn truthful and recoverable instead of disposable.
 
+Startup lifecycle notices must also stay honest: a fresh "runtime online" notice is **not** proof that inbound Teams delivery has already succeeded. Until the first successful inbound `/api/messages` turn is observed, owner-facing startup notices should warn that inbound delivery is still being verified and that a no-reply first message may need to be resent.
+
 ### Slash Commands (Handled Before Overseer)
 
 | Command               | Access       | Action |

@@ -143,6 +143,17 @@ async function sendProactiveMessage(message: string): Promise<void> {
 
 let startupSent = false;
 
+export function buildStartupNoticeMessage(version: string, startTime: string): string {
+  return [
+    '🟢 **HelkinSwarm Runtime Online**',
+    '',
+    `Version: ${version}`,
+    `Started: ${startTime}`,
+    'Inbound Teams delivery is still being verified on this fresh runtime.',
+    'If your next message gets no reply within about a minute, resend it.',
+  ].join('\n');
+}
+
 /** Send a startup notice to the owner. Call this from the Functions entry point. */
 export async function sendStartupNotice(): Promise<void> {
   if (startupSent) return;
@@ -152,7 +163,7 @@ export async function sendStartupNotice(): Promise<void> {
   const { APP_VERSION } = await import('../config/version.js');
   const version = APP_VERSION;
   const startTime = new Date().toISOString();
-  const message = `🟢 **HelkinSwarm Online**\n\nVersion: ${version}\nStarted: ${startTime}\nReady to assist.`;
+  const message = buildStartupNoticeMessage(version, startTime);
 
   try {
     await sendProactiveMessage(message);
