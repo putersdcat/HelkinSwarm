@@ -1,0 +1,49 @@
+{
+  "domain": "forge-create-a-receipts-parser-skill-v367a",
+  "shortName": "forge-create-a-receipts-parser-skill-v367a",
+  "version": "0.1.0",
+  "displayName": "Forge Create A Receipts Parser Skill V367a",
+  "shortDescription": "SkillForge prototype for: create a receipts parser skill v367a",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/core.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials",
+  "discoveryHints": [
+    "create a receipts parser skill v367a",
+    "Forge Create A Receipts Parser Skill V367a",
+    "forge-create-a-receipts-parser-skill-v367a"
+  ],
+  "orchestratorUseCases": [
+    "Prototype generated from SkillForge idea: create a receipts parser skill v367a"
+  ],
+  "recommendedEntryTools": [
+    "forge_create_a_receipts_parser_skill_v367a_run"
+  ],
+  "tools": [
+    {
+      "name": "forge_create_a_receipts_parser_skill_v367a_run",
+      "description": "Prototype entry tool for Forge Create A Receipts Parser Skill V367a",
+      "risk": "medium",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": true,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": "string",
+            "description": "Natural-language request for the prototype skill."
+          }
+        },
+        "required": [
+          "request"
+        ]
+      },
+      "privilegeClass": "create",
+      "requiresSubAgent": true
+    }
+  ]
+}
