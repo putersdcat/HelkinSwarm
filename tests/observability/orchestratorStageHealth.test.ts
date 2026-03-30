@@ -164,4 +164,37 @@ describe('orchestratorStageHealth', () => {
       }),
     ]);
   });
+
+  it('prefers fresher in-memory stage updates over older Cosmos stage docs', async () => {
+    const {
+      getOrchestratorStageSnapshot,
+      recordSubstage,
+      resetOrchestratorStageHealth,
+    } = await loadModuleWithCosmosDouble({
+      queryResources: [
+        {
+          id: 'stage-corr-merge',
+          type: 'orchestrator-stage',
+          correlationId: 'corr-merge',
+          userId: 'user-1',
+          stage: 'build-prompt',
+          startedAtMs: 1_000,
+          updatedAtMs: 2_000,
+          ttl: 900,
+        },
+      ],
+    });
+    resetOrchestratorStageHealth();
+    recordSubstage('corr-merge', 'awaiting-confirmation', 'user-1', 4_000);
+
+    const snapshot = await getOrchestratorStageSnapshot(5_000);
+
+    expect(snapshot.activeTurns).toBe(1);
+    expect(snapshot.turns).toEqual([
+      expect.objectContaining({
+        correlationId: 'corr-merge',
+        stage: 'awaiting-confirmation',
+      }),
+    ]);
+  });
 });

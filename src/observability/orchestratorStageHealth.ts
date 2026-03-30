@@ -38,6 +38,34 @@ function isVisibleStage(entry: Pick<ActiveTurnStage, 'stage'>): boolean {
   return entry.stage !== CLEARED_STAGE;
 }
 
+function mergeFreshStageEntries(
+  persistedEntries: ActiveTurnStage[],
+  inMemoryEntries: ActiveTurnStage[],
+  nowMs: number,
+): ActiveTurnStage[] {
+  const merged = new Map<string, ActiveTurnStage>();
+
+  const consider = (entry: ActiveTurnStage) => {
+    if (!isStageEntryFresh(entry, nowMs) || !isVisibleStage(entry)) {
+      return;
+    }
+
+    const existing = merged.get(entry.correlationId);
+    if (!existing || entry.updatedAtMs >= existing.updatedAtMs) {
+      merged.set(entry.correlationId, entry);
+    }
+  };
+
+  for (const entry of persistedEntries) {
+    consider(entry);
+  }
+  for (const entry of inMemoryEntries) {
+    consider(entry);
+  }
+
+  return Array.from(merged.values());
+}
+
 function buildClearedStageDocument(
   correlationId: string,
   userId: string,
@@ -180,8 +208,7 @@ export async function getOrchestratorStageSnapshot(nowMs = Date.now()): Promise<
       })
       .fetchAll(), STAGE_IO_TIMEOUT_MS);
 
-    const turns = resources
-      .filter((entry) => isStageEntryFresh(entry, nowMs) && isVisibleStage(entry))
+    const turns = mergeFreshStageEntries(resources, Array.from(activeTurns.values()), nowMs)
       .map((entry) => ({
         correlationId: entry.correlationId,
         userId: entry.userId,

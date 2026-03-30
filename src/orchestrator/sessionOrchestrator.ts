@@ -12,6 +12,7 @@ import type { ConversationReference } from 'botbuilder';
 import type { ToolDispatchInput, ToolDispatchResult } from './toolDispatchActivity.js';
 import type { LlmFollowUpInput } from './llmFollowUpActivity.js';
 import type { SendConfirmationCardInput, SendConfirmationCardResult } from './sendConfirmationCardActivity.js';
+import type { SaveStateInput } from './saveStateActivity.js';
 import type { StoreMemoryInput } from './storeMemoryActivity.js';
 import type { SubAgentInput, SubAgentResult } from './subAgentActivity.js';
 import type { ExecutorInput, ExecutorResult } from './executorActivity.js';
@@ -112,6 +113,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   let resolvedModelOverride = input.modelOverride;
   let pendingClarificationUpdate: PendingClarification | null | undefined;
   let clarificationShortCircuitResponse: string | undefined;
+  let persistClarificationClearBeforeLongRunningWork = false;
 
   if (input.state.pendingClarification) {
     const clarificationResult = resolveClarificationAnswer(
@@ -124,6 +126,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
     if (clarificationResult.kind === 'resume') {
       pendingClarificationUpdate = null;
+      persistClarificationClearBeforeLongRunningWork = true;
       userMessageForLlm = clarificationResult.resumedUserMessage;
       trackEvent({
         name: 'ClarificationResumed',
@@ -264,6 +267,16 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       safetyPassed: true,
       pendingClarification: pendingClarificationUpdate,
     } satisfies SessionResult;
+  }
+
+  if (persistClarificationClearBeforeLongRunningWork) {
+    const preConfirmationState: OverseerState = {
+      ...input.state,
+      pendingClarification: undefined,
+    };
+    yield context.df.callActivity('saveStateActivity', {
+      state: preConfirmationState,
+    } satisfies SaveStateInput);
   }
 
   // 1. Build prompt (persona + summary + user message)
