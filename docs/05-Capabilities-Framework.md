@@ -160,6 +160,76 @@ Every tool call automatically flows through the full four-eyes verification pipe
 
 No tool author has to remember any of these steps — they are enforced by the registry.
 
+### Config-Gated Skill Rollout Standard
+
+Skill authors are forbidden from exposing a skill for normal conversational use if the skill can still fail on a missing backend prerequisite that the user cannot satisfy from the current interaction.
+
+This is a separate rollout concern from the manifest's `onboardingMethod` field.
+
+#### Rollout Classification (operator-facing)
+
+Use one of these classes when evaluating whether a skill is ready to be shown to normal users:
+
+| Rollout class | Meaning | Exposure rule |
+|---|---|---|
+| `automatic-agentic` | The system can create/acquire/store everything it needs automatically | Safe to expose once the automation path is proven |
+| `post-install-link` | The user must complete a supported `/link` or consent flow | Safe to expose only if the UX can detect missing linkage and guide recovery |
+| `both` | Agentic backend setup plus a user completion/link step | Safe to expose only if both halves are wired and recoverable |
+| `operator/backend-config-required` | Requires an API key, tenant config, billing setup, allow-list, or other backend/operator step not solvable from the current user turn | **Do not expose as ready for normal use** until preflight checks and graceful fallback exist |
+
+The first three values are current manifest-backed onboarding modes. The fourth is an operational rollout classification that must be applied during design and release review even if the manifest schema has not yet been extended to encode it directly.
+
+#### Mandatory preflight readiness checks
+
+Before a config-gated skill is treated as available to the orchestrator, the rollout must prove all of the following:
+
+1. **Credential/config presence** — required API key, connection, tenant setting, or external account exists
+2. **Credential/config validity** — a cheap test call or validation probe succeeds
+3. **Recovery path exists** — the system knows what to do when the prerequisite is absent or stale
+4. **User-facing response is humane** — no vague backend-only shrug reaches the chat participant
+5. **Discovery honesty** — a not-ready skill is either hidden from normal routing or surfaced as not-yet-configured rather than silently failing at invocation time
+
+If any of those checks are false, the skill is not rollout-ready.
+
+#### Graceful fallback requirements
+
+When a best-match skill is installed but not yet configured, the orchestrator must do one of the following instead of surfacing a raw backend failure:
+
+- route to a lower-fidelity but working alternative
+- explain clearly that the capability exists but is not yet configured on this stamp
+- guide the supported setup path (`/link`, operator action, or control-center workflow)
+- decline honestly and create/point to the correct follow-up work item if the capability cannot yet be enabled safely
+
+What must **not** happen:
+
+- a vague `missing key`, `not configured`, or backend stack-style error dumped into chat
+- pretending the skill is ready because the manifest exists
+- exposing a voice or chat invocation path that dead-ends in operator-only backend instructions
+
+#### Anti-pattern example: `skills/web/`
+
+The current web-search skill is the canonical failure mode to avoid:
+
+- `skills/web/manifest.json` declares `onboardingMethod: "automatic-agentic"`
+- the same manifest also declares an external requirement: `Brave Search API key`
+- `skills/web/handlers.ts` throws when `BRAVE_SEARCH_API_KEY` is absent:
+  - `Web search not configured — BRAVE_SEARCH_API_KEY not set...`
+
+That means a normal user can ask for web search and still hit a backend-configuration failure if the operator path was never completed.
+
+This is exactly the UX trap future skills must not repeat.
+
+#### Checklist for future skill rollouts
+
+Before merging or exposing a new skill, confirm:
+
+- [ ] onboarding mode is declared honestly
+- [ ] rollout class is evaluated explicitly, including `operator/backend-config-required` when applicable
+- [ ] required permissions, external accounts, and backend prerequisites are listed
+- [ ] a preflight readiness check exists
+- [ ] graceful fallback text/behavior exists for not-yet-configured states
+- [ ] the orchestrator will not route ordinary users into backend-only setup failures
+
 ### SkillForge Connection (0f)
 
 When SkillForge creates a new skill:

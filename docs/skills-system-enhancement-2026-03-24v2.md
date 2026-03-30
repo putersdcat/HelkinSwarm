@@ -58,6 +58,36 @@ Every skill **must** include a JSON manifest with these fields (enforced in `.gi
 - **Core skills** = default-installed on new stamped instance; still go through the exact same automated onboarding pipeline.  
 - **Soft onboarding** (personality/creature comfort): reusable module for first-run questions (how to address user, preferred response length, etc.).
 
+#### 6.1 Rollout classification for config-gated skills
+
+The manifest onboarding mode is necessary but not sufficient for rollout.
+
+Operationally, every skill must also be classified as one of:
+
+- `automatic-agentic`
+- `post-install-link`
+- `both`
+- `operator/backend-config-required`
+
+The last category is the danger class for skills that still depend on backend keys, tenant setup, billing activation, allow-lists, or other operator-side work that a normal user cannot complete in the moment.
+
+If a skill falls into `operator/backend-config-required`, it must **not** be exposed as normally available until:
+
+- prerequisite presence is verified
+- a lightweight test call proves readiness
+- the orchestrator has a graceful fallback path
+- the user-facing response explains the situation clearly instead of surfacing a backend-only failure
+
+#### 6.2 Required rollout checklist before exposure
+
+Before a skill is shown as ready for ordinary use, verify:
+
+- [ ] all backend credentials/config exist
+- [ ] a readiness/preflight check exists
+- [ ] missing-config state has a humane fallback
+- [ ] dependency/install state is explicit
+- [ ] voice/chat requests cannot dead-end in operator-only setup instructions
+
 ### 7. Password Manager Skill (Specific Example)
 - **Core skill** (default-installed).  
 - Backend: Azure Key Vault.  
@@ -71,6 +101,17 @@ Every skill **must** include a JSON manifest with these fields (enforced in `.gi
 - No user-facing “missing config” errors allowed.  
 - Orchestrator must trap and resolve such failures intelligently.  
 - Will become a dependency for any skill needing current web data.
+
+Updated anti-pattern framing:
+
+- the specific provider changed (Bing retired; current repo uses Brave Search), but the UX failure mode is the same
+- if `skills/web/handlers.ts` can still throw because `BRAVE_SEARCH_API_KEY` is absent, then the skill is not rollout-ready for normal users
+- that means web search must either:
+  - complete its backend/operator setup before exposure,
+  - remain classified as `operator/backend-config-required`, or
+  - provide a clear fallback path instead of letting a normal user request die in backend-config instructions
+
+This example should be treated as the standing warning for any future API-key skill.
 
 ### 9. Virtual Employees Context (End-Game Reinforcement)
 - Virtual employees = future sub-stamped instances of HelkinSwarm (lightweight, agentic-only, no full web UI).  
