@@ -128,6 +128,17 @@ The orchestrator now uses a **discovery-first tool presentation model**:
 - `helkin_skill_search` is the bridge from that small surface into the wider skill library
 - when discovery returns likely matches, the follow-up hop receives only the narrowed tool subset plus the core tools
 
+Historical design reference for this feature:
+- `docs/skill-discovery-meta-tool-feature-concept-2026-03-28.md`
+
+Implementation stack that materially delivered the feature:
+- `#332`, `#333`, `#335`, `#336`, `#337`, `#338`
+
+Important scope note:
+- the delivered discovery layer covers manifest-driven indexing, `helkin_skill_search`, second-hop selective injection, and the user-facing read-only `/skillSearch` chat command
+- `/skillSearch` is a presentation layer over the same discovery index for human participants; it does **not** make discovered tools directly user-callable
+- stronger downstream use of discovery metadata for model/routing decisions remains follow-on work rather than fully shipped behavior
+
 This keeps safety filtering intact because the narrowed subset is still derived from the safety-filtered registry rather than bypassing it.
 
 ### Central Tool Registry

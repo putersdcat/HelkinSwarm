@@ -61,6 +61,7 @@ import { trackEvent } from '../observability/telemetry.js';
 import { clearOboSession } from '../auth/oboSessionStore.js';
 import { recoverStaleAck } from './staleAckRecovery.js';
 import { promoteSkillForgeBundle } from '../orchestrator/skillForgePromotion.js';
+import { renderSkillSearchCommandResponse } from './skillSearchCommand.js';
 
 const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
 
@@ -498,6 +499,17 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         userAlias,
         'I want to update my communication preferences. Please ask me about my preferences one at a time.',
       );
+      return;
+    }
+
+    // /skillSearch — read-only user-facing discovery over the installed skill/tool surface (#399)
+    if (lowerMessage.startsWith('/skillsearch')) {
+      const response = await renderSkillSearchCommandResponse(messageText);
+      await context.sendActivity({
+        type: ActivityTypes.Message,
+        text: response,
+        textFormat: 'markdown',
+      });
       return;
     }
 

@@ -67,6 +67,11 @@ This keeps scale-to-zero enabled while making the first post-idle turn truthful 
 | `/forge <idea>`       | Owner        | Routes directly to SkillForge (0f) |
 | `/heavy <prompt>`     | Owner        | Forces global frontier model |
 | `/light <prompt>`     | Owner        | Forces fast global model |
+| `/skillSearch ...`    | Any user     | Read-only browse/search over installed skills and tools |
+
+`/skillSearch` is a **chat-participant-facing read-only discovery command**. It does not execute tools directly; it only helps the user inspect the installed capability surface.
+
+This is intentionally distinct from the orchestrator-facing core tool `helkin_skill_search`, which exists for discovery-first routing inside the orchestration layer.
 
 ### Adaptive Cards & Confirmation UX
 
