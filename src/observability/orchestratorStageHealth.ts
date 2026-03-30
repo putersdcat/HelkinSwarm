@@ -14,6 +14,9 @@ interface OrchestratorStageDocument extends ActiveTurnStage {
   ttl: number;
 }
 
+const CLEARED_STAGE = 'cleared';
+const CLEARED_STAGE_TTL_SECONDS = 60;
+
 const SESSIONS_CONTAINER = 'sessions';
 const STAGE_TTL_SECONDS = 15 * 60;
 const STAGE_IO_TIMEOUT_MS = 1_000;
@@ -29,6 +32,28 @@ function isStageEntryFresh(
 
 function makeStageDocId(correlationId: string): string {
   return `stage-${correlationId}`;
+}
+
+function isVisibleStage(entry: Pick<ActiveTurnStage, 'stage'>): boolean {
+  return entry.stage !== CLEARED_STAGE;
+}
+
+function buildClearedStageDocument(
+  correlationId: string,
+  userId: string,
+  nowMs: number,
+  startedAtMs = nowMs,
+): OrchestratorStageDocument {
+  return {
+    id: makeStageDocId(correlationId),
+    type: 'orchestrator-stage',
+    correlationId,
+    userId,
+    stage: CLEARED_STAGE,
+    startedAtMs,
+    updatedAtMs: nowMs,
+    ttl: CLEARED_STAGE_TTL_SECONDS,
+  };
 }
 
 async function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
@@ -107,12 +132,31 @@ export function recordSubstage(
 }
 
 export async function clearOrchestratorStage(correlationId: string, userId: string): Promise<void> {
+  const existing = activeTurns.get(correlationId);
   activeTurns.delete(correlationId);
   try {
     const container = getContainer(SESSIONS_CONTAINER);
     await withTimeout(container.item(makeStageDocId(correlationId), userId).delete(), STAGE_IO_TIMEOUT_MS);
-  } catch {
-    // Best-effort only.
+  } catch (err) {
+    try {
+      const container = getContainer(SESSIONS_CONTAINER);
+      await withTimeout(
+        container.items.upsert(
+          buildClearedStageDocument(
+            correlationId,
+            userId,
+            Date.now(),
+            existing?.startedAtMs,
+          ),
+        ),
+        STAGE_IO_TIMEOUT_MS,
+      );
+    } catch {
+      // Best-effort only.
+    }
+    console.warn(
+      `[orchestratorStageHealth] Failed to delete stage doc for correlationId=${correlationId}; wrote cleared tombstone fallback if possible: ${err instanceof Error ? err.message : err}`,
+    );
   }
 }
 
@@ -137,7 +181,7 @@ export async function getOrchestratorStageSnapshot(nowMs = Date.now()): Promise<
       .fetchAll(), STAGE_IO_TIMEOUT_MS);
 
     const turns = resources
-      .filter((entry) => isStageEntryFresh(entry, nowMs))
+      .filter((entry) => isStageEntryFresh(entry, nowMs) && isVisibleStage(entry))
       .map((entry) => ({
         correlationId: entry.correlationId,
         userId: entry.userId,
@@ -154,7 +198,7 @@ export async function getOrchestratorStageSnapshot(nowMs = Date.now()): Promise<
     };
   } catch {
     const turns = Array.from(activeTurns.values())
-      .filter((entry) => isStageEntryFresh(entry, nowMs))
+      .filter((entry) => isStageEntryFresh(entry, nowMs) && isVisibleStage(entry))
       .map((entry) => ({
         correlationId: entry.correlationId,
         userId: entry.userId,
