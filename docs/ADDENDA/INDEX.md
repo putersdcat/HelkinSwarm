@@ -25,6 +25,7 @@ The ADDENDA series provides **implementation-ready specifications** for features
 | [ADDENDA-04](ADDENDA-04-Capability-Hot-Reload-Tool-Registry-and-Confirmation-Cards.md) | Capability Hot-Reload, Tool Registry & Confirmation Cards | Spec complete | Zod-validated manifest, OpenAI-format registry, 5-step verification cards |
 | [ADDENDA-05](ADDENDA-05-Auth-Identity-Layer-OBO-Token-Minting-and-Emergency-Stop.md) | Auth Identity Layer — OBO, Emergency Stop & Maintenance | Spec complete | UAMI → OBO → scoped tokens, Cosmos-backed e-stop, 4 maintenance states |
 | [ADDENDA-06](ADDENDA-06-Token-Budget-Tool-Budget-Scaler-Input-Canonicalization.md) | Token Budget, Tool Budget Scaler & Input Canonicalization | Spec complete | Correct `_latestPromptTokens` metric, 5 heuristic scaler, 5 canonicalization rules |
+| [ADDENDA-12](ADDENDA-12-Network-Hardening-and-Service-Communication-Map.md) | Network Hardening & Service Communication Map | Spec complete | #212 phased communication map, debug CIDR groundwork, VNet/private-endpoint migration framing |
 
 ---
 

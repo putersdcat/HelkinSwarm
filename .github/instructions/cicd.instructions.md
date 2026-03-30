@@ -46,8 +46,16 @@ Every deployment targets a specific **user stamp** (`userAlias`). There is no un
 - Target: `https://helkinswarm-func-{alias}.azurecontainerapps.io/api/health`
 - Pipeline aborts if health check fails
 
+## Temporary Developer IP Allowlisting (`#212` groundwork)
+- `deploy-stamp.yml` exposes optional workflow input `DEVELOPER_ALLOWED_IP_CIDRS`
+- Value must be a JSON array string, for example: `["203.0.113.10/32"]`
+- Current Phase 1 behavior records the intended debug CIDRs in Bicep/deployment outputs and workflow summaries without enforcing deny-by-default network ACLs yet
+- Full enforcement still requires the later VNet/private-endpoint migration; do **not** claim the stamp is firewall-hardened just because debug CIDRs were supplied
+- When temporary debug CIDRs are used, remove them again on the next dispatch once the investigation window is over
+
 ## Always
 - ✅ Trigger `deploy-stamp.yml` with an explicit `USER_ALIAS` every time
+- ✅ Pass `DEVELOPER_ALLOWED_IP_CIDRS` only as temporary JSON CIDR arrays when a debug window is truly needed
 - ✅ Use OIDC federation for all Azure auth in workflows
 - ✅ Run `pnpm lint && pnpm build` (ci.yml) before any merge
 - ✅ Run `az bicep build` validation before any infra change
@@ -56,6 +64,7 @@ Every deployment targets a specific **user stamp** (`userAlias`). There is no un
 ## Never
 - ❌ Do NOT Deploy via Azure portal or ad-hoc `az` commands (one-time bootstrap excepted)
 - ❌ Do NOT Store any secret (token, key, password) in GitHub secrets, `.env`, or Bicep
+- ❌ Do NOT Treat `DEVELOPER_ALLOWED_IP_CIDRS` as permanent policy — it is for temporary debug windows only
 - ❌ Do NOT Run `az containerapp update` manually
 - ❌ Do NOT Add a `cd.yml` general-purpose deploy workflow — all deploys are stamped
 - ❌ Do NOT Upload Teams app package without running `teams-package.yml` first

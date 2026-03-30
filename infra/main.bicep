@@ -39,6 +39,9 @@ param cicdPrincipalId string = ''
 @description('Owner email for P0 alert notifications')
 param alertEmail string = ''
 
+@description('Optional array of developer public IP CIDRs reserved for future temporary debug allowlisting during network hardening work. Example: developerAllowedIpCidrs=["203.0.113.10/32"]. Phase 1 stores the deployment intent; Phase 2 network ACL/private-endpoint work will enforce it.')
+param developerAllowedIpCidrs array = []
+
 @description('Client ID of the global router UAMI. When set, stamps use this for Bot Framework JWT validation instead of their own UAMI. Required after router is deployed.')
 param routerBotId string = ''
 
@@ -982,3 +985,4 @@ output aiEndpoint string = aiServices.properties.endpoint
 output appInsightsConnectionString string = dirtyDevMode ? '' : appInsights!.properties.ConnectionString
 output botEndpoint string = 'https://${functionApp.properties.defaultHostName}/api/messages'
 output healthEndpoint string = 'https://${functionApp.properties.defaultHostName}/api/health'
+output developerAllowedIpCidrsConfigured array = developerAllowedIpCidrs

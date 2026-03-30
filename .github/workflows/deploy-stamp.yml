@@ -66,6 +66,10 @@ on:
         required: false
         type: boolean
         default: false
+      DEVELOPER_ALLOWED_IP_CIDRS:
+        description: "Optional JSON array of temporary developer public IP CIDRs reserved for future network-hardening allowlists, e.g. [\"203.0.113.10/32\"]"
+        required: false
+        type: string
 
 # Only one stamp deployment at a time per alias
 concurrency:
@@ -110,6 +114,7 @@ jobs:
           STRATEGY="${{ github.event.inputs.QUOTA_STRATEGY || 'maximize' }}"
           CEILING="${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '400000' }}"
           OVERRIDES='${{ github.event.inputs.MODEL_QUOTA_OVERRIDES_JSON || '' }}'
+          DEV_IPS='${{ github.event.inputs.DEVELOPER_ALLOWED_IP_CIDRS || '' }}'
 
           if ! echo "$STRATEGY" | grep -qE '^(maximize|minimize|manual)$'; then
             echo "❌ Invalid QUOTA_STRATEGY: '$STRATEGY'"
@@ -124,6 +129,11 @@ jobs:
           if [ -n "$OVERRIDES" ]; then
             echo "$OVERRIDES" | jq -e . >/dev/null
             echo "✅ MODEL_QUOTA_OVERRIDES_JSON is valid JSON"
+          fi
+
+          if [ -n "$DEV_IPS" ]; then
+            echo "$DEV_IPS" | jq -e 'if type == "array" then . else error("expected JSON array") end' >/dev/null
+            echo "✅ DEVELOPER_ALLOWED_IP_CIDRS is a valid JSON array"
           fi
 
   # ─────────────────────────────────────────────────────────────────────────
@@ -277,6 +287,7 @@ jobs:
           QUOTA_STRATEGY="${{ github.event.inputs.QUOTA_STRATEGY || 'maximize' }}"
           QUOTA_MAX_TPM_CEILING="${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '400000' }}"
           MODEL_QUOTA_OVERRIDES_JSON='${{ github.event.inputs.MODEL_QUOTA_OVERRIDES_JSON || '' }}'
+          DEVELOPER_ALLOWED_IP_CIDRS='${{ github.event.inputs.DEVELOPER_ALLOWED_IP_CIDRS || '' }}'
           STAMP_POLICY_OUTLOOK_SEND_BYPASS="${{ (github.event.inputs.USER_ALIAS || vars.USER_ALIAS) == vars.USER_ALIAS && 'true' || 'false' }}"
 
           echo "ℹ️ CICD principal object id: ${CICD_PRINCIPAL_ID}"
@@ -286,6 +297,11 @@ jobs:
           if [ -n "$MODEL_QUOTA_OVERRIDES_JSON" ]; then
             echo "$MODEL_QUOTA_OVERRIDES_JSON" | jq -e . >/dev/null
             echo "ℹ️ Applying modelQuotaOverrides JSON from workflow input"
+          fi
+
+          if [ -n "$DEVELOPER_ALLOWED_IP_CIDRS" ]; then
+            echo "$DEVELOPER_ALLOWED_IP_CIDRS" | jq -e 'if type == "array" then . else error("expected JSON array") end' >/dev/null
+            echo "ℹ️ Developer debug CIDRs reserved for future network-hardening enforcement: $DEVELOPER_ALLOWED_IP_CIDRS"
           fi
 
           DEPLOY_CMD=(az deployment group create
@@ -304,6 +320,7 @@ jobs:
             delegatedAuthClientSecret="$DELEGATED_SECRET"
             lowCostDevMode=${{ github.event.inputs.LOW_COST_DEV_MODE || 'false' }}
             dirtyDevMode=${{ github.event.inputs.DIRTY_DEV_MODE || 'false' }}
+            developerAllowedIpCidrs="${DEVELOPER_ALLOWED_IP_CIDRS:-[]}"
             stampPolicyAllowOutlookSendWithoutConfirmation=${STAMP_POLICY_OUTLOOK_SEND_BYPASS}
           )
 
@@ -875,6 +892,7 @@ jobs:
           | **EU Residency** | \`${{ github.event.inputs.EU_RESIDENCY_MODE }}\` |
           | **Low Cost Dev Mode** | \`${{ github.event.inputs.LOW_COST_DEV_MODE || 'false' }}\` |
           | **Dirty Dev Mode** | \`${{ github.event.inputs.DIRTY_DEV_MODE || 'false' }}\` |
+          | **Developer Debug CIDRs** | \`${{ github.event.inputs.DEVELOPER_ALLOWED_IP_CIDRS || '[]' }}\` |
           | **Commit** | \`${{ github.sha }}\` |
           | **Triggered by** | \`${{ github.actor }}\` |
           | **Timestamp** | \`$(date -u +"%Y-%m-%dT%H:%M:%SZ")\` |
