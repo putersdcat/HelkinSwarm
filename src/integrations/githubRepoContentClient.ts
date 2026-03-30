@@ -7,6 +7,20 @@ const API_BASE = `https://api.github.com/repos/${OWNER}/${REPO}`;
 let cachedToken: string | undefined;
 let tokenExpiresAt = 0;
 
+export class GitHubContentsPermissionError extends Error {
+  readonly status: number;
+  readonly path: string;
+  readonly responseBody: string;
+
+  constructor(path: string, status: number, responseBody: string) {
+    super(`GitHub App lacks repository contents access for '${path}' (status ${status}).`);
+    this.name = 'GitHubContentsPermissionError';
+    this.path = path;
+    this.status = status;
+    this.responseBody = responseBody;
+  }
+}
+
 export interface RepoFileWriteInput {
   path: string;
   content: string;
@@ -125,6 +139,9 @@ export async function pushRepositoryFiles(input: {
 
     if (!response.ok) {
       const errorBody = await response.text();
+      if (response.status === 403 && errorBody.includes('Resource not accessible by integration')) {
+        throw new GitHubContentsPermissionError(file.path, response.status, errorBody);
+      }
       throw new Error(`GitHub file write failed for '${file.path}' with status ${response.status}: ${errorBody}`);
     }
 

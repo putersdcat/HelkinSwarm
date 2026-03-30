@@ -766,23 +766,40 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     try {
       const result = await promoteSkillForgeBundle(bundlePath);
-      const uniqueCommitShas = [...new Set(result.fileResults.map((file) => file.commitSha).filter(Boolean))];
       const ackId = ack?.id;
-      const promotionMessage = [
-        `✅ Promoted **${result.skillId}** from persisted bundle to \`${result.branch}\`.`,
-        '',
-        `Bundle: \`${result.bundlePath}\``,
-        `Commit message: \`${result.commitMessage}\``,
-        uniqueCommitShas.length > 0
-          ? `Commit SHA${uniqueCommitShas.length > 1 ? 's' : ''}: ${uniqueCommitShas.map((sha) => `\`${sha}\``).join(', ')}`
-          : 'Commit SHA: unavailable',
-        '',
-        'Files:',
-        ...result.fileResults.map((file) => `- \`${file.path}\` (${file.action})`),
-        '',
-        `Local reload summary: ${result.reloadSummary.skillsLoaded} skills / ${result.reloadSummary.toolsRegistered} tools registered in the current stamp process.`,
-        'Repo push to `main` has been made; deployment will rebuild the stamp so the promoted skill becomes executable from tracked source.',
-      ].join('\n');
+      const uniqueCommitShas = [...new Set(result.fileResults.map((file) => file.commitSha).filter(Boolean))];
+      const promotionMessage = result.status === 'promoted'
+        ? [
+            `✅ Promoted **${result.skillId}** from persisted bundle to \`${result.branch}\`.`,
+            '',
+            `Bundle: \`${result.bundlePath}\``,
+            `Commit message: \`${result.commitMessage}\``,
+            uniqueCommitShas.length > 0
+              ? `Commit SHA${uniqueCommitShas.length > 1 ? 's' : ''}: ${uniqueCommitShas.map((sha) => `\`${sha}\``).join(', ')}`
+              : 'Commit SHA: unavailable',
+            '',
+            'Files:',
+            ...result.fileResults.map((file) => `- \`${file.path}\` (${file.action})`),
+            '',
+            `Local reload summary: ${result.reloadSummary.skillsLoaded} skills / ${result.reloadSummary.toolsRegistered} tools registered in the current stamp process.`,
+            'Repo push to `main` has been made; deployment will rebuild the stamp so the promoted skill becomes executable from tracked source.',
+          ].join('\n')
+        : [
+            `⚠️ GitHub promotion is blocked for **${result.skillId}**, but the reviewed bundle is ready for owner-side promotion.`,
+            '',
+            `Bundle: \`${result.bundlePath}\``,
+            `Intended branch: \`${result.branch}\``,
+            `Intended commit message: \`${result.commitMessage}\``,
+            result.fallbackReason ?? 'GitHub App repository contents access is unavailable on this stamp.',
+            '',
+            'Prepared files:',
+            ...result.fileResults.map((file) => `- \`${file.path}\``),
+            '',
+            'Next steps:',
+            ...(result.nextSteps ?? []).map((step, index) => `${index + 1}. ${step}`),
+            '',
+            'No repository files were changed by this bot command.',
+          ].join('\n');
 
       if (ackId) {
         await context.updateActivity({
