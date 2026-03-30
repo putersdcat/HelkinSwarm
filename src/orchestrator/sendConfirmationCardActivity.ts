@@ -14,6 +14,7 @@ import {
   releaseOutboundArtifactClaim,
 } from '../bot/conversationStore.js';
 import { getEnvConfig } from '../config/envConfig.js';
+import { recordOrchestratorStage } from '../observability/orchestratorStageHealth.js';
 
 export interface SendConfirmationCardInput {
   userId: string;
@@ -93,6 +94,12 @@ export async function sendConfirmationCard(
         await context.sendActivity({ attachments: [card] });
         deliveredToUser = true;
       },
+    );
+
+    await recordOrchestratorStage(
+      input.correlationId,
+      'awaiting-confirmation',
+      input.userId,
     );
 
     return { sent: true };

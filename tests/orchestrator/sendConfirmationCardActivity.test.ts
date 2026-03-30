@@ -1,23 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-async function loadConfirmationModule() {
+async function loadModule(options?: { duplicate?: boolean }) {
   vi.resetModules();
 
-  const claimOutboundArtifact = vi.fn(async () => true);
-  const releaseOutboundArtifactClaim = vi.fn(async () => undefined);
   const continueConversationAsync = vi.fn(async (_appId, _conversationReference, callback) => {
     const sendActivity = vi.fn(async () => ({ id: 'card-1' }));
     await callback({ sendActivity });
   });
 
+  const claimOutboundArtifact = vi.fn(async () => !options?.duplicate);
+  const releaseOutboundArtifactClaim = vi.fn(async () => undefined);
+  const recordOrchestratorStage = vi.fn(async () => undefined);
+
   vi.doMock('../../src/bot/conversationStore.js', () => ({
-    getConversationReference: vi.fn(async () => ({ conversation: { id: 'conv-card-1' } })),
+    getConversationReference: vi.fn(async () => ({ conversation: { id: 'conv-1' } })),
     claimOutboundArtifact,
     releaseOutboundArtifactClaim,
-  }));
-
-  vi.doMock('../../src/bot/confirmationCards.js', () => ({
-    buildConfirmationCard: vi.fn(() => ({ contentType: 'application/vnd.microsoft.card.adaptive', content: {} })),
   }));
 
   vi.doMock('../../src/config/envConfig.js', () => ({
@@ -25,6 +23,14 @@ async function loadConfirmationModule() {
       microsoftAppId: 'test-app-id',
       microsoftAppTenantId: 'test-tenant-id',
     }),
+  }));
+
+  vi.doMock('../../src/observability/orchestratorStageHealth.js', () => ({
+    recordOrchestratorStage,
+  }));
+
+  vi.doMock('../../src/bot/confirmationCards.js', () => ({
+    buildConfirmationCard: vi.fn(() => ({ contentType: 'application/vnd.microsoft.card.adaptive' })),
   }));
 
   vi.doMock('botbuilder', () => ({
@@ -35,33 +41,69 @@ async function loadConfirmationModule() {
   }));
 
   const mod = await import('../../src/orchestrator/sendConfirmationCardActivity.js');
-  return { ...mod, claimOutboundArtifact, releaseOutboundArtifactClaim, continueConversationAsync };
+  return {
+    ...mod,
+    claimOutboundArtifact,
+    continueConversationAsync,
+    releaseOutboundArtifactClaim,
+    recordOrchestratorStage,
+  };
 }
 
-describe('sendConfirmationCard', () => {
+describe('sendConfirmationCardActivity', () => {
   afterEach(() => {
     vi.resetModules();
     vi.doUnmock('../../src/bot/conversationStore.js');
-    vi.doUnmock('../../src/bot/confirmationCards.js');
     vi.doUnmock('../../src/config/envConfig.js');
+    vi.doUnmock('../../src/observability/orchestratorStageHealth.js');
+    vi.doUnmock('../../src/bot/confirmationCards.js');
     vi.doUnmock('botbuilder');
   });
 
-  it('suppresses duplicate confirmation cards for the same session instance', async () => {
-    const { sendConfirmationCard, claimOutboundArtifact, continueConversationAsync } = await loadConfirmationModule();
-    claimOutboundArtifact.mockResolvedValue(false);
+  it('records awaiting-confirmation stage after sending a confirmation card', async () => {
+    const {
+      sendConfirmationCard,
+      recordOrchestratorStage,
+      continueConversationAsync,
+    } = await loadModule();
 
     const result = await sendConfirmationCard({
       userId: 'user-1',
-      toolName: 'outlook_send_email',
+      toolName: 'outlook_create_calendar_event',
       risk: 'high',
-      description: 'send email',
-      correlationId: 'corr-1',
-      sessionInstanceId: 'session-1',
+      description: 'Execute 1 tool(s): outlook_create_calendar_event',
+      correlationId: 'corr-123',
+      sessionInstanceId: 'session-123',
     });
 
-    expect(result).toEqual({ sent: true, skippedDuplicate: true });
-    expect(claimOutboundArtifact).toHaveBeenCalledWith('conv-card-1', 'user-1', 'confirmation-card', 'session-1');
+    expect(result.sent).toBe(true);
+    expect(continueConversationAsync).toHaveBeenCalledOnce();
+    expect(recordOrchestratorStage).toHaveBeenCalledWith(
+      'corr-123',
+      'awaiting-confirmation',
+      'user-1',
+    );
+  });
+
+  it('does not overwrite stage health when duplicate confirmation is suppressed', async () => {
+    const {
+      sendConfirmationCard,
+      continueConversationAsync,
+      recordOrchestratorStage,
+    } = await loadModule({ duplicate: true });
+
+    const result = await sendConfirmationCard({
+      userId: 'user-1',
+      toolName: 'outlook_create_calendar_event',
+      risk: 'high',
+      description: 'Execute 1 tool(s): outlook_create_calendar_event',
+      correlationId: 'corr-duplicate',
+      sessionInstanceId: 'session-123',
+    });
+
+    expect(result.sent).toBe(true);
+    expect(result.skippedDuplicate).toBe(true);
     expect(continueConversationAsync).not.toHaveBeenCalled();
+    expect(recordOrchestratorStage).not.toHaveBeenCalled();
   });
 });
