@@ -1,7 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-async function loadSendReplyModule(options?: { hangUpdate?: boolean }) {
+async function loadSendReplyModule(options?: { hangUpdate?: boolean; fastPath?: boolean }) {
   vi.resetModules();
+
+  if (options?.fastPath) {
+    process.env['SENDREPLY_FAST_PATH'] = '1';
+  } else {
+    delete process.env['SENDREPLY_FAST_PATH'];
+  }
 
   const continueConversationAsync = vi.fn(async (_appId, conversationReference, callback) => {
     const updateActivity = vi.fn(async () => {
@@ -39,6 +45,14 @@ async function loadSendReplyModule(options?: { hangUpdate?: boolean }) {
     }),
   }));
 
+  const clearOrchestratorStage = vi.fn(async () => undefined);
+  const recordSubstage = vi.fn(() => undefined);
+
+  vi.doMock('../../src/observability/orchestratorStageHealth.js', () => ({
+    clearOrchestratorStage,
+    recordSubstage,
+  }));
+
   vi.doMock('botbuilder', () => ({
     ActivityTypes: { Message: 'message' },
     CloudAdapter: class {
@@ -57,6 +71,8 @@ async function loadSendReplyModule(options?: { hangUpdate?: boolean }) {
     claimOutboundArtifact,
     releaseOutboundArtifactClaim,
     continueConversationAsync,
+    clearOrchestratorStage,
+    recordSubstage,
   };
 }
 
@@ -107,7 +123,9 @@ describe('ack correlation scoping', () => {
     vi.doUnmock('../../src/bot/sentMessageCache.js');
     vi.doUnmock('../../src/bot/ackVariants.js');
     vi.doUnmock('../../src/config/envConfig.js');
+    vi.doUnmock('../../src/observability/orchestratorStageHealth.js');
     vi.doUnmock('botbuilder');
+    delete process.env['SENDREPLY_FAST_PATH'];
   });
 
   it('sendReply resolves and clears the pending ack by correlationId, not userId', async () => {
@@ -169,5 +187,20 @@ describe('ack correlation scoping', () => {
     expect(result.success).toBe(true);
     expect(claimOutboundArtifact).toHaveBeenCalledWith('conv-1', 'user-1', 'reply', 'corr-duplicate');
     expect(continueConversationAsync).not.toHaveBeenCalled();
+  });
+
+  it('sendReply still clears orchestrator stage when SENDREPLY_FAST_PATH is enabled', async () => {
+    const { sendReply, clearOrchestratorStage, getPendingAckId, claimOutboundArtifact } = await loadSendReplyModule({ fastPath: true });
+
+    const result = await sendReply({
+      userId: 'user-1',
+      correlationId: 'corr-fast-path',
+      message: 'done',
+    });
+
+    expect(result.success).toBe(true);
+    expect(claimOutboundArtifact).not.toHaveBeenCalled();
+    expect(getPendingAckId).not.toHaveBeenCalled();
+    expect(clearOrchestratorStage).toHaveBeenCalledWith('corr-fast-path', 'user-1');
   });
 });

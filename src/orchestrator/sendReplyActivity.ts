@@ -195,9 +195,9 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
     if (input.correlationId) {
       trackEvent({ name: 'ReplySent', correlationId: input.correlationId, userId: input.userId, properties: { success: 'true', chunks: String(replyChunks.length) } });
     }
-    if (!SENDREPLY_FAST_PATH) {
-      await clearOrchestratorStage(correlationId, input.userId);
-    }
+    // Stage cleanup must happen even in fast-path mode. SENDREPLY_FAST_PATH only
+    // skips the ack/Cosmos reply plumbing, not turn completion bookkeeping.
+    await clearOrchestratorStage(correlationId, input.userId);
     console.log(`[sendReplyActivity] DONE correlationId=${correlationId}`);
     return { success: true };
   } catch (err: unknown) {
