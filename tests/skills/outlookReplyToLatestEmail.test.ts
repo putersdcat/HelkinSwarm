@@ -47,10 +47,10 @@ describe('outlook_reply_to_latest_email handler', () => {
     expect(fetchMock.mock.calls[1]?.[0]).toContain('/me/messages/msg-123/reply');
     expect(result).toMatchObject({
       success: true,
-      repliedToMessageId: 'msg-123',
       sender: 'eric@eanderson.de',
       subject: 'Test subject',
       action: 'reply',
     });
+    expect(result).not.toHaveProperty('repliedToMessageId');
   });
 });

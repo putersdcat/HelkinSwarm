@@ -299,7 +299,6 @@ const outlookReplyToLatestEmail: ToolHandler = async (args) => {
   return {
     success: true,
     action,
-    repliedToMessageId: target.id,
     sender: target.from?.emailAddress?.address ?? sender,
     subject: target.subject,
     receivedAt: target.receivedDateTime,
@@ -415,7 +414,6 @@ const outlookCreateCalendarEvent: ToolHandler = async (args) => {
 
   const created = CreatedEventSchema.parse(await response.json());
   return {
-    id: created.id,
     subject: created.subject,
     start: created.start.dateTime,
     end: created.end.dateTime,
