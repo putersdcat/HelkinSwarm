@@ -606,10 +606,16 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     // a deterministic instanceId. activity.timestamp can differ between original POST
     // and Bot Connector retry, so we use server-side Date.now() in 60s buckets.
     // We check both current and previous bucket to handle boundary crossings.
+    // Include routing discriminators (e.g. /light vs default, SkillForge) so two
+    // intentionally different turns with the same prompt body do not collide.
     const timeBucket = Math.floor(Date.now() / 60_000);
+    const routingDiscriminator = [
+      `model:${modelOverride ?? 'default'}`,
+      `skillforge:${skillForgeRequest ? 'on' : 'off'}`,
+    ].join('|');
     const makeDedupHash = (bucket: number): string =>
       createHash('sha256')
-        .update(`${userId}:${bucket}:${userMessage.slice(0, 200)}`)
+        .update(`${userId}:${bucket}:${routingDiscriminator}:${userMessage.slice(0, 200)}`)
         .digest('hex')
         .slice(0, 12);
     const dedupHash = makeDedupHash(timeBucket);
