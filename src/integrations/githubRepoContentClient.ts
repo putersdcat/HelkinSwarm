@@ -73,6 +73,30 @@ async function fetchExistingSha(path: string, branch: string): Promise<string | 
   return typeof body.sha === 'string' ? body.sha : null;
 }
 
+async function putRepositoryFile(
+  path: string,
+  branch: string,
+  message: string,
+  content: string,
+  sha?: string,
+): Promise<Response> {
+  const h = await headers();
+  const payload: Record<string, unknown> = {
+    message,
+    branch,
+    content: Buffer.from(content, 'utf8').toString('base64'),
+  };
+  if (sha) {
+    payload['sha'] = sha;
+  }
+
+  return fetch(`${API_BASE}/contents/${path}`, {
+    method: 'PUT',
+    headers: { ...h, 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function pushRepositoryFiles(input: {
   branch?: string;
   message: string;
@@ -83,25 +107,21 @@ export async function pushRepositoryFiles(input: {
   }
 
   const branch = input.branch?.trim() || 'main';
-  const h = await headers();
   const results: RepoFileWriteResult[] = [];
 
   for (const file of input.files) {
-    const existingSha = await fetchExistingSha(file.path, branch);
-    const payload: Record<string, unknown> = {
-      message: input.message,
-      branch,
-      content: Buffer.from(file.content, 'utf8').toString('base64'),
-    };
-    if (existingSha) {
-      payload['sha'] = existingSha;
-    }
+    let response = await putRepositoryFile(file.path, branch, input.message, file.content);
+    let action: RepoFileWriteResult['action'] = response.status === 201 ? 'created' : 'updated';
 
-    const response = await fetch(`${API_BASE}/contents/${file.path}`, {
-      method: 'PUT',
-      headers: { ...h, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    if (response.status === 422) {
+      const existingSha = await fetchExistingSha(file.path, branch);
+      if (!existingSha) {
+        const errorBody = await response.text();
+        throw new Error(`GitHub file write failed for '${file.path}' with status ${response.status}: ${errorBody}`);
+      }
+      response = await putRepositoryFile(file.path, branch, input.message, file.content, existingSha);
+      action = 'updated';
+    }
 
     if (!response.ok) {
       const errorBody = await response.text();
@@ -111,7 +131,7 @@ export async function pushRepositoryFiles(input: {
     const body = await response.json() as { commit?: { sha?: unknown }; content?: { path?: unknown } };
     results.push({
       path: typeof body.content?.path === 'string' ? body.content.path : file.path,
-      action: existingSha ? 'updated' : 'created',
+      action,
       commitSha: typeof body.commit?.sha === 'string' ? body.commit.sha : '',
     });
   }
