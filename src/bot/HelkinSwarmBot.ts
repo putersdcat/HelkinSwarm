@@ -918,10 +918,16 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       backdatedCreatedAt,
     );
 
-    // Leave the placeholder visible briefly so E2E can observe the accepted turn
-    // before the real watchdog logic resolves it in-place.
-    await new Promise((resolve) => setTimeout(resolve, STALE_ACK_VALIDATION_DELAY_MS));
-    await recoverStaleAcks(STALE_ACK_THRESHOLD_MS);
+    // Leave the placeholder visible briefly, then trigger the real watchdog logic
+    // after this handler returns so Teams has committed the initial placeholder.
+    void (async () => {
+      await new Promise((resolve) => setTimeout(resolve, STALE_ACK_VALIDATION_DELAY_MS));
+      try {
+        await recoverStaleAcks(STALE_ACK_THRESHOLD_MS);
+      } catch (err) {
+        console.warn('[HelkinSwarmBot] /validate-stale-ack recovery failed:', err);
+      }
+    })();
   }
 
   /**
