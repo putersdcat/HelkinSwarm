@@ -38,6 +38,7 @@ import {
   sortToolCallsByPlan,
 } from './planExecutionHints.js';
 import {
+  buildReadOnlyDiscoveryQuery,
   buildReadOnlyDiscoveryResponse,
   buildDiscoveryDeadEndResponse,
   deriveSelectiveFollowUpToolSchemas,
@@ -103,6 +104,10 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   let userMessageForLlm = input.devLoopContext?.isDevLoop
     ? input.devLoopContext.body
     : canonicalizedMessage;
+
+  if (isReadOnlyDiscoveryRequest(userMessageForLlm)) {
+    userMessageForLlm = buildReadOnlyDiscoveryQuery(userMessageForLlm);
+  }
 
   let resolvedModelOverride = input.modelOverride;
   let pendingClarificationUpdate: PendingClarification | null | undefined;
