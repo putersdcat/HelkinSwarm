@@ -209,6 +209,9 @@ function* processTurn(
   state.latestPromptTokens = sessionResult.promptTokens;
   state.accumulatedTokens = (state.accumulatedTokens ?? 0) + sessionResult.tokensUsed;
   state.model = sessionResult.model;
+  if (sessionResult.pendingClarification !== undefined) {
+    state.pendingClarification = sessionResult.pendingClarification ?? undefined;
+  }
   state.turnCount++;
   state.lastActivityTimestamp = context.df.currentUtcDateTime.toISOString();
 

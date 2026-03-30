@@ -3,6 +3,7 @@
 
 import { z } from 'zod';
 import { getContainer } from '../memory/cosmosClient.js';
+import { PendingClarificationSchema } from './clarificationLoop.js';
 
 const SESSIONS_CONTAINER = 'sessions';
 const TTL_SECONDS = 72 * 60 * 60; // 72h
@@ -31,6 +32,8 @@ export const OverseerStateSchema = z.object({
     role: z.enum(['user', 'assistant']),
     content: z.string(),
   })).default([]),
+  /** Pending clarification loop state for the first usable resume flow (#408). */
+  pendingClarification: PendingClarificationSchema.optional(),
 });
 
 export type OverseerState = z.infer<typeof OverseerStateSchema>;

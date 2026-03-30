@@ -47,6 +47,11 @@ import {
   shouldForceDiscoveryToolSearch,
   synthesizeDeterministicFollowUpToolCall,
 } from './discoveryToolInjection.js';
+import {
+  detectClarificationRequest,
+  resolveClarificationAnswer,
+  type PendingClarification,
+} from './clarificationLoop.js';
 
 export interface SessionInput {
   state: OverseerState;
@@ -80,6 +85,7 @@ export interface SessionResult {
   toolResults: ToolDispatchResult | null;
   replySent: boolean;
   safetyPassed: boolean;
+  pendingClarification?: PendingClarification | null;
 }
 
 df.app.orchestration('sessionOrchestrator', function* (context) {
@@ -92,9 +98,81 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
   // 0b. For DevLoop sessions, use the clean body (protocol markers stripped) as
   // the user message for the LLM — the DevLoop context is injected via system prompt (#147).
-  const userMessageForLlm = input.devLoopContext?.isDevLoop
+  let userMessageForLlm = input.devLoopContext?.isDevLoop
     ? input.devLoopContext.body
     : canonicalizedMessage;
+
+  let resolvedModelOverride = input.modelOverride;
+  let pendingClarificationUpdate: PendingClarification | null | undefined;
+  let clarificationShortCircuitResponse: string | undefined;
+
+  if (input.state.pendingClarification) {
+    const clarificationResult = resolveClarificationAnswer(
+      input.state.pendingClarification,
+      userMessageForLlm,
+      context.df.currentUtcDateTime,
+    );
+
+    resolvedModelOverride = input.state.pendingClarification.modelOverride ?? resolvedModelOverride;
+
+    if (clarificationResult.kind === 'resume') {
+      pendingClarificationUpdate = null;
+      userMessageForLlm = clarificationResult.resumedUserMessage;
+      trackEvent({
+        name: 'ClarificationResumed',
+        correlationId,
+        userId: input.state.userId,
+        properties: {
+          reason: input.state.pendingClarification.reason,
+          requestId: input.state.pendingClarification.id,
+        },
+      });
+    } else if (clarificationResult.kind === 'retry') {
+      pendingClarificationUpdate = clarificationResult.pending;
+      clarificationShortCircuitResponse = clarificationResult.responseMessage;
+      trackEvent({
+        name: 'ClarificationRetryRequested',
+        correlationId,
+        userId: input.state.userId,
+        properties: {
+          reason: clarificationResult.pending.reason,
+          requestId: clarificationResult.pending.id,
+        },
+      });
+    } else {
+      pendingClarificationUpdate = null;
+      clarificationShortCircuitResponse = clarificationResult.responseMessage;
+      trackEvent({
+        name: clarificationResult.kind === 'expired' ? 'ClarificationExpired' : 'ClarificationCancelled',
+        correlationId,
+        userId: input.state.userId,
+        properties: {
+          reason: input.state.pendingClarification.reason,
+          requestId: input.state.pendingClarification.id,
+        },
+      });
+    }
+  } else {
+    const clarificationRequest = detectClarificationRequest(
+      userMessageForLlm,
+      context.df.currentUtcDateTime,
+      resolvedModelOverride,
+    );
+    if (clarificationRequest) {
+      pendingClarificationUpdate = clarificationRequest.pending;
+      clarificationShortCircuitResponse = clarificationRequest.responseMessage;
+      trackEvent({
+        name: 'ClarificationRequested',
+        correlationId,
+        userId: input.state.userId,
+        properties: {
+          reason: clarificationRequest.pending.reason,
+          requestId: clarificationRequest.pending.id,
+          answerMode: clarificationRequest.pending.answerMode,
+        },
+      });
+    }
+  }
 
   if (input.skillForgeRequest) {
     const prototype = yield context.df.callActivity('skillForgePrototypeActivity', {
@@ -127,6 +205,60 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     } satisfies SessionResult;
   }
 
+  const spans: TelemetrySpan[] = [];
+  if (clarificationShortCircuitResponse) {
+    let replyMessage = clarificationShortCircuitResponse;
+    const envConfig = getEnvConfig();
+    replyMessage += formatTelemetryFooter(envConfig.devTelemetryMode, {
+      correlationId,
+      totalMs: context.df.currentUtcDateTime.getTime() - turnStartTime,
+      model: 'clarification-loop',
+      promptTokens: 0,
+      completionTokens: 0,
+      spans,
+      toolCalls: [],
+      safetyPassed: true,
+      planComplexity: 'simple',
+    });
+
+    if (input.devLoopContext?.isDevLoop) {
+      const tag = input.devLoopContext.correlationTag ? ` ${input.devLoopContext.correlationTag}` : '';
+      const replyPrefix = input.devLoopContext.prefix === 'DEVQUERY' ? 'HELKIN-REPLY' : 'SWARM';
+      replyMessage = `${replyPrefix}: ${replyMessage}${tag} OVER`;
+    }
+
+    const replyInput: SendReplyInput = {
+      userId: input.state.userId,
+      message: replyMessage,
+      correlationId,
+      conversationReference: input.conversationReference,
+    };
+    const replyResult: SendReplyResult = yield context.df.callActivity(
+      'sendReplyActivity',
+      replyInput,
+    );
+
+    const memoryInput: StoreMemoryInput = {
+      userId: input.state.userId,
+      userMessage: input.userMessage,
+      assistantReply: clarificationShortCircuitResponse,
+    };
+    yield context.df.callActivity('storeMemoryActivity', memoryInput);
+
+    return {
+      response: clarificationShortCircuitResponse,
+      cleanResponse: clarificationShortCircuitResponse,
+      tokensUsed: 0,
+      promptTokens: 0,
+      model: 'clarification-loop',
+      toolCalls: [],
+      toolResults: null,
+      replySent: replyResult.success,
+      safetyPassed: true,
+      pendingClarification: pendingClarificationUpdate,
+    } satisfies SessionResult;
+  }
+
   // 1. Build prompt (persona + summary + user message)
   const promptInput: BuildPromptInput = {
     state: input.state,
@@ -140,7 +272,6 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     'buildPromptActivity',
     promptInput,
   );
-  const spans: TelemetrySpan[] = [];
   spans.push({ label: 'prompt', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
 
   // 1b. Plan activity — classify complexity & decompose multi-step requests (#320)
@@ -179,7 +310,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       ...promptWithPlan,
       correlationId,
       userId: input.state.userId,
-      modelOverride: input.modelOverride,
+      modelOverride: resolvedModelOverride,
       imageUrls: input.imageUrls,
       tools: getDiscoveryFirstToolSchemas(),
       toolChoice: shouldForceDiscoveryToolSearch(input.userMessage)
@@ -454,7 +585,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       const allToolSchemas = toolRegistry.toFunctionSchemas();
       const selectiveFollowUpSchemas = deriveSelectiveFollowUpToolSchemas(toolResults?.results ?? []);
       const discoveryFollowUpModelOverride = getDiscoveryFollowUpModelOverride(toolResults?.results ?? []);
-      const effectiveFollowUpModelOverride = input.modelOverride ?? discoveryFollowUpModelOverride;
+      const effectiveFollowUpModelOverride = resolvedModelOverride ?? discoveryFollowUpModelOverride;
       const deterministicFollowUpToolCall = synthesizeDeterministicFollowUpToolCall(
         input.userMessage,
         selectiveFollowUpSchemas,
@@ -841,7 +972,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     : responseContent;
   let replyMessage = displayResponse;
 
-  const modelDisclosure = buildModelOverrideDisclosure(input.modelOverride, llmResult.model);
+  const modelDisclosure = buildModelOverrideDisclosure(resolvedModelOverride, llmResult.model);
   if (modelDisclosure) {
     replyMessage = `${modelDisclosure}\n\n${replyMessage}`;
   }
@@ -907,6 +1038,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     toolResults,
     replySent: replyResult.success,
     safetyPassed,
+    pendingClarification: pendingClarificationUpdate,
   } satisfies SessionResult;
 });
 

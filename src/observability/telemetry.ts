@@ -65,7 +65,12 @@ export type TelemetryEventName =
   | 'MultiRoundDispatch'
   | 'DiscoveryQueryExecuted'
   | 'DiscoveryToolSubsetSelected'
-  | 'PolicyOverrideApplied';
+  | 'PolicyOverrideApplied'
+  | 'ClarificationRequested'
+  | 'ClarificationRetryRequested'
+  | 'ClarificationResumed'
+  | 'ClarificationCancelled'
+  | 'ClarificationExpired';
 
 // ---------------------------------------------------------------------------
 // Session Tracer — maps events to trace phases for Dev Console (#140)
@@ -102,6 +107,11 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   DiscoveryQueryExecuted: 'tool-dispatch',
   DiscoveryToolSubsetSelected: 'orchestrator',
   PolicyOverrideApplied: 'orchestrator',
+  ClarificationRequested: 'orchestrator',
+  ClarificationRetryRequested: 'orchestrator',
+  ClarificationResumed: 'orchestrator',
+  ClarificationCancelled: 'orchestrator',
+  ClarificationExpired: 'orchestrator',
   BotMessageReceived: 'bot-receive',
   PromptBuilt: 'prompt-build',
   ReplySent: 'reply-send',
