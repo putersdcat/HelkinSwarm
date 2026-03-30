@@ -398,7 +398,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return;
     }
 
-    if (lowerMessage === '/validate-stale-ack') {
+    if (lowerMessage === '/validate-stale-ack' || lowerMessage === 'validate stale ack') {
       await this.handleValidateStaleAck(context, userId);
       return;
     }

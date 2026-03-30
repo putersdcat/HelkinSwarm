@@ -6,7 +6,7 @@ describe('HelkinSwarmBot /validate-stale-ack routing', () => {
     const source = readFileSync('src/bot/HelkinSwarmBot.ts', 'utf8');
     const storeSource = readFileSync('src/bot/conversationStore.ts', 'utf8');
 
-    expect(source).toContain("if (lowerMessage === '/validate-stale-ack') {");
+    expect(source).toContain("if (lowerMessage === '/validate-stale-ack' || lowerMessage === 'validate stale ack') {");
     expect(source).toContain('⌛ Working on it... (🧪 stale-ack validation)');
     expect(source).toContain('STALE_ACK_VALIDATION_DELAY_MS = 4_000');
     expect(source).toContain('const conversationReference = TurnContextClass.getConversationReference(context.activity);');
