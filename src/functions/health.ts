@@ -10,7 +10,7 @@ import { getPendingAckSnapshot } from '../bot/conversationStore.js';
 import { STALE_ACK_THRESHOLD_MS } from '../bot/staleAckRecovery.js';
 import { getContainerAgeMs } from '../bot/lifecycleNotices.js';
 
-const POST_START_MESSAGE_READINESS_GRACE_MS = 180_000;
+const POST_START_MESSAGE_READINESS_GRACE_MS = 15 * 60_000;
 
 interface HealthResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';

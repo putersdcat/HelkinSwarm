@@ -51,6 +51,8 @@ describe('healthHandler', () => {
   });
 
   it('reports llm=ok when no aggregate failure state exists', async () => {
+    mockGetContainerAgeMs.mockReturnValue(20 * 60_000);
+
     const response = await healthHandler({} as never, {} as never);
     expect(response.status).toBe(200);
     const body = response.jsonBody as { components: { llm: string }, status: string };
@@ -73,12 +75,22 @@ describe('healthHandler', () => {
   });
 
   it('reports degraded during the post-start message acceptance gap', async () => {
-    mockGetContainerAgeMs.mockReturnValue(60_000);
+    mockGetContainerAgeMs.mockReturnValue(5 * 60_000);
 
     const response = await healthHandler({} as never, {} as never);
     expect(response.status).toBe(200);
     const body = response.jsonBody as { components: { messagePath: string }, status: string };
     expect(body.components.messagePath).toBe('degraded');
     expect(body.status).toBe('degraded');
+  });
+
+  it('recovers to healthy once the post-start readiness window has elapsed without other failures', async () => {
+    mockGetContainerAgeMs.mockReturnValue(20 * 60_000);
+
+    const response = await healthHandler({} as never, {} as never);
+    expect(response.status).toBe(200);
+    const body = response.jsonBody as { components: { messagePath: string }, status: string };
+    expect(body.components.messagePath).toBe('ok');
+    expect(body.status).toBe('healthy');
   });
 });
