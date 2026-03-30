@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildSkillForgePrototype } from '../../src/orchestrator/skillForgePrototypeActivity.js';
+import { CapabilityManifestSchema } from '../../src/capabilities/manifestSchema.js';
 
 describe('skillForgePrototypeActivity', () => {
   it('builds a PR-ready scaffold bundle with manifest, handler, and test files', () => {
@@ -23,5 +24,15 @@ describe('skillForgePrototypeActivity', () => {
     expect(result.persistedBundlePath).toBeNull();
     expect(result.summary).toContain('Branch + review-body handoff metadata prepared in the prototype bundle.');
     expect(result.summary).toContain('Persisted bundle path will be included when storage is available.');
+    expect(result.summary).toContain('/forge promote <persisted-bundle-path>');
+
+    const manifestFile = result.files.find((file) => file.path.endsWith('/manifest.json'));
+    expect(manifestFile).toBeDefined();
+    const manifest = CapabilityManifestSchema.parse(JSON.parse(manifestFile!.content) as unknown);
+    expect(manifest.shortName).toBe(result.skillId);
+    expect(manifest.shortDescription).toContain('receipts parser');
+    expect(manifest.onboardingMethod).toBe('automatic-agentic');
+    expect(manifest.lifecycleRules).toBe('keep-credentials');
+    expect(manifest.tools[0]?.requiresConfirmation).toBe(true);
   });
 });

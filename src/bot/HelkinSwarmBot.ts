@@ -59,6 +59,7 @@ import type { QuotedContext } from './quotedContext.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { clearOboSession } from '../auth/oboSessionStore.js';
 import { recoverStaleAck } from './staleAckRecovery.js';
+import { promoteSkillForgeBundle } from '../orchestrator/skillForgePromotion.js';
 
 const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
 
@@ -395,6 +396,11 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     if (lowerMessage === '/emergency-resume') {
       await this.handleEmergencyResume(context, userId);
+      return;
+    }
+
+    if (lowerMessage.startsWith('/forge promote')) {
+      await this.handleForgePromote(context, userId, messageText);
       return;
     }
 
@@ -736,6 +742,70 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         text: '⚠️ SkillForge failed before it could start. Please try again in a moment.',
         textFormat: 'markdown',
       });
+    }
+  }
+
+  /** /forge promote <bundlePath> — owner-approved promotion of a persisted SkillForge bundle into tracked repo files. */
+  private async handleForgePromote(
+    context: TurnContext,
+    userId: string,
+    messageText: string,
+  ): Promise<void> {
+    if (!(await isOwnerUserId(userId))) {
+      await context.sendActivity('⛔ Owner-only command.');
+      return;
+    }
+
+    const bundlePath = messageText.slice('/forge promote'.length).trim();
+    if (!bundlePath) {
+      await context.sendActivity('Usage: /forge promote <persisted-bundle-path>');
+      return;
+    }
+
+    const ack = await context.sendActivity('⌛ Promoting SkillForge bundle into tracked repository files...');
+
+    try {
+      const result = await promoteSkillForgeBundle(bundlePath);
+      const uniqueCommitShas = [...new Set(result.fileResults.map((file) => file.commitSha).filter(Boolean))];
+      const ackId = ack?.id;
+      const promotionMessage = [
+        `✅ Promoted **${result.skillId}** from persisted bundle to \`${result.branch}\`.`,
+        '',
+        `Bundle: \`${result.bundlePath}\``,
+        `Commit message: \`${result.commitMessage}\``,
+        uniqueCommitShas.length > 0
+          ? `Commit SHA${uniqueCommitShas.length > 1 ? 's' : ''}: ${uniqueCommitShas.map((sha) => `\`${sha}\``).join(', ')}`
+          : 'Commit SHA: unavailable',
+        '',
+        'Files:',
+        ...result.fileResults.map((file) => `- \`${file.path}\` (${file.action})`),
+        '',
+        `Local reload summary: ${result.reloadSummary.skillsLoaded} skills / ${result.reloadSummary.toolsRegistered} tools registered in the current stamp process.`,
+        'Repo push to `main` has been made; deployment will rebuild the stamp so the promoted skill becomes executable from tracked source.',
+      ].join('\n');
+
+      if (ackId) {
+        await context.updateActivity({
+          type: ActivityTypes.Message,
+          id: ackId,
+          text: promotionMessage,
+          textFormat: 'markdown',
+        });
+      } else {
+        await context.sendActivity({ type: ActivityTypes.Message, text: promotionMessage, textFormat: 'markdown' });
+      }
+    } catch (err) {
+      const errorMessage = `⚠️ SkillForge promotion failed: ${err instanceof Error ? err.message : String(err)}`;
+      if (ack?.id) {
+        await context.updateActivity({
+          type: ActivityTypes.Message,
+          id: ack.id,
+          text: errorMessage,
+          textFormat: 'markdown',
+        });
+      } else {
+        await context.sendActivity(errorMessage);
+      }
     }
   }
 

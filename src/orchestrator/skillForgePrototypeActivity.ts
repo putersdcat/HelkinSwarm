@@ -2,6 +2,8 @@ import * as df from 'durable-functions';
 import { z } from 'zod';
 import { persistSkillForgeBundle } from './skillForgeBundleStore.js';
 
+const SKILLFORGE_ICON_URL = 'https://helkinswarmtabsst.z20.web.core.windows.net/icons/core.png';
+
 const SkillForgeInputSchema = z.object({
   idea: z.string().min(1),
   userId: z.string().min(1),
@@ -58,9 +60,17 @@ export function buildSkillForgePrototype(input: SkillForgePrototypeInput): Skill
 
   const manifestContent = JSON.stringify({
     domain: skillId,
+    shortName: skillId,
     version: '0.1.0',
     displayName,
-    description: `SkillForge prototype for: ${parsed.idea}`,
+    shortDescription: `SkillForge prototype for: ${parsed.idea}`,
+    iconUrl: SKILLFORGE_ICON_URL,
+    deploymentScenario: 'personal-user-centric',
+    onboardingMethod: 'automatic-agentic',
+    lifecycleRules: 'keep-credentials',
+    discoveryHints: [parsed.idea, displayName, skillId],
+    orchestratorUseCases: [`Prototype generated from SkillForge idea: ${parsed.idea}`],
+    recommendedEntryTools: [`${skillId.replace(/-/g, '_')}_run`],
     tools: [
       {
         name: `${skillId.replace(/-/g, '_')}_run`,
@@ -146,6 +156,7 @@ export function buildSkillForgePrototype(input: SkillForgePrototypeInput): Skill
     `Suggested review title: ${reviewTitle}`,
     'Branch + review-body handoff metadata prepared in the prototype bundle.',
     'Persisted bundle path will be included when storage is available.',
+    'Owner approval gate: run `/forge promote <persisted-bundle-path>` to promote the reviewed bundle into tracked repository files.',
     '',
     'Next step: review the scaffold, replace placeholder logic, and keep the skill disabled until human approval.',
   ].join('\n');
