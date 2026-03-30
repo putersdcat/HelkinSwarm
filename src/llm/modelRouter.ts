@@ -175,11 +175,14 @@ export function getFallbackChain(requestedDeploymentName?: string): ModelRouting
   const candidates: Array<string | undefined> = [requested];
 
   if (requested === routing.lane.primary) {
-    candidates.push(config.llmFallbackPrimary, routing.lane.secondary, config.llmFallbackSecondary);
+    // When the primary Grok slot is saturated or unhealthy, prefer the explicitly
+    // provisioned secondary slot first. In the global lane this is gpt-5.4-mini,
+    // which is our preferred non-Grok fallback before tertiary models (#411).
+    candidates.push(routing.lane.secondary, config.llmFallbackPrimary, config.llmFallbackSecondary);
   } else if (requested === routing.lane.secondary) {
-    candidates.push(config.llmFallbackSecondary, config.llmFallbackPrimary, routing.lane.primary);
+    candidates.push(config.llmFallbackPrimary, config.llmFallbackSecondary, routing.lane.primary);
   } else {
-    candidates.push(config.llmFallbackPrimary, routing.lane.secondary, routing.lane.primary, config.llmFallbackSecondary);
+    candidates.push(routing.lane.secondary, config.llmFallbackPrimary, config.llmFallbackSecondary, routing.lane.primary);
   }
 
   if (routing.lane.vision) {

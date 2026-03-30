@@ -118,8 +118,15 @@ resource aiDeployEmbedding 'Microsoft.CognitiveServices/accounts/deployments@202
 | text-embedding-3-large | 50 (50k) | 100 (100k) | Bottleneck for semantic search; prioritize |
 | grok-4-1-fast-non-reasoning (primary) | 10 (10k) | 80–100 (80–100k) | Primary frontier model (if space) |
 | grok-4-1-fast-reasoning (secondary) | 10 (10k) | 50–80 (50–80k) | Fallback reasoning mode |
-| gpt-5.4-mini (tertiary) | 10 (10k) | 20–50 (20–50k) | Third option if grok unavailable |
-| **Total per stamp** | ~50k | ~200–250k | Distributed within tier ceiling |
+| gpt-5.4-mini (preferred non-Grok fallback) | 50 (50k) | 202 (202k) | First fallback after the main Grok slots; preserve explicit higher quota in source control |
+| gpt-5.1-codex-mini | 5 (5k) | 10 (10k) | Small reserve only; not the preferred interactive fallback |
+| o4-mini | 5 (5k) | 20 (20k) | Reasoning reserve without crowding out GPT-5.4-mini fallback headroom |
+| DeepSeek-V3.2 | 5 (5k) | 10 (10k) | Later tertiary fallback after GPT-5.4-mini |
+| **Total per stamp** | ~50–65k | ~390–400k | Distributed within the configured ceiling with GPT-5.4-mini prioritized as the main non-Grok fallback |
+
+Operational note:
+- in the global lane, fallback policy should prefer `gpt-5.4-mini` immediately after the main Grok slot rather than treating it as a late tertiary candidate
+- quota defaults should reflect that role so future Bicep regeneration does not silently demote `gpt-5.4-mini` back to a low-capacity afterthought
 
 ### 2.3 Quota Validation & Tier Ceiling Awareness
 
