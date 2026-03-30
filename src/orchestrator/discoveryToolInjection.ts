@@ -28,8 +28,109 @@ function splitRecipients(raw: string): string[] {
     .filter((value) => value.length > 0);
 }
 
+function stripValidationNoise(userMessage: string): string {
+  return userMessage
+    .replace(/^\/(?:heavy|light)\s+/i, '')
+    .replace(/\bthis is issue\s+\d+.*$/i, '')
+    .trim();
+}
+
+function capitalizePhrase(value: string): string {
+  if (!value) return value;
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function buildRelativeDayDate(keyword: 'today' | 'tomorrow'): Date {
+  const date = new Date();
+  date.setUTCSeconds(0, 0);
+  if (keyword === 'tomorrow') {
+    date.setUTCDate(date.getUTCDate() + 1);
+  }
+  return date;
+}
+
+function parseCalendarTime(hourText: string, minuteText: string | undefined, meridiem: string | undefined): { hour: number; minute: number } | null {
+  let hour = Number(hourText);
+  const minute = Number(minuteText ?? '0');
+
+  if (!Number.isInteger(hour) || !Number.isInteger(minute) || hour < 0 || minute < 0 || minute > 59) {
+    return null;
+  }
+
+  if (meridiem) {
+    const normalized = meridiem.toLowerCase();
+    if (hour < 1 || hour > 12) {
+      return null;
+    }
+    if (normalized === 'pm' && hour !== 12) {
+      hour += 12;
+    }
+    if (normalized === 'am' && hour === 12) {
+      hour = 0;
+    }
+  } else if (hour > 23) {
+    return null;
+  }
+
+  return { hour, minute };
+}
+
+function parseDeterministicCalendarEventIntent(userMessage: string): DeterministicFollowUpToolCall | null {
+  const normalizedMessage = stripValidationNoise(userMessage);
+  const normalizedLower = normalizedMessage.toLowerCase();
+
+  const looksLikeCalendarIntent = /(calendar|meeting|appointment|event)/.test(normalizedLower)
+    && /(create|add|schedule|book|set up|put)/.test(normalizedLower);
+
+  if (!looksLikeCalendarIntent) {
+    return null;
+  }
+
+  const dayMatch = normalizedLower.match(/\b(today|tomorrow)\b/);
+  const timeMatch = normalizedMessage.match(/\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+
+  if (!dayMatch || !timeMatch) {
+    return null;
+  }
+
+  const parsedTime = parseCalendarTime(timeMatch[1] ?? '', timeMatch[2], timeMatch[3]);
+  if (!parsedTime) {
+    return null;
+  }
+
+  const subjectMatch = normalizedMessage.match(
+    /\b(?:calendar|meeting|appointment|event)\b.*?\b(?:to|for)\s+(.+?)\s+(?:today|tomorrow|at\s+\d)/i,
+  );
+  const rawSubject = subjectMatch?.[1]?.trim() ?? 'new calendar event';
+  const cleanedSubject = rawSubject.replace(/^have\s+/i, '').trim();
+  const subject = capitalizePhrase(cleanedSubject || 'new calendar event');
+
+  const start = buildRelativeDayDate(dayMatch[1] === 'tomorrow' ? 'tomorrow' : 'today');
+  start.setUTCHours(parsedTime.hour, parsedTime.minute, 0, 0);
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+
+  const reminderMatch = normalizedLower.match(/\breminder\s+(\d+)\s*(?:minutes?|mins?|min)\s+before\b/i);
+  const reminderMinutesBeforeStart = reminderMatch ? Number(reminderMatch[1]) : undefined;
+
+  return {
+    name: 'outlook_create_calendar_event',
+    arguments: {
+      subject,
+      start: start.toISOString(),
+      end: end.toISOString(),
+      ...(reminderMinutesBeforeStart !== undefined
+        ? {
+            reminderMinutesBeforeStart,
+            isReminderOn: true,
+          }
+        : {}),
+    },
+  };
+}
+
 function parseQuotedSendEmailIntent(userMessage: string): DeterministicFollowUpToolCall | null {
-  const match = userMessage.match(
+  const cleanedMessage = stripValidationNoise(userMessage);
+  const match = cleanedMessage.match(
     /send an? email to\s+(.+?)\s+with subject\s+["“'`](.+?)["”'`]\s+and body\s+["“'`](.+?)["”'`]/i,
   );
 
@@ -105,6 +206,13 @@ export function synthesizeDeterministicFollowUpToolCall(
   if (!tools || tools.length === 0) return null;
 
   const toolNames = new Set(tools.map((tool) => tool.function.name));
+
+  if (toolNames.has('outlook_create_calendar_event')) {
+    const calendarIntent = parseDeterministicCalendarEventIntent(userMessage);
+    if (calendarIntent) {
+      return calendarIntent;
+    }
+  }
 
   if (toolNames.has('outlook_send_email')) {
     return parseQuotedSendEmailIntent(userMessage);

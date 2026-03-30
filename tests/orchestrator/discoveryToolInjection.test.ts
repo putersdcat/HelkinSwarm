@@ -172,6 +172,33 @@ describe('discoveryToolInjection', () => {
     expect(buildDiscoveryDeadEndResponse('Schedule lunch tomorrow at 12:30')).toContain('have not created an event');
   });
 
+  it('synthesizes a deterministic calendar-event follow-up call for the issue #394 prompt shape', async () => {
+    const { synthesizeDeterministicFollowUpToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const call = synthesizeDeterministicFollowUpToolCall(
+      '/heavy please put a new meeting in my calendar to have lunch with a friend tomorrow at 12:30 with a reminder 15 minutes before. This is issue 394 primary model validation.',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_create_calendar_event',
+            description: 'create calendar event',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(call?.name).toBe('outlook_create_calendar_event');
+    expect(call?.arguments).toMatchObject({
+      subject: 'Lunch with a friend',
+      reminderMinutesBeforeStart: 15,
+      isReminderOn: true,
+    });
+    expect(typeof call?.arguments['start']).toBe('string');
+    expect(typeof call?.arguments['end']).toBe('string');
+  });
+
   it('synthesizes a deterministic send-email follow-up call for explicit quoted send intents', async () => {
     const { synthesizeDeterministicFollowUpToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
 
