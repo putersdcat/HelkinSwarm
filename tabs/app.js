@@ -48,6 +48,147 @@
     }
   }
 
+  function parseIsoDateOnly(value) {
+    if (!value) return null;
+    var parts = String(value).split('-');
+    if (parts.length !== 3) return null;
+    var year = Number(parts[0]);
+    var month = Number(parts[1]) - 1;
+    var day = Number(parts[2]);
+    if (!isFinite(year) || !isFinite(month) || !isFinite(day)) return null;
+    return new Date(Date.UTC(year, month, day));
+  }
+
+  function isoDateOnly(date) {
+    if (!(date instanceof Date) || isNaN(date.getTime())) return '';
+    return date.toISOString().slice(0, 10);
+  }
+
+  function startOfIsoWeek(date) {
+    var d = new Date(date.getTime());
+    var day = d.getUTCDay();
+    var diff = day === 0 ? -6 : 1 - day;
+    d.setUTCDate(d.getUTCDate() + diff);
+    return d;
+  }
+
+  function classifyCostServiceGroup(service) {
+    if (!service) return 'User Stamp Runtime';
+    var models = ['Foundry Models', 'Foundry Tools'];
+    var shared = ['Log Analytics', 'Azure Monitor', 'Key Vault'];
+    if (models.indexOf(service) >= 0) return 'Model Metrics';
+    if (shared.indexOf(service) >= 0) return 'Shared MS Components';
+    return 'User Stamp Runtime';
+  }
+
+  function buildCostGroupBreakdown(breakdown) {
+    var groups = {};
+    (breakdown || []).forEach(function (item) {
+      var key = classifyCostServiceGroup(item.service);
+      groups[key] = (groups[key] || 0) + (item.cost || 0);
+    });
+    return Object.keys(groups).map(function (key) {
+      return { name: key, cost: Math.round(groups[key] * 100) / 100 };
+    }).sort(function (a, b) { return b.cost - a.cost; });
+  }
+
+  function filterDailyCostsByRange(daily, rangeDays) {
+    var items = (daily || []).slice().sort(function (a, b) { return a.date.localeCompare(b.date); });
+    if (!rangeDays || !items.length) return items;
+    return items.slice(-rangeDays);
+  }
+
+  function aggregateCostSeries(daily, granularity) {
+    var buckets = {};
+    (daily || []).forEach(function (item) {
+      var date = parseIsoDateOnly(item.date);
+      if (!date) return;
+      var key = item.date;
+      if (granularity === 'weekly') {
+        key = isoDateOnly(startOfIsoWeek(date));
+      } else if (granularity === 'monthly') {
+        key = String(date.getUTCFullYear()) + '-' + String(date.getUTCMonth() + 1).padStart(2, '0');
+      }
+      buckets[key] = (buckets[key] || 0) + (item.cost || 0);
+    });
+    return Object.keys(buckets).sort().map(function (key) {
+      return { label: key, cost: Math.round(buckets[key] * 100) / 100 };
+    });
+  }
+
+  function renderCostSeriesRows(items, currency, emptyMessage, barClass) {
+    var maxCost = (items || []).reduce(function (max, item) { return Math.max(max, item.cost || 0); }, 0) || 1;
+    if (!items || !items.length) {
+      return '<p class="empty-state">' + esc(emptyMessage) + '</p>';
+    }
+    return items.map(function (item) {
+      var width = Math.max(6, Math.round((item.cost / maxCost) * 100));
+      return '<div class="cost-row">' +
+        '<div class="cost-row-header"><span>' + esc(item.label || item.service || item.name) + '</span><strong>' + esc(fmtMoney(item.cost, currency)) + '</strong></div>' +
+        '<div class="cost-bar ' + esc(barClass || '') + '"><span class="cost-bar-fill" style="width:' + width + '%"></span></div>' +
+        '</div>';
+    }).join('');
+  }
+
+  function renderCostsPanelContent(data, state) {
+    var breakdown = data.breakdown || [];
+    var daily = data.daily || [];
+    var filteredDaily = filterDailyCostsByRange(daily, state.rangeDays);
+    var series = aggregateCostSeries(filteredDaily, state.granularity);
+    var topServices = breakdown.slice(0, 8).map(function (item) {
+      return { label: item.service, cost: item.cost };
+    });
+    var groupedSpend = buildCostGroupBreakdown(breakdown).map(function (item) {
+      return { label: item.name, cost: item.cost };
+    });
+    var granularityLabel = state.granularity.charAt(0).toUpperCase() + state.granularity.slice(1);
+
+    return '<div class="kpi-row">' +
+      kpiTile('Period', data.period || 'MonthToDate') +
+      kpiTile('Resource Group', data.resourceGroup || '\u2014') +
+      kpiTile('Total Spend', fmtMoney(data.totalCost, data.currency), 'kpi-ok') +
+      kpiTile('Services', breakdown.length) +
+      '</div>' +
+      '<div class="card"><h2>Filters</h2>' +
+      '<div class="cta-list costs-filter-bar">' +
+      '<span class="muted">Date Range</span>' +
+      '<button class="cmd-btn cost-range-btn' + (state.rangeDays === 7 ? ' cmd-btn-primary' : '') + '" data-range="7">Last 7 Days</button>' +
+      '<button class="cmd-btn cost-range-btn' + (state.rangeDays === 14 ? ' cmd-btn-primary' : '') + '" data-range="14">Last 14 Days</button>' +
+      '<button class="cmd-btn cost-range-btn' + (state.rangeDays === 30 ? ' cmd-btn-primary' : '') + '" data-range="30">Month To Date</button>' +
+      '<span class="muted">Granularity</span>' +
+      '<button class="cmd-btn cost-granularity-btn' + (state.granularity === 'daily' ? ' cmd-btn-primary' : '') + '" data-granularity="daily">Daily</button>' +
+      '<button class="cmd-btn cost-granularity-btn' + (state.granularity === 'weekly' ? ' cmd-btn-primary' : '') + '" data-granularity="weekly">Weekly</button>' +
+      '<button class="cmd-btn cost-granularity-btn' + (state.granularity === 'monthly' ? ' cmd-btn-primary' : '') + '" data-granularity="monthly">Monthly</button>' +
+      '</div>' +
+      '<p class="muted">Current scope filters the active stamp resource group and reshapes the live Azure Cost Management dataset client-side.</p>' +
+      '</div>' +
+      '<div class="two-col">' +
+      '<div class="card"><h2>Top Services</h2>' +
+      renderCostSeriesRows(topServices, data.currency, 'No cost breakdown data.') +
+      '</div>' +
+      '<div class="card"><h2>Spend Groups</h2>' +
+      renderCostSeriesRows(groupedSpend, data.currency, 'No grouped cost data.') +
+      '</div></div>' +
+      '<div class="two-col">' +
+      '<div class="card"><h2>' + esc(granularityLabel) + ' Trend</h2>' +
+      renderCostSeriesRows(series, data.currency, 'No trend data available for this range.', state.granularity === 'daily' ? 'cost-bar-daily' : '') +
+      '</div>' +
+      '<div class="card"><h2>Scope Notes</h2>' +
+      configRow('Date Range', esc(state.rangeDays) + ' days') +
+      configRow('Granularity', '<span class="badge badge-info">' + esc(granularityLabel) + '</span>') +
+      configRow('Model Metrics', renderInlineTags((breakdown || []).filter(function (item) {
+        return classifyCostServiceGroup(item.service) === 'Model Metrics';
+      }).map(function (item) {
+        return item.service + ' ' + fmtMoney(item.cost, data.currency);
+      }))) +
+      '<p class="muted">Model metrics currently reflect Azure Cost Management service categories such as Foundry Models and Foundry Tools. Fine-grained token analytics remain follow-on work.</p>' +
+      '</div></div>' +
+      '<div class="card"><h2>Notes</h2>' +
+      '<p>Control Center now exposes live month-to-date stamp spend, grouped service breakdowns, and daily / weekly / monthly trend views inside Teams.</p>' +
+      '<p class="muted">Deeper filters (for example, explicit model-token telemetry slices) remain follow-on backlog work beyond this shipped Control Center costs surface.</p>' +
+      '</div>';
+  }
+
   var PHASE_ICONS = {
     "llm-call": "\uD83E\uDD16", "tool-dispatch": "\uD83D\uDD27", "verification": "\uD83D\uDEE1\uFE0F",
     "memory": "\uD83E\uDDE0", "reply-send": "\uD83D\uDCAC", "orchestrator": "\u2699\uFE0F",
@@ -734,43 +875,7 @@
             (data.detail ? '<pre>' + esc(data.detail) + '</pre>' : '') +
             '</div>';
         }
-
-        var breakdown = data.breakdown || [];
-        var daily = data.daily || [];
-        var top = breakdown.slice(0, 8);
-        var maxServiceCost = top.reduce(function (max, item) { return Math.max(max, item.cost || 0); }, 0) || 1;
-        var recentDaily = daily.slice(-14);
-        var maxDailyCost = recentDaily.reduce(function (max, item) { return Math.max(max, item.cost || 0); }, 0) || 1;
-
-        return '<div class="kpi-row">' +
-          kpiTile('Period', data.period || 'MonthToDate') +
-          kpiTile('Resource Group', data.resourceGroup || '\u2014') +
-          kpiTile('Total Spend', fmtMoney(data.totalCost, data.currency), 'kpi-ok') +
-          kpiTile('Services', breakdown.length) +
-          '</div>' +
-          '<div class="two-col">' +
-          '<div class="card"><h2>Top Services</h2>' +
-          (top.length > 0 ? top.map(function (item) {
-            var width = Math.max(8, Math.round((item.cost / maxServiceCost) * 100));
-            return '<div class="cost-row">' +
-              '<div class="cost-row-header"><span>' + esc(item.service) + '</span><strong>' + esc(fmtMoney(item.cost, data.currency)) + '</strong></div>' +
-              '<div class="cost-bar"><span class="cost-bar-fill" style="width:' + width + '%"></span></div>' +
-              '</div>';
-          }).join('') : '<p class="empty-state">No cost breakdown data.</p>') +
-          '</div>' +
-          '<div class="card"><h2>Daily Trend (Last 14 Days)</h2>' +
-          (recentDaily.length > 0 ? recentDaily.map(function (item) {
-            var width = Math.max(6, Math.round((item.cost / maxDailyCost) * 100));
-            return '<div class="cost-row">' +
-              '<div class="cost-row-header"><span>' + esc(item.date) + '</span><strong>' + esc(fmtMoney(item.cost, data.currency)) + '</strong></div>' +
-              '<div class="cost-bar cost-bar-daily"><span class="cost-bar-fill" style="width:' + width + '%"></span></div>' +
-              '</div>';
-          }).join('') : '<p class="empty-state">No daily cost data yet.</p>') +
-          '</div></div>' +
-          '<div class="card"><h2>Notes</h2>' +
-          '<p>Current scope shows month-to-date spend for the active stamp resource group with service breakdowns and daily trend bars.</p>' +
-          '<p class="muted">Filters, model-level slices, and richer charts remain follow-on work under the broader Costs UI backlog.</p>' +
-          '</div>';
+        return '<div class="costs-interactive-root"></div>';
       },
       config: function (d) {
         var data = d.dash;
@@ -882,6 +987,29 @@
                 .catch(function (err) { btn.textContent = err.message; });
             });
           });
+        }
+        if (key === "costs") {
+          var costRoot = container.querySelector('.costs-interactive-root');
+          var costState = { rangeDays: 14, granularity: 'daily' };
+
+          function renderCostsState() {
+            if (!costRoot) return;
+            costRoot.innerHTML = renderCostsPanelContent(data.costs || {}, costState);
+            costRoot.querySelectorAll('.cost-range-btn').forEach(function (btn) {
+              btn.addEventListener('click', function () {
+                costState.rangeDays = Number(btn.getAttribute('data-range')) || 14;
+                renderCostsState();
+              });
+            });
+            costRoot.querySelectorAll('.cost-granularity-btn').forEach(function (btn) {
+              btn.addEventListener('click', function () {
+                costState.granularity = btn.getAttribute('data-granularity') || 'daily';
+                renderCostsState();
+              });
+            });
+          }
+
+          renderCostsState();
         }
         if (key === "dev") {
           loadRecentTraces();
