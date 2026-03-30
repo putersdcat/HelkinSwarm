@@ -58,6 +58,9 @@ import { extractMessageReferenceId, extractMessageReferencePreview } from './mes
 import type { QuotedContext } from './quotedContext.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { clearOboSession } from '../auth/oboSessionStore.js';
+import { recoverStaleAcks, STALE_ACK_THRESHOLD_MS } from './staleAckRecovery.js';
+
+const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
 
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
@@ -392,6 +395,11 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     if (lowerMessage === '/emergency-resume') {
       await this.handleEmergencyResume(context, userId);
+      return;
+    }
+
+    if (lowerMessage === '/validate-stale-ack') {
+      await this.handleValidateStaleAck(context, userId);
       return;
     }
 
@@ -873,6 +881,47 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     console.error(`[HelkinSwarmBot] P0 emergency resume activated by userId=${userId}`);
     await context.sendActivity('✅ Maintenance mode cleared. HelkinSwarm is back online.');
+  }
+
+  /**
+   * /validate-stale-ack — owner-only validation seam for #383/#373.
+   * Creates a real visible placeholder, backdates it past the watchdog threshold,
+   * then runs the same stale-ack recovery scan used by the timer/startup path.
+   */
+  private async handleValidateStaleAck(
+    context: TurnContext,
+    userId: string,
+  ): Promise<void> {
+    if (!(await isOwnerUserId(userId))) {
+      await context.sendActivity('⛔ Owner-only command.');
+      return;
+    }
+
+    const correlationId = crypto.randomUUID();
+    const ackResponse = await context.sendActivity('⌛ Working on it... (🧪 stale-ack validation)');
+
+    if (!ackResponse?.id) {
+      await context.sendActivity('⚠️ Validation failed before the placeholder could be created.');
+      return;
+    }
+
+    const conversationId = context.activity.conversation?.id ?? userId;
+    const backdatedCreatedAt = new Date(
+      Date.now() - STALE_ACK_THRESHOLD_MS - 1_000,
+    ).toISOString();
+
+    await savePendingAckId(
+      userId,
+      conversationId,
+      ackResponse.id,
+      correlationId,
+      backdatedCreatedAt,
+    );
+
+    // Leave the placeholder visible briefly so E2E can observe the accepted turn
+    // before the real watchdog logic resolves it in-place.
+    await new Promise((resolve) => setTimeout(resolve, STALE_ACK_VALIDATION_DELAY_MS));
+    await recoverStaleAcks(STALE_ACK_THRESHOLD_MS);
   }
 
   /**

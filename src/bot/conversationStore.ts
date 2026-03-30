@@ -105,6 +105,7 @@ export async function savePendingAckId(
   conversationId: string,
   activityId: string,
   correlationId: string,
+  createdAt = new Date().toISOString(),
 ): Promise<void> {
   const doc: PendingAckDocument = {
     id: makePendingAckDocumentId(correlationId),
@@ -112,7 +113,7 @@ export async function savePendingAckId(
     userId,
     correlationId,
     activityId,
-    createdAt: new Date().toISOString(),
+    createdAt,
   };
   const container = getContainer(CONTAINER_NAME);
   await container.items.upsert(doc);
