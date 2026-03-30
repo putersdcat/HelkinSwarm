@@ -40,10 +40,12 @@ export async function recoverStaleAck(
   ackActivityId: string,
   userId: string,
   correlationId: string,
+  conversationReferenceOverride?: Partial<ConversationReference> | null,
 ): Promise<'recovered' | 'cleared-without-reference'> {
   const adapter = getAdapter();
   const appId = getEnvConfig().microsoftAppId;
-  const conversationReference = await getConversationReference(userId);
+  const conversationReference = conversationReferenceOverride
+    ?? await getConversationReference(userId);
 
   if (!conversationReference) {
     await clearPendingAckId(conversationId, correlationId);

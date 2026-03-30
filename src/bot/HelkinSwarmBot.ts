@@ -58,7 +58,7 @@ import { extractMessageReferenceId, extractMessageReferencePreview } from './mes
 import type { QuotedContext } from './quotedContext.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { clearOboSession } from '../auth/oboSessionStore.js';
-import { recoverStaleAcks, STALE_ACK_THRESHOLD_MS } from './staleAckRecovery.js';
+import { recoverStaleAck } from './staleAckRecovery.js';
 
 const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
 
@@ -906,24 +906,20 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
 
     const conversationId = context.activity.conversation?.id ?? userId;
-    const backdatedCreatedAt = new Date(
-      Date.now() - STALE_ACK_THRESHOLD_MS - 1_000,
-    ).toISOString();
+    const conversationReference = TurnContextClass.getConversationReference(context.activity);
 
-    await savePendingAckId(
-      userId,
-      conversationId,
-      ackResponse.id,
-      correlationId,
-      backdatedCreatedAt,
-    );
-
-    // Leave the placeholder visible briefly, then trigger the real watchdog logic
-    // after this handler returns so Teams has committed the initial placeholder.
+    // Leave the placeholder visible briefly, then trigger the same in-place
+    // recovery updater the watchdog uses after the handler has returned.
     void (async () => {
       await new Promise((resolve) => setTimeout(resolve, STALE_ACK_VALIDATION_DELAY_MS));
       try {
-        await recoverStaleAcks(STALE_ACK_THRESHOLD_MS);
+        await recoverStaleAck(
+          conversationId,
+          ackResponse.id,
+          userId,
+          correlationId,
+          conversationReference,
+        );
       } catch (err) {
         console.warn('[HelkinSwarmBot] /validate-stale-ack recovery failed:', err);
       }
