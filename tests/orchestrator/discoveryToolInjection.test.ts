@@ -1,8 +1,98 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { clearSkillDiscoveryIndex, rebuildSkillDiscoveryIndex } from '../../src/capabilities/skillDiscoveryIndex.js';
+import type { CapabilityManifest } from '../../src/capabilities/manifestSchema.js';
+
+const discoveryManifests: CapabilityManifest[] = [
+  {
+    domain: 'outlook',
+    version: '1.0',
+    shortName: 'outlook',
+    displayName: 'Outlook',
+    shortDescription: 'Email and calendar management',
+    iconUrl: 'https://example.com/outlook.png',
+    deploymentScenario: 'personal-user-centric',
+    onboardingMethod: 'post-install-link',
+    lifecycleRules: 'keep-credentials',
+    discoveryHints: ['email', 'calendar'],
+    orchestratorUseCases: ['read email and inspect meetings'],
+    recommendedEntryTools: ['outlook_search_emails'],
+    modelAffinity: { execution: 'reasoning' },
+    tools: [
+      {
+        name: 'outlook_search_emails',
+        description: 'search email',
+        risk: 'low',
+        dataSensitivity: 'pii',
+        allowedModelLane: 'any',
+        requiresConfirmation: false,
+        requiresExecutor: false,
+        requiresSubAgent: true,
+        privilegeClass: 'read-only',
+        aliases: [],
+        discoveryTerms: [],
+        useWhen: [],
+        avoidWhen: [],
+        typicalInputs: [],
+      },
+      {
+        name: 'outlook_create_calendar_event',
+        description: 'create calendar event',
+        risk: 'high',
+        dataSensitivity: 'pii',
+        allowedModelLane: 'any',
+        requiresConfirmation: true,
+        requiresExecutor: false,
+        requiresSubAgent: true,
+        privilegeClass: 'create',
+        aliases: [],
+        discoveryTerms: [],
+        useWhen: [],
+        avoidWhen: [],
+        typicalInputs: [],
+      },
+    ],
+  },
+  {
+    domain: 'weather',
+    version: '1.0',
+    shortName: 'weather',
+    displayName: 'Weather',
+    shortDescription: 'Weather checks',
+    iconUrl: 'https://example.com/weather.png',
+    deploymentScenario: 'personal-user-centric',
+    onboardingMethod: 'automatic-agentic',
+    lifecycleRules: 'keep-credentials',
+    discoveryHints: ['forecast'],
+    orchestratorUseCases: ['check weather'],
+    recommendedEntryTools: ['weather_get'],
+    modelAffinity: { execution: 'fast' },
+    tools: [
+      {
+        name: 'weather_get',
+        description: 'get weather',
+        risk: 'low',
+        dataSensitivity: 'non-pii',
+        allowedModelLane: 'any',
+        requiresConfirmation: false,
+        requiresExecutor: false,
+        requiresSubAgent: false,
+        privilegeClass: 'read-only',
+        aliases: [],
+        discoveryTerms: [],
+        useWhen: [],
+        avoidWhen: [],
+        typicalInputs: [],
+      },
+    ],
+  },
+];
 
 async function seedRegistry(): Promise<void> {
   process.env['AZURE_CONTENT_SAFETY_ENDPOINT'] = 'https://example.cognitiveservices.azure.com';
   process.env['AZURE_CONTENT_SAFETY_KEY'] = 'test-key';
+
+  clearSkillDiscoveryIndex();
+  rebuildSkillDiscoveryIndex(discoveryManifests);
 
   const { toolRegistry } = await import('../../src/tools/toolRegistry.js');
   toolRegistry.clear();
@@ -152,6 +242,43 @@ describe('discoveryToolInjection', () => {
       'helkin_health_check',
       'outlook_create_calendar_event',
     ]);
+  });
+
+  it('derives a primary follow-up model override when matched skills consistently prefer reasoning/primary execution', async () => {
+    const { getDiscoveryFollowUpModelOverride } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const override = getDiscoveryFollowUpModelOverride([
+      {
+        toolName: 'helkin_skill_search',
+        success: true,
+        result: {
+          tools: [],
+          skills: [{ domain: 'outlook', recommendedEntryTools: ['outlook_search_emails'] }],
+        },
+      },
+    ]);
+
+    expect(override).toBe('primary');
+  });
+
+  it('does not apply a discovery-driven model override when matched skills disagree', async () => {
+    const { getDiscoveryFollowUpModelOverride } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const override = getDiscoveryFollowUpModelOverride([
+      {
+        toolName: 'helkin_skill_search',
+        success: true,
+        result: {
+          tools: [],
+          skills: [
+            { domain: 'outlook', recommendedEntryTools: ['outlook_search_emails'] },
+            { domain: 'weather', recommendedEntryTools: ['weather_get'] },
+          ],
+        },
+      },
+    ]);
+
+    expect(override).toBeUndefined();
   });
 
   it('returns an honest discovery dead-end message instead of a generic no-op', async () => {

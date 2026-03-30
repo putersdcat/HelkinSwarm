@@ -40,6 +40,7 @@ import {
 import {
   buildDiscoveryDeadEndResponse,
   deriveSelectiveFollowUpToolSchemas,
+  getDiscoveryFollowUpModelOverride,
   getForcedDiscoveryFollowUpToolChoice,
   getDiscoveryFirstToolSchemas,
   isDiscoveryOnlyDeadEnd,
@@ -452,6 +453,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       const maxToolRounds = Math.min(input.toolBudget ?? 5, 10);
       const allToolSchemas = toolRegistry.toFunctionSchemas();
       const selectiveFollowUpSchemas = deriveSelectiveFollowUpToolSchemas(toolResults?.results ?? []);
+      const discoveryFollowUpModelOverride = getDiscoveryFollowUpModelOverride(toolResults?.results ?? []);
+      const effectiveFollowUpModelOverride = input.modelOverride ?? discoveryFollowUpModelOverride;
       const deterministicFollowUpToolCall = synthesizeDeterministicFollowUpToolCall(
         input.userMessage,
         selectiveFollowUpSchemas,
@@ -464,6 +467,17 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           properties: {
             toolCount: selectiveFollowUpSchemas.length,
             selectedTools: selectiveFollowUpSchemas.map((tool) => tool.function.name).join(','),
+          },
+        });
+      }
+      if (discoveryFollowUpModelOverride && !input.modelOverride) {
+        trackEvent({
+          name: 'PolicyOverrideApplied',
+          correlationId,
+          userId: input.state.userId,
+          properties: {
+            authority: 'discovery-model-affinity',
+            source: discoveryFollowUpModelOverride,
           },
         });
       }
@@ -480,7 +494,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         },
         toolResults: toolResults?.results ?? [],
         correlationId,
-        modelOverride: input.modelOverride,
+        modelOverride: effectiveFollowUpModelOverride,
         enableRetry: true,
         tools: selectiveFollowUpSchemas ?? allToolSchemas,
         toolChoice: getForcedDiscoveryFollowUpToolChoice(input.userMessage, selectiveFollowUpSchemas) ?? undefined,
@@ -537,7 +551,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             },
             toolResults: toolResults?.results.slice(0, initialResultCount) ?? [],
             correlationId,
-            modelOverride: input.modelOverride,
+            modelOverride: effectiveFollowUpModelOverride,
             enableRetry: false,
             additionalTurns: [
               ...additionalTurns,
@@ -791,7 +805,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           },
           toolResults: toolResults?.results.slice(0, initialResultCount) ?? [],
           correlationId,
-          modelOverride: input.modelOverride,
+          modelOverride: effectiveFollowUpModelOverride,
           enableRetry: allowMoreFollowUpTools,
           tools: allowMoreFollowUpTools ? (selectiveFollowUpSchemas ?? allToolSchemas) : undefined,
           toolChoice: allowMoreFollowUpTools

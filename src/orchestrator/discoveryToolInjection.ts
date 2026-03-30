@@ -1,5 +1,7 @@
 import { toolRegistry } from '../tools/toolRegistry.js';
 import type { ToolDefinition } from '../llm/foundryClient.js';
+import { getDiscoverySkill } from '../capabilities/skillDiscoveryIndex.js';
+import type { ModelAffinity } from '../capabilities/manifestSchema.js';
 
 export type DeterministicFollowUpToolCall = {
   name: string;
@@ -14,8 +16,10 @@ type ToolResult = {
 
 type DiscoverySearchResultShape = {
   tools?: Array<{ name?: string }>;
-  skills?: Array<{ recommendedEntryTools?: string[] }>;
+  skills?: Array<{ domain?: string; recommendedEntryTools?: string[] }>;
 };
+
+type DiscoveryModelOverride = 'primary' | 'secondary';
 
 function isCoreTool(name: string): boolean {
   return name.startsWith('helkin_');
@@ -278,4 +282,50 @@ function isDiscoverySearchResult(value: unknown): value is DiscoverySearchResult
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
   return Array.isArray(candidate['tools']) || Array.isArray(candidate['skills']);
+}
+
+export function getDiscoveryFollowUpModelOverride(
+  toolResults: ToolResult[],
+): DiscoveryModelOverride | undefined {
+  const discoveryResult = toolResults.find((result) =>
+    result.success && result.toolName === 'helkin_skill_search' && isDiscoverySearchResult(result.result),
+  );
+
+  if (!discoveryResult || !discoveryResult.result || !isDiscoverySearchResult(discoveryResult.result)) {
+    return undefined;
+  }
+
+  const matchedOverrides = new Set<DiscoveryModelOverride>();
+
+  for (const skill of discoveryResult.result.skills ?? []) {
+    if (!skill.domain) {
+      continue;
+    }
+
+    const manifestSkill = getDiscoverySkill(skill.domain);
+    const override = mapModelAffinityToOverride(manifestSkill?.modelAffinity);
+    if (override) {
+      matchedOverrides.add(override);
+    }
+  }
+
+  return matchedOverrides.size === 1
+    ? Array.from(matchedOverrides)[0]
+    : undefined;
+}
+
+function mapModelAffinityToOverride(
+  modelAffinity: ModelAffinity | undefined,
+): DiscoveryModelOverride | undefined {
+  const requestedSlot = modelAffinity?.execution ?? modelAffinity?.synthesis ?? modelAffinity?.discovery;
+
+  if (requestedSlot === 'fast') {
+    return 'secondary';
+  }
+
+  if (requestedSlot === 'primary' || requestedSlot === 'reasoning') {
+    return 'primary';
+  }
+
+  return undefined;
 }

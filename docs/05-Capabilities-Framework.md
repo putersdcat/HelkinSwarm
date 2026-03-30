@@ -91,6 +91,7 @@ Every manifest follows this schema, validated by Zod at load time (`src/capabili
 | `dependencies` | No | string[] | Required skill shortNames (install blocked if missing) |
 | `requiredPermissions` | No | string[] | Entra/Graph delegated permissions needed |
 | `externalAccountsNeeded` | No | string[] | Third-party accounts required |
+| `modelAffinity` | No | object | Optional downstream hint for discovery-first follow-up model choice (`fast`, `reasoning`, `primary`) |
 | `softOnboarding` | No | object | First-run personality preferences |
 | `maintenanceTasks` | No | array | Scheduled/event-driven maintenance tasks |
 
@@ -128,6 +129,25 @@ The orchestrator now uses a **discovery-first tool presentation model**:
 - `helkin_skill_search` is the bridge from that small surface into the wider skill library
 - when discovery returns likely matches, the follow-up hop receives only the narrowed tool subset plus the core tools
 
+### Downstream discovery contract
+
+For post-discovery behavior, the current downstream contract is intentionally explicit:
+
+- `recommendedEntryTools`
+  - this is the **deterministic executable breadcrumb** used to build the narrowed follow-up tool subset
+  - if discovery finds a skill but no executable tool subset is reached, the runtime must fail honestly rather than quietly pretending the request is complete
+- `modelAffinity`
+  - this is an **optional follow-up model hint**, not a top-level prompt-surface selector
+  - when a discovery result resolves to a single consistent affinity across matched skills, the follow-up LLM hop uses:
+    - `fast` → the secondary lane
+    - `primary` or `reasoning` → the primary lane
+  - if affinities conflict or are absent, no discovery-driven model override is applied
+  - because the current follow-up router exposes primary/secondary slots rather than an arbitrary reasoning slot, `reasoning` currently coalesces to the primary slot
+
+This means discovery metadata now materially affects downstream routing in two ways:
+- executable tool narrowing via `recommendedEntryTools`
+- follow-up model-slot steering via `modelAffinity` when the metadata is consistent enough to be deterministic
+
 Historical design reference for this feature:
 - `docs/skill-discovery-meta-tool-feature-concept-2026-03-28.md`
 
@@ -135,9 +155,9 @@ Implementation stack that materially delivered the feature:
 - `#332`, `#333`, `#335`, `#336`, `#337`, `#338`
 
 Important scope note:
-- the delivered discovery layer covers manifest-driven indexing, `helkin_skill_search`, second-hop selective injection, and the user-facing read-only `/skillSearch` chat command
+- the delivered discovery layer covers manifest-driven indexing, `helkin_skill_search`, second-hop selective injection, the user-facing read-only `/skillSearch` chat command, and deterministic post-discovery use of `modelAffinity` for follow-up primary/secondary slot steering
 - `/skillSearch` is a presentation layer over the same discovery index for human participants; it does **not** make discovered tools directly user-callable
-- stronger downstream use of discovery metadata for model/routing decisions remains follow-on work rather than fully shipped behavior
+- richer downstream use of discovery metadata beyond the current deterministic breadcrumbs remains future follow-on work rather than fully shipped behavior
 
 This keeps safety filtering intact because the narrowed subset is still derived from the safety-filtered registry rather than bypassing it.
 
