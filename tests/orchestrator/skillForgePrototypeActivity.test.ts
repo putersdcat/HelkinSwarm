@@ -34,5 +34,8 @@ describe('skillForgePrototypeActivity', () => {
     expect(manifest.onboardingMethod).toBe('automatic-agentic');
     expect(manifest.lifecycleRules).toBe('keep-credentials');
     expect(manifest.tools[0]?.requiresConfirmation).toBe(true);
+
+    const handlersFile = result.files.find((file) => file.path.endsWith('/handlers.ts'));
+    expect(handlersFile?.content).toContain("../../../src/capabilities/capabilityLoader.js");
   });
 });

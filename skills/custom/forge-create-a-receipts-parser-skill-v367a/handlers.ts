@@ -1,5 +1,5 @@
-import type { ToolHandler } from '../../src/capabilities/capabilityLoader.js';
-import { registerHandler } from '../../src/capabilities/capabilityLoader.js';
+import type { ToolHandler } from '../../../src/capabilities/capabilityLoader.js';
+import { registerHandler } from '../../../src/capabilities/capabilityLoader.js';
 
 export const forge_create_a_receipts_parser_skill_v367a_run: ToolHandler = async (args) => {
   const request = String(args['request'] ?? '');

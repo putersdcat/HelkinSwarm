@@ -99,8 +99,8 @@ export function buildSkillForgePrototype(input: SkillForgePrototypeInput): Skill
   }, null, 2);
 
   const handlersContent = [
-    "import type { ToolHandler } from '../../src/capabilities/capabilityLoader.js';",
-    "import { registerHandler } from '../../src/capabilities/capabilityLoader.js';",
+    "import type { ToolHandler } from '../../../src/capabilities/capabilityLoader.js';",
+    "import { registerHandler } from '../../../src/capabilities/capabilityLoader.js';",
     '',
     `export const ${skillId.replace(/-/g, '_')}_run: ToolHandler = async (args) => {`,
     "  const request = String(args['request'] ?? '');",
