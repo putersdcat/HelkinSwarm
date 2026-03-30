@@ -87,6 +87,14 @@ export function getForcedDiscoveryFollowUpToolChoice(
     return { type: 'function', function: { name: 'outlook_reply_to_latest_email' } };
   }
 
+  const looksLikeCalendarCreateIntent =
+    /(calendar|meeting|appointment|event)/.test(normalized)
+    && /(create|add|schedule|book|set up|put)/.test(normalized);
+
+  if (looksLikeCalendarCreateIntent && toolNames.has('outlook_create_calendar_event')) {
+    return { type: 'function', function: { name: 'outlook_create_calendar_event' } };
+  }
+
   return null;
 }
 
@@ -135,6 +143,27 @@ export function deriveSelectiveFollowUpToolSchemas(
   return toolRegistry.toFunctionSchemas().filter((tool) =>
     isCoreTool(tool.function.name) || selectedNames.has(tool.function.name),
   );
+}
+
+export function isDiscoveryOnlyDeadEnd(toolResults: ToolResult[] | null | undefined): boolean {
+  if (!toolResults || toolResults.length === 0) return false;
+
+  const successfulToolNames = toolResults
+    .filter((result) => result.success)
+    .map((result) => result.toolName);
+
+  return successfulToolNames.includes('helkin_skill_search')
+    && successfulToolNames.every((toolName) => isCoreTool(toolName));
+}
+
+export function buildDiscoveryDeadEndResponse(userMessage: string): string {
+  const normalized = userMessage.toLowerCase();
+
+  if (/(calendar|meeting|appointment|event|schedule)/.test(normalized)) {
+    return 'I searched the installed skills for a calendar action, but I did not reach an executable calendar tool from discovery, so I have not created an event. Please restate the request with the event subject plus the date and time, and include any attendees or reminder details you want.';
+  }
+
+  return 'I searched the installed skills for a matching action, but I did not reach an executable tool from discovery, so I have not changed anything yet. Please restate the request with the exact action and the key details you want me to use.';
 }
 
 function isDiscoverySearchResult(value: unknown): value is DiscoverySearchResultShape {

@@ -39,6 +39,17 @@ async function seedRegistry(): Promise<void> {
     privilegeClass: 'read-only',
     inputSchema: { type: 'object', properties: {}, required: [] },
   });
+  toolRegistry.register({
+    name: 'outlook_create_calendar_event',
+    description: 'create calendar event',
+    risk: 'high',
+    dataSensitivity: 'pii',
+    requiresConfirmation: true,
+    requiresExecutor: false,
+    requiresSubAgent: true,
+    privilegeClass: 'create',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  });
 }
 
 describe('discoveryToolInjection', () => {
@@ -100,6 +111,65 @@ describe('discoveryToolInjection', () => {
     ]);
 
     expect(choice).toEqual({ type: 'function', function: { name: 'outlook_send_email' } });
+  });
+
+  it('forces calendar creation when discovery surfaced the event-creation tool', async () => {
+    const { getForcedDiscoveryFollowUpToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const choice = getForcedDiscoveryFollowUpToolChoice(
+      'Please put a new meeting in my calendar for lunch tomorrow at 12:30',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_create_calendar_event',
+            description: 'create calendar event',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(choice).toEqual({ type: 'function', function: { name: 'outlook_create_calendar_event' } });
+  });
+
+  it('includes recommended entry tools from matched skills in the follow-up subset', async () => {
+    const { deriveSelectiveFollowUpToolSchemas } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const tools = deriveSelectiveFollowUpToolSchemas([
+      {
+        toolName: 'helkin_skill_search',
+        success: true,
+        result: {
+          tools: [],
+          skills: [{ recommendedEntryTools: ['outlook_create_calendar_event'] }],
+        },
+      },
+    ]);
+
+    expect(tools?.map((tool) => tool.function.name)).toEqual([
+      'helkin_skill_search',
+      'helkin_health_check',
+      'outlook_create_calendar_event',
+    ]);
+  });
+
+  it('returns an honest discovery dead-end message instead of a generic no-op', async () => {
+    const { buildDiscoveryDeadEndResponse, isDiscoveryOnlyDeadEnd } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const toolResults = [
+      {
+        toolName: 'helkin_skill_search',
+        success: true,
+        result: {
+          tools: [],
+          skills: [],
+        },
+      },
+    ];
+
+    expect(isDiscoveryOnlyDeadEnd(toolResults)).toBe(true);
+    expect(buildDiscoveryDeadEndResponse('Schedule lunch tomorrow at 12:30')).toContain('have not created an event');
   });
 
   it('synthesizes a deterministic send-email follow-up call for explicit quoted send intents', async () => {

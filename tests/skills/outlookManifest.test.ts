@@ -1,13 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
+type InputSchema = {
+  properties?: Record<string, unknown>;
+};
+
 type ToolEntry = {
   name: string;
   requiresConfirmation?: boolean;
+  aliases?: string[];
+  discoveryTerms?: string[];
+  useWhen?: string[];
+  typicalInputs?: string[];
+  inputSchema?: InputSchema;
 };
 
 describe('outlook manifest safety flags', () => {
-  it('keeps send mail opt-out while calendar creation still requires confirmation', () => {
+  it('keeps the current confirmation flags for Outlook write actions', () => {
     const manifest = JSON.parse(readFileSync('skills/outlook/manifest.json', 'utf8')) as {
       tools: ToolEntry[];
     };
@@ -16,8 +25,24 @@ describe('outlook manifest safety flags', () => {
     const replyLatest = manifest.tools.find((tool) => tool.name === 'outlook_reply_to_latest_email');
     const createEvent = manifest.tools.find((tool) => tool.name === 'outlook_create_calendar_event');
 
-    expect(send?.requiresConfirmation).toBe(false);
+    expect(send?.requiresConfirmation).toBe(true);
     expect(replyLatest?.requiresConfirmation).toBe(false);
     expect(createEvent?.requiresConfirmation).toBe(true);
+  });
+
+  it('surfaces calendar creation as a discovery-first entry tool with reminder support', () => {
+    const manifest = JSON.parse(readFileSync('skills/outlook/manifest.json', 'utf8')) as {
+      tools: ToolEntry[];
+      recommendedEntryTools: string[];
+    };
+
+    const createEvent = manifest.tools.find((tool) => tool.name === 'outlook_create_calendar_event');
+
+    expect(manifest.recommendedEntryTools).toContain('outlook_create_calendar_event');
+    expect(createEvent?.aliases?.length).toBeGreaterThan(0);
+    expect(createEvent?.discoveryTerms).toContain('calendar reminder');
+    expect(createEvent?.useWhen?.length).toBeGreaterThan(0);
+    expect(createEvent?.typicalInputs?.length).toBeGreaterThan(0);
+    expect(createEvent?.inputSchema?.properties).toHaveProperty('reminderMinutesBeforeStart');
   });
 });

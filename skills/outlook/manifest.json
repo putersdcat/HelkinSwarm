@@ -337,6 +337,14 @@
             },
             "description": "Attendee email addresses (optional)"
           },
+          "reminderMinutesBeforeStart": {
+            "type": "number",
+            "description": "Optional reminder offset in minutes before the event starts"
+          },
+          "isReminderOn": {
+            "type": "boolean",
+            "description": "Enable or disable the event reminder explicitly (defaults to true when reminderMinutesBeforeStart is provided)"
+          },
           "isOnlineMeeting": {
             "type": "boolean",
             "description": "Create as Teams meeting (default: false)"
@@ -348,6 +356,28 @@
           "end"
         ]
       },
+      "aliases": [
+        "create calendar event",
+        "schedule meeting",
+        "add calendar event",
+        "book appointment"
+      ],
+      "discoveryTerms": [
+        "calendar creation",
+        "meeting scheduling",
+        "schedule lunch",
+        "calendar reminder"
+      ],
+      "useWhen": [
+        "the user asks to create, schedule, book, or add a meeting or event to the calendar",
+        "the request includes a reminder, attendees, or online meeting preference"
+      ],
+      "typicalInputs": [
+        "Lunch with Sam tomorrow at 12:30",
+        "Project sync on Friday at 09:00 with a 15 minute reminder",
+        "Book a Teams meeting with alex@example.com"
+      ],
+      "returnsSummaryShape": "created calendar event summary with id, time range, attendees, and reminder state",
       "privilegeClass": "create",
       "requiresSubAgent": true
     }
@@ -369,7 +399,10 @@
   "recommendedEntryTools": [
     "outlook_search_emails",
     "outlook_list_emails",
-    "outlook_list_calendar_events"
+    "outlook_send_email",
+    "outlook_reply_to_latest_email",
+    "outlook_list_calendar_events",
+    "outlook_create_calendar_event"
   ],
   "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/outlook.png",
   "deploymentScenario": "personal-user-centric",

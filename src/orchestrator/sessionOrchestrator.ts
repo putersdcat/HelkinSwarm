@@ -38,9 +38,11 @@ import {
   sortToolCallsByPlan,
 } from './planExecutionHints.js';
 import {
+  buildDiscoveryDeadEndResponse,
   deriveSelectiveFollowUpToolSchemas,
   getForcedDiscoveryFollowUpToolChoice,
   getDiscoveryFirstToolSchemas,
+  isDiscoveryOnlyDeadEnd,
   shouldForceDiscoveryToolSearch,
   synthesizeDeterministicFollowUpToolCall,
 } from './discoveryToolInjection.js';
@@ -752,7 +754,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
   // 4. Guard against empty response — Teams rejects empty text
   if (!responseContent || responseContent.trim().length === 0) {
-    responseContent = 'I processed your request but have nothing to report back.';
+    responseContent = isDiscoveryOnlyDeadEnd(toolResults?.results)
+      ? buildDiscoveryDeadEndResponse(input.userMessage)
+      : 'I processed your request but have nothing to report back.';
   }
 
   // 5. Send reply to Teams (proactive)

@@ -142,6 +142,8 @@ const CalendarEventSchema = z.object({
     emailAddress: EmailAddressSchema,
     type: z.string().optional(),
   })).default([]),
+  isReminderOn: z.boolean().optional(),
+  reminderMinutesBeforeStart: z.number().optional(),
   isOnlineMeeting: z.boolean().optional(),
   onlineMeetingUrl: z.string().nullable().optional(),
   bodyPreview: z.string().nullable().optional(),
@@ -372,6 +374,12 @@ const outlookCreateCalendarEvent: ToolHandler = async (args) => {
   const location = args['location'] as string | undefined;
   const body = args['body'] as string | undefined;
   const attendees = z.array(z.string()).default([]).parse(args['attendees'] ?? []);
+  const reminderMinutesBeforeStart = args['reminderMinutesBeforeStart'] === undefined
+    ? undefined
+    : z.number().int().min(0).max(40320).parse(args['reminderMinutesBeforeStart']);
+  const isReminderOn = args['isReminderOn'] === undefined
+    ? reminderMinutesBeforeStart !== undefined
+    : z.boolean().parse(args['isReminderOn']);
   const isOnlineMeeting = z.boolean().default(false).parse(args['isOnlineMeeting'] ?? false);
 
   const token = await resolveToken(args);
@@ -392,6 +400,10 @@ const outlookCreateCalendarEvent: ToolHandler = async (args) => {
         emailAddress: { address: addr },
         type: 'required',
       })),
+      ...(reminderMinutesBeforeStart !== undefined ? { reminderMinutesBeforeStart } : {}),
+      ...(args['isReminderOn'] !== undefined || reminderMinutesBeforeStart !== undefined
+        ? { isReminderOn }
+        : {}),
       isOnlineMeeting,
     }),
   });
@@ -408,6 +420,8 @@ const outlookCreateCalendarEvent: ToolHandler = async (args) => {
     start: created.start.dateTime,
     end: created.end.dateTime,
     attendees: created.attendees.map((a) => a.emailAddress.address),
+    isReminderOn: created.isReminderOn,
+    reminderMinutesBeforeStart: created.reminderMinutesBeforeStart,
     meetingUrl: created.onlineMeetingUrl,
   };
 };
