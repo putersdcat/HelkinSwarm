@@ -610,9 +610,69 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             // explicitly skip confirmation may proceed here.
             skipConfirmation: shouldSkipConfirmationForMultiRound(roundToolDefs),
           });
-          if (!roundVerification.passed) {
+          if (!roundVerification.passed && !roundVerification.requiresConfirmation) {
             console.log(`[sessionOrchestrator] Multi-round ${toolRound}: verification blocked ${highestRoundRisk}-risk tools`);
+            followUp = {
+              ...followUp,
+              content: `Safety pipeline blocked this action: ${roundVerification.error}`,
+              toolCalls: [],
+              finishReason: 'stop',
+            };
             break;
+          }
+
+          if (roundVerification.requiresConfirmation) {
+            const cardInput: SendConfirmationCardInput = {
+              userId: input.state.userId,
+              toolName: roundCallsForDispatch.map((tc: { name: string }) => tc.name).join(', '),
+              risk: highestRoundRisk,
+              description: `Execute ${roundCallsForDispatch.length} tool(s): ${roundCallsForDispatch.map((tc: { name: string }) => tc.name).join(', ')}`,
+              correlationId,
+              sessionInstanceId: context.df.instanceId,
+            };
+            const cardResult: SendConfirmationCardResult = yield context.df.callActivity(
+              'sendConfirmationCardActivity',
+              cardInput,
+            );
+
+            if (!cardResult.sent) {
+              followUp = {
+                ...followUp,
+                content: 'Safety: Unable to send confirmation card. Action blocked.',
+                toolCalls: [],
+                finishReason: 'stop',
+              };
+              break;
+            }
+
+            const timeoutMs = 5 * 60 * 1000;
+            const deadline = new Date(context.df.currentUtcDateTime.getTime() + timeoutMs);
+            const timer = context.df.createTimer(deadline);
+            const confirmation = context.df.waitForExternalEvent('ConfirmationResponse');
+
+            const winner = yield context.df.Task.any([confirmation, timer]);
+
+            if (winner === timer) {
+              followUp = {
+                ...followUp,
+                content: '⏰ Action timed out after 5 minutes. The tool call was cancelled for safety.',
+                toolCalls: [],
+                finishReason: 'stop',
+              };
+              break;
+            }
+
+            timer.cancel();
+            const response = confirmation.result as { action: string };
+            if (response.action !== 'approved') {
+              followUp = {
+                ...followUp,
+                content: '❌ Action cancelled by user.',
+                toolCalls: [],
+                finishReason: 'stop',
+              };
+              break;
+            }
           }
         }
 
