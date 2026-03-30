@@ -269,6 +269,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     } satisfies SessionResult;
   }
 
+  const effectiveTaskMessage = userMessageForLlm;
+
   if (persistClarificationClearBeforeLongRunningWork) {
     const preConfirmationState: OverseerState = {
       ...input.state,
@@ -333,7 +335,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       modelOverride: resolvedModelOverride,
       imageUrls: input.imageUrls,
       tools: getDiscoveryFirstToolSchemas(),
-      toolChoice: shouldForceDiscoveryToolSearch(input.userMessage)
+      toolChoice: shouldForceDiscoveryToolSearch(effectiveTaskMessage)
         ? { type: 'function', function: { name: 'helkin_skill_search' } }
         : 'auto',
     },
@@ -421,7 +423,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           toolName: gatedToolCallsForDispatch.map((tc: { name: string }) => tc.name).join(', '),
         risk: highestRisk,
           rawOutput: gatedToolCallsForDispatch,
-        originalQuery: input.userMessage,
+        originalQuery: effectiveTaskMessage,
         skipConfirmation: allToolsSkipConfirmation,
       });
 
@@ -502,7 +504,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           toolDescription: def?.description ?? tc.name,
           toolInputSchema: def?.inputSchema,
           arguments: JSON.parse(tc.arguments) as Record<string, unknown>,
-          userContext: input.userMessage,
+          userContext: effectiveTaskMessage,
           correlationId,
           sessionId: input.state.userId,
           userId: input.state.userId,
@@ -597,8 +599,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       scopedTokenMintCount += mergedResults.filter((result) => result.scopedTokenMinted).length;
       spans.push({ label: 'tools', durationMs: context.df.currentUtcDateTime.getTime() - toolDispatchStart });
 
-      if (isReadOnlyDiscoveryRequest(input.userMessage)) {
-        responseContent = buildReadOnlyDiscoveryResponse(toolResults.results, input.userMessage);
+      if (isReadOnlyDiscoveryRequest(effectiveTaskMessage)) {
+        responseContent = buildReadOnlyDiscoveryResponse(toolResults.results, effectiveTaskMessage);
       } else {
 
       // 3b. Multi-round tool dispatch loop (#253)
@@ -611,7 +613,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       const discoveryFollowUpModelOverride = getDiscoveryFollowUpModelOverride(toolResults?.results ?? []);
       const effectiveFollowUpModelOverride = resolvedModelOverride ?? discoveryFollowUpModelOverride;
       const deterministicFollowUpToolCall = synthesizeDeterministicFollowUpToolCall(
-        input.userMessage,
+        effectiveTaskMessage,
         selectiveFollowUpSchemas,
       );
       if (selectiveFollowUpSchemas) {
@@ -652,7 +654,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         modelOverride: effectiveFollowUpModelOverride,
         enableRetry: true,
         tools: selectiveFollowUpSchemas ?? allToolSchemas,
-        toolChoice: getForcedDiscoveryFollowUpToolChoice(input.userMessage, selectiveFollowUpSchemas) ?? undefined,
+        toolChoice: getForcedDiscoveryFollowUpToolChoice(effectiveTaskMessage, selectiveFollowUpSchemas) ?? undefined,
       };
       spanStart = context.df.currentUtcDateTime.getTime();
       let followUp: LlmResult = deterministicFollowUpToolCall
@@ -774,7 +776,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             toolName: roundCallsForDispatch.map((tc: { name: string }) => tc.name).join(', '),
             risk: highestRoundRisk,
             rawOutput: roundCallsForDispatch,
-            originalQuery: input.userMessage,
+            originalQuery: effectiveTaskMessage,
             // Multi-round remains non-interactive; only batches whose tools all
             // explicitly skip confirmation may proceed here.
             skipConfirmation: shouldSkipConfirmationForMultiRound(roundToolDefs),
@@ -881,7 +883,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             toolDescription: def?.description ?? tc.name,
             toolInputSchema: def?.inputSchema,
             arguments: JSON.parse(tc.arguments) as Record<string, unknown>,
-            userContext: input.userMessage,
+            userContext: effectiveTaskMessage,
             correlationId,
             sessionId: input.state.userId,
             userId: input.state.userId,
@@ -964,7 +966,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           enableRetry: allowMoreFollowUpTools,
           tools: allowMoreFollowUpTools ? (selectiveFollowUpSchemas ?? allToolSchemas) : undefined,
           toolChoice: allowMoreFollowUpTools
-            ? (getForcedDiscoveryFollowUpToolChoice(input.userMessage, selectiveFollowUpSchemas) ?? undefined)
+            ? (getForcedDiscoveryFollowUpToolChoice(effectiveTaskMessage, selectiveFollowUpSchemas) ?? undefined)
             : undefined,
           additionalTurns,
         };
@@ -985,7 +987,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // 4. Guard against empty response — Teams rejects empty text
   if (!responseContent || responseContent.trim().length === 0) {
     responseContent = isDiscoveryOnlyDeadEnd(toolResults?.results)
-      ? buildDiscoveryDeadEndResponse(input.userMessage)
+      ? buildDiscoveryDeadEndResponse(effectiveTaskMessage)
       : 'I processed your request but have nothing to report back.';
   }
 

@@ -1,0 +1,19 @@
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+
+describe('sessionOrchestrator clarification routing', () => {
+  it('uses the effective resumed task text for discovery forcing and follow-up routing', () => {
+    const source = readFileSync('src/orchestrator/sessionOrchestrator.ts', 'utf8');
+
+    expect(source).toContain('const effectiveTaskMessage = userMessageForLlm;');
+    expect(source).toContain('toolChoice: shouldForceDiscoveryToolSearch(effectiveTaskMessage)');
+    expect(source).toContain('const deterministicFollowUpToolCall = synthesizeDeterministicFollowUpToolCall(');
+    expect(source).toContain('effectiveTaskMessage,');
+    expect(source).toContain('getForcedDiscoveryFollowUpToolChoice(effectiveTaskMessage, selectiveFollowUpSchemas)');
+    expect(source).toContain('buildDiscoveryDeadEndResponse(effectiveTaskMessage)');
+    expect(source).toContain('userContext: effectiveTaskMessage,');
+    expect(source).toContain('originalQuery: effectiveTaskMessage,');
+    expect(source).not.toContain('toolChoice: shouldForceDiscoveryToolSearch(input.userMessage)');
+    expect(source).not.toContain('getForcedDiscoveryFollowUpToolChoice(input.userMessage, selectiveFollowUpSchemas)');
+  });
+});
