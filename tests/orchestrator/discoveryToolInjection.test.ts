@@ -217,6 +217,62 @@ describe('discoveryToolInjection', () => {
     expect(choice).toEqual({ type: 'function', function: { name: 'outlook_send_email' } });
   });
 
+  it('prefers an explicit tool-name mention over the generic email-send fallback', async () => {
+    const { getForcedDiscoveryFollowUpToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const choice = getForcedDiscoveryFollowUpToolChoice(
+      'Use the exact tool outlook_search_emails with query hasAttachment:true and return the first result.',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_search_emails',
+            description: 'search emails',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_send_email',
+            description: 'send email',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(choice).toEqual({ type: 'function', function: { name: 'outlook_search_emails' } });
+  });
+
+  it('prefers outlook_search_emails for search intents even when the prompt mentions email generically', async () => {
+    const { getForcedDiscoveryFollowUpToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const choice = getForcedDiscoveryFollowUpToolChoice(
+      'Search my Outlook mailbox for the most recent email that has attachments.',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_search_emails',
+            description: 'search emails',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_send_email',
+            description: 'send email',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(choice).toEqual({ type: 'function', function: { name: 'outlook_search_emails' } });
+  });
+
   it('keeps explicit read-only discovery prompts pinned to helkin_skill_search on follow-up', async () => {
     const { getForcedDiscoveryFollowUpToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
 

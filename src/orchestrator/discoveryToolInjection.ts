@@ -59,6 +59,16 @@ function collapseWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+function findExplicitToolNameMention(normalizedMessage: string, toolNames: Set<string>): string | undefined {
+  for (const toolName of toolNames) {
+    if (normalizedMessage.includes(toolName.toLowerCase())) {
+      return toolName;
+    }
+  }
+
+  return undefined;
+}
+
 export function isReadOnlyDiscoveryRequest(userMessage: string): boolean {
   const normalized = stripValidationNoise(userMessage).toLowerCase();
   const hasReadOnlyConstraint = /(discovery[- ]only|read[- ]only|do not execute|don't execute|without executing|non-discovery tools)/.test(normalized);
@@ -243,6 +253,27 @@ export function getForcedDiscoveryFollowUpToolChoice(
     return toolNames.has('helkin_skill_search')
       ? { type: 'function', function: { name: 'helkin_skill_search' } }
       : null;
+  }
+
+  const explicitToolName = findExplicitToolNameMention(normalized, toolNames);
+  if (explicitToolName) {
+    return { type: 'function', function: { name: explicitToolName } };
+  }
+
+  if (/(search|find|lookup|look up)/.test(normalized) && toolNames.has('outlook_search_emails')) {
+    return { type: 'function', function: { name: 'outlook_search_emails' } };
+  }
+
+  if (/(read|open|show).*(email|message|mail)/.test(normalized) && toolNames.has('outlook_read_email')) {
+    return { type: 'function', function: { name: 'outlook_read_email' } };
+  }
+
+  if (/(attachment|inline image|content id|cid)/.test(normalized) && toolNames.has('outlook_list_attachments')) {
+    return { type: 'function', function: { name: 'outlook_list_attachments' } };
+  }
+
+  if (/(download|save|materialize|retrieve).*(attachment|inline image|file)/.test(normalized) && toolNames.has('outlook_download_attachment')) {
+    return { type: 'function', function: { name: 'outlook_download_attachment' } };
   }
 
   if (/(send|email|mail)/.test(normalized) && toolNames.has('outlook_send_email')) {
