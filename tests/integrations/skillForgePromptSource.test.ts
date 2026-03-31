@@ -17,6 +17,8 @@ describe('SkillForge prompt source wiring', () => {
     expect(bootstrapSource).toContain('export function loadSkillForgePrompt');
     expect(bootstrapSource).toContain("readFileSync(promptPath, 'utf8').trim()");
     expect(bootstrapSource).toContain('startSkillForgeBootstrap()');
+    expect(bootstrapSource).toContain('const keepAliveTimer = setInterval');
+    expect(bootstrapSource).toContain("process.once('SIGTERM', shutdown);");
 
     expect(dockerfile).toContain('COPY src/skillforge/skillforge-prompt.md /opt/skillforge/skillforge-prompt.md');
     expect(dockerfile).toContain('COPY infra/skillforge-bootstrap.mjs /opt/skillforge/bootstrap.mjs');

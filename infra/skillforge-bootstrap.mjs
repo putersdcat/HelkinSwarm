@@ -18,7 +18,18 @@ export function startSkillForgeBootstrap() {
   const prompt = loadSkillForgePrompt(promptPath);
 
   console.log(`SkillForge container ready (system prompt loaded from ${promptPath}; ${prompt.length} chars)`);
-  process.stdin.resume();
+
+  const keepAliveTimer = setInterval(() => {
+    // Keep the bootstrap process alive until the orchestrator or job runner replaces it.
+  }, 60_000);
+
+  const shutdown = () => {
+    clearInterval(keepAliveTimer);
+    process.exit(0);
+  };
+
+  process.once('SIGTERM', shutdown);
+  process.once('SIGINT', shutdown);
 
   return {
     promptPath,
