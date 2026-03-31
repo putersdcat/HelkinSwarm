@@ -43,5 +43,6 @@ COPY --from=build /app/package.json ./package.json
 COPY config/ ./config/
 COPY skills/ ./skills/
 COPY src/persona/ ./src/persona/
+COPY visualAssets/ ./visualAssets/
 
 EXPOSE 80

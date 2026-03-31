@@ -75,7 +75,7 @@ import { sendReply } from '../orchestrator/sendReplyActivity.js';
 import { RuntimeFileConsentContextSchema } from '../orchestrator/sendReplyActivity.js';
 import { ingestTeamsAttachments } from './inboundAttachmentIngestion.js';
 import { buildOverseerDedupIdentity } from './overseerDedupIdentity.js';
-import { getSingleEmojiBypassReply } from './emojiEasterEggs.js';
+import { buildRobotLoveEasterEggReply } from './robotLoveEasterEgg.js';
 
 const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
 
@@ -686,7 +686,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return;
     }
 
-    const singleEmojiBypass = getSingleEmojiBypassReply({
+    const robotLoveEasterEggReply = await buildRobotLoveEasterEggReply({
       messageText,
       activityText: context.activity.text ?? undefined,
       activityDetails: [
@@ -695,11 +695,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         JSON.stringify(context.activity.attachments ?? []),
       ],
     });
-    if (singleEmojiBypass) {
+    if (robotLoveEasterEggReply) {
       await context.sendActivity({
         type: ActivityTypes.Message,
-        text: singleEmojiBypass.text,
-        ...(singleEmojiBypass.textFormat ? { textFormat: singleEmojiBypass.textFormat } : {}),
+        ...(robotLoveEasterEggReply.text ? { text: robotLoveEasterEggReply.text } : {}),
+        ...(robotLoveEasterEggReply.textFormat ? { textFormat: robotLoveEasterEggReply.textFormat } : {}),
+        ...(robotLoveEasterEggReply.attachments ? { attachments: robotLoveEasterEggReply.attachments } : {}),
       });
       return;
     }
