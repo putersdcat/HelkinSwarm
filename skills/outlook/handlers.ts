@@ -295,7 +295,7 @@ async function getMessageAttachmentContext(
 
   const attachmentResult = await graphFetch(
     token,
-    `/me/messages/${encodeURIComponent(messageId)}/attachments?$top=100&$select=id,name,contentType,size,isInline,contentId,lastModifiedDateTime`,
+    `/me/messages/${encodeURIComponent(messageId)}/attachments?$top=100`,
     OutlookAttachmentListSchema,
   );
 
@@ -397,7 +397,7 @@ const outlookDownloadAttachment: ToolHandler = async (args) => {
 
   const attachment = await graphFetch(
     token,
-    `/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}?$select=id,name,contentType,size,isInline,contentId,lastModifiedDateTime,contentBytes`,
+    `/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
     OutlookFileAttachmentSchema,
   );
 

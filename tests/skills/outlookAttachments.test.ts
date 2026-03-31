@@ -115,7 +115,8 @@ describe('outlook attachment handlers', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0]?.[0]).toContain('/me/messages/msg-1?$select=id,body,hasAttachments');
-    expect(fetchMock.mock.calls[1]?.[0]).toContain('/me/messages/msg-1/attachments');
+    expect(fetchMock.mock.calls[1]?.[0]).toContain('/me/messages/msg-1/attachments?$top=100');
+    expect(fetchMock.mock.calls[1]?.[0]).not.toContain('$select=');
     expect(result.messageId).toBe('msg-1');
     expect(result.bodyCidReferences).toContain('inline-1');
     expect(result.attachments).toEqual([
@@ -196,6 +197,7 @@ describe('outlook attachment handlers', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(fetchMock.mock.calls[2]?.[0]).toContain('/me/messages/msg-2/attachments/att-inline');
+    expect(fetchMock.mock.calls[2]?.[0]).not.toContain('$select=');
     expect(persistRuntimeAsset).toHaveBeenCalledTimes(1);
     expect(persistRuntimeAsset).toHaveBeenCalledWith(expect.objectContaining({
       userId: 'user-1',
