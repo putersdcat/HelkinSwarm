@@ -1,0 +1,270 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.41.2.15936",
+      "templateHash": "17306508782853317406"
+    }
+  },
+  "parameters": {
+    "aiServicesName": {
+      "type": "string",
+      "metadata": {
+        "description": "Name of the existing Azure AI Services account that owns the model deployments."
+      }
+    },
+    "quotaMaxTPM": {
+      "type": "int",
+      "defaultValue": 100000,
+      "metadata": {
+        "description": "DEPRECATED alias for the old quota ceiling parameter. Prefer quotaMaxTPMCeiling."
+      }
+    },
+    "quotaMaxTPMCeiling": {
+      "type": "int",
+      "defaultValue": 400000,
+      "metadata": {
+        "description": "Maximum TPM ceiling for AI model deployments. The summed requested deployment capacities stay within this ceiling."
+      }
+    },
+    "quotaStrategy": {
+      "type": "string",
+      "defaultValue": "maximize",
+      "allowedValues": [
+        "maximize",
+        "minimize",
+        "manual"
+      ],
+      "metadata": {
+        "description": "Quota allocation strategy. maximize = favor higher initial deployment capacities; minimize = conservative baseline; manual = rely primarily on modelQuotaOverrides."
+      }
+    },
+    "modelQuotaOverrides": {
+      "type": "object",
+      "defaultValue": {},
+      "metadata": {
+        "description": "Per-model deployment capacity overrides in 1k TPM units, keyed by deployment name (for example text-embedding-3-large = 100)."
+      }
+    }
+  },
+  "variables": {
+    "effectiveQuotaMaxTPM": "[max(parameters('quotaMaxTPM'), parameters('quotaMaxTPMCeiling'))]",
+    "quotaBudgetK": "[max(1, int(div(variables('effectiveQuotaMaxTPM'), 1000)))]",
+    "embeddingRequested": "[if(contains(parameters('modelQuotaOverrides'), 'text-embedding-3-large'), int(parameters('modelQuotaOverrides')['text-embedding-3-large']), if(equals(parameters('quotaStrategy'), 'minimize'), 50, if(equals(parameters('quotaStrategy'), 'manual'), 100, 100)))]",
+    "grokReasoningRequested": "[if(contains(parameters('modelQuotaOverrides'), 'grok-4-1-fast-reasoning'), int(parameters('modelQuotaOverrides')['grok-4-1-fast-reasoning']), if(equals(parameters('quotaStrategy'), 'minimize'), 10, if(equals(parameters('quotaStrategy'), 'manual'), 20, 20)))]",
+    "grokFastRequested": "[if(contains(parameters('modelQuotaOverrides'), 'grok-4-1-fast-non-reasoning'), int(parameters('modelQuotaOverrides')['grok-4-1-fast-non-reasoning']), if(equals(parameters('quotaStrategy'), 'minimize'), 10, if(equals(parameters('quotaStrategy'), 'manual'), 20, 20)))]",
+    "gpt54Requested": "[if(contains(parameters('modelQuotaOverrides'), 'gpt-5.4-mini'), int(parameters('modelQuotaOverrides')['gpt-5.4-mini']), if(equals(parameters('quotaStrategy'), 'minimize'), 50, if(equals(parameters('quotaStrategy'), 'manual'), 202, 202)))]",
+    "codexRequested": "[if(contains(parameters('modelQuotaOverrides'), 'gpt-5.1-codex-mini'), int(parameters('modelQuotaOverrides')['gpt-5.1-codex-mini']), if(equals(parameters('quotaStrategy'), 'minimize'), 5, if(equals(parameters('quotaStrategy'), 'manual'), 10, 10)))]",
+    "o4MiniRequested": "[if(contains(parameters('modelQuotaOverrides'), 'o4-mini'), int(parameters('modelQuotaOverrides')['o4-mini']), if(equals(parameters('quotaStrategy'), 'minimize'), 5, if(equals(parameters('quotaStrategy'), 'manual'), 20, 20)))]",
+    "fwMiniMaxRequested": "[if(contains(parameters('modelQuotaOverrides'), 'FW-MiniMax-M2.5'), int(parameters('modelQuotaOverrides')['FW-MiniMax-M2.5']), if(equals(parameters('quotaStrategy'), 'minimize'), 5, if(equals(parameters('quotaStrategy'), 'manual'), 5, 5)))]",
+    "fwKimiRequested": "[if(contains(parameters('modelQuotaOverrides'), 'FW-Kimi-K2.5'), int(parameters('modelQuotaOverrides')['FW-Kimi-K2.5']), if(equals(parameters('quotaStrategy'), 'minimize'), 5, if(equals(parameters('quotaStrategy'), 'manual'), 5, 5)))]",
+    "deepSeekRequested": "[if(contains(parameters('modelQuotaOverrides'), 'DeepSeek-V3.2'), int(parameters('modelQuotaOverrides')['DeepSeek-V3.2']), if(equals(parameters('quotaStrategy'), 'minimize'), 5, if(equals(parameters('quotaStrategy'), 'manual'), 10, 10)))]",
+    "capEmbedding": "[min(variables('embeddingRequested'), variables('quotaBudgetK'))]",
+    "remainingAfterEmbedding": "[max(0, sub(variables('quotaBudgetK'), variables('capEmbedding')))]",
+    "capGrokReasoning": "[min(variables('grokReasoningRequested'), variables('remainingAfterEmbedding'))]",
+    "remainingAfterGrokReasoning": "[max(0, sub(variables('remainingAfterEmbedding'), variables('capGrokReasoning')))]",
+    "capGrokFast": "[min(variables('grokFastRequested'), variables('remainingAfterGrokReasoning'))]",
+    "remainingAfterGrokFast": "[max(0, sub(variables('remainingAfterGrokReasoning'), variables('capGrokFast')))]",
+    "capGpt54Mini": "[min(variables('gpt54Requested'), variables('remainingAfterGrokFast'))]",
+    "remainingAfterGpt54Mini": "[max(0, sub(variables('remainingAfterGrokFast'), variables('capGpt54Mini')))]",
+    "capCodexMini": "[min(variables('codexRequested'), variables('remainingAfterGpt54Mini'))]",
+    "remainingAfterCodexMini": "[max(0, sub(variables('remainingAfterGpt54Mini'), variables('capCodexMini')))]",
+    "capO4Mini": "[min(variables('o4MiniRequested'), variables('remainingAfterCodexMini'))]",
+    "remainingAfterO4Mini": "[max(0, sub(variables('remainingAfterCodexMini'), variables('capO4Mini')))]",
+    "capFwMiniMax": "[min(variables('fwMiniMaxRequested'), variables('remainingAfterO4Mini'))]",
+    "remainingAfterFwMiniMax": "[max(0, sub(variables('remainingAfterO4Mini'), variables('capFwMiniMax')))]",
+    "capFwKimi": "[min(variables('fwKimiRequested'), variables('remainingAfterFwMiniMax'))]",
+    "remainingAfterFwKimi": "[max(0, sub(variables('remainingAfterFwMiniMax'), variables('capFwKimi')))]",
+    "capDeepSeek": "[min(variables('deepSeekRequested'), variables('remainingAfterFwKimi'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2024-10-01",
+      "name": "[format('{0}/{1}', parameters('aiServicesName'), 'text-embedding-3-large')]",
+      "sku": {
+        "name": "GlobalStandard",
+        "capacity": "[variables('capEmbedding')]"
+      },
+      "properties": {
+        "model": {
+          "format": "OpenAI",
+          "name": "text-embedding-3-large",
+          "version": "1"
+        },
+        "raiPolicyName": "Microsoft.DefaultV2",
+        "versionUpgradeOption": "NoAutoUpgrade"
+      }
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2024-10-01",
+      "name": "[format('{0}/{1}', parameters('aiServicesName'), 'grok-4-1-fast-reasoning')]",
+      "sku": {
+        "name": "DataZoneStandard",
+        "capacity": "[variables('capGrokReasoning')]"
+      },
+      "properties": {
+        "model": {
+          "format": "xAI",
+          "name": "grok-4-1-fast-reasoning",
+          "version": "1"
+        },
+        "raiPolicyName": "Microsoft.DefaultV2",
+        "versionUpgradeOption": "NoAutoUpgrade"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('aiServicesName'), 'text-embedding-3-large')]"
+      ]
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2024-10-01",
+      "name": "[format('{0}/{1}', parameters('aiServicesName'), 'grok-4-1-fast-non-reasoning')]",
+      "sku": {
+        "name": "DataZoneStandard",
+        "capacity": "[variables('capGrokFast')]"
+      },
+      "properties": {
+        "model": {
+          "format": "xAI",
+          "name": "grok-4-1-fast-non-reasoning",
+          "version": "1"
+        },
+        "raiPolicyName": "Microsoft.DefaultV2",
+        "versionUpgradeOption": "NoAutoUpgrade"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('aiServicesName'), 'grok-4-1-fast-reasoning')]"
+      ]
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2024-10-01",
+      "name": "[format('{0}/{1}', parameters('aiServicesName'), 'gpt-5.4-mini')]",
+      "sku": {
+        "name": "GlobalStandard",
+        "capacity": "[variables('capGpt54Mini')]"
+      },
+      "properties": {
+        "model": {
+          "format": "OpenAI",
+          "name": "gpt-5.4-mini",
+          "version": "2026-03-17"
+        },
+        "raiPolicyName": "Microsoft.DefaultV2",
+        "versionUpgradeOption": "NoAutoUpgrade"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('aiServicesName'), 'grok-4-1-fast-non-reasoning')]"
+      ]
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2024-10-01",
+      "name": "[format('{0}/{1}', parameters('aiServicesName'), 'gpt-5.1-codex-mini')]",
+      "sku": {
+        "name": "GlobalStandard",
+        "capacity": "[variables('capCodexMini')]"
+      },
+      "properties": {
+        "model": {
+          "format": "OpenAI",
+          "name": "gpt-5.1-codex-mini",
+          "version": "2025-11-13"
+        },
+        "raiPolicyName": "Microsoft.DefaultV2",
+        "versionUpgradeOption": "NoAutoUpgrade"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('aiServicesName'), 'gpt-5.4-mini')]"
+      ]
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2024-10-01",
+      "name": "[format('{0}/{1}', parameters('aiServicesName'), 'o4-mini')]",
+      "sku": {
+        "name": "GlobalStandard",
+        "capacity": "[variables('capO4Mini')]"
+      },
+      "properties": {
+        "model": {
+          "format": "OpenAI",
+          "name": "o4-mini",
+          "version": "2025-04-16"
+        },
+        "raiPolicyName": "Microsoft.DefaultV2",
+        "versionUpgradeOption": "NoAutoUpgrade"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('aiServicesName'), 'gpt-5.1-codex-mini')]"
+      ]
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2024-10-01",
+      "name": "[format('{0}/{1}', parameters('aiServicesName'), 'FW-MiniMax-M2.5')]",
+      "sku": {
+        "name": "DataZoneStandard",
+        "capacity": "[variables('capFwMiniMax')]"
+      },
+      "properties": {
+        "model": {
+          "format": "Fireworks",
+          "name": "FW-MiniMax-M2.5",
+          "version": "1"
+        },
+        "raiPolicyName": "Microsoft.DefaultV2",
+        "versionUpgradeOption": "NoAutoUpgrade"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('aiServicesName'), 'o4-mini')]"
+      ]
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2024-10-01",
+      "name": "[format('{0}/{1}', parameters('aiServicesName'), 'FW-Kimi-K2.5')]",
+      "sku": {
+        "name": "DataZoneStandard",
+        "capacity": "[variables('capFwKimi')]"
+      },
+      "properties": {
+        "model": {
+          "format": "Fireworks",
+          "name": "FW-Kimi-K2.5",
+          "version": "1"
+        },
+        "raiPolicyName": "Microsoft.DefaultV2",
+        "versionUpgradeOption": "NoAutoUpgrade"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('aiServicesName'), 'FW-MiniMax-M2.5')]"
+      ]
+    },
+    {
+      "type": "Microsoft.CognitiveServices/accounts/deployments",
+      "apiVersion": "2024-10-01",
+      "name": "[format('{0}/{1}', parameters('aiServicesName'), 'DeepSeek-V3.2')]",
+      "sku": {
+        "name": "GlobalStandard",
+        "capacity": "[variables('capDeepSeek')]"
+      },
+      "properties": {
+        "model": {
+          "format": "DeepSeek",
+          "name": "DeepSeek-V3.2",
+          "version": "1"
+        },
+        "raiPolicyName": "Microsoft.DefaultV2",
+        "versionUpgradeOption": "NoAutoUpgrade"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('aiServicesName'), 'FW-Kimi-K2.5')]"
+      ]
+    }
+  ]
+}

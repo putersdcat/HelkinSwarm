@@ -7,6 +7,16 @@ const API_BASE = `https://api.github.com/repos/${OWNER}/${REPO}`;
 let cachedToken: string | undefined;
 let tokenExpiresAt = 0;
 
+function readGitHubAppSetting(primaryName: string, fallbackName: string): string | undefined {
+  const primaryValue = process.env[primaryName]?.trim();
+  if (primaryValue) {
+    return primaryValue;
+  }
+
+  const fallbackValue = process.env[fallbackName]?.trim();
+  return fallbackValue && fallbackValue.length > 0 ? fallbackValue : undefined;
+}
+
 export class GitHubContentsPermissionError extends Error {
   readonly status: number;
   readonly path: string;
@@ -40,13 +50,13 @@ async function getGitHubInstallationToken(): Promise<string> {
     return cachedToken;
   }
 
-  const appId = process.env['GITHUB_APP_ID'];
-  const installationId = process.env['GITHUB_APP_INSTALLATION_ID'];
-  const privateKey = process.env['GITHUB_APP_PRIVATE_KEY'];
+  const appId = readGitHubAppSetting('SKILLFORGE_GITHUB_APP_ID', 'GITHUB_APP_ID');
+  const installationId = readGitHubAppSetting('SKILLFORGE_GITHUB_APP_INSTALLATION_ID', 'GITHUB_APP_INSTALLATION_ID');
+  const privateKey = readGitHubAppSetting('SKILLFORGE_GITHUB_APP_PRIVATE_KEY', 'GITHUB_APP_PRIVATE_KEY');
 
   if (!appId || !installationId || !privateKey) {
     throw new Error(
-      'GitHub App credentials not configured. Ensure GITHUB_APP_ID, GITHUB_APP_INSTALLATION_ID, and GITHUB_APP_PRIVATE_KEY are set.',
+      'GitHub App credentials not configured. Ensure SKILLFORGE_GITHUB_APP_ID, SKILLFORGE_GITHUB_APP_INSTALLATION_ID, and SKILLFORGE_GITHUB_APP_PRIVATE_KEY are set (or fall back to the legacy GITHUB_APP_* names).',
     );
   }
 

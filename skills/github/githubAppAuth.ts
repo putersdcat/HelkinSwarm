@@ -12,13 +12,24 @@ import { createAppAuth } from '@octokit/auth-app';
 let _cachedToken: string | undefined;
 let _tokenExpiresAt: number = 0; // epoch ms
 
+function readGitHubAppSetting(primaryName: string, fallbackName: string): string | undefined {
+  const primaryValue = process.env[primaryName]?.trim();
+  if (primaryValue) {
+    return primaryValue;
+  }
+
+  const fallbackValue = process.env[fallbackName]?.trim();
+  return fallbackValue && fallbackValue.length > 0 ? fallbackValue : undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /**
  * Returns a valid GitHub installation token, refreshing if within 5 min of expiry.
- * Reads GITHUB_APP_ID, GITHUB_APP_INSTALLATION_ID, GITHUB_APP_PRIVATE_KEY from env.
+ * Reads SKILLFORGE_GITHUB_APP_ID, SKILLFORGE_GITHUB_APP_INSTALLATION_ID, and
+ * SKILLFORGE_GITHUB_APP_PRIVATE_KEY from env, with fallback to legacy GITHUB_APP_* names.
  */
 export async function getGitHubInstallationToken(): Promise<string> {
   const nowMs = Date.now();
@@ -28,14 +39,15 @@ export async function getGitHubInstallationToken(): Promise<string> {
     return _cachedToken;
   }
 
-  const appId = process.env['GITHUB_APP_ID'];
-  const installationId = process.env['GITHUB_APP_INSTALLATION_ID'];
-  const privateKey = process.env['GITHUB_APP_PRIVATE_KEY'];
+  const appId = readGitHubAppSetting('SKILLFORGE_GITHUB_APP_ID', 'GITHUB_APP_ID');
+  const installationId = readGitHubAppSetting('SKILLFORGE_GITHUB_APP_INSTALLATION_ID', 'GITHUB_APP_INSTALLATION_ID');
+  const privateKey = readGitHubAppSetting('SKILLFORGE_GITHUB_APP_PRIVATE_KEY', 'GITHUB_APP_PRIVATE_KEY');
 
   if (!appId || !installationId || !privateKey) {
     throw new Error(
-      'GitHub App credentials not configured. Ensure GITHUB_APP_ID, GITHUB_APP_INSTALLATION_ID, ' +
-      'and GITHUB_APP_PRIVATE_KEY are set via Key Vault references in Container App settings.'
+      'GitHub App credentials not configured. Ensure SKILLFORGE_GITHUB_APP_ID, ' +
+      'SKILLFORGE_GITHUB_APP_INSTALLATION_ID, and SKILLFORGE_GITHUB_APP_PRIVATE_KEY are set ' +
+      '(or fall back to the legacy GITHUB_APP_* names) via Key Vault references in Container App settings.'
     );
   }
 

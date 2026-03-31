@@ -3,7 +3,8 @@
 // Issue: #121
 //
 // Auth: GitHub App installation token (minted via @octokit/auth-app).
-// Credentials: GITHUB_APP_ID, GITHUB_APP_INSTALLATION_ID, GITHUB_APP_PRIVATE_KEY (KV refs).
+// Credentials: SKILLFORGE_GITHUB_APP_ID, SKILLFORGE_GITHUB_APP_INSTALLATION_ID,
+// SKILLFORGE_GITHUB_APP_PRIVATE_KEY (KV refs), with fallback to legacy GITHUB_APP_* names.
 // Scope: putersdcat/HelkinSwarm only — no cross-repo access.
 
 import type { ToolHandler } from '../../src/capabilities/capabilityLoader.js';

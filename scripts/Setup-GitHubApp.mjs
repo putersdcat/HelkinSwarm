@@ -1,6 +1,8 @@
 #!/usr/bin/env node
+/* global Buffer, URL, console, fetch, process, setTimeout */
+/* eslint-disable no-console */
 /**
- * Setup-GitHubApp.mjs — One-time GitHub App creation via App Manifest flow.
+ * Setup-GitHubApp.mjs — One-time SkillForge GitHub App creation via App Manifest flow.
  *
  * Usage: node scripts/Setup-GitHubApp.mjs
  *
@@ -12,7 +14,7 @@
  *  5. Script exchanges code for credentials (app_id + private key)
  *  6. Fetches the installation ID (GitHub auto-installs on your account)
  *  7. Stores private key in Azure Key Vault (helkinswarm-kv-a7f2)
- *  8. Sets GITHUB_APP_ID and GITHUB_INSTALLATION_ID as GitHub repo variables
+ *  8. Sets SKILLFORGE_GITHUB_APP_ID and SKILLFORGE_GITHUB_INSTALLATION_ID as GitHub repo variables
  *
  * Prerequisites:
  *  - az CLI logged in (az login)
@@ -34,13 +36,18 @@ const REPO = 'HelkinSwarm';
 const KV_NAME = 'helkinswarm-kv-a7f2';
 
 const manifest = {
-  name: 'HelkinSwarm Bot',
-  description: 'HelkinSwarm self-repo backlog management — issues and milestones',
+  name: 'HelkinSwarm SkillForge Bot',
+  description: 'Dedicated GitHub App for HelkinSwarm SkillForge branch and pull request automation',
   url: `https://github.com/${OWNER}/${REPO}`,
   redirect_url: `http://localhost:${PORT}/callback`,
   public: false,
   default_permissions: {
+    actions: 'read',
+    checks: 'read',
+    statuses: 'read',
+    contents: 'write',
     issues: 'write',
+    pull_requests: 'write',
     metadata: 'read',
   },
   default_events: [],
@@ -52,10 +59,10 @@ function buildLandingHtml() {
   const scriptTag = '<' + 'script>setTimeout(()=>document.getElementById("manifest-form").submit(),500)</' + 'script>';
   return [
     '<!DOCTYPE html><html><head>',
-    '<title>Creating HelkinSwarm GitHub App...</title>',
+    '<title>Creating HelkinSwarm SkillForge GitHub App...</title>',
     '<style>body{font-family:-apple-system,sans-serif;text-align:center;padding:60px;background:#0d1117;color:#e6edf3}</style>',
     '</head><body>',
-    '<h1>🤖 Creating HelkinSwarm GitHub App</h1>',
+    '<h1>🤖 Creating HelkinSwarm SkillForge GitHub App</h1>',
     '<p>Redirecting you to GitHub now...<br>You will need to click <strong>"Create GitHub App"</strong> once.</p>',
     `<form id="manifest-form" method="post" action="https://github.com/settings/apps/new">`,
     `  <input type="hidden" name="manifest" value="${manifestJson}" />`,
@@ -126,26 +133,26 @@ async function storeCredentials(appId, installationId, pem) {
 
   console.log('\n📦 Storing private key in Azure Key Vault...');
   try {
-    await exec(`az keyvault secret set --vault-name "${KV_NAME}" --name "GitHubAppPrivateKey" --value "${pemEscaped}" --output none`);
-    console.log(`  ✅ GitHubAppPrivateKey → kv://${KV_NAME}/GitHubAppPrivateKey`);
-  } catch (e) {
+    await exec(`az keyvault secret set --vault-name "${KV_NAME}" --name "SkillForgeGitHubAppPrivateKey" --value "${pemEscaped}" --output none`);
+    console.log(`  ✅ SkillForgeGitHubAppPrivateKey → kv://${KV_NAME}/SkillForgeGitHubAppPrivateKey`);
+  } catch {
     // Try with --file approach (safer for large keys)
     const { writeFileSync, unlinkSync } = await import('fs');
     const tmpFile = '/tmp/gh-app-key.pem';
     writeFileSync(tmpFile, pem, { encoding: 'utf8', mode: 0o600 });
     try {
-      await exec(`az keyvault secret set --vault-name "${KV_NAME}" --name "GitHubAppPrivateKey" --file "${tmpFile}" --output none`);
-      console.log(`  ✅ GitHubAppPrivateKey → kv://${KV_NAME}/GitHubAppPrivateKey`);
+      await exec(`az keyvault secret set --vault-name "${KV_NAME}" --name "SkillForgeGitHubAppPrivateKey" --file "${tmpFile}" --output none`);
+      console.log(`  ✅ SkillForgeGitHubAppPrivateKey → kv://${KV_NAME}/SkillForgeGitHubAppPrivateKey`);
     } finally {
       unlinkSync(tmpFile);
     }
   }
 
   console.log('\n🔧 Setting GitHub repo variables...');
-  await exec(`gh variable set GITHUB_APP_ID --body "${appId}" --repo ${OWNER}/${REPO}`);
-  await exec(`gh variable set GITHUB_INSTALLATION_ID --body "${installationId}" --repo ${OWNER}/${REPO}`);
-  console.log(`  ✅ GITHUB_APP_ID = ${appId}`);
-  console.log(`  ✅ GITHUB_INSTALLATION_ID = ${installationId}`);
+  await exec(`gh variable set SKILLFORGE_GITHUB_APP_ID --body "${appId}" --repo ${OWNER}/${REPO}`);
+  await exec(`gh variable set SKILLFORGE_GITHUB_APP_INSTALLATION_ID --body "${installationId}" --repo ${OWNER}/${REPO}`);
+  console.log(`  ✅ SKILLFORGE_GITHUB_APP_ID = ${appId}`);
+  console.log(`  ✅ SKILLFORGE_GITHUB_APP_INSTALLATION_ID = ${installationId}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -194,11 +201,11 @@ const server = http.createServer(async (req, res) => {
       const successHtml = `<!DOCTYPE html><html>
 <head><style>body{font-family:-apple-system,sans-serif;text-align:center;padding:60px;background:#0d1117;color:#e6edf3}</style></head>
 <body>
-  <h1>✅ GitHub App Created Successfully!</h1>
+  <h1>✅ SkillForge GitHub App Created Successfully!</h1>
   <p>App ID: <strong>${appId}</strong></p>
   <p>Slug: <strong>${slug}</strong></p>
   <p>Installation ID: <strong>${installationId}</strong></p>
-  <p>Private key stored in Key Vault. Repo variables set.</p>
+  <p>Private key stored in Key Vault. SkillForge repo variables set.</p>
   <p><strong>You can close this tab.</strong></p>
   <p>Run <code>git push origin main</code> to trigger deploy and activate the GitHub tools.</p>
 </body></html>`;
@@ -211,7 +218,7 @@ const server = http.createServer(async (req, res) => {
 ✅ Setup complete!
    App ID:          ${appId}
    Installation ID: ${installationId}
-   Private key:     kv://${KV_NAME}/GitHubAppPrivateKey
+  Private key:     kv://${KV_NAME}/SkillForgeGitHubAppPrivateKey
 
 Next steps:
   1. Push a commit to trigger deploy (the Bicep will wire up the KV reference)
@@ -234,7 +241,7 @@ Next steps:
 
 server.listen(PORT, '127.0.0.1', () => {
   console.log(`
-🤖 HelkinSwarm GitHub App Setup
+🤖 HelkinSwarm SkillForge GitHub App Setup
 ================================
 Server running at http://localhost:${PORT}
 Opening browser... You'll be redirected to GitHub.

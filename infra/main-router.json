@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.41.2.15936",
-      "templateHash": "11761032957832101385"
+      "templateHash": "12707946130223358205"
     }
   },
   "parameters": {
@@ -27,6 +27,13 @@
       "defaultValue": false,
       "metadata": {
         "description": "Create/update the GraphOAuth Bot Service connection. Set true only on first deploy or when scopes change."
+      }
+    },
+    "lowCostDevMode": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Low Cost Dev Mode — 7-day log retention (minimum for PerGB2018), 0.1 GB/day ingestion cap, minimal App Insights sampling. (#303)"
       }
     },
     "delegatedAuthClientId": {
@@ -56,7 +63,11 @@
     "roleStorageBlobDataOwner": "b7e6dc6d-f1e8-4753-8033-0f276bb0955b",
     "roleStorageQueueContributor": "974c5e8b-45b9-4653-ba55-5f855dd0fb88",
     "roleStorageTableContributor": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3",
-    "roleAcrPull": "7f951dda-4ed3-4680-a7ca-43fe172d538d"
+    "roleAcrPull": "7f951dda-4ed3-4680-a7ca-43fe172d538d",
+    "routerLawRetentionDays": 30,
+    "routerLawDailyCapGb": "[if(parameters('lowCostDevMode'), json('0.1'), json('-1'))]",
+    "routerAppInsSamplingPct": "[if(parameters('lowCostDevMode'), 10, 100)]",
+    "routerMinReplicas": "[if(parameters('lowCostDevMode'), 0, 1)]"
   },
   "resources": [
     {
@@ -74,7 +85,10 @@
         "sku": {
           "name": "PerGB2018"
         },
-        "retentionInDays": 30
+        "retentionInDays": "[variables('routerLawRetentionDays')]",
+        "workspaceCapping": {
+          "dailyQuotaGb": "[variables('routerLawDailyCapGb')]"
+        }
       }
     },
     {
@@ -85,7 +99,8 @@
       "kind": "web",
       "properties": {
         "Application_Type": "web",
-        "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('routerLawName'))]"
+        "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('routerLawName'))]",
+        "SamplingPercentage": "[variables('routerAppInsSamplingPct')]"
       },
       "dependsOn": [
         "[resourceId('Microsoft.OperationalInsights/workspaces', variables('routerLawName'))]"
@@ -103,7 +118,12 @@
       "properties": {
         "supportsHttpsTrafficOnly": true,
         "minimumTlsVersion": "TLS1_2",
-        "allowBlobPublicAccess": false
+        "allowBlobPublicAccess": false,
+        "allowSharedKeyAccess": false,
+        "networkAcls": {
+          "defaultAction": "Allow",
+          "bypass": "AzureServices"
+        }
       }
     },
     {
@@ -276,7 +296,7 @@
             }
           ],
           "scale": {
-            "minReplicas": 1,
+            "minReplicas": "[variables('routerMinReplicas')]",
             "maxReplicas": 3
           }
         }
@@ -341,7 +361,7 @@
         "serviceProviderId": "30dd229c-58e3-4a48-bdfd-91ec48eb906c",
         "clientId": "[parameters('delegatedAuthClientId')]",
         "clientSecret": "[parameters('delegatedAuthClientSecret')]",
-        "scopes": "User.Read Mail.ReadWrite Calendars.ReadWrite Files.ReadWrite offline_access",
+        "scopes": "User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Files.ReadWrite offline_access",
         "parameters": [
           {
             "key": "tenantID",
@@ -357,7 +377,7 @@
           },
           {
             "key": "scopes",
-            "value": "User.Read Mail.ReadWrite Calendars.ReadWrite Files.ReadWrite offline_access"
+            "value": "User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Files.ReadWrite offline_access"
           }
         ]
       },
