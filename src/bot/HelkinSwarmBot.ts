@@ -4,6 +4,7 @@
 
 import {
   TeamsActivityHandler,
+  type FileConsentCardResponse,
   type TurnContext,
   TurnContext as TurnContextClass,
   type AdaptiveCardInvokeResponse,
@@ -71,6 +72,7 @@ import {
   readRuntimeAssetContent,
 } from '../integrations/runtimeAssetStore.js';
 import { sendReply } from '../orchestrator/sendReplyActivity.js';
+import { RuntimeFileConsentContextSchema } from '../orchestrator/sendReplyActivity.js';
 
 const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
 
@@ -150,6 +152,77 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       }
       await next();
     });
+  }
+
+  protected override async handleTeamsFileConsentAccept(
+    context: TurnContext,
+    fileConsentCardResponse: FileConsentCardResponse,
+  ): Promise<void> {
+    try {
+      const parsedContext = RuntimeFileConsentContextSchema.parse(fileConsentCardResponse.context as unknown);
+      const loaded = await readRuntimeAssetContent({
+        userId: parsedContext.userId,
+        assetId: parsedContext.assetId,
+      });
+
+      if (!loaded || !fileConsentCardResponse.uploadInfo?.uploadUrl || !fileConsentCardResponse.uploadInfo.contentUrl) {
+        await context.sendActivity('⚠️ File upload could not be completed because the runtime asset is no longer available.');
+        return;
+      }
+
+      const content = loaded.content;
+      const response = await fetch(fileConsentCardResponse.uploadInfo.uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Length': String(content.byteLength),
+          'Content-Range': `bytes 0-${content.byteLength - 1}/${content.byteLength}`,
+          'Content-Type': parsedContext.contentType,
+        },
+        body: content,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Upload session rejected the file with status ${response.status}`);
+      }
+
+      await context.sendActivity({
+        type: ActivityTypes.Message,
+        attachments: [{
+          contentType: 'application/vnd.microsoft.teams.card.file.info',
+          contentUrl: fileConsentCardResponse.uploadInfo.contentUrl,
+          name: fileConsentCardResponse.uploadInfo.name,
+          content: {
+            uniqueId: fileConsentCardResponse.uploadInfo.uniqueId,
+            fileType: fileConsentCardResponse.uploadInfo.fileType,
+          },
+        }],
+      });
+
+      await deleteRuntimeAsset({
+        userId: parsedContext.userId,
+        assetId: parsedContext.assetId,
+      });
+    } catch (err) {
+      console.error('[HelkinSwarmBot] File consent accept failed:', err);
+      await context.sendActivity(`⚠️ File upload failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  protected override async handleTeamsFileConsentDecline(
+    context: TurnContext,
+    fileConsentCardResponse: FileConsentCardResponse,
+  ): Promise<void> {
+    try {
+      const parsedContext = RuntimeFileConsentContextSchema.parse(fileConsentCardResponse.context as unknown);
+      await deleteRuntimeAsset({
+        userId: parsedContext.userId,
+        assetId: parsedContext.assetId,
+      });
+    } catch {
+      // Best-effort cleanup only.
+    }
+
+    await context.sendActivity('Okay — I canceled the file send.');
   }
 
   /**
@@ -1220,9 +1293,6 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     );
     const textBytes = Buffer.from('HelkinSwarm outbound asset reply self-test', 'utf8');
 
-    let imageAssetId: string | undefined;
-    let fileAssetId: string | undefined;
-
     try {
       const imageReference = await persistRuntimeAsset({
         userId,
@@ -1255,9 +1325,6 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         throw new Error('Runtime asset storage is not configured on this stamp.');
       }
 
-      imageAssetId = imageReference.id;
-      fileAssetId = textReference.id;
-
       await sendReply({
         userId,
         correlationId,
@@ -1285,13 +1352,6 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         });
       } else {
         await context.sendActivity(message);
-      }
-    } finally {
-      if (imageAssetId) {
-        await deleteRuntimeAsset({ userId, assetId: imageAssetId });
-      }
-      if (fileAssetId) {
-        await deleteRuntimeAsset({ userId, assetId: fileAssetId });
       }
     }
   }

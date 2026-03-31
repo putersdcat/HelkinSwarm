@@ -11,5 +11,7 @@ describe('HelkinSwarmBot /assetreply selftest routing', () => {
     expect(source).toContain("await context.sendActivity('⌛ Running outbound asset reply self-test...');");
     expect(source).toContain('await sendReply({');
     expect(source).toContain('assets: [');
+    expect(source).toContain('protected override async handleTeamsFileConsentAccept(');
+    expect(source).toContain('protected override async handleTeamsFileConsentDecline(');
   });
 });

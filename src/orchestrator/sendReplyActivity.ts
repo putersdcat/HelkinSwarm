@@ -21,13 +21,27 @@ import { getEnvConfig } from '../config/envConfig.js';
 import { splitReplyIntoChunks } from './replyChunking.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { clearOrchestratorStage, recordSubstage } from '../observability/orchestratorStageHealth.js';
-import { readRuntimeAssetContent, type RuntimeAssetReference } from '../integrations/runtimeAssetStore.js';
+import {
+  loadRuntimeAssetReference,
+  readRuntimeAssetContent,
+  type RuntimeAssetReference,
+} from '../integrations/runtimeAssetStore.js';
+import { z } from 'zod';
 
 export interface RuntimeReplyAssetInput {
   assetId: string;
   fileName?: string;
   contentType?: string;
 }
+
+export const RuntimeFileConsentContextSchema = z.object({
+  assetId: z.string().uuid(),
+  userId: z.string().min(1),
+  correlationId: z.string().min(1),
+  fileName: z.string().min(1),
+  contentType: z.string().min(1),
+});
+export type RuntimeFileConsentContext = z.infer<typeof RuntimeFileConsentContextSchema>;
 
 export interface SendReplyInput {
   /** User AAD Object ID — used to look up ConversationReference from Cosmos. */
@@ -103,6 +117,43 @@ function toTeamsAttachment(reference: RuntimeAssetReference, content: Buffer, ov
   } satisfies Attachment;
 }
 
+function inferFileType(reference: RuntimeAssetReference): string {
+  const fileName = reference.fileName ?? '';
+  const fileExtension = fileName.includes('.') ? fileName.split('.').pop()?.toLowerCase() : undefined;
+  if (fileExtension && fileExtension.length > 0) {
+    return fileExtension;
+  }
+
+  const contentSubtype = reference.contentType.split('/')[1]?.toLowerCase();
+  if (contentSubtype && contentSubtype.length > 0) {
+    return contentSubtype;
+  }
+
+  return 'bin';
+}
+
+function toFileConsentCard(reference: RuntimeAssetReference, correlationId: string, override?: RuntimeReplyAssetInput): Attachment {
+  const fileName = override?.fileName ?? reference.fileName ?? `${reference.id}.${inferFileType(reference)}`;
+  const context = RuntimeFileConsentContextSchema.parse({
+    assetId: reference.id,
+    userId: reference.userId,
+    correlationId,
+    fileName,
+    contentType: override?.contentType ?? reference.contentType,
+  });
+
+  return {
+    contentType: 'application/vnd.microsoft.teams.card.file.consent',
+    name: fileName,
+    content: {
+      description: reference.summary ?? `Download ${fileName}`,
+      sizeInBytes: reference.byteLength,
+      acceptContext: context,
+      declineContext: context,
+    },
+  } satisfies Attachment;
+}
+
 async function resolveAssetAttachments(input: SendReplyInput): Promise<Attachment[]> {
   if (!input.assets || input.assets.length === 0) {
     return [];
@@ -110,15 +161,25 @@ async function resolveAssetAttachments(input: SendReplyInput): Promise<Attachmen
 
   const attachments: Attachment[] = [];
   for (const asset of input.assets) {
-    const loaded = await readRuntimeAssetContent({
-      userId: input.userId,
-      assetId: asset.assetId,
-    });
-    if (!loaded) {
+    const reference = await loadRuntimeAssetReference({ userId: input.userId, assetId: asset.assetId });
+    if (!reference) {
       throw new Error(`Runtime asset '${asset.assetId}' could not be resolved for reply send.`);
     }
 
-    attachments.push(toTeamsAttachment(loaded.reference, loaded.content, asset));
+    const effectiveContentType = asset.contentType ?? reference.contentType;
+    if (effectiveContentType.startsWith('image/')) {
+      const loaded = await readRuntimeAssetContent({
+        userId: input.userId,
+        assetId: asset.assetId,
+      });
+      if (!loaded) {
+        throw new Error(`Runtime asset '${asset.assetId}' content could not be loaded for reply send.`);
+      }
+      attachments.push(toTeamsAttachment(loaded.reference, loaded.content, asset));
+      continue;
+    }
+
+    attachments.push(toFileConsentCard(reference, input.correlationId ?? input.userId, asset));
   }
 
   return attachments;

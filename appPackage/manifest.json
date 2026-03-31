@@ -28,7 +28,7 @@
       "scopes": [
         "personal"
       ],
-      "supportsFiles": false,
+      "supportsFiles": true,
       "isNotificationOnly": false,
       "commandLists": [
         {
