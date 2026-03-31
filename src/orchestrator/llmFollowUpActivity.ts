@@ -114,6 +114,36 @@ export function buildFallbackToolResultContent(
   return buildDefaultToolSummary(toolResults);
 }
 
+export function shouldStopOnRepeatedToolFailure(
+  candidateToolCalls: Array<{ name: string; arguments: string }>,
+  additionalTurns: LlmFollowUpInput['additionalTurns'] = [],
+): boolean {
+  if (candidateToolCalls.length === 0 || additionalTurns.length === 0) {
+    return false;
+  }
+
+  const lastTurn = [...additionalTurns]
+    .reverse()
+    .find((turn) => turn.assistantToolCalls.length > 0 || turn.toolResults.length > 0);
+
+  if (!lastTurn || lastTurn.assistantToolCalls.length !== candidateToolCalls.length) {
+    return false;
+  }
+
+  const sameCalls = candidateToolCalls.every((call, index) => {
+    const previous = lastTurn.assistantToolCalls[index];
+    return previous?.name === call.name && previous.arguments === call.arguments;
+  });
+
+  if (!sameCalls || lastTurn.toolResults.length === 0 || !lastTurn.toolResults.every((result) => !result.success && !!result.error)) {
+    return false;
+  }
+
+  return lastTurn.toolResults.every((result) =>
+    /not supported yet|does not support|not available|cannot send|blocked by safety pipeline|i have not sent/i.test(result.error ?? ''),
+  );
+}
+
 df.app.activity('llmFollowUpActivity', {
   handler: async (input: LlmFollowUpInput): Promise<LlmResult> => {
     const routing = getModelRouting();
@@ -244,6 +274,10 @@ df.app.activity('llmFollowUpActivity', {
         name: tc.function.name,
         arguments: tc.function.arguments,
       })) ?? [];
+      const aggregatedToolResults = [
+        ...input.toolResults,
+        ...(input.additionalTurns ?? []).flatMap((turn) => turn.toolResults),
+      ];
 
       const latestUserMessage = getLatestUserMessage(input.originalMessages);
       const synthesizedToolCall = retryToolCalls.length === 0 && retryTools
@@ -258,6 +292,18 @@ df.app.activity('llmFollowUpActivity', {
         : retryToolCalls;
 
       if (effectiveRetryToolCalls.length > 0 && retryTools) {
+        if (shouldStopOnRepeatedToolFailure(effectiveRetryToolCalls, input.additionalTurns)) {
+          return {
+            content: buildFallbackToolResultContent(input.originalMessages, aggregatedToolResults),
+            model: response.model,
+            tokensUsed: response.usage.totalTokens,
+            promptTokens: response.usage.promptTokens,
+            toolCalls: [],
+            finishReason: 'stop',
+            operationalNotices: buildSuccessfulFailoverNotices(response.failoverSteps),
+          };
+        }
+
         console.log(`[llmFollowUpActivity] LLM requested ${effectiveRetryToolCalls.length} retry tool call(s) (#182).`);
         return {
           content: llmContent ?? '',
@@ -290,7 +336,7 @@ df.app.activity('llmFollowUpActivity', {
       // rather than dumping raw JSON that may exceed Teams message limits (#184).
       const content = llmContent
         ? llmContent
-        : buildFallbackToolResultContent(input.originalMessages, input.toolResults);
+        : buildFallbackToolResultContent(input.originalMessages, aggregatedToolResults);
 
       return {
         content,

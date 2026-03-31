@@ -54,4 +54,39 @@ describe('llmFollowUpActivity execution prompt', () => {
       expect(content).toContain('I did not send the requested inline-image email');
     });
   });
+
+  it('stops retrying an identical tool call after a deterministic unsupported-action failure', () => {
+    return loadFollowUpModule().then(({ shouldStopOnRepeatedToolFailure }) => {
+      const shouldStop = shouldStopOnRepeatedToolFailure(
+        [
+          {
+            name: 'outlook_send_email',
+            arguments: '{"subject":"cid guard probe"}',
+          },
+        ],
+        [
+          {
+            assistantContent: '',
+            assistantToolCalls: [
+              {
+                id: 'prior-1',
+                name: 'outlook_send_email',
+                arguments: '{"subject":"cid guard probe"}',
+              },
+            ],
+            toolResults: [
+              {
+                toolCallId: 'prior-1',
+                toolName: 'outlook_send_email',
+                success: false,
+                error: 'Embedded inline images in outgoing Outlook email are not supported yet. I have not sent the requested inline-image email.',
+              },
+            ],
+          },
+        ],
+      );
+
+      expect(shouldStop).toBe(true);
+    });
+  });
 });
