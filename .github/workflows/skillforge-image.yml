@@ -108,15 +108,15 @@ jobs:
           ELAPSED_MS=$((END_MS - START_MS))
           echo "elapsedMs=$ELAPSED_MS" >> "$GITHUB_OUTPUT"
 
-          docker rm -f skillforge-startup-smoke >/dev/null 2>&1 || true
-
           if [ "$READY" -ne 1 ]; then
             echo "❌ SkillForge container never reported ready during startup smoke."
+            docker rm -f skillforge-startup-smoke >/dev/null 2>&1 || true
             exit 1
           fi
 
           if [ "$AUDIT_OK" -ne 1 ]; then
             echo "❌ SkillForge container did not emit bootstrap audit records during startup smoke."
+            docker rm -f skillforge-startup-smoke >/dev/null 2>&1 || true
             exit 1
           fi
 
@@ -141,8 +141,11 @@ jobs:
 
           if [ "$ELAPSED_MS" -gt 10000 ]; then
             echo "❌ SkillForge cold-start smoke exceeded 10s (${ELAPSED_MS}ms)."
+            docker rm -f skillforge-startup-smoke >/dev/null 2>&1 || true
             exit 1
           fi
+
+          docker rm -f skillforge-startup-smoke >/dev/null 2>&1 || true
 
           echo "✅ SkillForge startup smoke passed in ${ELAPSED_MS}ms"
 
