@@ -17,9 +17,23 @@ It is **not** part of the main orchestrator or any persistent sub-agent. It spin
 
 - Orchestrator receives user request → scans modular `skills/` library (see **0a**) → no match.
 - Instead of replying “I can’t do that,” it routes the request to SkillForge with the raw prompt + minimal session summary.
+- `/forge` may be invoked directly by the user **or** suggested/escalated by the orchestrator after it recognizes that no existing skill/tool can satisfy the request but that a new skill is plausibly buildable.
 - Spawns SkillForge as a separate Durable Activity (or Azure Container Instance job).
 - SkillForge runs in its own clean LLM session (fresh context, no inherited state).
 - Full safety pipeline (see **0e**) is applied to the incoming request and every reasoning step inside the container.
+
+### 2.5 Stage 3 — Artifact Persistence
+
+Before any repo handoff occurs, SkillForge should persist a durable review bundle so the work can be:
+
+- reviewed
+- resumed
+- promoted
+- audited
+
+Current prototype work has already proven the value of this slice via bundle persistence (`skillForgeBundleStore.ts` and persisted bundle paths returned by `skillForgePrototypeActivity`).
+
+Longer term, this bundle store may remain Blob-backed or be abstracted over a broader low-license document-storage skill once that capability exists for the wider system. In other words, Stage 3 persistence should be treated as a durable architecture seam, not as a one-off scratch hack.
 
 ### 3. Container Architecture & Base Image
 
@@ -86,6 +100,96 @@ The LLM thinks aloud, uses terminal tools, fixes lint errors live, iterates unti
 - Orchestrator replies to user in Teams:
   “I didn’t have a tool for that, so SkillForge prototyped one. PR #42 is ready for your review. Once merged, I’ll load it automatically.”
 - User reviews + merges → orchestrator hot-reloads capability map on next orchestration step or via `/reload skills`.
+
+### 7.1 Stage 4 — PR / repo handoff clarification
+
+The intended in-product SkillForge behavior **does include branch + PR creation**.
+
+This is a critically important scope clarification:
+
+- the trunk-only / no-PR / no-branch directives in the Copilot instructions apply to **VS Code backlog agents working on the core HelkinSwarm repo directly**
+- they do **not** prohibit the productized SkillForge feature from creating branches and pull requests as part of its own controlled workflow
+
+SkillForge should therefore continue to target a PR-based handoff path where appropriate, even while core backlog work remains trunk-only.
+
+### 7.2 Stage 4.5 — Isolated development execution path
+
+There is a missing middle stage between “draft bundle / branch exists” and “PR is ready for human review”.
+
+That stage is the actual coding/execution environment where SkillForge (or an attached coding agent) develops the generated skill on its branch until it is ready to submit for review.
+
+Candidate implementations include:
+
+- Azure-hosted isolated development box / coding container
+- GitHub-hosted coding-agent execution (Copilot coding agent / cloud agent)
+- complexity-based routing between those paths
+
+#### Initial chosen subset
+
+The initial Stage 4.5 execution path should be **GitHub-hosted coding-agent execution on the generated branch**.
+
+Why this is the preferred first subset:
+
+- it matches the existing PR-centric SkillForge lifecycle better than inventing a second bespoke execution plane first
+- it keeps the development box attached to the repository/branch where the generated files already live
+- it reuses GitHub’s existing review / workflow / artifact surfaces instead of forcing HelkinSwarm to build a full Azure-hosted coding workspace first
+- it preserves the distinction between:
+  - **VS Code backlog agents** working trunk-only on the core repo
+  - **in-product SkillForge** working on controlled generated branches as part of the product workflow
+
+Azure-hosted isolated execution remains a valid later path for cases that require stricter runtime isolation, custom tooling, or capabilities that GitHub-hosted execution cannot provide cleanly.
+
+#### Initial routing decision
+
+For the first usable Stage 4.5 slice:
+
+- generated SkillForge work should route to **GitHub-hosted execution only**
+- Azure-hosted execution remains a documented future extension, not a first required dependency
+- complexity-based routing remains a future evolution after one execution lane is proven operationally
+
+This means the system can honestly document an initial subset without pretending that both execution lanes are already productized.
+
+#### Guardrails for the chosen execution path
+
+Because GitHub-hosted coding-agent execution consumes metered resources, Stage 4.5 must stay budget-aware from day one.
+
+Initial guardrails:
+
+- max **1 active Stage 4.5 execution job per requester/stamp** at a time
+- max **3 coding-agent iteration rounds** before returning for human intervention
+- max **2 workflow/job retries** for the same generated branch before the run is marked failed
+- prefer the **smallest viable validation set** before escalating into broader review gates
+- enforce a **hard wall-clock timeout** for the isolated execution stage; if the job does not converge promptly, fail closed and return the artifact for human review instead of looping indefinitely
+- keep the execution scope **branch-local** to the generated SkillForge branch; no direct write-back to `main` from the Stage 4.5 lane
+- consume GitHub Actions minutes / premium requests as an explicit budgeted feature, not an invisible free background behavior
+
+#### Handoff clarity
+
+The intended first-pass lifecycle is therefore:
+
+1. **Stage 4** — SkillForge creates/persists the draft bundle and branch/PR handoff metadata
+2. **Stage 4.5** — GitHub-hosted coding-agent execution develops the generated branch under the guardrails above
+3. **Stage 5** — automated review / validation / intelligent review gates run before the result returns for final human approval
+
+This makes Stage 4.5 explicit without violating the core repo’s trunk-only rule for ordinary backlog-agent work.
+
+Tracked follow-on issue:
+- `#401` — Stage 4.5 isolated development execution path for generated skill branches
+
+### 7.3 Stage 5 — Automated review before final human/chat-participant review
+
+Before a generated SkillForge PR is ever returned to the original requester for final approval, the system should be able to run:
+
+- automated testing
+- security review / policy checks
+- manifest/schema validation
+- intelligent review (including Copilot/cloud-agent-assisted review where appropriate)
+- explicit verification that the generated skill appears to satisfy the original request
+
+Only after those review layers pass should the PR come back for final human/chat-participant review and merge to `main`, followed by hot reload / validation in the requester’s named stamp.
+
+Tracked follow-on issue:
+- `#402` — Stage 5 automated validation and intelligent review before final human merge
 
 ### 8. Failure & Fallback
 
