@@ -47,7 +47,9 @@ WORKDIR /workspace
 RUN chown -R forge:forge /workspace
 
 # ── SkillForge prompt (loaded at container boot) ──
-COPY src/skillforge/skillForgePrompt.ts /opt/skillforge/prompt.ts
+COPY src/skillforge/skillforge-prompt.md /opt/skillforge/skillforge-prompt.md
+COPY infra/skillforge-bootstrap.mjs /opt/skillforge/bootstrap.mjs
+ENV SKILLFORGE_SYSTEM_PROMPT_PATH=/opt/skillforge/skillforge-prompt.md
 
 # ── Resource guardrails (enforced by ACI, not container-level) ──
 # CPU: capped by ACI configuration
@@ -59,7 +61,7 @@ USER forge
 
 # ── Healthcheck for ACI ──
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
-    CMD node -e "process.exit(0)"
+    CMD node -e "const fs=require('node:fs'); const path=process.env.SKILLFORGE_SYSTEM_PROMPT_PATH; process.exit(path && fs.existsSync(path) ? 0 : 1)"
 
 # Labels for traceability
 LABEL org.opencontainers.image.title="HelkinSwarm SkillForge Base"
@@ -67,4 +69,4 @@ LABEL org.opencontainers.image.description="Ephemeral skill prototyping containe
 LABEL org.opencontainers.image.source="https://github.com/putersdcat/HelkinSwarm"
 
 # Default command: wait for orchestrator instructions
-CMD ["node", "-e", "console.log('SkillForge container ready'); process.stdin.resume();"]
+CMD ["node", "/opt/skillforge/bootstrap.mjs"]
