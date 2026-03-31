@@ -46,7 +46,6 @@ jobs:
   build-and-push:
     name: Build SkillForge Image
     runs-on: ubuntu-latest
-    environment: production
 
     steps:
       - name: Checkout
