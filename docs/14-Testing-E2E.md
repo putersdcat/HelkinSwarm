@@ -37,6 +37,54 @@ The result includes:
 - `durableHooksRegistered` (0h)
 - `correlationId` and elapsed time
 
+### Attachment-Bearing Workflow Proof Paths
+
+Attachment/file features need **explicit proof paths** because it is easy to ship a partial illusion:
+- inbound metadata can appear while bytes are unusable
+- runtime asset storage can work while outbound replies still send text only
+- outbound asset replies can work while inbound upload ingestion still fails
+
+For the current attachment pipeline, the minimum validated stack is:
+
+1. **Runtime asset storage seam** — `/assetstore selftest`
+	- proves runtime asset references can be persisted, resolved, read back, and deleted
+	- expected outcome: a text reply describing asset id, content type, byte count, expiry, and delete result
+
+2. **Outbound attachment reply seam** — `/assetreply selftest`
+	- proves the reply pipeline can resolve runtime asset references into real Teams-visible attachments
+	- expected outcome: a text summary plus the image/file artifacts sent via the normal reply path
+
+3. **Inbound upload-driven seam** — `/assetingest selftest [primary|secondary]`
+	- injects synthetic Teams-style image + file attachments through the same inbound ingestion helper used by the bot
+	- expected outcome: a normal overseer/LLM reply that lists the runtime assets now available in the turn
+	- use a specific lane when you need deterministic evidence for the active primary or secondary model
+
+#### Current proof workflow
+
+Recommended order:
+
+1. run `/assetstore selftest`
+2. run `/assetreply selftest`
+3. run `/assetingest selftest secondary` (or `primary` when specifically validating that lane)
+4. read the recent chat window and runtime health after each step
+5. record message ids, correlations, runtime status, and whether Teams surfaced the expected file/image artifacts
+
+#### Known tooling gap
+
+The current Teams Test Harness can safely send text probes and inspect the resulting chat artifacts, but it does **not yet** upload an arbitrary real user file into the chat on demand.
+
+That means the present proof stack covers:
+- runtime asset storage
+- outbound attachment reply behavior
+- inbound attachment ingestion through the shipped synthetic self-test seam
+
+It does **not** yet provide a fully automated harness path for:
+- real human-style Teams file upload -> bot ingest -> downstream action
+
+So attachment E2E should explicitly distinguish:
+- **validated now:** synthetic ingress + real runtime asset storage + real outbound Teams attachment replies
+- **future harness work:** real uploaded-file automation in the safe test chat
+
 ### Playwright Restrictions (Strict)
 
 **Playwright is allowed ONLY for visual inspection**, never for sending messages.
