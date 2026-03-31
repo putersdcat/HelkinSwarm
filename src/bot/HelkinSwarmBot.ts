@@ -686,9 +686,21 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return;
     }
 
-    const singleEmojiBypass = getSingleEmojiBypassReply(messageText);
+    const singleEmojiBypass = getSingleEmojiBypassReply({
+      messageText,
+      activityText: context.activity.text ?? undefined,
+      activityDetails: [
+        JSON.stringify(context.activity.entities ?? []),
+        JSON.stringify(context.activity.channelData ?? {}),
+        JSON.stringify(context.activity.attachments ?? []),
+      ],
+    });
     if (singleEmojiBypass) {
-      await context.sendActivity(singleEmojiBypass);
+      await context.sendActivity({
+        type: ActivityTypes.Message,
+        text: singleEmojiBypass.text,
+        ...(singleEmojiBypass.textFormat ? { textFormat: singleEmojiBypass.textFormat } : {}),
+      });
       return;
     }
 
