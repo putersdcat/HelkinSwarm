@@ -122,26 +122,18 @@ export function shouldStopOnRepeatedToolFailure(
     return false;
   }
 
-  const lastTurn = [...additionalTurns]
-    .reverse()
-    .find((turn) => turn.assistantToolCalls.length > 0 || turn.toolResults.length > 0);
-
-  if (!lastTurn || lastTurn.assistantToolCalls.length !== candidateToolCalls.length) {
-    return false;
-  }
-
-  const sameCalls = candidateToolCalls.every((call, index) => {
-    const previous = lastTurn.assistantToolCalls[index];
-    return previous?.name === call.name && previous.arguments === call.arguments;
-  });
-
-  if (!sameCalls || lastTurn.toolResults.length === 0 || !lastTurn.toolResults.every((result) => !result.success && !!result.error)) {
-    return false;
-  }
-
-  return lastTurn.toolResults.every((result) =>
-    /not supported yet|does not support|not available|cannot send|blocked by safety pipeline|i have not sent/i.test(result.error ?? ''),
+  const deterministicallyBlockedToolNames = new Set(
+    additionalTurns.flatMap((turn) =>
+      turn.toolResults
+        .filter((result) =>
+          !result.success
+          && /not supported yet|does not support|not available|cannot send|blocked by safety pipeline|i have not sent/i.test(result.error ?? ''),
+        )
+        .map((result) => result.toolName),
+    ),
   );
+
+  return candidateToolCalls.every((call) => deterministicallyBlockedToolNames.has(call.name));
 }
 
 df.app.activity('llmFollowUpActivity', {

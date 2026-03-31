@@ -61,7 +61,7 @@ describe('llmFollowUpActivity execution prompt', () => {
         [
           {
             name: 'outlook_send_email',
-            arguments: '{"subject":"cid guard probe"}',
+            arguments: '{"subject":"cid guard probe retry"}',
           },
         ],
         [
