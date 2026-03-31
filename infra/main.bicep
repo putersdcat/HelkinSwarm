@@ -595,6 +595,9 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'ENTRA_OBO_CLIENT_SECRET', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=DelegatedAuthClientSecret)' }
 
         // ── GitHub App auth — KV references resolved by UAMI at runtime ──
+        { name: 'SKILLFORGE_GITHUB_APP_ID',              value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=SkillForgeGitHubAppId)' }
+        { name: 'SKILLFORGE_GITHUB_APP_INSTALLATION_ID', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=SkillForgeGitHubInstallationId)' }
+        { name: 'SKILLFORGE_GITHUB_APP_PRIVATE_KEY',     value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=SkillForgeGitHubAppPrivateKey)' }
         { name: 'GITHUB_APP_ID',              value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=GitHubAppId)' }
         { name: 'GITHUB_APP_INSTALLATION_ID', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=GitHubInstallationId)' }
         { name: 'GITHUB_APP_PRIVATE_KEY',     value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=GitHubAppPrivateKey)' }
@@ -606,6 +609,9 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         // ── Feature toggles ──
         { name: 'SKILLFORGE_ENABLED', value: 'true' }
         { name: 'SKILLFORGE_ACR_IMAGE', value: '' }
+        { name: 'SKILLFORGE_TIMEOUT_MINUTES', value: '15' }
+        { name: 'SKILLFORGE_CPU_KILL_THRESHOLD', value: '80' }
+        { name: 'SKILLFORGE_MEMORY_LIMIT_MB', value: '2048' }
         { name: 'SKILLFORGE_RESOURCE_GROUP', value: resourceGroup().name }
         { name: 'AZURE_SUBSCRIPTION_ID', value: subscription().subscriptionId }
         { name: 'AZURE_RESOURCE_GROUP', value: resourceGroup().name }
