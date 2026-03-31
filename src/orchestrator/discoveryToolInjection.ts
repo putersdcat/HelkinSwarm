@@ -237,7 +237,11 @@ export function shouldForceDiscoveryToolSearch(userMessage: string): boolean {
   }
 
   const normalized = userMessage.toLowerCase();
-  return /(send|reply|email|mail|calendar|meeting|schedule|github|repo|issue|pull request|weather|web search|search the web)/.test(normalized);
+  const mentionsToolName = /\b[a-z]+_[a-z0-9_]+\b/.test(normalized);
+  const mentionsAttachmentIntent = /(attachment|inline image|content id|cid|messageid)/.test(normalized);
+  return mentionsToolName
+    || mentionsAttachmentIntent
+    || /(send|reply|email|mail|calendar|meeting|schedule|github|repo|issue|pull request|weather|web search|search the web)/.test(normalized);
 }
 
 export function getForcedDiscoveryFollowUpToolChoice(

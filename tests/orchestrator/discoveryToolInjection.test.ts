@@ -183,6 +183,8 @@ describe('discoveryToolInjection', () => {
 
     expect(shouldForceDiscoveryToolSearch('Send an email to Eric')).toBe(true);
     expect(shouldForceDiscoveryToolSearch('Create a calendar event for tomorrow')).toBe(true);
+    expect(shouldForceDiscoveryToolSearch('Use the exact tool outlook_list_attachments for this messageId')).toBe(true);
+    expect(shouldForceDiscoveryToolSearch('Download the attachment with content ID cid:hero-image from this message')).toBe(true);
     expect(shouldForceDiscoveryToolSearch('hello there')).toBe(false);
   });
 
