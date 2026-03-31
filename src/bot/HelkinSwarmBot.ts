@@ -75,6 +75,7 @@ import { sendReply } from '../orchestrator/sendReplyActivity.js';
 import { RuntimeFileConsentContextSchema } from '../orchestrator/sendReplyActivity.js';
 import { ingestTeamsAttachments } from './inboundAttachmentIngestion.js';
 import { buildOverseerDedupIdentity } from './overseerDedupIdentity.js';
+import { getSingleEmojiBypassReply } from './emojiEasterEggs.js';
 
 const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
 
@@ -682,6 +683,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         ? 'emergency stop is active. Send /emergency-resume to restore service.'
         : 'maintenance is in progress.';
       await context.sendActivity(`I am offline — ${mode}`);
+      return;
+    }
+
+    const singleEmojiBypass = getSingleEmojiBypassReply(messageText);
+    if (singleEmojiBypass) {
+      await context.sendActivity(singleEmojiBypass);
       return;
     }
 
