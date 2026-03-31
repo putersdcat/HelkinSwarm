@@ -13,6 +13,8 @@ describe('HelkinSwarmBot /assetingest selftest routing', () => {
     expect(source).toContain('asset-ingest-selftest.png');
     expect(source).toContain('asset-ingest-selftest.txt');
     expect(source).toContain('For this inbound attachment ingestion self-test, report the runtime assets available in this turn.');
+    expect(source).toContain('Forward only runtime asset');
+    expect(source).toMatch(/assetIngestPrompt,[\s\S]*modelOverride,[\s\S]*undefined,[\s\S]*ingested\.runtimeAssets,/);
     expect(source).toContain('await this.raiseToOverseer(');
   });
 });

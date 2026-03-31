@@ -1601,13 +1601,16 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         throw new Error(`Expected 2 runtime assets, got ${ingested.runtimeAssets.length}.`);
       }
 
+      // This self-test validates inbound attachment ingestion + runtime asset
+      // propagation, not image understanding. Forward only runtime asset
+      // references + notices so the lane under test stays text-only (#430).
       const started = await this.raiseToOverseer(
         context,
         userId,
         userAlias,
         assetIngestPrompt,
         modelOverride,
-        ingested.imageUrls,
+        undefined,
         ingested.runtimeAssets,
         ingested.notices,
         undefined,
