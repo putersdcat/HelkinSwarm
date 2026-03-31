@@ -17,6 +17,10 @@ describe('RobotLove easter egg detection', () => {
       messageText: '',
       activityDetails: ['<p><emoji id="hearteyesrobot" alt="😍" title="Heart eyes robot"></emoji></p>'],
     })).toBe(true);
+    expect(isHeartEyesRobotTrigger({
+      messageText: '',
+      activityDetails: ['{"type":"message","text":"","entities":[],"channelData":{"text":"<p><emoji id=\"hearteyesrobot\" alt=\"😍\" title=\"Heart eyes robot\"></emoji></p>"}}'],
+    })).toBe(true);
   });
 
   it('returns the RobotLove gif attachment when the asset exists', async () => {

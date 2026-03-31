@@ -690,6 +690,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       messageText,
       activityText: context.activity.text ?? undefined,
       activityDetails: [
+        JSON.stringify(context.activity),
         JSON.stringify(context.activity.entities ?? []),
         JSON.stringify(context.activity.channelData ?? {}),
         JSON.stringify(context.activity.attachments ?? []),

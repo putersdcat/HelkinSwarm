@@ -9,6 +9,7 @@ describe('HelkinSwarmBot RobotLove easter egg routing', () => {
 
     expect(source).toContain("import { buildRobotLoveEasterEggReply } from './robotLoveEasterEgg.js';");
     expect(source).toContain('const robotLoveEasterEggReply = await buildRobotLoveEasterEggReply({');
+    expect(source).toContain('JSON.stringify(context.activity),');
     expect(source).toContain('attachments: robotLoveEasterEggReply.attachments');
     expect(source).toContain('// Parse DevLoop protocol markers (#147) — must happen before shields check');
     expect(source.indexOf('const robotLoveEasterEggReply = await buildRobotLoveEasterEggReply({')).toBeLessThan(
