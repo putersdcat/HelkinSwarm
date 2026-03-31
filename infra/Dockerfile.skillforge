@@ -10,6 +10,8 @@
 
 FROM node:22-slim AS base
 
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
 # Security: No root, no sudo, no Docker-in-Docker
 RUN groupadd -r forge && useradd -r -g forge -s /bin/bash -m forge
 
@@ -33,10 +35,15 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get update && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Warm npm cache from main repo lockfile ──
-WORKDIR /warm-cache
+# ── Warm toolchain layer from main repo lockfile ──
+# Keep the dependency layer in the final image so the promised dev tooling is
+# actually present at runtime, not merely downloaded and discarded during build.
+WORKDIR /opt/skillforge/tooling
 COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile && rm -rf /warm-cache
+RUN pnpm install --frozen-lockfile \
+    && pnpm add -D prettier @playwright/test playwright \
+    && pnpm store prune
+ENV PATH=/opt/skillforge/tooling/node_modules/.bin:${PATH}
 
 # ── Skill manifest templates ──
 WORKDIR /templates

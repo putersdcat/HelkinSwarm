@@ -12,11 +12,22 @@ describe('SkillForge image workflow source wiring', () => {
     expect(workflow).toContain("- 'src/skillforge/skillforge-prompt.md'");
     expect(workflow).toContain("- 'package.json'");
     expect(workflow).toContain("- 'pnpm-lock.yaml'");
+    expect(workflow).toContain("- 'eslint.config.js'");
+    expect(workflow).toContain("- 'tsconfig.json'");
+    expect(workflow).toContain("- 'tsconfig.mcp.json'");
     expect(workflow).toContain('github.event.inputs.USER_ALIAS || vars.USER_ALIAS');
     expect(workflow).toContain('Measure startup smoke');
     expect(workflow).toContain('SkillForge container ready');
     expect(workflow).toContain('\\[skillforge-audit\\]');
+    expect(workflow).toContain('command -v pnpm >/dev/null');
+    expect(workflow).toContain('command -v tsc >/dev/null');
+    expect(workflow).toContain('command -v eslint >/dev/null');
+    expect(workflow).toContain('command -v prettier >/dev/null');
+    expect(workflow).toContain('command -v playwright >/dev/null');
+    expect(workflow).toContain('! command -v sudo >/dev/null 2>&1');
+    expect(workflow).toContain('[ ! -S /var/run/docker.sock ]');
     expect(workflow).toContain('did not emit bootstrap audit records');
+    expect(workflow).toContain('SkillForge toolchain/isolation smoke failed');
     expect(workflow).toContain('exceeded 10s');
 
     expect(bicep).toContain("{ name: 'SKILLFORGE_TIMEOUT_MINUTES', value: '15' }");
