@@ -26,8 +26,8 @@ export interface TeamsNativeEmojiEasterEggInput {
   activityDetails?: string[];
 }
 
-function collectSignals(input: TeamsNativeEmojiEasterEggInput): string[] {
-  return [input.messageText, input.activityText ?? '', ...(input.activityDetails ?? [])]
+function collectActivitySignals(input: TeamsNativeEmojiEasterEggInput): string[] {
+  return [input.activityText ?? '', ...(input.activityDetails ?? [])]
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
 }
@@ -38,12 +38,12 @@ export function hasHeartEyesRobotSignal(input: TeamsNativeEmojiEasterEggInput): 
     return true;
   }
 
-  const signals = collectSignals(input);
+  const signals = collectActivitySignals(input);
   return signals.some((value) => HEART_EYES_ROBOT_ID_PATTERN.test(value) || HEART_EYES_ROBOT_PHRASE_PATTERN.test(value));
 }
 
 export function hasHighFiveSignal(input: TeamsNativeEmojiEasterEggInput): boolean {
-  const signals = collectSignals(input);
+  const signals = collectActivitySignals(input);
   return signals.some((value) => HIGHFIVE_ID_PATTERN.test(value) || HIGHFIVE_PHRASE_PATTERN.test(value));
 }
 
