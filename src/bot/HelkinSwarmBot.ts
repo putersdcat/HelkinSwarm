@@ -75,7 +75,7 @@ import { sendReply } from '../orchestrator/sendReplyActivity.js';
 import { RuntimeFileConsentContextSchema } from '../orchestrator/sendReplyActivity.js';
 import { ingestTeamsAttachments } from './inboundAttachmentIngestion.js';
 import { buildOverseerDedupIdentity } from './overseerDedupIdentity.js';
-import { buildRobotLoveEasterEggReply } from './robotLoveEasterEgg.js';
+import { buildTeamsNativeEmojiEasterEggReply } from './teamsNativeEmojiEasterEggs.js';
 
 const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
 
@@ -686,7 +686,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return;
     }
 
-    const robotLoveEasterEggReply = await buildRobotLoveEasterEggReply({
+    const nativeEmojiEasterEggReply = await buildTeamsNativeEmojiEasterEggReply({
       messageText,
       activityText: context.activity.text ?? undefined,
       activityDetails: [
@@ -696,12 +696,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         JSON.stringify(context.activity.attachments ?? []),
       ],
     });
-    if (robotLoveEasterEggReply) {
+    if (nativeEmojiEasterEggReply) {
       await context.sendActivity({
         type: ActivityTypes.Message,
-        ...(robotLoveEasterEggReply.text ? { text: robotLoveEasterEggReply.text } : {}),
-        ...(robotLoveEasterEggReply.textFormat ? { textFormat: robotLoveEasterEggReply.textFormat } : {}),
-        ...(robotLoveEasterEggReply.attachments ? { attachments: robotLoveEasterEggReply.attachments } : {}),
+        ...(nativeEmojiEasterEggReply.text ? { text: nativeEmojiEasterEggReply.text } : {}),
+        ...(nativeEmojiEasterEggReply.textFormat ? { textFormat: nativeEmojiEasterEggReply.textFormat } : {}),
+        ...(nativeEmojiEasterEggReply.attachments ? { attachments: nativeEmojiEasterEggReply.attachments } : {}),
       });
       return;
     }
