@@ -50,6 +50,68 @@ Every tool call routed through `requiresSubAgent: true` runs in a **fresh, isola
 
 This prevents prompt injection bleed and keeps context windows small.
 
+### Runtime Asset Handoff Contract
+
+Attachment-bearing and multimodal workflows use a shared **runtime asset handoff contract** across tools, orchestrator activities, and Teams replies.
+
+#### Producer contract
+
+Asset-producing steps must persist bytes into runtime asset storage and return or carry a typed reference rather than raw payload bytes.
+
+- canonical envelope: `RuntimeAssetReference` in `src/integrations/runtimeAssetStore.ts`
+- required shape includes: `id`, `userId`, `correlationId`, `kind`, `contentType`, optional `fileName`, `byteLength`, `sha256`, `source`, `createdAt`, `expiresAt`, `ttlSeconds`, and `storage`
+- ingress/tool producers may also emit prompt-safe notices alongside references when an attachment was skipped, truncated, or transformed
+
+Examples:
+- Teams ingress persists uploaded files/images before overseer handoff and carries them as `runtimeAssets` + `attachmentNotices`
+- Outlook attachment download persists the selected attachment and returns a `runtimeAsset` reference instead of base64 file bytes
+
+#### Orchestrator contract
+
+The orchestrator carries references, not payloads.
+
+- `SessionInput.runtimeAssets` and `BuildPromptInput.runtimeAssets` carry asset references through the turn
+- `attachmentNotices` carry prompt-safe ingestion outcomes without inventing fake assets
+- `buildPromptActivity.ts` injects only summary metadata for the model (filename, content type, byte size, expiry, attachment kind)
+- the LLM should normally see reference summaries, not raw file bytes
+
+This keeps prompts lean and preserves data minimization.
+
+#### Consumer contract
+
+Consumers resolve bytes only at the step that truly needs them.
+
+- downstream tools should accept an asset id or reference and resolve content inside the handler/activity that needs it
+- `sendReplyActivity.ts` consumes `assets: RuntimeReplyAssetInput[]` and resolves runtime asset references at send time
+- image replies materialize image bytes only for the outbound Teams message; non-image files use the file-consent send path without stuffing the bytes into prompt context
+
+#### Safety and data minimization rules
+
+- raw bytes stay out of prompt/tool-call text unless a specific execution step explicitly requires rendering or transformation
+- the default model-facing representation is `buildRuntimeAssetPromptSummary(...)`
+- asset references are ephemeral and TTL-bound; they are workflow transport, not durable user storage
+- cross-skill handoff should prefer `assetId` / typed reference passing over copying bytes between tool results
+
+#### Scenario anchors
+
+The current contract is intended to cover at least these reusable shapes:
+
+1. **Inbound → action**
+  - Teams upload → ingest to runtime asset storage → prompt-safe summary to orchestrator/model → downstream tool consumes reference
+
+2. **External source → reply**
+  - Outlook attachment → download into runtime asset storage → reply path resolves reference → Teams receives the file/image artifact
+
+#### Key contract surfaces
+
+| Surface | Current contract |
+|------|-------------------|
+| `src/integrations/runtimeAssetStore.ts` | canonical runtime asset reference envelope + TTL-backed storage |
+| `src/bot/inboundAttachmentIngestion.ts` | Teams ingress producer path (`runtimeAssets`, `attachmentNotices`, optional `imageUrls`) |
+| `src/orchestrator/buildPromptActivity.ts` | model sees summary metadata, not raw payload bytes |
+| `skills/outlook/handlers.ts` | external-source producer path via `outlook_download_attachment` |
+| `src/orchestrator/sendReplyActivity.ts` | outbound consumer path from runtime asset refs to Teams attachments |
+
 ### Integration with Self-Improvement (0g + 0b)
 
 The bidirectional DevLoop channel allows the VS Code agent to:

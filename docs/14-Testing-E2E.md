@@ -59,6 +59,18 @@ For the current attachment pipeline, the minimum validated stack is:
 	- expected outcome: a normal overseer/LLM reply that lists the runtime assets now available in the turn
 	- use a specific lane when you need deterministic evidence for the active primary or secondary model
 
+#### Scenario coverage expected from the contract
+
+When validating the runtime asset handoff contract, make sure the proof stack covers both directions:
+
+1. **Inbound → action**
+	- example: Teams-style uploaded file/image enters via ingestion, becomes a runtime asset reference, and is surfaced to the overseer/model as prompt-safe metadata rather than raw bytes
+	- minimum proof: `/assetingest selftest primary|secondary`
+
+2. **External source → reply**
+	- example: Outlook attachment is discovered, downloaded into runtime asset storage, and then returned through the normal Teams reply path as a file/image artifact
+	- current practical proof: real conversational Outlook flow using `outlook_search_emails` → `outlook_list_attachments` → `outlook_download_attachment`, plus the outbound attachment reply seam for Teams-visible artifact delivery
+
 #### Current proof workflow
 
 Recommended order:
