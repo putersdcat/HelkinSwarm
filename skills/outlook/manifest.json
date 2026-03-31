@@ -52,7 +52,7 @@
     },
     {
       "name": "outlook_read_email",
-      "description": "Read the full body of a specific email by its ID. Returns subject, sender, recipients, body, and attachments list.",
+      "description": "Read the full body of a specific email by its ID. Returns subject, sender, recipients, body, and attachment metadata summary including inline-image CID mapping when available.",
       "risk": "low",
       "dataSensitivity": "pii",
       "allowedModelLane": "any",
@@ -72,6 +72,101 @@
           "messageId"
         ]
       },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": true
+    },
+    {
+      "name": "outlook_list_attachments",
+      "description": "List attachment metadata for a specific Outlook message, including inline-image detection, content IDs, and whether each attachment is referenced by cid: links in the body.",
+      "risk": "low",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": "The Graph API message ID whose attachment metadata should be listed"
+          }
+        },
+        "required": [
+          "messageId"
+        ]
+      },
+      "aliases": [
+        "list email attachments",
+        "show message attachments",
+        "inspect email inline images"
+      ],
+      "discoveryTerms": [
+        "attachment metadata",
+        "inline image cid",
+        "email attachment list"
+      ],
+      "useWhen": [
+        "the user wants to inspect an email's attachments before downloading or forwarding one",
+        "the user asks whether a message contains inline images or regular file attachments"
+      ],
+      "typicalInputs": [
+        "message id from a previous email search",
+        "latest email attachment metadata",
+        "which attachments are inline images"
+      ],
+      "returnsSummaryShape": "attachment metadata with ids, names, content types, inline flags, content IDs, and cid/body-reference mapping",
+      "privilegeClass": "read-only",
+      "requiresSubAgent": true
+    },
+    {
+      "name": "outlook_download_attachment",
+      "description": "Download a specific Outlook message attachment into HelkinSwarm runtime asset storage so later steps can reference or return it without inlining raw bytes into the prompt.",
+      "risk": "low",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "messageId": {
+            "type": "string",
+            "description": "The Graph API message ID that owns the attachment"
+          },
+          "attachmentId": {
+            "type": "string",
+            "description": "The Graph API attachment ID to download"
+          }
+        },
+        "required": [
+          "messageId",
+          "attachmentId"
+        ]
+      },
+      "aliases": [
+        "download email attachment",
+        "save attachment from email",
+        "materialize inline image"
+      ],
+      "discoveryTerms": [
+        "download attachment",
+        "runtime asset from email",
+        "retrieve inline image"
+      ],
+      "useWhen": [
+        "the user wants to materialize a specific Outlook attachment for later tool steps or chat return",
+        "the user wants an inline image or file from an email turned into a reusable runtime asset reference"
+      ],
+      "typicalInputs": [
+        "message id + attachment id from a prior list step",
+        "download the first attachment from the latest matching email",
+        "save the inline image from this message"
+      ],
+      "returnsSummaryShape": "attachment metadata plus a runtime asset reference compatible with downstream tools and reply attachments",
       "privilegeClass": "read-only",
       "requiresSubAgent": true
     },
@@ -390,15 +485,19 @@
     "mailbox",
     "calendar",
     "meeting",
-    "reply to latest email"
+    "reply to latest email",
+    "attachment",
+    "inline image"
   ],
   "orchestratorUseCases": [
     "find, read, summarize, reply to, or send email",
+    "inspect Outlook attachments and download them into runtime asset storage",
     "inspect upcoming meetings and create calendar events"
   ],
   "recommendedEntryTools": [
     "outlook_search_emails",
     "outlook_list_emails",
+    "outlook_list_attachments",
     "outlook_send_email",
     "outlook_reply_to_latest_email",
     "outlook_list_calendar_events",

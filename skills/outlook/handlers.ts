@@ -7,11 +7,13 @@
 // OAuth connection token cached by manual /link in the Bot Token Service.
 
 import type { ToolHandler } from '../../src/capabilities/capabilityLoader.js';
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { getGraphTokenForUser } from '../../src/auth/graphTokenHelper.js';
 import { isPlaceholderScopedToken } from '../../src/auth/scopedTokenMinter.js';
 import { registerHandler } from '../../src/capabilities/capabilityLoader.js';
 import { trackEvent } from '../../src/observability/telemetry.js';
+import { persistRuntimeAsset } from '../../src/integrations/runtimeAssetStore.js';
 
 // ---------------------------------------------------------------------------
 // Constants & helpers
@@ -129,6 +131,25 @@ const MessageListSchema = z.object({
   value: z.array(MessageSchema),
 }).passthrough();
 
+const OutlookAttachmentSchema = z.object({
+  '@odata.type': z.string().optional(),
+  id: z.string(),
+  name: z.string().nullable().optional(),
+  contentType: z.string().nullable().optional(),
+  size: z.number().int().nonnegative().optional(),
+  isInline: z.boolean().optional(),
+  contentId: z.string().nullable().optional(),
+  lastModifiedDateTime: z.string().nullable().optional(),
+}).passthrough();
+
+const OutlookAttachmentListSchema = z.object({
+  value: z.array(OutlookAttachmentSchema),
+}).passthrough();
+
+const OutlookFileAttachmentSchema = OutlookAttachmentSchema.extend({
+  contentBytes: z.string().nullable().optional(),
+}).passthrough();
+
 const CalendarEventSchema = z.object({
   id: z.string(),
   subject: z.string().nullable().optional(),
@@ -165,6 +186,124 @@ const FOLDER_MAP: Record<string, string> = {
   drafts: 'drafts',
   archive: 'archive',
 };
+
+type OutlookAttachmentRecord = z.infer<typeof OutlookAttachmentSchema>;
+
+interface OutlookAttachmentMetadata {
+  id: string;
+  name: string | null;
+  contentType: string;
+  size: number | null;
+  isInline: boolean;
+  contentId: string | null;
+  cidReferencedInBody: boolean;
+  lastModifiedDateTime: string | null;
+  attachmentType: 'file' | 'item' | 'reference' | 'unknown';
+  attachmentKind: 'inline-image' | 'file-download' | 'generic-attachment';
+  downloadSupported: boolean;
+}
+
+function normalizeContentId(contentId: string | null | undefined): string | undefined {
+  const trimmed = contentId?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return trimmed.replace(/^<+/, '').replace(/>+$/, '');
+}
+
+function extractCidReferences(bodyContent: string | undefined): Set<string> {
+  const references = new Set<string>();
+  if (!bodyContent) {
+    return references;
+  }
+
+  const cidRegex = /cid:([^"'\s>]+)/gi;
+  for (const match of bodyContent.matchAll(cidRegex)) {
+    const normalized = normalizeContentId(match[1]);
+    if (normalized) {
+      references.add(normalized.toLowerCase());
+    }
+  }
+
+  return references;
+}
+
+function getAttachmentType(odataType: string | undefined): OutlookAttachmentMetadata['attachmentType'] {
+  const normalized = odataType?.toLowerCase() ?? '';
+  if (normalized.endsWith('fileattachment')) {
+    return 'file';
+  }
+  if (normalized.endsWith('itemattachment')) {
+    return 'item';
+  }
+  if (normalized.endsWith('referenceattachment')) {
+    return 'reference';
+  }
+  return 'unknown';
+}
+
+function mapOutlookAttachmentMetadata(
+  attachment: OutlookAttachmentRecord,
+  cidReferences: Set<string>,
+): OutlookAttachmentMetadata {
+  const contentId = normalizeContentId(attachment.contentId);
+  const cidReferencedInBody = !!contentId && cidReferences.has(contentId.toLowerCase());
+  const attachmentType = getAttachmentType(attachment['@odata.type']);
+  const isInline = attachment.isInline === true || cidReferencedInBody;
+  const attachmentKind: OutlookAttachmentMetadata['attachmentKind'] = isInline
+    ? 'inline-image'
+    : attachmentType === 'file'
+      ? 'file-download'
+      : 'generic-attachment';
+
+  return {
+    id: attachment.id,
+    name: attachment.name ?? null,
+    contentType: attachment.contentType ?? 'application/octet-stream',
+    size: attachment.size ?? null,
+    isInline,
+    contentId: contentId ?? null,
+    cidReferencedInBody,
+    lastModifiedDateTime: attachment.lastModifiedDateTime ?? null,
+    attachmentType,
+    attachmentKind,
+    downloadSupported: attachmentType === 'file',
+  };
+}
+
+async function getMessageAttachmentContext(
+  token: string,
+  messageId: string,
+): Promise<{
+  bodyCidReferences: string[];
+  attachments: OutlookAttachmentMetadata[];
+}> {
+  const message = await graphFetch(
+    token,
+    `/me/messages/${encodeURIComponent(messageId)}?$select=id,body,hasAttachments`,
+    MessageSchema,
+  );
+
+  const cidReferences = extractCidReferences(message.body?.content);
+  if (!message.hasAttachments) {
+    return {
+      bodyCidReferences: Array.from(cidReferences),
+      attachments: [],
+    };
+  }
+
+  const attachmentResult = await graphFetch(
+    token,
+    `/me/messages/${encodeURIComponent(messageId)}/attachments?$top=100&$select=id,name,contentType,size,isInline,contentId,lastModifiedDateTime`,
+    OutlookAttachmentListSchema,
+  );
+
+  return {
+    bodyCidReferences: Array.from(cidReferences),
+    attachments: attachmentResult.value.map((attachment) => mapOutlookAttachmentMetadata(attachment, cidReferences)),
+  };
+}
 
 const outlookListEmails: ToolHandler = async (args) => {
   z.string().parse(args['userId']); // validate presence
@@ -205,6 +344,8 @@ const outlookReadEmail: ToolHandler = async (args) => {
     MessageSchema,
   );
 
+  const attachmentContext = await getMessageAttachmentContext(token, messageId);
+
   return {
     id: result.id,
     subject: result.subject,
@@ -215,6 +356,83 @@ const outlookReadEmail: ToolHandler = async (args) => {
     bodyType: result.body?.contentType,
     receivedAt: result.receivedDateTime,
     hasAttachments: result.hasAttachments,
+    bodyCidReferences: attachmentContext.bodyCidReferences,
+    attachments: attachmentContext.attachments,
+  };
+};
+
+const outlookListAttachments: ToolHandler = async (args) => {
+  z.string().parse(args['userId']);
+  const messageId = z.string().parse(args['messageId']);
+
+  const token = await resolveToken(args);
+  const attachmentContext = await getMessageAttachmentContext(token, messageId);
+
+  return {
+    messageId,
+    bodyCidReferences: attachmentContext.bodyCidReferences,
+    attachments: attachmentContext.attachments,
+  };
+};
+
+const outlookDownloadAttachment: ToolHandler = async (args) => {
+  const userId = z.string().parse(args['userId']);
+  const messageId = z.string().parse(args['messageId']);
+  const attachmentId = z.string().parse(args['attachmentId']);
+  const correlationId = z.string().optional().parse(args['correlationId']) ?? randomUUID();
+
+  const token = await resolveToken(args);
+  const attachmentContext = await getMessageAttachmentContext(token, messageId);
+  const attachmentMetadata = attachmentContext.attachments.find((attachment) => attachment.id === attachmentId);
+
+  if (!attachmentMetadata) {
+    throw new Error(`Attachment '${attachmentId}' was not found on message '${messageId}'.`);
+  }
+
+  if (!attachmentMetadata.downloadSupported) {
+    throw new Error(
+      `Attachment '${attachmentId}' is a ${attachmentMetadata.attachmentType} attachment and cannot be downloaded into runtime asset storage yet.`,
+    );
+  }
+
+  const attachment = await graphFetch(
+    token,
+    `/me/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}?$select=id,name,contentType,size,isInline,contentId,lastModifiedDateTime,contentBytes`,
+    OutlookFileAttachmentSchema,
+  );
+
+  if (!attachment.contentBytes) {
+    throw new Error(`Attachment '${attachmentId}' did not include file content.`);
+  }
+
+  const assetReference = await persistRuntimeAsset({
+    userId,
+    correlationId,
+    contentType: attachmentMetadata.contentType,
+    ...(attachmentMetadata.name ? { fileName: attachmentMetadata.name } : {}),
+    bytes: Buffer.from(attachment.contentBytes, 'base64'),
+    source: {
+      channel: 'outlook',
+      attachmentKind: attachmentMetadata.attachmentKind,
+      messageId,
+      externalId: attachmentId,
+      detail: attachmentMetadata.isInline
+        ? `outlook:inline-image:${attachmentMetadata.contentId ?? attachmentId}`
+        : 'outlook:file-attachment',
+    },
+    summary: attachmentMetadata.isInline
+      ? `Inline Outlook attachment downloaded from message ${messageId}.${attachmentMetadata.name ? ` Original filename: ${attachmentMetadata.name}.` : ''}${attachmentMetadata.contentId ? ` Content ID: ${attachmentMetadata.contentId}.` : ''}`
+      : `Outlook attachment downloaded from message ${messageId}.${attachmentMetadata.name ? ` Original filename: ${attachmentMetadata.name}.` : ''}`,
+  });
+
+  if (!assetReference) {
+    throw new Error('Runtime asset storage is not configured on this stamp.');
+  }
+
+  return {
+    messageId,
+    attachment: attachmentMetadata,
+    runtimeAsset: assetReference,
   };
 };
 
@@ -431,6 +649,8 @@ const outlookCreateCalendarEvent: ToolHandler = async (args) => {
 export const handlers: Record<string, ToolHandler> = {
   outlook_list_emails: outlookListEmails,
   outlook_read_email: outlookReadEmail,
+  outlook_list_attachments: outlookListAttachments,
+  outlook_download_attachment: outlookDownloadAttachment,
   outlook_send_email: outlookSendEmail,
   outlook_reply_to_latest_email: outlookReplyToLatestEmail,
   outlook_search_emails: outlookSearchEmails,

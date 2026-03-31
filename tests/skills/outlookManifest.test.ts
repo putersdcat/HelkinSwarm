@@ -45,4 +45,22 @@ describe('outlook manifest safety flags', () => {
     expect(createEvent?.typicalInputs?.length).toBeGreaterThan(0);
     expect(createEvent?.inputSchema?.properties).toHaveProperty('reminderMinutesBeforeStart');
   });
+
+  it('advertises attachment metadata and download tools for Outlook messages', () => {
+    const manifest = JSON.parse(readFileSync('skills/outlook/manifest.json', 'utf8')) as {
+      tools: ToolEntry[];
+      recommendedEntryTools: string[];
+      discoveryHints?: string[];
+    };
+
+    const listAttachments = manifest.tools.find((tool) => tool.name === 'outlook_list_attachments');
+    const downloadAttachment = manifest.tools.find((tool) => tool.name === 'outlook_download_attachment');
+    const readEmail = manifest.tools.find((tool) => tool.name === 'outlook_read_email');
+
+    expect(readEmail?.description).toContain('attachment metadata');
+    expect(listAttachments?.inputSchema?.properties).toHaveProperty('messageId');
+    expect(downloadAttachment?.inputSchema?.properties).toHaveProperty('attachmentId');
+    expect(manifest.recommendedEntryTools).toContain('outlook_list_attachments');
+    expect(manifest.discoveryHints).toContain('attachment');
+  });
 });
