@@ -57,6 +57,19 @@ Current contract:
 
 This keeps outbound file/image responses aligned with the runtime asset model introduced for attachment-bearing workflows.
 
+### Inbound Attachments
+
+Inbound Teams attachments are no longer treated as an image-only side-channel.
+
+Current contract:
+- `HelkinSwarmBot.ts` ingests inbound Teams attachments before overseer handoff
+- supported inbound files/images are persisted into runtime asset storage as structured references
+- small inline images may also be exposed to the model as `imageUrls` for multimodal turns
+- non-image files are represented to the model by prompt-safe asset summaries and references rather than raw inline bytes
+- cold-start queued turns preserve the same inbound asset references and attachment-ingestion notices for replay
+
+This keeps inbound file/image handling aligned with the same runtime asset transport used by downstream tools and outbound replies.
+
 ### Scale-to-Zero Wake-Up Behavior
 
 When a message reaches the bot during the first few seconds after a cold start, HelkinSwarm must not silently drop it behind a vague "try again" response.

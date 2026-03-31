@@ -73,6 +73,7 @@ import {
 } from '../integrations/runtimeAssetStore.js';
 import { sendReply } from '../orchestrator/sendReplyActivity.js';
 import { RuntimeFileConsentContextSchema } from '../orchestrator/sendReplyActivity.js';
+import { ingestTeamsAttachments } from './inboundAttachmentIngestion.js';
 
 const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
 
@@ -431,6 +432,15 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
 
     // Cold-start guard: block processing for 3s after container start (#142)
+    const inboundAssets = await ingestTeamsAttachments({
+      userId,
+      correlationId,
+      conversationId: context.activity.conversation?.id ?? userId,
+      messageId: context.activity.id,
+      attachments: context.activity.attachments,
+      getBotToken: async () => getBearerToken('https://api.botframework.com/.default'),
+    });
+
     if (isColdStarting()) {
       const coldStartDelayMs = Math.max(500, 3_500 - getContainerAgeMs());
       try {
@@ -440,6 +450,9 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
           messageText,
           conversationReferenceJson: JSON.stringify(conversationReference),
           correlationId,
+          imageUrls: inboundAssets.imageUrls,
+          runtimeAssets: inboundAssets.runtimeAssets,
+          attachmentNotices: inboundAssets.notices,
           creationReason: 'cold-start-wake-up',
           userNotified: true,
         });
@@ -551,6 +564,11 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     if (lowerMessage === '/assetreply selftest') {
       await this.handleAssetReplySelfTest(context, userId);
+      return;
+    }
+
+    if (lowerMessage.startsWith('/assetingest selftest')) {
+      await this.handleAssetIngestSelfTest(context, userId, userAlias, messageText);
       return;
     }
 
@@ -709,9 +727,6 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
     }
 
-    // Extract and download image attachments as base64 data URLs (#130, #165)
-    const imageUrls = await this.extractImageDataUrls(context);
-
     const devLoopCtx = devLoopParsed.isDevLoop ? {
       isDevLoop: devLoopParsed.isDevLoop,
       prefix: devLoopParsed.prefix,
@@ -727,7 +742,9 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         userAlias,
         messageText,
         undefined,
-        imageUrls,
+        inboundAssets.imageUrls,
+        inboundAssets.runtimeAssets,
+        inboundAssets.notices,
         devLoopCtx,
         correlationTag,
         quotedContext,
@@ -740,7 +757,9 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         userId,
         messageText,
         conversationReferenceJson: JSON.stringify(conversationReference),
-        imageUrls,
+          imageUrls: inboundAssets.imageUrls,
+          runtimeAssets: inboundAssets.runtimeAssets,
+          attachmentNotices: inboundAssets.notices,
         devLoopContextJson: devLoopCtx ? JSON.stringify(devLoopCtx) : undefined,
       });
       await context.sendActivity(
@@ -758,6 +777,8 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     userMessage: string,
     modelOverride?: string,
     imageUrls?: string[],
+    runtimeAssets?: NewMessageEvent['runtimeAssets'],
+    attachmentNotices?: string[],
     devLoopContext?: NewMessageEvent['devLoopContext'],
     correlationTag?: string,
     quotedContext?: QuotedContext,
@@ -805,6 +826,8 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       correlationId: eventCorrelationId,
       ...(modelOverride !== undefined ? { modelOverride } : {}),
       ...(imageUrls && imageUrls.length > 0 ? { imageUrls } : {}),
+      ...(runtimeAssets && runtimeAssets.length > 0 ? { runtimeAssets } : {}),
+      ...(attachmentNotices && attachmentNotices.length > 0 ? { attachmentNotices } : {}),
       ...(devLoopContext !== undefined ? { devLoopContext } : {}),
       ...(correlationTag !== undefined ? { correlationTag } : {}),
       ...(quotedContext !== undefined ? { quotedContext } : {}),
@@ -891,6 +914,8 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         userId,
         userAlias,
         idea,
+        undefined,
+        undefined,
         undefined,
         undefined,
         undefined,
@@ -1019,7 +1044,20 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       const conversationId = context.activity.conversation?.id ?? userId;
       await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
     }
-    await this.raiseToOverseer(context, userId, userAlias, prompt, modelOverride, undefined, undefined, undefined, undefined, correlationId);
+    await this.raiseToOverseer(
+      context,
+      userId,
+      userAlias,
+      prompt,
+      modelOverride,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      correlationId,
+    );
   }
 
   /** /model <deployment-name> <prompt> — force a specific Azure AI Foundry deployment for one turn (owner-only, #217). */
@@ -1061,7 +1099,20 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       const conversationId = context.activity.conversation?.id ?? userId;
       await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
     }
-    await this.raiseToOverseer(context, userId, userAlias, prompt, deploymentName, undefined, undefined, undefined, undefined, correlationId);
+    await this.raiseToOverseer(
+      context,
+      userId,
+      userAlias,
+      prompt,
+      deploymentName,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      correlationId,
+    );
   }
 
   private async handleEmergencyStop(
@@ -1343,6 +1394,102 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       });
     } catch (err) {
       const message = `⚠️ Outbound asset reply self-test failed: ${err instanceof Error ? err.message : String(err)}`;
+      if (ackResponse?.id) {
+        await context.updateActivity({
+          type: ActivityTypes.Message,
+          id: ackResponse.id,
+          text: message,
+          textFormat: 'markdown',
+        });
+      } else {
+        await context.sendActivity(message);
+      }
+    }
+  }
+
+  /**
+   * /assetingest selftest [primary|secondary] — owner-only live seam for #416.
+   * Exercises the inbound attachment ingestion helper with synthetic Teams-style
+   * attachments, then routes the ingested runtime assets through the normal
+   * overseer/LLM reply path on the requested model lane.
+   */
+  private async handleAssetIngestSelfTest(
+    context: TurnContext,
+    userId: string,
+    userAlias: string,
+    messageText: string,
+  ): Promise<void> {
+    if (!(await isOwnerUserId(userId))) {
+      await context.sendActivity('⛔ Owner-only command.');
+      return;
+    }
+
+    const laneToken = messageText.trim().split(/\s+/)[2]?.toLowerCase();
+    const modelOverride = laneToken === 'primary' || laneToken === 'secondary'
+      ? laneToken
+      : undefined;
+
+    if (laneToken && !modelOverride) {
+      await context.sendActivity('Usage: `/assetingest selftest [primary|secondary]`');
+      return;
+    }
+
+    const correlationId = crypto.randomUUID();
+    const laneLabel = modelOverride ? ` (${modelOverride})` : '';
+    const ackResponse = await context.sendActivity(`⌛ Running inbound asset ingestion self-test${laneLabel}...`);
+    if (ackResponse?.id) {
+      const conversationId = context.activity.conversation?.id ?? userId;
+      await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
+    }
+
+    const pngDataUrl = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9s2l9wAAAABJRU5ErkJggg==';
+    const textDataUrl = `data:text/plain;base64,${Buffer.from('HelkinSwarm inbound asset ingestion self-test', 'utf8').toString('base64')}`;
+
+    try {
+      const ingested = await ingestTeamsAttachments({
+        userId,
+        correlationId,
+        conversationId: context.activity.conversation?.id ?? userId,
+        messageId: context.activity.id,
+        attachments: [
+          {
+            contentType: 'image/png',
+            contentUrl: pngDataUrl,
+            name: 'asset-ingest-selftest.png',
+          },
+          {
+            contentType: 'application/vnd.microsoft.teams.file.download.info',
+            name: 'asset-ingest-selftest.txt',
+            content: {
+              downloadUrl: textDataUrl,
+              uniqueId: crypto.randomUUID(),
+              fileType: 'txt',
+              etag: 'selftest',
+            },
+          },
+        ],
+      });
+
+      if (ingested.runtimeAssets.length < 2) {
+        throw new Error(`Expected 2 runtime assets, got ${ingested.runtimeAssets.length}.`);
+      }
+
+      await this.raiseToOverseer(
+        context,
+        userId,
+        userAlias,
+        'For this inbound attachment ingestion self-test, report the runtime assets available in this turn. List each filename, content type, and attachment kind in short bullets, and say whether any attachment ingestion notices were present.',
+        modelOverride,
+        ingested.imageUrls,
+        ingested.runtimeAssets,
+        ingested.notices,
+        undefined,
+        undefined,
+        undefined,
+        correlationId,
+      );
+    } catch (err) {
+      const message = `⚠️ Inbound asset ingestion self-test failed: ${err instanceof Error ? err.message : String(err)}`;
       if (ackResponse?.id) {
         await context.updateActivity({
           type: ActivityTypes.Message,
@@ -1687,54 +1834,4 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     return undefined;
   }
 
-  /**
-   * Download Teams inline image attachments and convert to base64 data URLs (#130, #165).
-   * Teams contentUrls are authenticated — the LLM API cannot access them directly.
-   * We download here (where Bot Framework auth is available) and inline as data URLs.
-   */
-  private async extractImageDataUrls(context: TurnContext): Promise<string[]> {
-    const attachments = context.activity.attachments;
-    if (!attachments) return [];
-
-    const MAX_IMAGE_BYTES = 4 * 1024 * 1024; // 4 MB per image
-    const dataUrls: string[] = [];
-
-    for (const attachment of attachments) {
-      if (!attachment.contentType?.startsWith('image/') || !attachment.contentUrl) {
-        continue;
-      }
-
-      try {
-        // Teams image URLs require Bot Framework auth to download
-        const token = await getBearerToken('https://api.botframework.com/.default');
-        const response = await fetch(attachment.contentUrl, {
-          headers: { Authorization: `Bearer ${token}` },
-          signal: AbortSignal.timeout(15_000),
-        });
-
-        if (!response.ok) {
-          console.warn(
-            `[HelkinSwarmBot] Image download failed: ${response.status} ${response.statusText} url=${attachment.contentUrl}`,
-          );
-          continue;
-        }
-
-        const buffer = Buffer.from(await response.arrayBuffer());
-        if (buffer.byteLength > MAX_IMAGE_BYTES) {
-          console.warn(
-            `[HelkinSwarmBot] Image too large (${buffer.byteLength} bytes), skipping`,
-          );
-          continue;
-        }
-
-        dataUrls.push(`data:${attachment.contentType};base64,${buffer.toString('base64')}`);
-      } catch (err) {
-        console.warn(
-          `[HelkinSwarmBot] Failed to download image: ${err instanceof Error ? err.message : err}`,
-        );
-      }
-    }
-
-    return dataUrls;
-  }
 }

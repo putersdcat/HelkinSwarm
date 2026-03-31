@@ -20,5 +20,7 @@ describe('HelkinSwarmBot cold-start wake-up queue routing', () => {
     expect(storeSource).toContain('correlationId: input.correlationId ?? id');
     expect(storeSource).toContain("creationReason: input.creationReason ?? 'overseer-unreachable'");
     expect(storeSource).toContain('userNotified: input.userNotified ?? false');
+    expect(storeSource).toContain('runtimeAssets: input.runtimeAssets ?? []');
+    expect(storeSource).toContain('attachmentNotices: input.attachmentNotices ?? []');
   });
 });

@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { getContainer } from '../memory/cosmosClient.js';
 import { trackEvent } from '../observability/telemetry.js';
+import { RuntimeAssetReferenceSchema } from '../integrations/runtimeAssetStore.js';
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -52,6 +53,10 @@ export const PendingIntentSchema = z.object({
   devLoopContextJson: z.string().optional(),
   /** Image URLs from attachments */
   imageUrls: z.array(z.string()).default([]),
+  /** Structured runtime asset references extracted from inbound Teams attachments (#416) */
+  runtimeAssets: z.array(RuntimeAssetReferenceSchema).default([]),
+  /** Prompt-safe notes about attachment ingestion outcomes (#416) */
+  attachmentNotices: z.array(z.string()).default([]),
   /** TTL in seconds — 7 days */
   ttl: z.number().default(604800),
 });
@@ -70,6 +75,8 @@ export async function createPendingIntent(input: {
   modelOverride?: string;
   devLoopContextJson?: string;
   imageUrls?: string[];
+  runtimeAssets?: PendingIntent['runtimeAssets'];
+  attachmentNotices?: string[];
   correlationId?: string;
   creationReason?: string;
   userNotified?: boolean;
@@ -96,6 +103,8 @@ export async function createPendingIntent(input: {
     modelOverride: input.modelOverride,
     devLoopContextJson: input.devLoopContextJson,
     imageUrls: input.imageUrls ?? [],
+    runtimeAssets: input.runtimeAssets ?? [],
+    attachmentNotices: input.attachmentNotices ?? [],
     ttl: 604800, // 7 days
   };
 

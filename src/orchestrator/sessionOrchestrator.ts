@@ -27,6 +27,7 @@ import { buildModelOverrideDisclosure, formatTelemetryFooter } from './turnTelem
 import type { TurnTelemetryData, TelemetrySpan } from './turnTelemetry.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { trackEvent } from '../observability/telemetry.js';
+import type { RuntimeAssetReference } from '../integrations/runtimeAssetStore.js';
 import {
   canExecuteInMultiRound,
   getHighestMultiRoundRisk,
@@ -69,6 +70,10 @@ export interface SessionInput {
   modelOverride?: string;
   /** Image URLs extracted from Teams attachments (#130) */
   imageUrls?: string[];
+  /** Structured runtime asset references extracted from inbound Teams attachments (#416) */
+  runtimeAssets?: RuntimeAssetReference[];
+  /** Prompt-safe notes about inbound attachment ingestion outcomes (#416) */
+  attachmentNotices?: string[];
   /** Parsed DevLoop protocol context (#147) */
   devLoopContext?: DevLoopContext;
   /** Structured quoted-reply context from Teams reply-with-quote (#278) */
@@ -285,6 +290,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   const promptInput: BuildPromptInput = {
     state: input.state,
     userMessage: userMessageForLlm,
+    runtimeAssets: input.runtimeAssets,
+    attachmentNotices: input.attachmentNotices,
     devLoopContext: input.devLoopContext,
     quotedContext: input.quotedContext,
     correlationId,

@@ -88,6 +88,8 @@ export async function replayPendingIntent(
       correlationId: intent.correlationId ?? intent.id,
       ...(intent.modelOverride ? { modelOverride: intent.modelOverride } : {}),
       ...(intent.imageUrls.length > 0 ? { imageUrls: intent.imageUrls } : {}),
+      ...(intent.runtimeAssets.length > 0 ? { runtimeAssets: intent.runtimeAssets } : {}),
+      ...(intent.attachmentNotices.length > 0 ? { attachmentNotices: intent.attachmentNotices } : {}),
       ...(devLoopContext ? { devLoopContext } : {}),
     };
 

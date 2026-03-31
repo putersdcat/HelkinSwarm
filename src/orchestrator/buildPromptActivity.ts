@@ -17,10 +17,16 @@ import type { QuotedContext } from '../bot/quotedContext.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { recordOrchestratorStage, recordSubstage } from '../observability/orchestratorStageHealth.js';
 import { getDiscoveryFirstToolDefinitions } from './discoveryToolInjection.js';
+import { buildInboundAttachmentPromptBlock } from '../bot/inboundAttachmentIngestion.js';
+import type { RuntimeAssetReference } from '../integrations/runtimeAssetStore.js';
 
 export interface BuildPromptInput {
   state: OverseerState;
   userMessage: string;
+  /** Structured runtime asset references extracted from inbound Teams attachments (#416) */
+  runtimeAssets?: RuntimeAssetReference[];
+  /** Prompt-safe notes about inbound attachment ingestion outcomes (#416) */
+  attachmentNotices?: string[];
   /** Parsed DevLoop protocol context (#147) */
   devLoopContext?: DevLoopContext;
   /** Structured quoted-reply context from Teams reply-with-quote (#278) */
@@ -179,6 +185,10 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   const devLoopBlock = input.devLoopContext?.isDevLoop
     ? buildDevLoopSystemBlock(input.devLoopContext)
     : '';
+  const inboundAttachmentBlock = buildInboundAttachmentPromptBlock(
+    input.runtimeAssets ?? [],
+    input.attachmentNotices ?? [],
+  );
 
   // In DevLoop sessions, suppress user preferences and onboarding — they leak
   // user-specific context (e.g. "Mr. Anderson" addressing) into system channels (#148).
@@ -197,6 +207,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
     !isDevLoop ? recalledMemory : '',
     state.euResidencyMode ? 'EU Residency Mode is ACTIVE — use only EU-compliant models.' : '',
     state.summary ? `Previous conversation summary:\n${state.summary}` : '',
+    inboundAttachmentBlock,
     toolSummary,
   ]
     .filter(Boolean)

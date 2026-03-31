@@ -22,6 +22,7 @@ import type { TerminateOrchestrationInput } from './terminateOrchestrationActivi
 import type { PurgeOrchestrationInput } from './terminateOrchestrationActivity.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
+import type { RuntimeAssetReference } from '../integrations/runtimeAssetStore.js';
 
 /** Spinner starts after this many ms. Only long turns get spinner updates. */
 const SPINNER_INITIAL_DELAY_MS = 8_000;
@@ -51,6 +52,10 @@ export interface NewMessageEvent {
   modelOverride?: string;
   /** Image URLs extracted from Teams attachments (#130) */
   imageUrls?: string[];
+  /** Structured runtime asset references extracted from inbound Teams attachments (#416) */
+  runtimeAssets?: RuntimeAssetReference[];
+  /** Prompt-safe notes about inbound attachment ingestion outcomes (#416) */
+  attachmentNotices?: string[];
   /** Parsed DevLoop protocol context when message has protocol markers (#147) */
   devLoopContext?: DevLoopContext;
   /** Short correlation tag (first 8 chars of correlationId) for ack/spinner tracing (#267) */
@@ -97,6 +102,8 @@ function* processTurn(
     correlationId,
     modelOverride: event.modelOverride,
     imageUrls: event.imageUrls,
+    runtimeAssets: event.runtimeAssets,
+    attachmentNotices: event.attachmentNotices,
     devLoopContext: event.devLoopContext,
     quotedContext: event.quotedContext,
   };

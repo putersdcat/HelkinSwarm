@@ -15,6 +15,7 @@ export type RuntimeAssetKind = z.infer<typeof RuntimeAssetKindSchema>;
 
 export const RuntimeAssetSourceSchema = z.object({
   channel: z.enum(['teams', 'outlook', 'tool', 'generated', 'system', 'unknown']),
+  attachmentKind: z.enum(['inline-image', 'file-download', 'generic-attachment']).optional(),
   conversationId: z.string().min(1).optional(),
   messageId: z.string().min(1).optional(),
   toolName: z.string().min(1).optional(),

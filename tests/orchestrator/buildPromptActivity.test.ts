@@ -87,4 +87,55 @@ describe('buildPrompt soft timeouts', () => {
     expect(prompt.messages.at(-1)?.content).toBe('hello');
     expect(prompt.systemPrompt).not.toContain('Relevant context from past interactions:');
   }, 10_000);
+
+  it('injects inbound runtime asset summaries and notices without exposing raw bytes', async () => {
+    const mod = await loadBuildPromptModule();
+
+    const prompt = await mod.buildPrompt({
+      state: {
+        userId: 'user-3',
+        userAlias: 'user-3',
+        conversationId: 'conv-3',
+        turnCount: 0,
+        accumulatedTokens: 0,
+        euResidencyMode: false,
+        recentHistory: [],
+      },
+      userMessage: 'summarize the uploaded document',
+      runtimeAssets: [
+        {
+          version: 1,
+          id: '11111111-1111-4111-8111-111111111111',
+          userId: 'user-3',
+          correlationId: 'corr-assets',
+          kind: 'document',
+          contentType: 'application/pdf',
+          fileName: 'paper.pdf',
+          byteLength: 2048,
+          sha256: 'c'.repeat(64),
+          source: {
+            channel: 'teams',
+            attachmentKind: 'file-download',
+          },
+          createdAt: '2026-03-31T00:00:00.000Z',
+          expiresAt: '2026-03-31T06:00:00.000Z',
+          ttlSeconds: 21600,
+          storage: {
+            container: 'helkinswarm-runtime-assets',
+            payloadBlobPath: 'payload/paper.pdf',
+            metadataBlobPath: 'metadata/paper.pdf.json',
+          },
+        },
+      ],
+      attachmentNotices: ['Skipped attachment `big.zip`: exceeds runtime attachment limit.'],
+      correlationId: 'corr-asset-summary',
+    });
+
+    expect(prompt.systemPrompt).toContain('Inbound runtime assets for this turn');
+    expect(prompt.systemPrompt).toContain('Attachment kind: file-download');
+    expect(prompt.systemPrompt).toContain('paper.pdf');
+    expect(prompt.systemPrompt).toContain('Attachment ingestion notices');
+    expect(prompt.systemPrompt).toContain('Skipped attachment `big.zip`');
+    expect(prompt.systemPrompt).not.toContain('JVBER');
+  });
 });
