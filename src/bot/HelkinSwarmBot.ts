@@ -63,6 +63,13 @@ import { recoverStaleAck } from './staleAckRecovery.js';
 import { promoteSkillForgeBundle } from '../orchestrator/skillForgePromotion.js';
 import { renderSkillSearchCommandResponse } from './skillSearchCommand.js';
 import { buildReadOnlyDiscoveryQuery, isReadOnlyDiscoveryRequest } from '../orchestrator/discoveryToolInjection.js';
+import {
+  buildRuntimeAssetPromptSummary,
+  deleteRuntimeAsset,
+  loadRuntimeAssetReference,
+  persistRuntimeAsset,
+  readRuntimeAssetContent,
+} from '../integrations/runtimeAssetStore.js';
 
 const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
 
@@ -465,6 +472,11 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     if (lowerMessage === '/validate-stale-ack' || lowerMessage === 'validate stale ack') {
       await this.handleValidateStaleAck(context, userId);
+      return;
+    }
+
+    if (lowerMessage === '/assetstore selftest') {
+      await this.handleAssetStoreSelfTest(context, userId);
       return;
     }
 
@@ -1090,6 +1102,88 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         console.warn('[HelkinSwarmBot] /validate-stale-ack recovery failed:', err);
       }
     })();
+  }
+
+  /**
+   * /assetstore selftest — owner-only runtime asset storage validation seam for #417.
+   * Persists a tiny text asset, resolves metadata, downloads bytes, and deletes it again.
+   */
+  private async handleAssetStoreSelfTest(
+    context: TurnContext,
+    userId: string,
+  ): Promise<void> {
+    if (!(await isOwnerUserId(userId))) {
+      await context.sendActivity('⛔ Owner-only command.');
+      return;
+    }
+
+    const ack = await context.sendActivity('⌛ Running runtime asset storage self-test...');
+    const correlationId = crypto.randomUUID();
+
+    try {
+      const bytes = Buffer.from('HelkinSwarm runtime asset self-test', 'utf8');
+      const reference = await persistRuntimeAsset({
+        userId,
+        correlationId,
+        bytes,
+        contentType: 'text/plain',
+        fileName: 'runtime-asset-selftest.txt',
+        source: {
+          channel: 'system',
+          toolName: 'assetstore-selftest',
+          detail: 'Owner-triggered runtime asset storage validation.',
+        },
+        summary: 'Owner-triggered runtime asset store validation blob.',
+      });
+
+      if (!reference) {
+        throw new Error('Runtime asset storage is not configured on this stamp.');
+      }
+
+      const loadedReference = await loadRuntimeAssetReference(reference);
+      const loadedContent = await readRuntimeAssetContent(reference);
+      const deleted = await deleteRuntimeAsset(reference);
+
+      if (!loadedReference || !loadedContent) {
+        throw new Error('Persisted asset could not be resolved/read back.');
+      }
+
+      const reply = [
+        '✅ Runtime asset store self-test passed.',
+        '',
+        `Asset ID: \`${reference.id}\``,
+        `Content type: \`${reference.contentType}\``,
+        `Filename: \`${reference.fileName ?? 'n/a'}\``,
+        `Bytes: ${loadedContent.content.byteLength}`,
+        `Expires: ${reference.expiresAt}`,
+        `Deleted after verification: ${deleted ? 'yes' : 'no'}`,
+        '',
+        buildRuntimeAssetPromptSummary(reference),
+      ].join('\n');
+
+      if (ack?.id) {
+        await context.updateActivity({
+          type: ActivityTypes.Message,
+          id: ack.id,
+          text: reply,
+          textFormat: 'markdown',
+        });
+      } else {
+        await context.sendActivity(reply);
+      }
+    } catch (err) {
+      const message = `⚠️ Runtime asset store self-test failed: ${err instanceof Error ? err.message : String(err)}`;
+      if (ack?.id) {
+        await context.updateActivity({
+          type: ActivityTypes.Message,
+          id: ack.id,
+          text: message,
+          textFormat: 'markdown',
+        });
+      } else {
+        await context.sendActivity(message);
+      }
+    }
   }
 
   /**

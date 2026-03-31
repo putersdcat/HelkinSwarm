@@ -74,6 +74,19 @@ Tool calls run in isolated sub-agent sessions (fresh LLM context, secondary mode
 **Durable Hooks Integration (0h)**  
 The overseer can register persistent hooks for long-running workflows. These survive `ContinueAsNew` and wake the orchestrator when external events occur.
 
+### Runtime Asset References
+
+Attachment-bearing workflows must use **runtime asset references** rather than shoving raw bytes through prompts or arbitrary tool arguments.
+
+Core rules:
+- binary payloads are persisted in ephemeral runtime storage and addressed by a typed reference envelope
+- downstream tools should pass the reference object (or its id/locator), not the original bytes
+- the model should normally see only a **summary of the asset reference** (content type, size, filename, expiry), not the raw payload
+- raw bytes should only be materialized for a tool/activity step that explicitly needs them (for example: outbound file send, attachment download, image/document processing)
+- runtime assets are short-lived and carry explicit `expiresAt` / `ttlSeconds` lifecycle data so attachment-bearing workflows do not silently become durable long-term storage
+
+This keeps multimodal and file workflows composable while preserving data minimization and keeping prompt context lean.
+
 ### Key Files
 
 | File | Responsibility |
