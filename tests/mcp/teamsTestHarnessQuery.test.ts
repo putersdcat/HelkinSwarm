@@ -51,6 +51,12 @@ const messages: HarnessRawMessage[] = [
         thumbnailUrl: 'https://example.test/thumb.png',
         name: 'thumb',
       },
+      {
+        id: 'a3',
+        contentType: 'text/plain',
+        contentUrl: 'https://example.test/file.txt',
+        name: 'file.txt',
+      },
     ],
   },
 ];
@@ -80,7 +86,7 @@ describe('teamsTestHarnessQuery helpers', () => {
 
     expect(normalized.formatting.hasHtml).toBe(true);
     expect(normalized.formatting.hasCodeBlock).toBe(true);
-    expect(normalized.attachments).toHaveLength(2);
+    expect(normalized.attachments).toHaveLength(3);
     expect(normalized.cards).toHaveLength(1);
     expect(normalized.cards[0]?.kind).toBe('adaptive-card');
     expect(normalized.cards[0]?.cardPayload).toMatchObject({
@@ -89,6 +95,8 @@ describe('teamsTestHarnessQuery helpers', () => {
     });
     expect(normalized.attachments[1]?.kind).toBe('image');
     expect(normalized.attachments[1]?.contentUrl).toBe('https://example.test/image.png');
+    expect(normalized.attachments[2]?.kind).toBe('file');
+    expect(normalized.attachments[2]?.contentUrl).toBe('https://example.test/file.txt');
   });
 
   it('recognizes messageReference attachments used by Teams quoted replies', () => {

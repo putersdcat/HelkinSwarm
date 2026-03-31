@@ -70,6 +70,7 @@ import {
   persistRuntimeAsset,
   readRuntimeAssetContent,
 } from '../integrations/runtimeAssetStore.js';
+import { sendReply } from '../orchestrator/sendReplyActivity.js';
 
 const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
 
@@ -472,6 +473,11 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     if (lowerMessage === '/validate-stale-ack' || lowerMessage === 'validate stale ack') {
       await this.handleValidateStaleAck(context, userId);
+      return;
+    }
+
+    if (lowerMessage === '/assetreply selftest') {
+      await this.handleAssetReplySelfTest(context, userId);
       return;
     }
 
@@ -1182,6 +1188,110 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         });
       } else {
         await context.sendActivity(message);
+      }
+    }
+  }
+
+  /**
+   * /assetreply selftest — owner-only validation seam for #419.
+   * Persists one tiny image asset and one tiny text asset, then sends them back
+   * through sendReply so the real outbound attachment reply path is exercised.
+   */
+  private async handleAssetReplySelfTest(
+    context: TurnContext,
+    userId: string,
+  ): Promise<void> {
+    if (!(await isOwnerUserId(userId))) {
+      await context.sendActivity('⛔ Owner-only command.');
+      return;
+    }
+
+    const correlationId = crypto.randomUUID();
+    const ackResponse = await context.sendActivity('⌛ Running outbound asset reply self-test...');
+    if (ackResponse?.id) {
+      const conversationId = context.activity.conversation?.id ?? userId;
+      await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
+    }
+
+    const conversationReference = TurnContextClass.getConversationReference(context.activity);
+    const pngBytes = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9s2l9wAAAABJRU5ErkJggg==',
+      'base64',
+    );
+    const textBytes = Buffer.from('HelkinSwarm outbound asset reply self-test', 'utf8');
+
+    let imageAssetId: string | undefined;
+    let fileAssetId: string | undefined;
+
+    try {
+      const imageReference = await persistRuntimeAsset({
+        userId,
+        correlationId,
+        bytes: pngBytes,
+        contentType: 'image/png',
+        fileName: 'asset-reply-selftest.png',
+        source: {
+          channel: 'system',
+          toolName: 'assetreply-selftest',
+          detail: 'Owner-triggered outbound image attachment reply validation.',
+        },
+        summary: '1x1 PNG for outbound Teams attachment reply validation.',
+      });
+      const textReference = await persistRuntimeAsset({
+        userId,
+        correlationId,
+        bytes: textBytes,
+        contentType: 'text/plain',
+        fileName: 'asset-reply-selftest.txt',
+        source: {
+          channel: 'system',
+          toolName: 'assetreply-selftest',
+          detail: 'Owner-triggered outbound file attachment reply validation.',
+        },
+        summary: 'Plain-text file for outbound Teams attachment reply validation.',
+      });
+
+      if (!imageReference || !textReference) {
+        throw new Error('Runtime asset storage is not configured on this stamp.');
+      }
+
+      imageAssetId = imageReference.id;
+      fileAssetId = textReference.id;
+
+      await sendReply({
+        userId,
+        correlationId,
+        conversationReference,
+        message: [
+          '✅ Outbound asset reply self-test passed.',
+          '',
+          `Image asset: \`${imageReference.fileName}\` (${imageReference.contentType})`,
+          `File asset: \`${textReference.fileName}\` (${textReference.contentType})`,
+          'Attachments are sent via the real sendReply pipeline from runtime asset references.',
+        ].join('\n'),
+        assets: [
+          { assetId: imageReference.id },
+          { assetId: textReference.id },
+        ],
+      });
+    } catch (err) {
+      const message = `⚠️ Outbound asset reply self-test failed: ${err instanceof Error ? err.message : String(err)}`;
+      if (ackResponse?.id) {
+        await context.updateActivity({
+          type: ActivityTypes.Message,
+          id: ackResponse.id,
+          text: message,
+          textFormat: 'markdown',
+        });
+      } else {
+        await context.sendActivity(message);
+      }
+    } finally {
+      if (imageAssetId) {
+        await deleteRuntimeAsset({ userId, assetId: imageAssetId });
+      }
+      if (fileAssetId) {
+        await deleteRuntimeAsset({ userId, assetId: fileAssetId });
       }
     }
   }

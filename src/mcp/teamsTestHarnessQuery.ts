@@ -168,7 +168,7 @@ function normalizeAttachment(attachment: HarnessRawAttachment): NormalizedHarnes
         ? 'message-reference'
       : lowerType.startsWith('image/') || !!attachment.thumbnailUrl
         ? 'image'
-        : lowerType.includes('file')
+        : lowerType.includes('file') || (!!attachment.contentUrl && !!attachment.name)
           ? 'file'
           : 'other';
 

@@ -4,6 +4,7 @@
 import * as df from 'durable-functions';
 import {
   ActivityTypes,
+  type Attachment,
   CloudAdapter,
   ConfigurationBotFrameworkAuthentication,
   type ConversationReference,
@@ -20,11 +21,20 @@ import { getEnvConfig } from '../config/envConfig.js';
 import { splitReplyIntoChunks } from './replyChunking.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { clearOrchestratorStage, recordSubstage } from '../observability/orchestratorStageHealth.js';
+import { readRuntimeAssetContent, type RuntimeAssetReference } from '../integrations/runtimeAssetStore.js';
+
+export interface RuntimeReplyAssetInput {
+  assetId: string;
+  fileName?: string;
+  contentType?: string;
+}
 
 export interface SendReplyInput {
   /** User AAD Object ID — used to look up ConversationReference from Cosmos. */
   userId: string;
   message: string;
+  /** Runtime asset references to send as Teams attachments. */
+  assets?: RuntimeReplyAssetInput[];
   /** Correlation ID for tracing (#269). */
   correlationId?: string;
   /** Pass-through ConversationReference to avoid Cosmos read (#327 diagnostic). */
@@ -76,6 +86,44 @@ function getAdapter(): CloudAdapter {
 // DIAGNOSTIC (#327): Skip Cosmos reads when fast-path is active
 const SENDREPLY_FAST_PATH = !!(process.env['SENDREPLY_FAST_PATH'] ?? '');
 
+function buildDataUrl(contentType: string, bytes: Buffer): string {
+  return `data:${contentType};base64,${bytes.toString('base64')}`;
+}
+
+function toTeamsAttachment(reference: RuntimeAssetReference, content: Buffer, override?: RuntimeReplyAssetInput): Attachment {
+  const contentType = override?.contentType ?? reference.contentType;
+  const name = override?.fileName ?? reference.fileName ?? `${reference.id}.${contentType.split('/')[1] ?? 'bin'}`;
+  const contentUrl = buildDataUrl(contentType, content);
+
+  return {
+    contentType,
+    contentUrl,
+    name,
+    ...(contentType.startsWith('image/') ? { thumbnailUrl: contentUrl } : {}),
+  } satisfies Attachment;
+}
+
+async function resolveAssetAttachments(input: SendReplyInput): Promise<Attachment[]> {
+  if (!input.assets || input.assets.length === 0) {
+    return [];
+  }
+
+  const attachments: Attachment[] = [];
+  for (const asset of input.assets) {
+    const loaded = await readRuntimeAssetContent({
+      userId: input.userId,
+      assetId: asset.assetId,
+    });
+    if (!loaded) {
+      throw new Error(`Runtime asset '${asset.assetId}' could not be resolved for reply send.`);
+    }
+
+    attachments.push(toTeamsAttachment(loaded.reference, loaded.content, asset));
+  }
+
+  return attachments;
+}
+
 export async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
   const correlationId = input.correlationId ?? input.userId;
   recordSubstage(correlationId, 'send-reply', input.userId);
@@ -84,6 +132,7 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
   let resolvedConversationId = input.userId;
   try {
     const replyChunks = splitReplyIntoChunks(input.message);
+    const assetAttachments = await resolveAssetAttachments(input);
 
     const adapter = getAdapter();
     const appId = getEnvConfig().microsoftAppId;
@@ -177,6 +226,17 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
             }
             deliveredToUser = true;
           }
+
+          if (assetAttachments.length > 0) {
+            const response = await turnContext.sendActivity({
+              type: ActivityTypes.Message,
+              attachments: assetAttachments,
+            });
+            if (response?.id) {
+              cacheSentMessage(response.id, `[attachment-message] ${assetAttachments.map((attachment) => attachment.name ?? attachment.contentType ?? 'attachment').join(', ')}`);
+            }
+            deliveredToUser = true;
+          }
         } else {
           // No ack stored (e.g. first reply after container restart) — fall back to new message
           for (const chunk of replyChunks) {
@@ -190,11 +250,22 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
             }
             deliveredToUser = true;
           }
+
+          if (assetAttachments.length > 0) {
+            const response = await turnContext.sendActivity({
+              type: ActivityTypes.Message,
+              attachments: assetAttachments,
+            });
+            if (response?.id) {
+              cacheSentMessage(response.id, `[attachment-message] ${assetAttachments.map((attachment) => attachment.name ?? attachment.contentType ?? 'attachment').join(', ')}`);
+            }
+            deliveredToUser = true;
+          }
         }
       },
     );
     if (input.correlationId) {
-      trackEvent({ name: 'ReplySent', correlationId: input.correlationId, userId: input.userId, properties: { success: 'true', chunks: String(replyChunks.length) } });
+      trackEvent({ name: 'ReplySent', correlationId: input.correlationId, userId: input.userId, properties: { success: 'true', chunks: String(replyChunks.length), attachments: String(assetAttachments.length) } });
     }
     // Stage cleanup must happen even in fast-path mode. SENDREPLY_FAST_PATH only
     // skips the ack/Cosmos reply plumbing, not turn completion bookkeeping.

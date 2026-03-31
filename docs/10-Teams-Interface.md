@@ -45,6 +45,18 @@ graph TD
 5. If long-running, durable hook is registered (0h)  
 6. Final reply sent proactively; ack is replaced in-place
 
+### Asset-Bearing Replies
+
+The proactive reply path must support **runtime asset references** in addition to plain text.
+
+Current contract:
+- `sendReplyActivity.ts` remains the authoritative outbound reply path
+- text replies still use the normal ack-update + chunked send behavior
+- when runtime asset references are supplied, the reply path resolves them at send time and emits Teams attachments with preserved metadata such as content type and filename
+- attachment payload bytes must come from runtime asset storage, not from ad-hoc inline prompt blobs carried across orchestration steps
+
+This keeps outbound file/image responses aligned with the runtime asset model introduced for attachment-bearing workflows.
+
 ### Scale-to-Zero Wake-Up Behavior
 
 When a message reaches the bot during the first few seconds after a cold start, HelkinSwarm must not silently drop it behind a vague "try again" response.

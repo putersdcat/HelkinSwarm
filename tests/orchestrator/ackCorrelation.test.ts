@@ -3,6 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 async function loadSendReplyModule(options?: { hangUpdate?: boolean; fastPath?: boolean }) {
   vi.resetModules();
 
+  let lastUpdateActivity: ReturnType<typeof vi.fn> | undefined;
+  let lastSendActivity: ReturnType<typeof vi.fn> | undefined;
+
   if (options?.fastPath) {
     process.env['SENDREPLY_FAST_PATH'] = '1';
   } else {
@@ -17,6 +20,8 @@ async function loadSendReplyModule(options?: { hangUpdate?: boolean; fastPath?: 
       return undefined;
     });
     const sendActivity = vi.fn(async () => ({ id: 'sent-1' }));
+    lastUpdateActivity = updateActivity;
+    lastSendActivity = sendActivity;
     await callback({ updateActivity, sendActivity });
     return { conversationReference, updateActivity, sendActivity };
   });
@@ -36,6 +41,40 @@ async function loadSendReplyModule(options?: { hangUpdate?: boolean; fastPath?: 
 
   vi.doMock('../../src/bot/sentMessageCache.js', () => ({
     cacheSentMessage: vi.fn(),
+  }));
+
+  const readRuntimeAssetContent = vi.fn(async ({ assetId }: { assetId: string }) => {
+    if (assetId === 'asset-image') {
+      return {
+        reference: {
+          id: 'asset-image',
+          userId: 'user-1',
+          correlationId: 'corr-assets',
+          contentType: 'image/png',
+          fileName: 'asset-image.png',
+        },
+        content: Buffer.from([137, 80, 78, 71]),
+      };
+    }
+
+    if (assetId === 'asset-file') {
+      return {
+        reference: {
+          id: 'asset-file',
+          userId: 'user-1',
+          correlationId: 'corr-assets',
+          contentType: 'text/plain',
+          fileName: 'asset-file.txt',
+        },
+        content: Buffer.from('hello file', 'utf8'),
+      };
+    }
+
+    return null;
+  });
+
+  vi.doMock('../../src/integrations/runtimeAssetStore.js', () => ({
+    readRuntimeAssetContent,
   }));
 
   vi.doMock('../../src/config/envConfig.js', () => ({
@@ -73,6 +112,9 @@ async function loadSendReplyModule(options?: { hangUpdate?: boolean; fastPath?: 
     continueConversationAsync,
     clearOrchestratorStage,
     recordSubstage,
+    readRuntimeAssetContent,
+    getLastSendActivity: () => lastSendActivity,
+    getLastUpdateActivity: () => lastUpdateActivity,
   };
 }
 
@@ -123,6 +165,7 @@ describe('ack correlation scoping', () => {
     vi.doUnmock('../../src/bot/sentMessageCache.js');
     vi.doUnmock('../../src/bot/ackVariants.js');
     vi.doUnmock('../../src/config/envConfig.js');
+    vi.doUnmock('../../src/integrations/runtimeAssetStore.js');
     vi.doUnmock('../../src/observability/orchestratorStageHealth.js');
     vi.doUnmock('botbuilder');
     delete process.env['SENDREPLY_FAST_PATH'];
@@ -203,5 +246,47 @@ describe('ack correlation scoping', () => {
     expect(claimOutboundArtifact).not.toHaveBeenCalled();
     expect(getPendingAckId).not.toHaveBeenCalled();
     expect(clearOrchestratorStage).toHaveBeenCalledWith('corr-fast-path', 'user-1');
+  });
+
+  it('sendReply can emit runtime-asset-backed Teams attachments after the text reply', async () => {
+    const { sendReply, readRuntimeAssetContent, getLastSendActivity, getLastUpdateActivity } = await loadSendReplyModule();
+
+    const result = await sendReply({
+      userId: 'user-1',
+      correlationId: 'corr-assets',
+      message: 'asset reply',
+      assets: [
+        { assetId: 'asset-image' },
+        { assetId: 'asset-file' },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    expect(readRuntimeAssetContent).toHaveBeenCalledTimes(2);
+    const sendActivity = getLastSendActivity();
+    const updateActivity = getLastUpdateActivity();
+    expect(sendActivity).toBeDefined();
+    expect(updateActivity).toBeDefined();
+    expect(updateActivity).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'message',
+      id: 'ack-activity-1',
+      text: 'asset reply',
+    }));
+
+    expect(sendActivity).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'message',
+      attachments: [
+        expect.objectContaining({
+          contentType: 'image/png',
+          name: 'asset-image.png',
+          thumbnailUrl: expect.stringContaining('data:image/png;base64,'),
+        }),
+        expect.objectContaining({
+          contentType: 'text/plain',
+          name: 'asset-file.txt',
+          contentUrl: expect.stringContaining('data:text/plain;base64,'),
+        }),
+      ],
+    }));
   });
 });
