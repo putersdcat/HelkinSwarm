@@ -59,7 +59,60 @@ const FOLLOW_UP_EXECUTION_PROMPT =
   'If the request is not yet fulfilled and more tools are available, call the next required tool. ' +
   'A discovery/search result that only identifies candidate tools is NOT fulfillment when the user asked you to send, reply, create, update, or delete something. ' +
   'After discovery narrows the tool set, call the concrete discovered tool that completes the user intent. ' +
+  'Never return raw tool dumps or discovery blobs to the user as the final answer. ' +
   'Only answer with a final natural-language response when the full user intent is satisfied or you can explain a specific blocker.';
+
+function getLatestUserMessage(originalMessages: Array<{ role: string; content: string }>): string {
+  return [...originalMessages]
+    .reverse()
+    .find((message) => message.role === 'user')?.content ?? '';
+}
+
+function isReadOnlyOrDiscoveryTool(toolName: string): boolean {
+  return toolName === 'helkin_skill_search'
+    || /_(list|read|search|download|get)_/.test(toolName);
+}
+
+function buildDefaultToolSummary(toolResults: LlmFollowUpInput['toolResults']): string {
+  const summaries = toolResults.map((tr) => {
+    if (!tr.success) return `**${tr.toolName}** failed: ${tr.error ?? 'unknown error'}`;
+    const resultStr = typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result, null, 2);
+    if (resultStr.length > 2000) {
+      return `**${tr.toolName}**: (result too large to display inline — ${resultStr.length} chars)`;
+    }
+    return `**${tr.toolName}**: ${resultStr}`;
+  });
+  return summaries.join('\n\n');
+}
+
+export function buildFallbackToolResultContent(
+  originalMessages: Array<{ role: string; content: string }>,
+  toolResults: LlmFollowUpInput['toolResults'],
+): string {
+  const latestUserMessage = getLatestUserMessage(originalMessages);
+  const requestedAction = /\b(send|reply|draft|create|update|delete|move|forward|schedule|email|mail)\b/i.test(latestUserMessage);
+  const requestedInlineMedia = /\b(inline|gif|image|photo|png|jpg|jpeg|webp)\b/i.test(latestUserMessage);
+  const onlyReadOnlyOrDiscovery = toolResults.length > 0 && toolResults.every((tr) => isReadOnlyOrDiscoveryTool(tr.toolName));
+  const inlineEmailSendFailure = toolResults.find((tr) =>
+    tr.toolName === 'outlook_send_email'
+    && !tr.success
+    && /embedded inline images|inline-image email|cid: inline image|data:image/i.test(tr.error ?? ''),
+  );
+
+  if (inlineEmailSendFailure) {
+    return 'I couldn’t complete that email request. Outlook inline embedded images from Teams/runtime assets are not supported yet, so I did not send the requested inline-image email.';
+  }
+
+  if (requestedAction && requestedInlineMedia && onlyReadOnlyOrDiscovery) {
+    return 'I couldn’t complete that request. I only reached discovery/read steps, and HelkinSwarm does not yet have a reliable path to send an Outlook email with a Teams-provided image or GIF embedded inline in the message body. I did not send the requested inline-image email.';
+  }
+
+  if (requestedAction && onlyReadOnlyOrDiscovery) {
+    return 'I couldn’t complete the requested action. I only reached search/read steps and did not actually send, create, update, or delete anything.';
+  }
+
+  return buildDefaultToolSummary(toolResults);
+}
 
 df.app.activity('llmFollowUpActivity', {
   handler: async (input: LlmFollowUpInput): Promise<LlmResult> => {
@@ -192,9 +245,7 @@ df.app.activity('llmFollowUpActivity', {
         arguments: tc.function.arguments,
       })) ?? [];
 
-      const latestUserMessage = [...input.originalMessages]
-        .reverse()
-        .find((message) => message.role === 'user')?.content ?? '';
+      const latestUserMessage = getLatestUserMessage(input.originalMessages);
       const synthesizedToolCall = retryToolCalls.length === 0 && retryTools
         ? synthesizeDeterministicFollowUpToolCall(latestUserMessage, retryTools)
         : null;
@@ -237,21 +288,9 @@ df.app.activity('llmFollowUpActivity', {
 
       // If the LLM still returned empty content, build a concise summary from tool results
       // rather than dumping raw JSON that may exceed Teams message limits (#184).
-      let content: string;
-      if (llmContent) {
-        content = llmContent;
-      } else {
-        const summaries = input.toolResults.map((tr) => {
-          if (!tr.success) return `**${tr.toolName}** failed: ${tr.error ?? 'unknown error'}`;
-          const resultStr = typeof tr.result === 'string' ? tr.result : JSON.stringify(tr.result, null, 2);
-          // Cap individual tool summaries to prevent oversized messages
-          if (resultStr.length > 2000) {
-            return `**${tr.toolName}**: (result too large to display inline — ${resultStr.length} chars)`;
-          }
-          return `**${tr.toolName}**: ${resultStr}`;
-        });
-        content = summaries.join('\n\n');
-      }
+      const content = llmContent
+        ? llmContent
+        : buildFallbackToolResultContent(input.originalMessages, input.toolResults);
 
       return {
         content,

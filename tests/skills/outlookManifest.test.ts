@@ -26,6 +26,7 @@ describe('outlook manifest safety flags', () => {
     const createEvent = manifest.tools.find((tool) => tool.name === 'outlook_create_calendar_event');
 
     expect(send?.requiresConfirmation).toBe(true);
+    expect(send?.description).toContain('does not support embedded inline images or file attachments yet');
     expect(replyLatest?.requiresConfirmation).toBe(false);
     expect(createEvent?.requiresConfirmation).toBe(true);
   });

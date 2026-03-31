@@ -98,6 +98,25 @@ async function graphFetch<T>(
   return schema.parse(data);
 }
 
+export function detectUnsupportedInlineEmailBody(
+  body: string,
+  bodyType: string,
+): string | null {
+  if (bodyType.toLowerCase() !== 'html') {
+    return null;
+  }
+
+  if (/\bcid:/i.test(body)) {
+    return 'The HTML body references a cid: inline image, but this tool cannot send the matching inline attachment payload yet.';
+  }
+
+  if (/src\s*=\s*["']data:image\//i.test(body)) {
+    return 'The HTML body embeds a data:image payload, but this tool does not support sending embedded image bytes inline yet.';
+  }
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Zod schemas for Graph API response validation
 // ---------------------------------------------------------------------------
@@ -443,6 +462,14 @@ const outlookSendEmail: ToolHandler = async (args) => {
   const body = z.string().parse(args['body']);
   const bodyType = z.string().default('text').parse(args['bodyType'] ?? 'text');
   const cc = z.array(z.string()).default([]).parse(args['cc'] ?? []);
+
+  const inlineImageBlocker = detectUnsupportedInlineEmailBody(body, bodyType);
+  if (inlineImageBlocker) {
+    throw new Error(
+      'Embedded inline images in outgoing Outlook email are not supported yet. ' +
+      `${inlineImageBlocker} I have not sent the requested inline-image email.`,
+    );
+  }
 
   const token = await resolveToken(args);
 
