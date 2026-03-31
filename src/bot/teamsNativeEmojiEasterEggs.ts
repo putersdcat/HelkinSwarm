@@ -6,10 +6,11 @@ const HEART_EYES_ROBOT_ID_PATTERN = /hearteyesrobot/i;
 const HIGHFIVE_PHRASE_PATTERN = /high[ -]?five/i;
 const HIGHFIVE_ID_PATTERN = /(?:^|[^a-z])highfive(?:[^a-z]|$)/i;
 
-const HIGHFIVE_HTML = '<p><emoji id="highfive" alt="✋" title="High five"></emoji></p>';
+const HIGHFIVE_SHORTCODE = '(highfive)';
 const ROBOT_LOVE_FALLBACK_TEXT = '🤖❤️👀 Robot love detected!';
 
 export interface TeamsNativeEmojiEasterEggReply {
+  kind: 'robot-love' | 'highfive';
   text?: string;
   textFormat?: 'plain' | 'markdown' | 'xml';
   attachments?: Array<{
@@ -76,6 +77,7 @@ export async function buildTeamsNativeEmojiEasterEggReply(
       const { readFile } = await import('node:fs/promises');
       const dataUrl = await loadRobotLoveDataUrl(options.readFileImpl ?? readFile);
       return {
+        kind: 'robot-love',
         attachments: [
           {
             contentType: 'image/gif',
@@ -86,14 +88,15 @@ export async function buildTeamsNativeEmojiEasterEggReply(
         ],
       };
     } catch {
-      return { text: ROBOT_LOVE_FALLBACK_TEXT };
+      return { kind: 'robot-love', text: ROBOT_LOVE_FALLBACK_TEXT };
     }
   }
 
   if (hasHighFiveSignal(input)) {
     return {
-      text: HIGHFIVE_HTML,
-      textFormat: 'xml',
+      kind: 'highfive',
+      text: HIGHFIVE_SHORTCODE,
+      textFormat: 'plain',
     };
   }
 

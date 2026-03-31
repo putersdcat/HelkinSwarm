@@ -38,6 +38,7 @@ describe('Teams native emoji easter egg detection', () => {
   it('returns the RobotLove gif attachment when the asset exists', async () => {
     const reply = await buildTeamsNativeEmojiEasterEggReply({ messageText: ':hearteyesrobot:' });
 
+    expect(reply?.kind).toBe('robot-love');
     expect(reply?.attachments?.[0]).toMatchObject({
       contentType: 'image/gif',
       name: 'RobotLove.gif',
@@ -51,18 +52,19 @@ describe('Teams native emoji easter egg detection', () => {
       { readFileImpl: async () => { throw new Error('missing gif'); } },
     );
 
-    expect(reply).toEqual({ text: '🤖❤️👀 Robot love detected!' });
+    expect(reply).toEqual({ kind: 'robot-love', text: '🤖❤️👀 Robot love detected!' });
   });
 
-  it('returns native highfive markup for the Teams highfive signal', async () => {
+  it('returns the blog-style highfive shortcode for the Teams highfive signal', async () => {
     const reply = await buildTeamsNativeEmojiEasterEggReply({
       messageText: '',
       activityDetails: ['<p><emoji id="highfive" alt="✋" title="High five"></emoji></p>'],
     });
 
     expect(reply).toEqual({
-      text: '<p><emoji id="highfive" alt="✋" title="High five"></emoji></p>',
-      textFormat: 'xml',
+      kind: 'highfive',
+      text: '(highfive)',
+      textFormat: 'plain',
     });
   });
 

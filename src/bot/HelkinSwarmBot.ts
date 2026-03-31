@@ -697,6 +697,26 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       ],
     });
     if (nativeEmojiEasterEggReply) {
+      if (nativeEmojiEasterEggReply.kind === 'robot-love') {
+        const inlineResponse = await context.sendActivity({
+          type: ActivityTypes.Message,
+          ...(nativeEmojiEasterEggReply.text ? { text: nativeEmojiEasterEggReply.text } : {}),
+          ...(nativeEmojiEasterEggReply.textFormat ? { textFormat: nativeEmojiEasterEggReply.textFormat } : {}),
+          ...(nativeEmojiEasterEggReply.attachments ? { attachments: nativeEmojiEasterEggReply.attachments } : {}),
+        });
+
+        if (nativeEmojiEasterEggReply.attachments?.[0]?.name === 'RobotLove.gif') {
+          await this.offerRobotLoveAnimationFile(
+            context,
+            userId,
+            correlationId,
+            nativeEmojiEasterEggReply.attachments[0].contentUrl,
+            inlineResponse?.id,
+          );
+        }
+        return;
+      }
+
       await context.sendActivity({
         type: ActivityTypes.Message,
         ...(nativeEmojiEasterEggReply.text ? { text: nativeEmojiEasterEggReply.text } : {}),
@@ -1114,6 +1134,63 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         await context.sendActivity(errorMessage);
       }
     }
+  }
+
+  private async offerRobotLoveAnimationFile(
+    context: TurnContext,
+    userId: string,
+    correlationId: string,
+    dataUrl: string,
+    inlineMessageId?: string,
+  ): Promise<void> {
+    const parsed = /^data:(?<contentType>[^;]+);base64,(?<payload>.+)$/u.exec(dataUrl);
+    if (!parsed?.groups?.contentType || !parsed.groups.payload) {
+      return;
+    }
+
+    const persisted = await persistRuntimeAsset({
+      userId,
+      correlationId,
+      bytes: Buffer.from(parsed.groups.payload, 'base64'),
+      contentType: parsed.groups.contentType,
+      fileName: 'RobotLove.gif',
+      source: {
+        channel: 'system',
+        toolName: 'robotlove-easter-egg',
+        detail: 'Animated RobotLove easter egg file handoff for Teams clients that render bot GIF previews as still images.',
+      },
+      summary: 'Animated RobotLove easter egg GIF.',
+    });
+
+    if (!persisted) {
+      return;
+    }
+
+    const consentContext = RuntimeFileConsentContextSchema.parse({
+      assetId: persisted.id,
+      userId,
+      correlationId,
+      fileName: 'RobotLove.gif',
+      contentType: persisted.contentType,
+    });
+
+    await context.sendActivity({
+      type: ActivityTypes.Message,
+      text: inlineMessageId
+        ? '🤖❤️👀 Teams bot image previews are static, so tap below if you want the full animated `RobotLove.gif`.'
+        : '🤖❤️👀 Tap below if you want the full animated `RobotLove.gif`.',
+      textFormat: 'markdown',
+      attachments: [{
+        contentType: 'application/vnd.microsoft.teams.card.file.consent',
+        name: 'RobotLove.gif',
+        content: {
+          description: 'Download the full animated RobotLove.gif easter egg.',
+          sizeInBytes: persisted.byteLength,
+          acceptContext: consentContext,
+          declineContext: consentContext,
+        },
+      }],
+    });
   }
 
   /** /heavy or /light — force a specific model tier for one turn (owner-only). */
