@@ -14,8 +14,13 @@ describe('SkillForge prompt source wiring', () => {
     expect(promptMarkdown).toContain('cannot do — need human');
 
     expect(bootstrapSource).toContain("const DEFAULT_PROMPT_PATH = '/opt/skillforge/skillforge-prompt.md';");
+    expect(bootstrapSource).toContain("const DEFAULT_AUDIT_LOG_PATH = '/tmp/skillforge-audit.jsonl';");
     expect(bootstrapSource).toContain('export function loadSkillForgePrompt');
+    expect(bootstrapSource).toContain('export function assertSkillForgeEnvironmentSafe');
+    expect(bootstrapSource).toContain('export function emitSkillForgeAuditEvent');
     expect(bootstrapSource).toContain("readFileSync(promptPath, 'utf8').trim()");
+    expect(bootstrapSource).toContain('prompt shields=');
+    expect(bootstrapSource).toContain("emitSkillForgeAuditEvent('bootstrap-ready'");
     expect(bootstrapSource).toContain('startSkillForgeBootstrap()');
     expect(bootstrapSource).toContain('const keepAliveTimer = setInterval');
     expect(bootstrapSource).toContain("process.once('SIGTERM', shutdown);");
@@ -23,6 +28,8 @@ describe('SkillForge prompt source wiring', () => {
     expect(dockerfile).toContain('COPY src/skillforge/skillforge-prompt.md /opt/skillforge/skillforge-prompt.md');
     expect(dockerfile).toContain('COPY infra/skillforge-bootstrap.mjs /opt/skillforge/bootstrap.mjs');
     expect(dockerfile).toContain('ENV SKILLFORGE_SYSTEM_PROMPT_PATH=/opt/skillforge/skillforge-prompt.md');
+    expect(dockerfile).toContain('ENV SKILLFORGE_PROMPT_SHIELD_POLICY=continuous');
+    expect(dockerfile).toContain('ENV SKILLFORGE_AUDIT_LOG_PATH=/tmp/skillforge-audit.jsonl');
     expect(dockerfile).toContain('CMD ["node", "/opt/skillforge/bootstrap.mjs"]');
   });
 });

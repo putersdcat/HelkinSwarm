@@ -50,6 +50,8 @@ RUN chown -R forge:forge /workspace
 COPY src/skillforge/skillforge-prompt.md /opt/skillforge/skillforge-prompt.md
 COPY infra/skillforge-bootstrap.mjs /opt/skillforge/bootstrap.mjs
 ENV SKILLFORGE_SYSTEM_PROMPT_PATH=/opt/skillforge/skillforge-prompt.md
+ENV SKILLFORGE_PROMPT_SHIELD_POLICY=continuous
+ENV SKILLFORGE_AUDIT_LOG_PATH=/tmp/skillforge-audit.jsonl
 
 # ── Resource guardrails (enforced by ACI, not container-level) ──
 # CPU: capped by ACI configuration

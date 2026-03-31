@@ -87,9 +87,15 @@ jobs:
             ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} >/tmp/skillforge-container-id.txt
 
           READY=0
+          AUDIT_OK=0
           for _ in $(seq 1 20); do
             if docker logs skillforge-startup-smoke 2>&1 | grep -q 'SkillForge container ready'; then
               READY=1
+            fi
+            if docker logs skillforge-startup-smoke 2>&1 | grep -q '\[skillforge-audit\]'; then
+              AUDIT_OK=1
+            fi
+            if [ "$READY" -eq 1 ] && [ "$AUDIT_OK" -eq 1 ]; then
               break
             fi
             sleep 0.5
@@ -103,6 +109,11 @@ jobs:
 
           if [ "$READY" -ne 1 ]; then
             echo "❌ SkillForge container never reported ready during startup smoke."
+            exit 1
+          fi
+
+          if [ "$AUDIT_OK" -ne 1 ]; then
+            echo "❌ SkillForge container did not emit bootstrap audit records during startup smoke."
             exit 1
           fi
 
