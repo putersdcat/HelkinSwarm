@@ -134,6 +134,7 @@ describe('buildPrompt soft timeouts', () => {
     expect(prompt.systemPrompt).toContain('Inbound runtime assets for this turn');
     expect(prompt.systemPrompt).toContain('Attachment kind: file-download');
     expect(prompt.systemPrompt).toContain('paper.pdf');
+    expect(prompt.systemPrompt).toContain('Asset ID: `11111111-1111-4111-8111-111111111111`');
     expect(prompt.systemPrompt).toContain('Attachment ingestion notices');
     expect(prompt.systemPrompt).toContain('Skipped attachment `big.zip`');
     expect(prompt.systemPrompt).not.toContain('JVBER');

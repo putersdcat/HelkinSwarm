@@ -195,6 +195,7 @@ export function buildRuntimeAssetPromptSummary(reference: RuntimeAssetReference)
   const namePart = reference.fileName ? `file \`${reference.fileName}\`` : `asset \`${reference.id}\``;
   return [
     `Runtime asset reference available: ${namePart}.`,
+    `Asset ID: \`${reference.id}\`.`,
     `Content type: ${reference.contentType}.`,
     `Size: ${reference.byteLength} bytes.`,
     `Expires at: ${reference.expiresAt}.`,

@@ -1636,19 +1636,51 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return;
     }
 
-    const laneToken = messageText.trim().split(/\s+/)[2]?.toLowerCase();
-    const modelOverride = laneToken === 'primary' || laneToken === 'secondary'
-      ? laneToken
-      : undefined;
+    const rawArgs = messageText.trim().split(/\s+/).slice(2);
+    let modelOverride: 'primary' | 'secondary' | undefined;
+    let inlineEmailMode = false;
+    let inlineEmailRecipient: string | undefined;
 
-    if (laneToken && !modelOverride) {
-      await context.sendActivity('Usage: `/assetingest selftest [primary|secondary]`');
+    for (const arg of rawArgs) {
+      const normalizedArg = arg.toLowerCase();
+      if ((normalizedArg === 'primary' || normalizedArg === 'secondary') && !modelOverride) {
+        modelOverride = normalizedArg;
+        continue;
+      }
+
+      if (normalizedArg === 'inline-email') {
+        inlineEmailMode = true;
+        continue;
+      }
+
+      if (inlineEmailMode && !inlineEmailRecipient) {
+        inlineEmailRecipient = arg;
+        continue;
+      }
+
+      await context.sendActivity('Usage: `/assetingest selftest [primary|secondary]` or `/assetingest selftest inline-email <recipient> [primary|secondary]`');
+      return;
+    }
+
+    if (inlineEmailMode && !inlineEmailRecipient) {
+      await context.sendActivity('Usage: `/assetingest selftest inline-email <recipient> [primary|secondary]`');
       return;
     }
 
     const correlationId = crypto.randomUUID();
     const laneLabel = modelOverride ? ` (${modelOverride})` : '';
-    const assetIngestPrompt = 'For this inbound attachment ingestion self-test, report the runtime assets available in this turn. List each filename, content type, and attachment kind in short bullets, and say whether any attachment ingestion notices were present.';
+    const inlineEmailContentId = 'asset-ingest-selftest';
+    const inlineEmailSubject = `DL-inline-selftest-${correlationId.slice(0, 8)}`;
+    const assetIngestPrompt = inlineEmailMode
+      ? [
+          'Use the exact tool outlook_send_email.',
+          `Send an HTML email to ${inlineEmailRecipient} with subject "${inlineEmailSubject}".`,
+          `The body must contain a short intro paragraph plus an inline image using <img src="cid:${inlineEmailContentId}" />.`,
+          `Use the runtime asset for \`asset-ingest-selftest.png\` as inlineAssets with contentId \`${inlineEmailContentId}\`.`,
+          'Do not use the text asset as an attachment for this test.',
+          'After the tool call, tell me plainly whether the email was actually sent.',
+        ].join(' ')
+      : 'For this inbound attachment ingestion self-test, report the runtime assets available in this turn. List each filename, content type, attachment kind, and asset ID in short bullets, and say whether any attachment ingestion notices were present.';
     const existingOverseerInstanceId = await this.findExistingOverseerInstance(
       userId,
       assetIngestPrompt,
@@ -1661,7 +1693,10 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return;
     }
 
-    const ackResponse = await context.sendActivity(`⌛ Running inbound asset ingestion self-test${laneLabel}...`);
+    const ackLabel = inlineEmailMode
+      ? `⌛ Running inbound asset inline-email self-test${laneLabel}...`
+      : `⌛ Running inbound asset ingestion self-test${laneLabel}...`;
+    const ackResponse = await context.sendActivity(ackLabel);
     if (ackResponse?.id) {
       const conversationId = context.activity.conversation?.id ?? userId;
       await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
@@ -1700,8 +1735,9 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       }
 
       // This self-test validates inbound attachment ingestion + runtime asset
-      // propagation, not image understanding. Forward only runtime asset
-      // references + notices so the lane under test stays text-only (#430).
+      // propagation. For inline-email mode, the lane under test must see the
+      // runtime asset references (including asset IDs) so it can call
+      // outlook_send_email with inlineAssets on the real deployed path.
       const started = await this.raiseToOverseer(
         context,
         userId,
