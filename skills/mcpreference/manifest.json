@@ -1,0 +1,109 @@
+{
+  "domain": "mcpreference",
+  "version": "1.0",
+  "shortName": "mcpreference",
+  "displayName": "MCP Reference",
+  "shortDescription": "Reference skill proving stdio MCP connector interoperability through the normal HelkinSwarm tool path",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/core.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials",
+  "mcpServer": {
+    "transport": "stdio",
+    "command": "node",
+    "args": [
+      "skills/mcpreference/server.mjs"
+    ],
+    "timeoutMs": 15000
+  },
+  "discoveryHints": [
+    "mcp connector",
+    "reference mcp server",
+    "stdio interoperability"
+  ],
+  "orchestratorUseCases": [
+    "verify that manifest-declared MCP-backed tools can be discovered and executed like normal HelkinSwarm tools"
+  ],
+  "recommendedEntryTools": [
+    "mcpreference_echo",
+    "mcpreference_uppercase"
+  ],
+  "tools": [
+    {
+      "name": "mcpreference_echo",
+      "description": "Echo a short message through the reference stdio MCP server.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "message": {
+            "type": "string",
+            "description": "Message to echo back"
+          }
+        },
+        "required": [
+          "message"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "echoed": { "type": "string" },
+          "echoedLength": { "type": "number" },
+          "via": { "type": "string" }
+        },
+        "required": [
+          "echoed",
+          "echoedLength",
+          "via"
+        ]
+      },
+      "privilegeClass": "read-only"
+    },
+    {
+      "name": "mcpreference_uppercase",
+      "description": "Uppercase a short string through the reference stdio MCP server.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text to transform"
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "original": { "type": "string" },
+          "uppercased": { "type": "string" },
+          "via": { "type": "string" }
+        },
+        "required": [
+          "original",
+          "uppercased",
+          "via"
+        ]
+      },
+      "privilegeClass": "read-only"
+    }
+  ]
+}

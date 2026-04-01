@@ -21,6 +21,12 @@ describe('CapabilityManifestSchema discovery metadata', () => {
         synthesis: 'primary',
       },
       recommendedEntryTools: ['demo_search'],
+      mcpServer: {
+        transport: 'stdio',
+        command: 'node',
+        args: ['skills/demo/server.mjs'],
+        timeoutMs: 15000,
+      },
       tools: [
         {
           name: 'demo_search',
@@ -37,6 +43,7 @@ describe('CapabilityManifestSchema discovery metadata', () => {
           avoidWhen: ['the user needs to create demo data'],
           typicalInputs: ['search the demo corpus for invoices'],
           returnsSummaryShape: 'array of search results',
+          remoteToolName: 'remote_demo_search',
           inputSchema: { type: 'object', properties: {}, required: [] },
         },
       ],
@@ -44,7 +51,9 @@ describe('CapabilityManifestSchema discovery metadata', () => {
 
     expect(parsed.discoveryHints).toContain('demo');
     expect(parsed.modelAffinity?.synthesis).toBe('primary');
+    expect(parsed.mcpServer?.transport).toBe('stdio');
     expect(parsed.tools[0]?.aliases).toContain('search demo');
+    expect(parsed.tools[0]?.remoteToolName).toBe('remote_demo_search');
     expect(parsed.tools[0]?.returnsSummaryShape).toBe('array of search results');
   });
 

@@ -62,6 +62,16 @@ export const CapabilityGroup = z.object({
 });
 export type CapabilityGroup = z.infer<typeof CapabilityGroup>;
 
+export const McpServerConfig = z.object({
+  transport: z.literal('stdio'),
+  command: z.string().min(1),
+  args: z.array(z.string().min(1)).default([]),
+  cwd: z.string().min(1).optional(),
+  env: z.record(z.string(), z.string()).default({}),
+  timeoutMs: z.number().int().positive().max(120_000).default(20_000),
+});
+export type McpServerConfig = z.infer<typeof McpServerConfig>;
+
 export const ToolManifestEntry = z.object({
   name: z.string().regex(/^[a-z][a-z0-9_]*$/, 'Tool names must be snake_case'),
   description: z.string().min(1),
@@ -83,6 +93,7 @@ export const ToolManifestEntry = z.object({
   typicalInputs: z.array(z.string().min(1)).default([]),
   returnsSummaryShape: z.string().min(1).optional(),
   capabilityGroup: z.string().min(1).optional(),
+  remoteToolName: z.string().min(1).optional(),
   inputSchema: z.record(z.unknown()).optional(),
   outputSchema: z.record(z.unknown()).optional(),
 });
@@ -102,6 +113,7 @@ export const CapabilityManifestSchema = z.object({
   version: z.string().min(1),
   tools: z.array(ToolManifestEntry).min(1),
   linkConfig: LinkConfigSchema.optional(),
+  mcpServer: McpServerConfig.optional(),
   // v2 fields (#196) — spec ref: skills-system-enhancement-2026-03-24v2.md §3
   shortName: z.string().min(1),
   displayName: z.string().min(1),

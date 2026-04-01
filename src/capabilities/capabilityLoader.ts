@@ -8,6 +8,7 @@ import { CapabilityManifestSchema } from './manifestSchema.js';
 import type { CapabilityManifest, MaintenanceTask } from './manifestSchema.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { clearSkillDiscoveryIndex, rebuildSkillDiscoveryIndex } from './skillDiscoveryIndex.js';
+import { registerMcpHandlersForManifest } from '../mcp/mcpConnector.js';
 
 // ---------------------------------------------------------------------------
 // Tool handler type — async function that executes a tool
@@ -143,6 +144,7 @@ export async function loadCapabilities(
 
         // Load handlers if handlers.js exists
         await loadHandlers(relativeSkillDir, manifest);
+        await loadMcpHandlers(relativeSkillDir, manifest);
 
         result.skillsLoaded++;
       } catch (err) {
@@ -227,6 +229,21 @@ async function loadHandlers(
       registerHandler(tool.name, handler as ToolHandler);
     }
   }
+}
+
+async function loadMcpHandlers(
+  relativeSkillDir: string,
+  manifest: CapabilityManifest,
+): Promise<void> {
+  if (!manifest.mcpServer) {
+    return;
+  }
+
+  await registerMcpHandlersForManifest({
+    relativeSkillDir,
+    manifest,
+    registerHandler,
+  });
 }
 
 // ---------------------------------------------------------------------------

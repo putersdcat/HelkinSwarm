@@ -8,7 +8,7 @@ describe('capabilityLoader custom skill discovery', () => {
   });
 
   it('discovers nested skills/custom manifests and registers their tools', async () => {
-    const { loadCapabilities, getManifest } = await import('../../src/capabilities/capabilityLoader.js');
+    const { loadCapabilities, getHandler, getManifest } = await import('../../src/capabilities/capabilityLoader.js');
     const { toolRegistry } = await import('../../src/tools/toolRegistry.js');
     toolRegistry.clear();
 
@@ -17,5 +17,23 @@ describe('capabilityLoader custom skill discovery', () => {
     expect(result.skillsLoaded).toBeGreaterThanOrEqual(7);
     expect(getManifest('forge-create-a-receipts-parser-skill-v367a')).toBeDefined();
     expect(toolRegistry.get('forge_create_a_receipts_parser_skill_v367a_run')).toBeDefined();
+
+    expect(getManifest('mcpreference')).toBeDefined();
+    expect(toolRegistry.get('mcpreference_echo')).toBeDefined();
+
+    const mcpHandler = getHandler('mcpreference_echo');
+    expect(mcpHandler).toBeDefined();
+
+    const mcpResult = await mcpHandler?.({ message: 'bridge test' }) as {
+      echoed: string;
+      echoedLength: number;
+      via: string;
+    };
+
+    expect(mcpResult).toEqual({
+      echoed: 'bridge test',
+      echoedLength: 11,
+      via: 'reference-mcp',
+    });
   });
 });
