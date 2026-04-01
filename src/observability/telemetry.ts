@@ -65,6 +65,8 @@ export type TelemetryEventName =
   | 'MultiRoundDispatch'
   | 'DiscoveryQueryExecuted'
   | 'DiscoveryToolSubsetSelected'
+  | 'McpRegistryCatalogRefreshed'
+  | 'McpRegistrySearchExecuted'
   | 'PolicyOverrideApplied'
   | 'ClarificationRequested'
   | 'ClarificationRetryRequested'
@@ -106,6 +108,8 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   MultiRoundDispatch: 'tool-dispatch',
   DiscoveryQueryExecuted: 'tool-dispatch',
   DiscoveryToolSubsetSelected: 'orchestrator',
+  McpRegistryCatalogRefreshed: 'tool-dispatch',
+  McpRegistrySearchExecuted: 'tool-dispatch',
   PolicyOverrideApplied: 'orchestrator',
   ClarificationRequested: 'orchestrator',
   ClarificationRetryRequested: 'orchestrator',

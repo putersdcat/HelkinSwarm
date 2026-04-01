@@ -273,6 +273,119 @@ export const helkin_skill_search: ToolHandler = async (args) => {
   };
 };
 
+export const helkin_mcp_registry_search: ToolHandler = async (args) => {
+  const { ensureFreshMcpRegistryCatalog, getMcpRegistryCatalogStatus, searchMcpRegistryCatalog } = await import('../../src/mcp/mcpRegistryCatalog.js');
+  const { trackEvent } = await import('../../src/observability/telemetry.js');
+
+  const command = String(args['command'] ?? 'help');
+  const correlationId = String(args['correlationId'] ?? crypto.randomUUID());
+  const userId = typeof args['userId'] === 'string' ? args['userId'] : undefined;
+
+  if (command === 'help') {
+    return {
+      status: 'success',
+      command: 'help',
+      usage: [
+        'command=help',
+        'command=search query="azure key vault"',
+        'command=status',
+        'command=refresh',
+      ],
+      notes: [
+        'Registry discovery is read-only and returns onboarding candidates, not installed skills.',
+        'This tool stays separate from helkin_skill_search so local installed skills and external MCP candidates are not blurred together.',
+        'Search uses a synced local in-process cache instead of hitting the registry on every call.',
+      ],
+    };
+  }
+
+  if (command === 'status') {
+    return {
+      status: 'success',
+      command: 'status',
+      catalog: getMcpRegistryCatalogStatus(),
+    };
+  }
+
+  if (command === 'refresh') {
+    const catalog = await ensureFreshMcpRegistryCatalog({ forceFull: Boolean(args['forceFull']) });
+    trackEvent({
+      name: 'McpRegistryCatalogRefreshed',
+      correlationId,
+      userId,
+      properties: {
+        mode: catalog.lastSyncMode ?? 'unknown',
+        totalCached: String(catalog.totalCached),
+        malformedDropped: String(catalog.malformedDropped),
+      },
+    });
+
+    return {
+      status: 'success',
+      command: 'refresh',
+      catalog,
+    };
+  }
+
+  if (command === 'search') {
+    const query = String(args['query'] ?? '').trim();
+    if (!query) {
+      return { status: 'error', message: 'query is required when command=search.' };
+    }
+
+    const result = await searchMcpRegistryCatalog(query, {
+      limit: Number(args['limit'] ?? 8),
+      includeDeleted: Boolean(args['includeDeleted']),
+      includeDeprecated: args['includeDeprecated'] === undefined ? true : Boolean(args['includeDeprecated']),
+      forceRefresh: Boolean(args['forceRefresh']),
+    });
+
+    trackEvent({
+      name: 'McpRegistrySearchExecuted',
+      correlationId,
+      userId,
+      properties: {
+        query,
+        returnedCandidates: String(result.candidates.length),
+        usedStaleCache: String(result.usedStaleCache),
+        totalCached: String(result.syncStatus.totalCached),
+      },
+    });
+
+    return {
+      status: 'success',
+      command: 'search',
+      query,
+      generatedAt: result.generatedAt,
+      usedStaleCache: result.usedStaleCache,
+      excluded: result.excluded,
+      syncStatus: result.syncStatus,
+      candidates: result.candidates.map((candidate) => ({
+        name: candidate.name,
+        title: candidate.title,
+        description: candidate.description,
+        latestVersion: candidate.latestVersion,
+        status: candidate.status,
+        statusMessage: candidate.statusMessage,
+        repositoryUrl: candidate.repositoryUrl,
+        websiteUrl: candidate.websiteUrl,
+        transportTypes: candidate.transportTypes,
+        packageSummaries: candidate.packageSummaries,
+        remoteSummaries: candidate.remoteSummaries,
+        publishedAt: candidate.publishedAt,
+        updatedAt: candidate.updatedAt,
+        score: candidate.score,
+        matchReasons: candidate.matchReasons,
+      })),
+    };
+  }
+
+  return {
+    status: 'error',
+    message: `Unknown command '${command}'. Use command=help for supported operations.`,
+  };
+};
+
 export const helkin_get_costs: ToolHandler = async (_args) => {
   const { getAzureResourceGroupCostSummary } = await import('../../src/integrations/azureCostManagement.js');
   return getAzureResourceGroupCostSummary();

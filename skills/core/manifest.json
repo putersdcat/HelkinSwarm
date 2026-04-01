@@ -97,6 +97,61 @@
       "requiresSubAgent": false
     },
     {
+      "name": "helkin_mcp_registry_search",
+      "description": "Read-only search over a synced local cache of official MCP Registry candidates. Supports help, search, status, and refresh. Use this to discover external MCP servers as onboarding candidates without blurring them with installed HelkinSwarm skills.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "enum": [
+              "help",
+              "search",
+              "status",
+              "refresh"
+            ],
+            "description": "Registry discovery operation to run. Use help for usage guidance."
+          },
+          "query": {
+            "type": "string",
+            "description": "Natural-language query for command=search."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Optional maximum number of candidates to return for search (default: 8)."
+          },
+          "includeDeprecated": {
+            "type": "boolean",
+            "description": "Optional search flag to include deprecated candidates (default: true)."
+          },
+          "includeDeleted": {
+            "type": "boolean",
+            "description": "Optional search flag to include deleted candidates (default: false)."
+          },
+          "forceRefresh": {
+            "type": "boolean",
+            "description": "For command=search, force a full cache refresh before searching."
+          },
+          "forceFull": {
+            "type": "boolean",
+            "description": "For command=refresh, force a full cache rebuild instead of a normal freshness check."
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
+    },
+    {
       "name": "helkin_get_costs",
       "description": "Returns current month Azure spend breakdown by resource. Requires Azure Cost Management access.",
       "risk": "low",
