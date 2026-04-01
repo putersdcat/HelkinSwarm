@@ -41,7 +41,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 WORKDIR /opt/skillforge/tooling
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile \
-    && pnpm add -D prettier @playwright/test playwright \
+    && pnpm add -D typescript eslint prettier @playwright/test playwright \
     && pnpm store prune
 ENV PATH=/opt/skillforge/tooling/node_modules/.bin:${PATH}
 
