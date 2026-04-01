@@ -1,8 +1,10 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport, type StdioServerParameters } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { CompatibilityCallToolResultSchema } from '@modelcontextprotocol/sdk/types.js';
 import { join } from 'node:path';
 import type { CapabilityManifest, ToolManifestEntry } from '../capabilities/manifestSchema.js';
+import type { McpServerConfig } from '../capabilities/manifestSchema.js';
 import type { ToolHandler } from '../capabilities/capabilityLoader.js';
 
 type RegisterHandlerFn = (toolName: string, handler: ToolHandler) => void;
@@ -20,7 +22,7 @@ type McpToolDescriptor = {
 
 type McpClientState = {
 	client: Client;
-	transport: StdioClientTransport;
+	transport: StdioClientTransport | StreamableHTTPClientTransport;
 	timeoutMs: number;
 	stderrLines: string[];
 	remoteTools: Map<string, McpToolDescriptor>;
@@ -39,16 +41,7 @@ const MAX_STDERR_LINES = 20;
 export async function registerMcpHandlersForManifest(
 	input: RegisterMcpHandlersInput,
 ): Promise<void> {
-	const state = await getOrCreateMcpClientState(input.manifest);
-
 	for (const tool of input.manifest.tools) {
-		const remoteToolName = tool.remoteToolName ?? tool.name;
-		if (!state.remoteTools.has(remoteToolName)) {
-			throw new Error(
-				`MCP server for skill '${input.manifest.domain}' does not expose required tool '${remoteToolName}'.`,
-			);
-		}
-
 		input.registerHandler(
 			tool.name,
 			buildMcpBackedHandler(input.manifest.domain, tool, async (args) =>
@@ -65,13 +58,8 @@ export async function smokeTestMcpServerForManifest(
 		throw new Error(`Skill '${manifest.domain}' does not declare an MCP server.`);
 	}
 
-	if (manifest.mcpServer.transport !== 'stdio') {
-		throw new Error(`Unsupported MCP transport '${manifest.mcpServer.transport}' for skill '${manifest.domain}'.`);
-	}
-
 	const stderrLines: string[] = [];
-	const transport = new StdioClientTransport(resolveServerParameters(manifest));
-	bindStderrCapture(transport, stderrLines);
+	const transport = buildTransport(manifest.mcpServer, stderrLines);
 
 	const client = new Client(
 		{ name: `helkinswarm-${manifest.domain}-mcp-smoketest`, version: '1.0.0' },
@@ -133,6 +121,11 @@ async function callRemoteTool(
 ): Promise<unknown> {
 	const state = await getOrCreateMcpClientState(manifest);
 	const remoteToolName = tool.remoteToolName ?? tool.name;
+	if (!state.remoteTools.has(remoteToolName)) {
+		throw new Error(
+			`MCP server for skill '${manifest.domain}' does not expose required tool '${remoteToolName}'.`,
+		);
+	}
 
 	const result = await withTimeout(
 		state.client.callTool(
@@ -201,13 +194,8 @@ async function createMcpClientState(
 		throw new Error(`Skill '${manifest.domain}' does not declare an MCP server.`);
 	}
 
-	if (manifest.mcpServer.transport !== 'stdio') {
-		throw new Error(`Unsupported MCP transport '${manifest.mcpServer.transport}' for skill '${manifest.domain}'.`);
-	}
-
 	const stderrLines: string[] = [];
-	const transport = new StdioClientTransport(resolveServerParameters(manifest));
-	bindStderrCapture(transport, stderrLines);
+	const transport = buildTransport(manifest.mcpServer, stderrLines);
 
 	const client = new Client(
 		{ name: `helkinswarm-${manifest.domain}-mcp-client`, version: '1.0.0' },
@@ -267,12 +255,24 @@ function bindStderrCapture(transport: StdioClientTransport, stderrLines: string[
 	});
 }
 
-function resolveServerParameters(manifest: CapabilityManifest): StdioServerParameters {
-	const config = manifest.mcpServer;
-	if (!config) {
-		throw new Error(`Skill '${manifest.domain}' does not declare an MCP server.`);
+function buildTransport(
+	config: McpServerConfig,
+	stderrLines: string[],
+): StdioClientTransport | StreamableHTTPClientTransport {
+	if (config.transport === 'stdio') {
+		const transport = new StdioClientTransport(resolveServerParameters(config));
+		bindStderrCapture(transport, stderrLines);
+		return transport;
 	}
 
+	return new StreamableHTTPClientTransport(new URL(config.url), {
+		requestInit: {
+			headers: config.headers,
+		},
+	});
+}
+
+function resolveServerParameters(config: Extract<McpServerConfig, { transport: 'stdio' }>): StdioServerParameters {
 	const inheritedEnv = Object.fromEntries(
 		Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
 	);
@@ -340,7 +340,9 @@ async function withTimeout<T>(
 	}
 }
 
-async function safeCloseTransport(transport: StdioClientTransport): Promise<void> {
+async function safeCloseTransport(
+	transport: StdioClientTransport | StreamableHTTPClientTransport,
+): Promise<void> {
 	try {
 		await transport.close();
 	} catch {

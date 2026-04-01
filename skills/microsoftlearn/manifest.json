@@ -1,0 +1,223 @@
+{
+  "domain": "microsoftlearn",
+  "version": "1.0",
+  "shortName": "mslearn",
+  "displayName": "Microsoft Learn MCP",
+  "shortDescription": "Read-only official Microsoft documentation, code samples, and product reference grounding via the Microsoft Learn MCP server.",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/core.png",
+  "deploymentScenario": "enterprise-commercial",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials",
+  "dependencies": [],
+  "requiredPermissions": [],
+  "externalAccountsNeeded": [],
+  "capabilityGroups": [
+    {
+      "id": "docs",
+      "displayName": "Docs Search & Fetch",
+      "shortDescription": "Search official Microsoft docs and fetch full authoritative pages.",
+      "discoveryHints": [
+        "microsoft docs",
+        "official guidance",
+        "azure docs"
+      ],
+      "useWhen": [
+        "you need authoritative Microsoft documentation before acting",
+        "you want factual grounding for Azure, Graph, M365, or .NET work"
+      ],
+      "upstreamNamespace": "microsoft_docs",
+      "upstreamToolSelectors": [
+        "microsoft_docs_search",
+        "microsoft_docs_fetch"
+      ]
+    },
+    {
+      "id": "code",
+      "displayName": "Code Samples & API Reference",
+      "shortDescription": "Find official Microsoft/Azure code samples and implementation references.",
+      "discoveryHints": [
+        "microsoft code samples",
+        "azure sdk examples",
+        "official api reference"
+      ],
+      "useWhen": [
+        "you need runnable official samples for Microsoft technologies",
+        "you are implementing Azure, Graph, Foundry, or Microsoft 365 code paths"
+      ],
+      "upstreamNamespace": "microsoft_code_sample",
+      "upstreamToolSelectors": [
+        "microsoft_code_sample_search"
+      ]
+    }
+  ],
+  "discoveryHints": [
+    "microsoft docs",
+    "official reference",
+    "azure learn",
+    "m365 docs",
+    "graph docs"
+  ],
+  "orchestratorUseCases": [
+    "ground Azure and M365 operator actions in official Microsoft guidance",
+    "fetch authoritative documentation pages before taking platform actions",
+    "retrieve official Microsoft code samples for implementation tasks"
+  ],
+  "recommendedEntryTools": [
+    "mslearn_docs_search",
+    "mslearn_code_sample_search"
+  ],
+  "mcpServer": {
+    "transport": "streamable-http",
+    "url": "https://learn.microsoft.com/api/mcp?maxTokenBudget=2000",
+    "headers": {},
+    "timeoutMs": 30000
+  },
+  "tools": [
+    {
+      "name": "mslearn_docs_search",
+      "remoteToolName": "microsoft_docs_search",
+      "description": "Search official Microsoft documentation for relevant conceptual, operational, and reference guidance.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "aliases": [
+        "search microsoft docs",
+        "find official microsoft guidance"
+      ],
+      "discoveryTerms": [
+        "microsoft docs search",
+        "official learn search",
+        "azure documentation"
+      ],
+      "useWhen": [
+        "you need a fast official Microsoft documentation overview before acting"
+      ],
+      "avoidWhen": [
+        "you need to mutate an external system rather than research it"
+      ],
+      "typicalInputs": [
+        "Azure service question",
+        "Graph API concept lookup",
+        "M365 admin guidance query"
+      ],
+      "returnsSummaryShape": "official Microsoft documentation search hits with URLs and excerpts",
+      "capabilityGroup": "docs",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Query about Microsoft or Azure technologies."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    },
+    {
+      "name": "mslearn_docs_fetch",
+      "remoteToolName": "microsoft_docs_fetch",
+      "description": "Fetch a full Microsoft documentation page as markdown for deeper grounded reasoning.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "aliases": [
+        "fetch microsoft doc page",
+        "read official learn page"
+      ],
+      "discoveryTerms": [
+        "microsoft docs fetch",
+        "learn page markdown"
+      ],
+      "useWhen": [
+        "a search result found a promising Microsoft doc page and you need the full content"
+      ],
+      "avoidWhen": [
+        "you only need a broad search overview instead of a full page"
+      ],
+      "typicalInputs": [
+        "learn.microsoft.com URL",
+        "official docs URL from a prior search result"
+      ],
+      "returnsSummaryShape": "full Microsoft documentation page in markdown form",
+      "capabilityGroup": "docs",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The Microsoft documentation URL to fetch."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      }
+    },
+    {
+      "name": "mslearn_code_sample_search",
+      "remoteToolName": "microsoft_code_sample_search",
+      "description": "Search official Microsoft and Azure code samples and code-reference snippets.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "aliases": [
+        "search microsoft code examples",
+        "find azure code sample"
+      ],
+      "discoveryTerms": [
+        "microsoft code sample search",
+        "official azure examples",
+        "graph sample code"
+      ],
+      "useWhen": [
+        "you need official Microsoft sample code or API usage patterns"
+      ],
+      "avoidWhen": [
+        "you only need conceptual documentation without sample code"
+      ],
+      "typicalInputs": [
+        "SDK name",
+        "API method",
+        "Azure task description"
+      ],
+      "returnsSummaryShape": "official Microsoft code sample hits with language-specific examples",
+      "capabilityGroup": "code",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The Microsoft or Azure coding topic to search for."
+          },
+          "language": {
+            "type": "string",
+            "description": "Optional programming language filter."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      }
+    }
+  ]
+}

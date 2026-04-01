@@ -21,6 +21,9 @@ describe('capabilityLoader custom skill discovery', () => {
     expect(getManifest('mcpreference')).toBeDefined();
     expect(toolRegistry.get('mcpreference_echo')).toBeDefined();
 
+    expect(getManifest('microsoftlearn')).toBeDefined();
+    expect(toolRegistry.get('mslearn_docs_search')).toBeDefined();
+
     const mcpHandler = getHandler('mcpreference_echo');
     expect(mcpHandler).toBeDefined();
 

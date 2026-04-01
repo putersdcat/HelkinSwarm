@@ -62,7 +62,7 @@ export const CapabilityGroup = z.object({
 });
 export type CapabilityGroup = z.infer<typeof CapabilityGroup>;
 
-export const McpServerConfig = z.object({
+const McpServerStdioConfig = z.object({
   transport: z.literal('stdio'),
   command: z.string().min(1),
   args: z.array(z.string().min(1)).default([]),
@@ -70,6 +70,16 @@ export const McpServerConfig = z.object({
   env: z.record(z.string(), z.string()).default({}),
   timeoutMs: z.number().int().positive().max(120_000).default(20_000),
 });
+const McpServerStreamableHttpConfig = z.object({
+  transport: z.literal('streamable-http'),
+  url: z.string().url(),
+  headers: z.record(z.string(), z.string()).default({}),
+  timeoutMs: z.number().int().positive().max(120_000).default(20_000),
+});
+export const McpServerConfig = z.discriminatedUnion('transport', [
+  McpServerStdioConfig,
+  McpServerStreamableHttpConfig,
+]);
 export type McpServerConfig = z.infer<typeof McpServerConfig>;
 
 export const ToolManifestEntry = z.object({
