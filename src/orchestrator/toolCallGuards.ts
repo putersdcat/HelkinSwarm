@@ -29,13 +29,76 @@ function stableSerialize(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function normalizeStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => typeof item === 'string' ? item.trim() : '')
+    .filter((item) => item.length > 0)
+    .sort((a, b) => a.localeCompare(b));
+}
+
+function normalizeInlineAssets(value: unknown): Array<{ assetId: string; contentId: string; fileName?: string }> {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item) => {
+      if (!item || typeof item !== 'object') {
+        return null;
+      }
+
+      const record = item as Record<string, unknown>;
+      const assetId = typeof record['assetId'] === 'string' ? record['assetId'].trim() : '';
+      const contentId = typeof record['contentId'] === 'string' ? record['contentId'].trim().toLowerCase() : '';
+      const fileName = typeof record['fileName'] === 'string' && record['fileName'].trim().length > 0
+        ? record['fileName'].trim()
+        : undefined;
+
+      if (!assetId || !contentId) {
+        return null;
+      }
+
+      return fileName ? { assetId, contentId, fileName } : { assetId, contentId };
+    })
+    .filter((item): item is { assetId: string; contentId: string; fileName?: string } => !!item)
+    .sort((a, b) => `${a.contentId}:${a.assetId}:${a.fileName ?? ''}`.localeCompare(`${b.contentId}:${b.assetId}:${b.fileName ?? ''}`));
+}
+
+function normalizeToolArguments(name: string, value: unknown): unknown {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return value;
+  }
+
+  const record = value as Record<string, unknown>;
+
+  if (name === 'outlook_send_email') {
+    return {
+      to: normalizeStringArray(record['to']),
+      subject: typeof record['subject'] === 'string' ? record['subject'] : '',
+      body: typeof record['body'] === 'string' ? record['body'] : '',
+      bodyType: typeof record['bodyType'] === 'string' && record['bodyType'].trim().length > 0
+        ? record['bodyType'].trim().toLowerCase()
+        : 'text',
+      cc: normalizeStringArray(record['cc']),
+      attachmentAssetIds: normalizeStringArray(record['attachmentAssetIds']),
+      inlineAssets: normalizeInlineAssets(record['inlineAssets']),
+    };
+  }
+
+  return value;
+}
+
 export function isMutatingTool(tool: GuardedToolLike | undefined): boolean {
   return !!tool && tool.privilegeClass !== undefined && tool.privilegeClass !== 'read-only';
 }
 
 export function buildToolCallFingerprint(name: string, rawArguments: string): string {
   try {
-    return `${name}:${stableSerialize(JSON.parse(rawArguments) as unknown)}`;
+    return `${name}:${stableSerialize(normalizeToolArguments(name, JSON.parse(rawArguments) as unknown))}`;
   } catch {
     return `${name}:${rawArguments.trim()}`;
   }

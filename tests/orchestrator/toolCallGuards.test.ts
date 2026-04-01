@@ -13,6 +13,19 @@ describe('toolCallGuards', () => {
     expect(a).toBe(b);
   });
 
+  it('normalizes outlook_send_email defaults and ordering when fingerprinting semantically identical sends', () => {
+    const minimal = buildToolCallFingerprint(
+      'outlook_send_email',
+      '{"to":["eric@eanderson.de"],"subject":"Hello","body":"Hi there"}',
+    );
+    const explicitDefaults = buildToolCallFingerprint(
+      'outlook_send_email',
+      '{"body":"Hi there","subject":"Hello","cc":[],"inlineAssets":[],"to":["eric@eanderson.de"],"attachmentAssetIds":[],"bodyType":"text"}',
+    );
+
+    expect(minimal).toBe(explicitDefaults);
+  });
+
   it('treats non-read-only tools as mutating', () => {
     expect(isMutatingTool({ privilegeClass: 'create' })).toBe(true);
     expect(isMutatingTool({ privilegeClass: 'read-only' })).toBe(false);
