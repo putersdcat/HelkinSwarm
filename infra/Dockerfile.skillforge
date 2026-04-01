@@ -44,6 +44,9 @@ RUN pnpm install --frozen-lockfile \
     && pnpm add -D typescript eslint prettier @playwright/test playwright \
     && ln -sf /opt/skillforge/tooling/node_modules/typescript/bin/tsc /usr/local/bin/tsc \
     && ln -sf /opt/skillforge/tooling/node_modules/typescript/bin/tsserver /usr/local/bin/tsserver \
+    && ln -sf /opt/skillforge/tooling/node_modules/eslint/bin/eslint.js /usr/local/bin/eslint \
+    && ln -sf /opt/skillforge/tooling/node_modules/prettier/bin/prettier.cjs /usr/local/bin/prettier \
+    && ln -sf /opt/skillforge/tooling/node_modules/playwright/cli.js /usr/local/bin/playwright \
     && pnpm store prune
 ENV PATH=/opt/skillforge/tooling/node_modules/.bin:${PATH}
 

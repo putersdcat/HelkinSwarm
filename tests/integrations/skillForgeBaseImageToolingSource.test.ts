@@ -11,6 +11,9 @@ describe('SkillForge base image tooling source wiring', () => {
     expect(dockerfile).toContain('pnpm install --frozen-lockfile');
     expect(dockerfile).toContain('pnpm add -D typescript eslint prettier @playwright/test playwright');
     expect(dockerfile).toContain('ln -sf /opt/skillforge/tooling/node_modules/typescript/bin/tsc /usr/local/bin/tsc');
+    expect(dockerfile).toContain('ln -sf /opt/skillforge/tooling/node_modules/eslint/bin/eslint.js /usr/local/bin/eslint');
+    expect(dockerfile).toContain('ln -sf /opt/skillforge/tooling/node_modules/prettier/bin/prettier.cjs /usr/local/bin/prettier');
+    expect(dockerfile).toContain('ln -sf /opt/skillforge/tooling/node_modules/playwright/cli.js /usr/local/bin/playwright');
     expect(dockerfile).toContain('pnpm store prune');
     expect(dockerfile).toContain('ENV PATH=/opt/skillforge/tooling/node_modules/.bin:${PATH}');
     expect(dockerfile).toContain('USER forge');
