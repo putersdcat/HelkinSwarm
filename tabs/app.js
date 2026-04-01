@@ -72,6 +72,21 @@
     return d;
   }
 
+  function daysInUtcMonth(date) {
+    return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate();
+  }
+
+  function fmtSignedMoney(amount, currency) {
+    if (typeof amount !== 'number') return '\u2014';
+    var formatted = fmtMoney(amount, currency);
+    return amount > 0 ? ('+' + formatted) : formatted;
+  }
+
+  function fmtPercent(value) {
+    if (typeof value !== 'number' || !isFinite(value)) return '\u2014';
+    return (value > 0 ? '+' : '') + value.toFixed(1) + '%';
+  }
+
   function classifyCostServiceGroup(service) {
     if (!service) return 'User Stamp Runtime';
     var models = ['Foundry Models', 'Foundry Tools'];
@@ -130,9 +145,66 @@
     }).join('');
   }
 
+  function buildUnavailableCostPeriod(label, currency, message) {
+    return {
+      status: 'unavailable',
+      label: label,
+      periodStart: '',
+      periodEnd: '',
+      daysInMonth: 0,
+      currency: currency || 'USD',
+      totalCost: 0,
+      breakdown: [],
+      daily: [],
+      validDayCount: 0,
+      message: message || 'Not available yet.'
+    };
+  }
+
+  function buildLegacyCurrentCostPeriod(data) {
+    var daily = (data.daily || []).slice().sort(function (a, b) { return a.date.localeCompare(b.date); });
+    var lastDate = daily.length ? parseIsoDateOnly(daily[daily.length - 1].date) : null;
+    var firstDate = daily.length ? parseIsoDateOnly(daily[0].date) : null;
+    var daysInMonth = lastDate ? daysInUtcMonth(lastDate) : 0;
+    return {
+      status: 'success',
+      label: 'Current month',
+      periodStart: firstDate ? isoDateOnly(firstDate) : '',
+      periodEnd: lastDate ? isoDateOnly(lastDate) : '',
+      daysInMonth: daysInMonth,
+      currency: data.currency || 'USD',
+      totalCost: data.totalCost || 0,
+      breakdown: data.breakdown || [],
+      daily: daily,
+      validDayCount: daily.length,
+      lastReportedDate: lastDate ? isoDateOnly(lastDate) : ''
+    };
+  }
+
+  function getCurrentCostPeriod(data) {
+    return data.currentMonth || buildLegacyCurrentCostPeriod(data);
+  }
+
+  function getPreviousCostPeriod(data, currency) {
+    return data.previousMonth || buildUnavailableCostPeriod('Previous month', currency, 'Previous month data is not available yet.');
+  }
+
   function renderCostsPanelContent(data, state) {
-    var breakdown = data.breakdown || [];
-    var daily = data.daily || [];
+    var currentMonth = getCurrentCostPeriod(data);
+    var previousMonth = getPreviousCostPeriod(data, currentMonth.currency);
+    var comparison = data.comparison || {
+      status: 'unavailable',
+      assumptions: [],
+      message: 'Previous month comparison is not available yet.',
+      fallbackSuggestion: 'Use trailing 30d or year-to-date for interim context.'
+    };
+    var hasPreviousMonth = previousMonth.status === 'success';
+    if (state.periodKey === 'previous' && !hasPreviousMonth) {
+      state.periodKey = 'current';
+    }
+    var activeMonth = state.periodKey === 'previous' && hasPreviousMonth ? previousMonth : currentMonth;
+    var breakdown = activeMonth.breakdown || [];
+    var daily = activeMonth.daily || [];
     var filteredDaily = filterDailyCostsByRange(daily, state.rangeDays);
     var series = aggregateCostSeries(filteredDaily, state.granularity);
     var topServices = breakdown.slice(0, 8).map(function (item) {
@@ -142,50 +214,81 @@
       return { label: item.name, cost: item.cost };
     });
     var granularityLabel = state.granularity.charAt(0).toUpperCase() + state.granularity.slice(1);
+    var fullRangeLabel = state.periodKey === 'previous' ? 'Full Month' : 'Month To Date';
+    var comparisonHtml = comparison.status === 'available'
+      ? '<div class="card"><h2>Current vs Previous Comparison</h2>' +
+        '<div class="cost-comparison-grid">' +
+        '<div class="cost-comparison-metric"><span>Comparing through day</span><strong>Day ' + esc(comparison.compareThroughDay) + '</strong></div>' +
+        '<div class="cost-comparison-metric"><span>Spend Delta</span><strong>' + esc(fmtSignedMoney(comparison.spendDelta, currentMonth.currency)) + '</strong></div>' +
+        '<div class="cost-comparison-metric"><span>Delta %</span><strong>' + esc(fmtPercent(comparison.spendDeltaPercent)) + '</strong></div>' +
+        '<div class="cost-comparison-metric"><span>Daily Velocity</span><strong>' + esc(fmtMoney(comparison.currentVelocity, currentMonth.currency)) + ' vs ' + esc(fmtMoney(comparison.previousVelocity, currentMonth.currency)) + '</strong></div>' +
+        '<div class="cost-comparison-metric"><span>Projected Month-End</span><strong>' + esc(fmtMoney(comparison.projectedMonthEndCost, currentMonth.currency)) + '</strong></div>' +
+        '</div>' +
+        '<p class="muted">' + esc(comparison.message || ('Comparing through day ' + comparison.compareThroughDay + '.')) + '</p>' +
+        ((comparison.assumptions || []).length
+          ? '<ul class="mini-steps cost-assumption-list">' + (comparison.assumptions || []).map(function (item) {
+              return '<li>' + esc(item) + '</li>';
+            }).join('') + '</ul>'
+          : '') +
+        '</div>'
+      : '<div class="card"><h2>Current vs Previous Comparison</h2>' +
+        '<div class="cost-callout cost-callout-warn"><strong>Previous month comparison is not available yet.</strong><p>' + esc(comparison.message || 'Previous month data is not available yet.') + '</p>' +
+        (comparison.fallbackSuggestion ? '<p class="muted">Fallback: ' + esc(comparison.fallbackSuggestion) + '</p>' : '') +
+        '</div></div>';
 
     return '<div class="kpi-row">' +
-      kpiTile('Period', data.period || 'MonthToDate') +
+      kpiTile('View', activeMonth.label || 'Current month') +
       kpiTile('Resource Group', data.resourceGroup || '\u2014') +
-      kpiTile('Total Spend', fmtMoney(data.totalCost, data.currency), 'kpi-ok') +
+      kpiTile('Total Spend', fmtMoney(activeMonth.totalCost, activeMonth.currency), 'kpi-ok') +
       kpiTile('Services', breakdown.length) +
+      kpiTile('Days Reported', activeMonth.validDayCount + ' / ' + (activeMonth.daysInMonth || '\u2014')) +
       '</div>' +
       '<div class="card"><h2>Filters</h2>' +
       '<div class="cta-list costs-filter-bar">' +
+      '<span class="muted">View</span>' +
+      '<button class="cmd-btn cost-period-btn' + (state.periodKey === 'current' ? ' cmd-btn-primary' : '') + '" data-period="current">Current month</button>' +
+      '<button class="cmd-btn cost-period-btn' + (state.periodKey === 'previous' ? ' cmd-btn-primary' : '') + '" data-period="previous"' + (hasPreviousMonth ? '' : ' disabled') + '>Previous month</button>' +
       '<span class="muted">Date Range</span>' +
       '<button class="cmd-btn cost-range-btn' + (state.rangeDays === 7 ? ' cmd-btn-primary' : '') + '" data-range="7">Last 7 Days</button>' +
       '<button class="cmd-btn cost-range-btn' + (state.rangeDays === 14 ? ' cmd-btn-primary' : '') + '" data-range="14">Last 14 Days</button>' +
-      '<button class="cmd-btn cost-range-btn' + (state.rangeDays === 30 ? ' cmd-btn-primary' : '') + '" data-range="30">Month To Date</button>' +
+      '<button class="cmd-btn cost-range-btn' + (state.rangeDays === 0 ? ' cmd-btn-primary' : '') + '" data-range="0">' + esc(fullRangeLabel) + '</button>' +
       '<span class="muted">Granularity</span>' +
       '<button class="cmd-btn cost-granularity-btn' + (state.granularity === 'daily' ? ' cmd-btn-primary' : '') + '" data-granularity="daily">Daily</button>' +
       '<button class="cmd-btn cost-granularity-btn' + (state.granularity === 'weekly' ? ' cmd-btn-primary' : '') + '" data-granularity="weekly">Weekly</button>' +
       '<button class="cmd-btn cost-granularity-btn' + (state.granularity === 'monthly' ? ' cmd-btn-primary' : '') + '" data-granularity="monthly">Monthly</button>' +
       '</div>' +
-      '<p class="muted">Current scope filters the active stamp resource group and reshapes the live Azure Cost Management dataset client-side.</p>' +
+      '<p class="muted">Current scope filters the active stamp resource group. Previous month data is requested once from the tab costs endpoint and reused client-side when you switch views.</p>' +
+      '<div class="cost-period-summary"><strong>' + esc(activeMonth.label || 'Current month') + '</strong>' +
+      (activeMonth.periodStart && activeMonth.periodEnd ? ' \u00B7 ' + esc(activeMonth.periodStart) + ' \u2192 ' + esc(activeMonth.periodEnd) : '') +
+      (comparison.compareThroughDay ? ' \u00B7 Comparing through day ' + esc(comparison.compareThroughDay) : '') + '</div>' +
       '</div>' +
+      comparisonHtml +
       '<div class="two-col">' +
       '<div class="card"><h2>Top Services</h2>' +
-      renderCostSeriesRows(topServices, data.currency, 'No cost breakdown data.') +
+      renderCostSeriesRows(topServices, activeMonth.currency, 'No cost breakdown data.') +
       '</div>' +
       '<div class="card"><h2>Spend Groups</h2>' +
-      renderCostSeriesRows(groupedSpend, data.currency, 'No grouped cost data.') +
+      renderCostSeriesRows(groupedSpend, activeMonth.currency, 'No grouped cost data.') +
       '</div></div>' +
       '<div class="two-col">' +
       '<div class="card"><h2>' + esc(granularityLabel) + ' Trend</h2>' +
-      renderCostSeriesRows(series, data.currency, 'No trend data available for this range.', state.granularity === 'daily' ? 'cost-bar-daily' : '') +
+      renderCostSeriesRows(series, activeMonth.currency, 'No trend data available for this range.', state.granularity === 'daily' ? 'cost-bar-daily' : '') +
       '</div>' +
       '<div class="card"><h2>Scope Notes</h2>' +
-      configRow('Date Range', esc(state.rangeDays) + ' days') +
+      configRow('Active View', '<span class="badge badge-info">' + esc(activeMonth.label || 'Current month') + '</span>') +
+      configRow('Date Range', state.rangeDays ? esc(state.rangeDays) + ' days' : esc(fullRangeLabel)) +
       configRow('Granularity', '<span class="badge badge-info">' + esc(granularityLabel) + '</span>') +
+      configRow('Days Reported', esc(activeMonth.validDayCount) + ' / ' + esc(activeMonth.daysInMonth || '\u2014')) +
       configRow('Model Metrics', renderInlineTags((breakdown || []).filter(function (item) {
         return classifyCostServiceGroup(item.service) === 'Model Metrics';
       }).map(function (item) {
-        return item.service + ' ' + fmtMoney(item.cost, data.currency);
+        return item.service + ' ' + fmtMoney(item.cost, activeMonth.currency);
       }))) +
       '<p class="muted">Model metrics currently reflect Azure Cost Management service categories such as Foundry Models and Foundry Tools. Fine-grained token analytics remain follow-on work.</p>' +
       '</div></div>' +
       '<div class="card"><h2>Notes</h2>' +
-      '<p>Control Center now exposes live month-to-date stamp spend, grouped service breakdowns, and daily / weekly / monthly trend views inside Teams.</p>' +
-      '<p class="muted">Deeper filters (for example, explicit model-token telemetry slices) remain follow-on backlog work beyond this shipped Control Center costs surface.</p>' +
+      '<p>Control Center now exposes current month and previous month stamp spend, a clear current-vs-previous comparison, and daily / weekly / monthly trend views inside Teams.</p>' +
+      '<p class="muted">Comparison math aligns the previous month to the current reporting window and normalizes velocity when early daily rows are missing.</p>' +
       '</div>';
   }
 
@@ -990,14 +1093,20 @@
         }
         if (key === "costs") {
           var costRoot = container.querySelector('.costs-interactive-root');
-          var costState = { rangeDays: 14, granularity: 'daily' };
+          var costState = { rangeDays: 0, granularity: 'daily', periodKey: 'current' };
 
           function renderCostsState() {
             if (!costRoot) return;
             costRoot.innerHTML = renderCostsPanelContent(data.costs || {}, costState);
+            costRoot.querySelectorAll('.cost-period-btn').forEach(function (btn) {
+              btn.addEventListener('click', function () {
+                costState.periodKey = btn.getAttribute('data-period') || 'current';
+                renderCostsState();
+              });
+            });
             costRoot.querySelectorAll('.cost-range-btn').forEach(function (btn) {
               btn.addEventListener('click', function () {
-                costState.rangeDays = Number(btn.getAttribute('data-range')) || 14;
+                costState.rangeDays = Number(btn.getAttribute('data-range')) || 0;
                 renderCostsState();
               });
             });

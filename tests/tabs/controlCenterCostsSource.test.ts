@@ -22,4 +22,15 @@ describe('Control Center costs UI source', () => {
     expect(source).toContain('Model Metrics');
     expect(source).toContain('costs-interactive-root');
   });
+
+  it('adds current-vs-previous month controls and comparison metrics', () => {
+    const source = readFileSync('tabs/app.js', 'utf8');
+
+    expect(source).toContain('Current month');
+    expect(source).toContain('Previous month');
+    expect(source).toContain('Comparing through day');
+    expect(source).toContain('Projected Month-End');
+    expect(source).toContain('Spend Delta');
+    expect(source).toContain('cost-period-btn');
+  });
 });

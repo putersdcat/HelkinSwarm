@@ -427,6 +427,52 @@ code {
 .cost-bar-daily .cost-bar-fill {
   background: linear-gradient(90deg, #8e44ad, #3498db);
 }
+.cost-period-summary {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.cost-comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.cost-comparison-metric {
+  background: var(--kpi-bg);
+  border-radius: 8px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.cost-comparison-metric span {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+}
+.cost-comparison-metric strong {
+  font-size: 15px;
+}
+.cost-assumption-list {
+  margin-top: 8px;
+}
+.cost-callout {
+  border-radius: 8px;
+  padding: 12px;
+}
+.cost-callout strong {
+  display: block;
+  margin-bottom: 4px;
+}
+.cost-callout-warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.cost-callout-warn .muted {
+  color: var(--warn);
+}
 
 /* ─── Mobile Responsiveness ───────────────────────────────────────────── */
 @media (max-width: 640px) {
