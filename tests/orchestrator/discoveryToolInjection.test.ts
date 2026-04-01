@@ -263,6 +263,62 @@ describe('discoveryToolInjection', () => {
     expect(choice).toEqual({ type: 'function', function: { name: 'outlook_send_email' } });
   });
 
+  it('forces an explicit core tool on the initial turn instead of falling back to helkin_skill_search', async () => {
+    const { getForcedInitialToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const choice = getForcedInitialToolChoice(
+      'Use the exact tool helkin_mcp_forge with command "draft_candidate" and candidateName "io.github.j0hanz/filesystem-mcp".',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'helkin_skill_search',
+            description: 'discover tools',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'helkin_mcp_forge',
+            description: 'draft and approve MCP onboarding bundles',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(choice).toEqual({ type: 'function', function: { name: 'helkin_mcp_forge' } });
+  });
+
+  it('still forces helkin_skill_search on the initial turn for generic external-action intents without an explicit core tool', async () => {
+    const { getForcedInitialToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const choice = getForcedInitialToolChoice(
+      'Send an email to Eric about the deployment status.',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'helkin_skill_search',
+            description: 'discover tools',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'helkin_mcp_forge',
+            description: 'draft and approve MCP onboarding bundles',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(choice).toEqual({ type: 'function', function: { name: 'helkin_skill_search' } });
+  });
+
   it('prefers an explicit tool-name mention over the generic email-send fallback', async () => {
     const { getForcedDiscoveryFollowUpToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
 

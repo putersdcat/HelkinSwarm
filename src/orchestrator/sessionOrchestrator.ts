@@ -51,11 +51,11 @@ import {
   buildDiscoveryDeadEndResponse,
   deriveSelectiveFollowUpToolSchemas,
   getDiscoveryFollowUpModelOverride,
+  getForcedInitialToolChoice,
   getForcedDiscoveryFollowUpToolChoice,
   getDiscoveryFirstToolSchemas,
   isReadOnlyDiscoveryRequest,
   isDiscoveryOnlyDeadEnd,
-  shouldForceDiscoveryToolSearch,
   synthesizeDeterministicFollowUpToolCall,
 } from './discoveryToolInjection.js';
 import {
@@ -339,6 +339,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
   // 2. Call LLM (global frontier model via Foundry client)
   spanStart = context.df.currentUtcDateTime.getTime();
+  const initialToolSchemas = getDiscoveryFirstToolSchemas();
   const llmResult: LlmResult = yield context.df.callActivity(
     'llmActivity',
     {
@@ -347,10 +348,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       userId: input.state.userId,
       modelOverride: resolvedModelOverride,
       imageUrls: input.imageUrls,
-      tools: getDiscoveryFirstToolSchemas(),
-      toolChoice: shouldForceDiscoveryToolSearch(effectiveTaskMessage)
-        ? { type: 'function', function: { name: 'helkin_skill_search' } }
-        : 'auto',
+      tools: initialToolSchemas,
+      toolChoice: getForcedInitialToolChoice(effectiveTaskMessage, initialToolSchemas) ?? 'auto',
     },
   );
   spans.push({ label: 'llm', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });

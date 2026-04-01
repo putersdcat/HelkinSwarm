@@ -252,6 +252,31 @@ export function shouldForceDiscoveryToolSearch(userMessage: string): boolean {
     || /(send|reply|email|mail|calendar|meeting|schedule|github|repo|issue|pull request|weather|web search|search the web)/.test(normalized);
 }
 
+export function getForcedInitialToolChoice(
+  userMessage: string,
+  tools: ToolDefinition[] | null | undefined,
+): { type: 'function'; function: { name: string } } | null {
+  if (!tools || tools.length === 0) return null;
+
+  const normalized = userMessage.toLowerCase();
+  const toolNames = new Set(tools.map((tool) => tool.function.name));
+
+  if (isReadOnlyDiscoveryRequest(userMessage)) {
+    return toolNames.has('helkin_skill_search')
+      ? { type: 'function', function: { name: 'helkin_skill_search' } }
+      : null;
+  }
+
+  const explicitToolName = findExplicitToolNameMention(normalized, toolNames);
+  if (explicitToolName) {
+    return { type: 'function', function: { name: explicitToolName } };
+  }
+
+  return shouldForceDiscoveryToolSearch(userMessage) && toolNames.has('helkin_skill_search')
+    ? { type: 'function', function: { name: 'helkin_skill_search' } }
+    : null;
+}
+
 export function getForcedDiscoveryFollowUpToolChoice(
   userMessage: string,
   tools: ToolDefinition[] | null | undefined,

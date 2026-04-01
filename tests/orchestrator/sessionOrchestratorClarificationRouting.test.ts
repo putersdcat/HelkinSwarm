@@ -6,7 +6,8 @@ describe('sessionOrchestrator clarification routing', () => {
     const source = readFileSync('src/orchestrator/sessionOrchestrator.ts', 'utf8');
 
     expect(source).toContain('const effectiveTaskMessage = userMessageForLlm;');
-    expect(source).toContain('toolChoice: shouldForceDiscoveryToolSearch(effectiveTaskMessage)');
+    expect(source).toContain('const initialToolSchemas = getDiscoveryFirstToolSchemas();');
+    expect(source).toContain('toolChoice: getForcedInitialToolChoice(effectiveTaskMessage, initialToolSchemas) ?? \'auto\'');
     expect(source).toContain('const deterministicFollowUpToolCall = synthesizeDeterministicFollowUpToolCall(');
     expect(source).toContain('effectiveTaskMessage,');
     expect(source).toContain('getForcedDiscoveryFollowUpToolChoice(effectiveTaskMessage, selectiveFollowUpSchemas)');
