@@ -1,8 +1,8 @@
 # ============================================================================
-# HelkinSwarm — Teams App Package: Build & Publish to Admin Center
-# Builds the Teams app .zip and publishes via Graph API when appPackage/ changes.
-# ⚠️ MARK FOR IMMEDIATE REFACTOR before first run in v2.
-# Reference implementation only — alpha issue refs stripped.
+# HelkinSwarm — Teams App Package: Build artifact only
+# Builds the Teams app .zip and uploads it as a workflow artifact.
+# Teams app-catalog publish remains delegated/manual because Microsoft Graph
+# Teams app publish/update APIs do NOT support application permissions.
 # ============================================================================
 
 name: Teams App Package
@@ -11,21 +11,20 @@ on:
   workflow_dispatch:  # manual only — push trigger disabled to save Actions quota (#279)
     inputs:
       requires_review:
-        description: "Require admin review before publish"
+        description: "Reserved for delegated/manual publish flows; ignored by this build-only workflow"
         type: boolean
         default: false
       skip_publish:
-        description: "Build only — skip Graph API publish"
+        description: "Deprecated compatibility flag. This workflow is always build-only because Teams catalog publish is delegated-only in Microsoft Graph."
         type: boolean
         default: true
 
 permissions:
-  id-token: write  # OIDC token for Azure login → Graph API
   contents: read
 
 jobs:
   package-and-publish:
-    name: Build & Publish Teams App
+    name: Build Teams App Package
     runs-on: ubuntu-latest
 
     steps:
@@ -166,101 +165,16 @@ jobs:
           path: /tmp/teams-pkg/
           retention-days: 90
 
-      # ── Publish to Teams Admin Center via Graph API ────────────────────
-      - name: Azure Login (OIDC)
-        if: ${{ github.event.inputs.skip_publish != 'true' }}
-        uses: azure/login@v3
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Publish to Teams Admin Center
-        if: ${{ github.event.inputs.skip_publish != 'true' }}
+      # ── Delegated publish note ─────────────────────────────────────────
+      - name: Explain delegated publish limitation
         id: publish
         run: |
-          ZIP_PATH="${{ steps.build.outputs.zip-path }}"
-          VERSION="${{ steps.manifest.outputs.version }}"
-
-          echo "📤 Publishing to Teams Admin Center..."
-
-          # Get Graph API token via the OIDC-authenticated identity
-          TOKEN=$(az account get-access-token \
-            --resource "https://graph.microsoft.com" \
-            --query accessToken -o tsv 2>&1)
-
-          if [ $? -ne 0 ]; then
-            echo "⚠️  Could not acquire Graph token: $TOKEN"
-            echo "    The service principal may not have Graph API permissions."
-            echo "    Falling back to artifact-only mode."
-            echo "publish-status=token-failed" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          # Discover Teams App ID from manifest
-          APP_ID=$(jq -r '.id' appPackage/manifest.json)
-          echo "  App ID from manifest: $APP_ID"
-
-          PUBLISHED=false
-
-          # Strategy 1: POST /appDefinitions (submit new version)
-          PUBLISH_URL="https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/${APP_ID}/appDefinitions"
-          REQUIRES_REVIEW="${{ github.event.inputs.requires_review }}"
-          if [ "$REQUIRES_REVIEW" = "true" ]; then
-            PUBLISH_URL="${PUBLISH_URL}?requiresReview=true"
-          fi
-
-          echo "  Trying POST /appDefinitions..."
-          HTTP_CODE=$(curl -s -o /tmp/graph-response.json -w "%{http_code}" \
-            -X POST \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Content-Type: application/zip" \
-            --data-binary "@${ZIP_PATH}" \
-            "$PUBLISH_URL")
-          RESPONSE=$(cat /tmp/graph-response.json 2>/dev/null || echo "{}")
-          echo "  HTTP Status: $HTTP_CODE"
-
-          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-            PUBLISHED=true
-          else
-            echo "  POST failed ($HTTP_CODE) — trying PUT fallback..."
-          fi
-
-          # Strategy 2: PUT /teamsApps/{id} (update existing app)
-          if [ "$PUBLISHED" = "false" ]; then
-            PUT_URL="https://graph.microsoft.com/v1.0/appCatalogs/teamsApps/${APP_ID}"
-            if [ "$REQUIRES_REVIEW" = "true" ]; then
-              PUT_URL="${PUT_URL}?requiresReview=true"
-            fi
-            HTTP_CODE=$(curl -s -o /tmp/graph-response.json -w "%{http_code}" \
-              -X PUT \
-              -H "Authorization: Bearer $TOKEN" \
-              -H "Content-Type: application/zip" \
-              --data-binary "@${ZIP_PATH}" \
-              "$PUT_URL")
-            RESPONSE=$(cat /tmp/graph-response.json 2>/dev/null || echo "{}")
-            echo "  PUT HTTP Status: $HTTP_CODE"
-
-            if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
-              PUBLISHED=true
-            fi
-          fi
-
-          # Evaluate result
-          if [ "$PUBLISHED" = "true" ]; then
-            APP_DEF_ID=$(echo "$RESPONSE" | jq -r '.id // "unknown"')
-            echo "✅ Published successfully! App Definition ID: $APP_DEF_ID"
-            echo "publish-status=success"       >> "$GITHUB_OUTPUT"
-            echo "app-definition-id=$APP_DEF_ID" >> "$GITHUB_OUTPUT"
-          elif [ "$HTTP_CODE" = "403" ]; then
-            echo "⚠️  Publish failed: 403 Forbidden (Graph permissions needed)"
-            echo "publish-status=forbidden" >> "$GITHUB_OUTPUT"
-          elif [ "$HTTP_CODE" = "404" ]; then
-            echo "⚠️  Publish failed: 404 (app must be initially uploaded manually)"
-            echo "publish-status=not-found" >> "$GITHUB_OUTPUT"
-          else
-            echo "⚠️  Publish failed: HTTP $HTTP_CODE"
-            echo "publish-status=failed" >> "$GITHUB_OUTPUT"
+          echo "publish-status=delegated-required" >> "$GITHUB_OUTPUT"
+          echo "ℹ️ Teams app catalog publish remains delegated/manual."
+          echo "ℹ️ Microsoft Graph teamsApp publish/update APIs do not support application permissions,"
+          echo "   so GitHub OIDC app-only automation cannot complete the publish step."
+          if [ "${{ github.event.inputs.skip_publish }}" != "true" ]; then
+            echo "⚠️ Publish was requested, but this workflow intentionally stayed build-only."
           fi
 
       # ── Job Summary ──────────────────────────────────────────────────
@@ -271,17 +185,12 @@ jobs:
           APP_NAME="${{ steps.manifest.outputs.app-name }}"
           ZIP_NAME="${{ steps.build.outputs.zip-name }}"
           PUBLISH_STATUS="${{ steps.publish.outputs.publish-status }}"
-          APP_DEF_ID="${{ steps.publish.outputs.app-definition-id }}"
           SHORT_SHA="${GITHUB_SHA:0:7}"
           TS=$(date -u '+%Y-%m-%d %H:%M UTC')
 
           case "$PUBLISH_STATUS" in
-            success)       STATUS_EMOJI="✅ Published" ;;
-            forbidden)     STATUS_EMOJI="⚠️ Forbidden (artifact available)" ;;
-            not-found)     STATUS_EMOJI="⚠️ App not in catalog (artifact available)" ;;
-            token-failed)  STATUS_EMOJI="⚠️ Token failed (artifact available)" ;;
-            failed)        STATUS_EMOJI="❌ Failed (artifact available)" ;;
-            *)             STATUS_EMOJI="⏭️ Skipped (build only)" ;;
+            delegated-required) STATUS_EMOJI="ℹ️ Delegated/manual publish required" ;;
+            *)                  STATUS_EMOJI="⏭️ Build only" ;;
           esac
 
           {
@@ -302,17 +211,13 @@ jobs:
             echo "| | |"
             echo "|---|---|"
             echo "| **Status** | ${STATUS_EMOJI} |"
-            if [ -n "$APP_DEF_ID" ] && [ "$APP_DEF_ID" != "" ]; then
-              echo "| **App Definition** | \`${APP_DEF_ID}\` |"
-            fi
+            echo "| **Graph publish in CI** | Not supported with application permissions; use delegated/manual publish |"
             echo ""
-            if [ "$PUBLISH_STATUS" != "success" ] && [ "$PUBLISH_STATUS" != "" ]; then
-              echo "### Manual Publish Fallback"
-              echo ""
-              echo '```powershell'
-              echo "# Download the artifact from this workflow run, then:"
-              echo '.\scripts\New-TeamsAppPackage.ps1 -Publish'
-              echo '```'
-              echo ""
-            fi
+            echo "### Delegated Publish Fallback"
+            echo ""
+            echo '```powershell'
+            echo "# Download the artifact from this workflow run, then publish with delegated user auth:"
+            echo '.\appPackage\New-TeamsAppPackage.ps1 -Publish'
+            echo '```'
+            echo ""
           } >> "$GITHUB_STEP_SUMMARY"
