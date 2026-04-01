@@ -120,21 +120,44 @@ jobs:
             exit 1
           fi
 
-          if ! docker exec skillforge-startup-smoke sh -lc '
+          if ! docker exec skillforge-startup-smoke bash -lc '
             set -eu
-            command -v pnpm >/dev/null
-            command -v tsc >/dev/null
-            command -v eslint >/dev/null
-            command -v prettier >/dev/null
-            command -v playwright >/dev/null
-            command -v gh >/dev/null
-            command -v git >/dev/null
-            command -v curl >/dev/null
-            [ "$(id -u)" -ne 0 ]
-            ! command -v sudo >/dev/null 2>&1
-            [ ! -S /var/run/docker.sock ]
+            check_command() {
+              command -v "$1" >/dev/null || {
+                echo "missing command: $1"
+                exit 1
+              }
+            }
+
+            check_command pnpm
+            check_command tsc
+            check_command eslint
+            check_command prettier
+            check_command playwright
+            check_command gh
+            check_command git
+            check_command curl
+
+            if [ "$(id -u)" -eq 0 ]; then
+              echo "expected non-root user inside SkillForge container"
+              exit 1
+            fi
+
+            if command -v sudo >/dev/null 2>&1; then
+              echo "sudo must not be present inside SkillForge container"
+              exit 1
+            fi
+
+            if [ -S /var/run/docker.sock ]; then
+              echo "docker.sock must not be mounted inside SkillForge container"
+              exit 1
+            fi
           '; then
             echo "❌ SkillForge toolchain/isolation smoke failed."
+            echo "--- container logs ---"
+            docker logs skillforge-startup-smoke || true
+            echo "--- container inspect ---"
+            docker inspect skillforge-startup-smoke --format 'status={{.State.Status}} user={{.Config.User}}' || true
             docker rm -f skillforge-startup-smoke >/dev/null 2>&1 || true
             exit 1
           fi
