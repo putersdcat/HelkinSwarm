@@ -337,6 +337,10 @@
             "type": "string",
             "description": "Search query (KQL syntax). Examples: 'subject:meeting', 'from:alice@contoso.com', 'hasAttachment:true'"
           },
+          "folder": {
+            "type": "string",
+            "description": "Optional folder to search: inbox, archive, sentitems, drafts"
+          },
           "top": {
             "type": "number",
             "description": "Max results (default: 10, max: 25)"

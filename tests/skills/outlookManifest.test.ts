@@ -77,4 +77,13 @@ describe('outlook manifest safety flags', () => {
     expect(send?.inputSchema?.properties).toHaveProperty('inlineAssets');
     expect(manifest.orchestratorUseCases).toContain('send email with runtime-asset attachments or inline runtime-asset images');
   });
+
+  it('exposes optional folder scoping for outlook_search_emails so Sent Items queries can be requested explicitly', () => {
+    const manifest = JSON.parse(readFileSync('skills/outlook/manifest.json', 'utf8')) as {
+      tools: Array<{ name: string; inputSchema?: { properties?: Record<string, unknown> } }>;
+    };
+    const search = manifest.tools.find((tool) => tool.name === 'outlook_search_emails');
+
+    expect(search?.inputSchema?.properties).toHaveProperty('folder');
+  });
 });

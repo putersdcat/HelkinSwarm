@@ -270,7 +270,28 @@ const FOLDER_MAP: Record<string, string> = {
   archive: 'archive',
 };
 
+interface OutlookSearchCriteria {
+  from: string[];
+  to: string[];
+  cc: string[];
+  subject: string[];
+  generalTerms: string[];
+  hasAttachment?: boolean;
+}
+
 type OutlookAttachmentRecord = z.infer<typeof OutlookAttachmentSchema>;
+
+type SearchableOutlookMessage = {
+  id: string;
+  subject?: string | null;
+  bodyPreview?: string | null;
+  from?: { emailAddress?: { address?: string | null; name?: string | null } } | null;
+  toRecipients?: Array<{ emailAddress?: { address?: string | null; name?: string | null } }>;
+  ccRecipients?: Array<{ emailAddress?: { address?: string | null; name?: string | null } }>;
+  receivedDateTime?: string | null;
+  isRead?: boolean;
+  hasAttachments?: boolean;
+};
 
 interface OutlookAttachmentMetadata {
   id: string;
@@ -330,6 +351,151 @@ function buildEmailSendDedupKey(input: {
 
   const hash = createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
   return `mail:${hash}`;
+}
+
+function extractSearchTerms(input: string): string[] {
+  const terms: string[] = [];
+  const termRegex = /"([^"]+)"|(\S+)/g;
+  for (const match of input.matchAll(termRegex)) {
+    const term = (match[1] ?? match[2] ?? '').trim();
+    if (term.length > 0) {
+      terms.push(term);
+    }
+  }
+  return terms;
+}
+
+function parseOutlookSearchCriteria(query: string): OutlookSearchCriteria {
+  const criteria: OutlookSearchCriteria = {
+    from: [],
+    to: [],
+    cc: [],
+    subject: [],
+    generalTerms: [],
+  };
+
+  const fieldRegex = /\b(from|to|cc|subject|hasattachment):(?:"([^"]+)"|(\S+))/gi;
+  let residual = query;
+
+  for (const match of query.matchAll(fieldRegex)) {
+    const field = match[1]?.toLowerCase();
+    const rawValue = (match[2] ?? match[3] ?? '').trim();
+    if (!field || rawValue.length === 0) {
+      continue;
+    }
+
+    switch (field) {
+      case 'from':
+        criteria.from.push(rawValue.toLowerCase());
+        break;
+      case 'to':
+        criteria.to.push(rawValue.toLowerCase());
+        break;
+      case 'cc':
+        criteria.cc.push(rawValue.toLowerCase());
+        break;
+      case 'subject':
+        criteria.subject.push(rawValue.toLowerCase());
+        break;
+      case 'hasattachment':
+        if (/^(true|yes|1)$/i.test(rawValue)) {
+          criteria.hasAttachment = true;
+        } else if (/^(false|no|0)$/i.test(rawValue)) {
+          criteria.hasAttachment = false;
+        }
+        break;
+      default:
+        break;
+    }
+
+    residual = residual.replace(match[0], ' ');
+  }
+
+  criteria.generalTerms = extractSearchTerms(residual)
+    .map((term) => term.toLowerCase())
+    .filter((term) => term.length > 0);
+
+  return criteria;
+}
+
+function recipientAddresses(recipients: Array<{ emailAddress?: { address?: string | null } }> | undefined): string[] {
+  return (recipients ?? [])
+    .map((recipient) => recipient.emailAddress?.address?.trim().toLowerCase())
+    .filter((address): address is string => !!address);
+}
+
+function messageMatchesOutlookSearchCriteria(
+  message: SearchableOutlookMessage,
+  criteria: OutlookSearchCriteria,
+): boolean {
+  const fromAddress = message.from?.emailAddress?.address?.trim().toLowerCase() ?? '';
+  const fromName = message.from?.emailAddress?.name?.trim().toLowerCase() ?? '';
+  const toAddresses = recipientAddresses(message.toRecipients);
+  const ccAddresses = recipientAddresses(message.ccRecipients);
+  const subject = message.subject?.toLowerCase() ?? '';
+  const preview = message.bodyPreview?.toLowerCase() ?? '';
+  const generalHaystack = [fromAddress, fromName, ...toAddresses, ...ccAddresses, subject, preview]
+    .filter((part) => part.length > 0)
+    .join(' ');
+
+  if (criteria.hasAttachment !== undefined && (message.hasAttachments ?? false) !== criteria.hasAttachment) {
+    return false;
+  }
+
+  if (criteria.from.some((term) => !fromAddress.includes(term) && !fromName.includes(term))) {
+    return false;
+  }
+
+  if (criteria.to.some((term) => !toAddresses.some((address) => address.includes(term)))) {
+    return false;
+  }
+
+  if (criteria.cc.some((term) => !ccAddresses.some((address) => address.includes(term)))) {
+    return false;
+  }
+
+  if (criteria.subject.some((term) => !subject.includes(term))) {
+    return false;
+  }
+
+  if (criteria.generalTerms.some((term) => !generalHaystack.includes(term))) {
+    return false;
+  }
+
+  return true;
+}
+
+function mapMessageSummary(message: SearchableOutlookMessage) {
+  return {
+    id: message.id,
+    subject: message.subject,
+    from: message.from?.emailAddress?.address ?? 'unknown',
+    fromName: message.from?.emailAddress?.name,
+    receivedAt: message.receivedDateTime,
+    preview: message.bodyPreview?.slice(0, 200),
+    isRead: message.isRead,
+    hasAttachments: message.hasAttachments,
+  };
+}
+
+async function fallbackSearchRecentMessages(
+  token: string,
+  query: string,
+  folder: string | undefined,
+  top: number,
+): Promise<Array<ReturnType<typeof mapMessageSummary>>> {
+  const scanTop = Math.min(Math.max(top * 5, 50), 100);
+  const folderSegment = folder
+    ? `/mailFolders/${FOLDER_MAP[folder.toLowerCase()] ?? folder}/`
+    : '/';
+  const criteria = parseOutlookSearchCriteria(query);
+  const path = `/me${folderSegment}messages?$top=${scanTop}&$select=id,subject,bodyPreview,from,toRecipients,ccRecipients,receivedDateTime,isRead,hasAttachments&$orderby=receivedDateTime desc`;
+  const result = await graphFetch(token, path, MessageListSchema);
+
+  return result.value
+    .filter((message) => messageMatchesOutlookSearchCriteria(message, criteria))
+    .slice(0, top)
+    .map(mapMessageSummary);
 }
 
 function extractCidReferences(bodyContent: string | undefined): Set<string> {
@@ -501,16 +667,7 @@ const outlookListEmails: ToolHandler = async (args) => {
   const token = await resolveToken(args);
   const result = await graphFetch(token, path, MessageListSchema);
 
-  return result.value.map((m) => ({
-    id: m.id,
-    subject: m.subject,
-    from: m.from?.emailAddress?.address ?? 'unknown',
-    fromName: m.from?.emailAddress?.name,
-    receivedAt: m.receivedDateTime,
-    preview: m.bodyPreview?.slice(0, 200),
-    isRead: m.isRead,
-    hasAttachments: m.hasAttachments,
-  }));
+  return result.value.map(mapMessageSummary);
 };
 
 const outlookReadEmail: ToolHandler = async (args) => {
@@ -756,17 +913,11 @@ const outlookSearchEmails: ToolHandler = async (args) => {
 
   const token = await resolveToken(args);
   const result = await graphFetch(token, path, MessageListSchema);
+  if (result.value.length > 0) {
+    return result.value.map(mapMessageSummary);
+  }
 
-  return result.value.map((m) => ({
-    id: m.id,
-    subject: m.subject,
-    from: m.from?.emailAddress?.address ?? 'unknown',
-    fromName: m.from?.emailAddress?.name,
-    receivedAt: m.receivedDateTime,
-    preview: m.bodyPreview?.slice(0, 200),
-    isRead: m.isRead,
-    hasAttachments: m.hasAttachments,
-  }));
+  return fallbackSearchRecentMessages(token, query, folder, top);
 };
 
 const outlookListCalendarEvents: ToolHandler = async (args) => {
