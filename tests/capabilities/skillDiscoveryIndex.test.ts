@@ -13,6 +13,17 @@ const manifests: CapabilityManifest[] = [
     deploymentScenario: 'personal-user-centric',
     onboardingMethod: 'post-install-link',
     lifecycleRules: 'keep-credentials',
+    capabilityGroups: [
+      {
+        id: 'mail-read',
+        displayName: 'Mail Read Operations',
+        shortDescription: 'Read mailbox content',
+        discoveryHints: ['mailbox', 'attachments'],
+        useWhen: ['you need to inspect mail'],
+        upstreamNamespace: 'mail.read',
+        upstreamToolSelectors: ['search'],
+      },
+    ],
     discoveryHints: ['email', 'calendar', 'mailbox'],
     orchestratorUseCases: ['find emails and inspect meetings'],
     recommendedEntryTools: ['outlook_search_emails'],
@@ -34,6 +45,7 @@ const manifests: CapabilityManifest[] = [
         avoidWhen: ['you already have a message id'],
         typicalInputs: ['find emails from GitHub'],
         returnsSummaryShape: 'array of matching email summaries',
+        capabilityGroup: 'mail-read',
       },
     ],
   },
@@ -81,6 +93,7 @@ describe('skillDiscoveryIndex', () => {
     const index = rebuildSkillDiscoveryIndex(manifests);
 
     expect(index.skills).toHaveLength(2);
+    expect(index.capabilityGroups).toHaveLength(1);
     expect(index.tools).toHaveLength(2);
     expect(index.skills[0]?.toolCount).toBeGreaterThan(0);
   });
@@ -91,6 +104,7 @@ describe('skillDiscoveryIndex', () => {
     const result = searchSkillDiscoveryIndex('search mailbox emails');
 
     expect(result.skills[0]?.id).toBe('outlook');
+    expect(result.capabilityGroups[0]?.id).toBe('outlook/mail-read');
     expect(result.tools[0]?.id).toBe('outlook_search_emails');
     expect(result.tools[0]?.matchReasons).toContain('discovery-terms');
   });
@@ -101,6 +115,7 @@ describe('skillDiscoveryIndex', () => {
 
     const index = getSkillDiscoveryIndex();
     expect(index.skills.map((skill) => skill.domain)).toEqual(['weather']);
+    expect(index.capabilityGroups).toEqual([]);
     expect(index.tools.map((tool) => tool.name)).toEqual(['weather_get']);
   });
 });

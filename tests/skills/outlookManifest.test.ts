@@ -86,4 +86,16 @@ describe('outlook manifest safety flags', () => {
 
     expect(search?.inputSchema?.properties).toHaveProperty('folder');
   });
+
+  it('declares capability groups so discovery can narrow Outlook to mail-read, mail-write, or calendar subsets', () => {
+    const manifest = JSON.parse(readFileSync('skills/outlook/manifest.json', 'utf8')) as {
+      capabilityGroups?: Array<{ id: string }>;
+      tools: Array<{ name: string; capabilityGroup?: string }>;
+    };
+
+    expect(manifest.capabilityGroups?.map((group) => group.id)).toEqual(['mail-read', 'mail-write', 'calendar']);
+    expect(manifest.tools.find((tool) => tool.name === 'outlook_search_emails')?.capabilityGroup).toBe('mail-read');
+    expect(manifest.tools.find((tool) => tool.name === 'outlook_send_email')?.capabilityGroup).toBe('mail-write');
+    expect(manifest.tools.find((tool) => tool.name === 'outlook_create_calendar_event')?.capabilityGroup).toBe('calendar');
+  });
 });

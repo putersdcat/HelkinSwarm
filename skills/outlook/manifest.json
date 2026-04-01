@@ -6,6 +6,62 @@
     "displayName": "Microsoft Account",
     "description": "Sign in to grant HelkinSwarm access to your email, calendar, and files"
   },
+  "capabilityGroups": [
+    {
+      "id": "mail-read",
+      "displayName": "Mail Read Operations",
+      "shortDescription": "Search, read, and inspect mailbox messages and attachments.",
+      "discoveryHints": [
+        "mailbox search",
+        "attachment inspection",
+        "sent items"
+      ],
+      "useWhen": [
+        "the user needs to find a message before acting on it",
+        "the user wants to inspect message attachments or sent mail"
+      ],
+      "upstreamNamespace": "mail.read",
+      "upstreamToolSelectors": [
+        "search",
+        "read",
+        "attachments"
+      ]
+    },
+    {
+      "id": "mail-write",
+      "displayName": "Mail Write Operations",
+      "shortDescription": "Send and reply to Outlook email on behalf of the user.",
+      "discoveryHints": [
+        "send email",
+        "reply in thread"
+      ],
+      "useWhen": [
+        "the user wants to send or reply to email"
+      ],
+      "upstreamNamespace": "mail.send",
+      "upstreamToolSelectors": [
+        "send",
+        "reply"
+      ]
+    },
+    {
+      "id": "calendar",
+      "displayName": "Calendar Operations",
+      "shortDescription": "Read and create Outlook calendar events.",
+      "discoveryHints": [
+        "calendar",
+        "meeting scheduling"
+      ],
+      "useWhen": [
+        "the user wants to inspect or create meetings and events"
+      ],
+      "upstreamNamespace": "calendar",
+      "upstreamToolSelectors": [
+        "list-events",
+        "create-event"
+      ]
+    }
+  ],
   "tools": [
     {
       "name": "outlook_list_emails",
@@ -47,6 +103,7 @@
         },
         "required": []
       },
+      "capabilityGroup": "mail-read",
       "privilegeClass": "read-only",
       "requiresSubAgent": true
     },
@@ -72,6 +129,7 @@
           "messageId"
         ]
       },
+      "capabilityGroup": "mail-read",
       "privilegeClass": "read-only",
       "requiresSubAgent": true
     },
@@ -117,6 +175,7 @@
         "which attachments are inline images"
       ],
       "returnsSummaryShape": "attachment metadata with ids, names, content types, inline flags, content IDs, and cid/body-reference mapping",
+      "capabilityGroup": "mail-read",
       "privilegeClass": "read-only",
       "requiresSubAgent": true
     },
@@ -167,6 +226,7 @@
         "save the inline image from this message"
       ],
       "returnsSummaryShape": "attachment metadata plus a runtime asset reference compatible with downstream tools and reply attachments",
+      "capabilityGroup": "mail-read",
       "privilegeClass": "read-only",
       "requiresSubAgent": true
     },
@@ -264,6 +324,7 @@
           "body"
         ]
       },
+      "capabilityGroup": "mail-write",
       "privilegeClass": "create",
       "requiresSubAgent": true
     },
@@ -310,6 +371,7 @@
           "comment"
         ]
       },
+      "capabilityGroup": "mail-write",
       "privilegeClass": "create",
       "requiresSubAgent": true
     },
@@ -369,6 +431,7 @@
         "hasAttachment:true"
       ],
       "returnsSummaryShape": "matching email summaries with ids for follow-up read or reply",
+      "capabilityGroup": "mail-read",
       "privilegeClass": "read-only",
       "requiresSubAgent": true
     },
@@ -412,6 +475,7 @@
         },
         "required": []
       },
+      "capabilityGroup": "calendar",
       "privilegeClass": "read-only",
       "requiresSubAgent": true
     },
@@ -509,6 +573,7 @@
         "Book a Teams meeting with alex@example.com"
       ],
       "returnsSummaryShape": "created calendar event summary with id, time range, attendees, and reminder state",
+      "capabilityGroup": "calendar",
       "privilegeClass": "create",
       "requiresSubAgent": true
     }

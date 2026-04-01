@@ -1,4 +1,4 @@
-import type { CapabilityManifest, ModelAffinity, ToolManifestEntry } from './manifestSchema.js';
+import type { CapabilityManifest, CapabilityGroup as CapabilityGroupManifestEntry, ModelAffinity, ToolManifestEntry } from './manifestSchema.js';
 
 export interface SkillDiscoverySkillEntry {
   domain: string;
@@ -29,16 +29,31 @@ export interface SkillDiscoveryToolEntry {
   avoidWhen: string[];
   typicalInputs: string[];
   returnsSummaryShape?: string;
+  capabilityGroup?: string;
+}
+
+export interface SkillDiscoveryCapabilityGroupEntry {
+  id: string;
+  domain: string;
+  displayName: string;
+  shortDescription: string;
+  discoveryHints: string[];
+  useWhen: string[];
+  toolNames: string[];
+  toolCount: number;
+  upstreamNamespace?: string;
+  upstreamToolSelectors: string[];
 }
 
 export interface SkillDiscoveryIndex {
   generatedAt: string;
   skills: SkillDiscoverySkillEntry[];
+  capabilityGroups: SkillDiscoveryCapabilityGroupEntry[];
   tools: SkillDiscoveryToolEntry[];
 }
 
 export interface SkillDiscoverySearchHit {
-  type: 'skill' | 'tool';
+  type: 'skill' | 'capability-group' | 'tool';
   id: string;
   domain: string;
   score: number;
@@ -49,12 +64,14 @@ export interface SkillDiscoverySearchResult {
   generatedAt: string | null;
   query: string;
   skills: SkillDiscoverySearchHit[];
+  capabilityGroups: SkillDiscoverySearchHit[];
   tools: SkillDiscoverySearchHit[];
 }
 
 let currentIndex: SkillDiscoveryIndex = {
   generatedAt: new Date(0).toISOString(),
   skills: [],
+  capabilityGroups: [],
   tools: [],
 };
 
@@ -62,6 +79,7 @@ export function clearSkillDiscoveryIndex(): void {
   currentIndex = {
     generatedAt: new Date(0).toISOString(),
     skills: [],
+    capabilityGroups: [],
     tools: [],
   };
 }
@@ -78,6 +96,21 @@ export function rebuildSkillDiscoveryIndex(manifests: CapabilityManifest[]): Ski
     toolNames: manifest.tools.map((tool) => tool.name),
     toolCount: manifest.tools.length,
   }));
+
+  const capabilityGroups: SkillDiscoveryCapabilityGroupEntry[] = manifests.flatMap((manifest) =>
+    (manifest.capabilityGroups ?? []).map((group: CapabilityGroupManifestEntry) => ({
+      id: `${manifest.domain}/${group.id}`,
+      domain: manifest.domain,
+      displayName: group.displayName,
+      shortDescription: group.shortDescription,
+      discoveryHints: group.discoveryHints ?? [],
+      useWhen: group.useWhen ?? [],
+      toolNames: manifest.tools.filter((tool) => tool.capabilityGroup === group.id).map((tool) => tool.name),
+      toolCount: manifest.tools.filter((tool) => tool.capabilityGroup === group.id).length,
+      upstreamNamespace: group.upstreamNamespace,
+      upstreamToolSelectors: group.upstreamToolSelectors ?? [],
+    })),
+  );
 
   const tools: SkillDiscoveryToolEntry[] = manifests.flatMap((manifest) =>
     manifest.tools.map((tool) => ({
@@ -97,12 +130,14 @@ export function rebuildSkillDiscoveryIndex(manifests: CapabilityManifest[]): Ski
       avoidWhen: tool.avoidWhen ?? [],
       typicalInputs: tool.typicalInputs ?? [],
       returnsSummaryShape: tool.returnsSummaryShape,
+      capabilityGroup: tool.capabilityGroup,
     })),
   );
 
   currentIndex = {
     generatedAt: new Date().toISOString(),
     skills,
+    capabilityGroups,
     tools,
   };
 
@@ -115,6 +150,10 @@ export function getSkillDiscoveryIndex(): SkillDiscoveryIndex {
 
 export function getDiscoverySkill(domain: string): SkillDiscoverySkillEntry | undefined {
   return currentIndex.skills.find((skill) => skill.domain === domain);
+}
+
+export function getDiscoveryCapabilityGroup(id: string): SkillDiscoveryCapabilityGroupEntry | undefined {
+  return currentIndex.capabilityGroups.find((group) => group.id === id);
 }
 
 export function getDiscoveryTool(name: string): SkillDiscoveryToolEntry | undefined {
@@ -135,6 +174,12 @@ export function searchSkillDiscoveryIndex(
     .sort(sortHits)
     .slice(0, skillLimit);
 
+  const capabilityGroups = currentIndex.capabilityGroups
+    .map((group) => buildCapabilityGroupHit(group, normalizedTokens))
+    .filter((hit): hit is SkillDiscoverySearchHit => hit !== null)
+    .sort(sortHits)
+    .slice(0, toolLimit);
+
   const tools = currentIndex.tools
     .map((tool) => buildToolHit(tool, normalizedTokens))
     .filter((hit): hit is SkillDiscoverySearchHit => hit !== null)
@@ -145,6 +190,7 @@ export function searchSkillDiscoveryIndex(
     generatedAt: currentIndex.generatedAt === new Date(0).toISOString() ? null : currentIndex.generatedAt,
     query,
     skills,
+    capabilityGroups,
     tools,
   };
 }
@@ -196,6 +242,28 @@ function buildSkillHit(skill: SkillDiscoverySkillEntry, tokens: string[]): Skill
   };
 }
 
+function buildCapabilityGroupHit(group: SkillDiscoveryCapabilityGroupEntry, tokens: string[]): SkillDiscoverySearchHit | null {
+  if (tokens.length === 0) return null;
+  const scored = scoreFields(tokens, [
+    { label: 'group-id', values: [group.id.toLowerCase()], weight: 6 },
+    { label: 'group-name', values: [group.displayName.toLowerCase()], weight: 5 },
+    { label: 'group-description', values: [group.shortDescription.toLowerCase()], weight: 4 },
+    { label: 'group-discovery-hints', values: group.discoveryHints.map((value) => value.toLowerCase()), weight: 4 },
+    { label: 'group-use-when', values: group.useWhen.map((value) => value.toLowerCase()), weight: 3 },
+    { label: 'group-tools', values: group.toolNames.map((value) => value.toLowerCase()), weight: 2 },
+    { label: 'upstream-namespace', values: group.upstreamNamespace ? [group.upstreamNamespace.toLowerCase()] : [], weight: 3 },
+  ]);
+
+  if (scored.score === 0) return null;
+  return {
+    type: 'capability-group',
+    id: group.id,
+    domain: group.domain,
+    score: scored.score,
+    matchReasons: scored.reasons,
+  };
+}
+
 function buildToolHit(tool: SkillDiscoveryToolEntry, tokens: string[]): SkillDiscoverySearchHit | null {
   if (tokens.length === 0) return null;
   const scored = scoreFields(tokens, [
@@ -203,6 +271,7 @@ function buildToolHit(tool: SkillDiscoveryToolEntry, tokens: string[]): SkillDis
     { label: 'domain', values: [tool.domain.toLowerCase()], weight: 3 },
     { label: 'description', values: [tool.description.toLowerCase()], weight: 4 },
     { label: 'aliases', values: tool.aliases.map((value) => value.toLowerCase()), weight: 5 },
+    { label: 'capability-group', values: tool.capabilityGroup ? [tool.capabilityGroup.toLowerCase()] : [], weight: 3 },
     { label: 'discovery-terms', values: tool.discoveryTerms.map((value) => value.toLowerCase()), weight: 4 },
     { label: 'use-when', values: tool.useWhen.map((value) => value.toLowerCase()), weight: 3 },
     { label: 'typical-inputs', values: tool.typicalInputs.map((value) => value.toLowerCase()), weight: 2 },

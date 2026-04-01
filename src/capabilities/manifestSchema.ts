@@ -51,6 +51,17 @@ export const SoftOnboarding = z.object({
   responseStyle: z.enum(['concise', 'long']).optional(),
 }).passthrough();
 
+export const CapabilityGroup = z.object({
+  id: z.string().regex(/^[a-z][a-z0-9_-]*$/, 'Capability group ids must be lowercase kebab/snake style'),
+  displayName: z.string().min(1),
+  shortDescription: z.string().min(1),
+  discoveryHints: z.array(z.string().min(1)).default([]),
+  useWhen: z.array(z.string().min(1)).default([]),
+  upstreamNamespace: z.string().min(1).optional(),
+  upstreamToolSelectors: z.array(z.string().min(1)).default([]),
+});
+export type CapabilityGroup = z.infer<typeof CapabilityGroup>;
+
 export const ToolManifestEntry = z.object({
   name: z.string().regex(/^[a-z][a-z0-9_]*$/, 'Tool names must be snake_case'),
   description: z.string().min(1),
@@ -71,6 +82,7 @@ export const ToolManifestEntry = z.object({
   avoidWhen: z.array(z.string().min(1)).default([]),
   typicalInputs: z.array(z.string().min(1)).default([]),
   returnsSummaryShape: z.string().min(1).optional(),
+  capabilityGroup: z.string().min(1).optional(),
   inputSchema: z.record(z.unknown()).optional(),
   outputSchema: z.record(z.unknown()).optional(),
 });
@@ -101,12 +113,25 @@ export const CapabilityManifestSchema = z.object({
   dependencies: z.array(z.string()).optional(),
   requiredPermissions: z.array(z.string()).optional(),
   externalAccountsNeeded: z.array(z.string()).optional(),
+  capabilityGroups: z.array(CapabilityGroup).default([]),
   discoveryHints: z.array(z.string().min(1)).default([]),
   orchestratorUseCases: z.array(z.string().min(1)).default([]),
   modelAffinity: ModelAffinity.optional(),
   recommendedEntryTools: z.array(z.string().min(1)).default([]),
   softOnboarding: SoftOnboarding.optional(),
   maintenanceTasks: z.array(MaintenanceTask).optional(),
+}).superRefine((manifest, ctx) => {
+  const definedGroupIds = new Set((manifest.capabilityGroups ?? []).map((group) => group.id));
+
+  for (const [index, tool] of manifest.tools.entries()) {
+    if (tool.capabilityGroup && !definedGroupIds.has(tool.capabilityGroup)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Tool '${tool.name}' references unknown capabilityGroup '${tool.capabilityGroup}'.`,
+        path: ['tools', index, 'capabilityGroup'],
+      });
+    }
+  }
 });
 
 export type CapabilityManifest = z.infer<typeof CapabilityManifestSchema>;

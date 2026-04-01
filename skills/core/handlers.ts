@@ -53,7 +53,7 @@ export const helkin_list_skills: ToolHandler = async () => {
 };
 
 export const helkin_skill_search: ToolHandler = async (args) => {
-  const { getDiscoverySkill, getDiscoveryTool, getSkillDiscoveryIndex, searchSkillDiscoveryIndex } = await import('../../src/capabilities/skillDiscoveryIndex.js');
+  const { getDiscoveryCapabilityGroup, getDiscoverySkill, getDiscoveryTool, getSkillDiscoveryIndex, searchSkillDiscoveryIndex } = await import('../../src/capabilities/skillDiscoveryIndex.js');
   const { toolRegistry } = await import('../../src/tools/toolRegistry.js');
   const { trackEvent } = await import('../../src/observability/telemetry.js');
 
@@ -68,9 +68,11 @@ export const helkin_skill_search: ToolHandler = async (args) => {
       usage: [
         'command=help',
         'command=search query="email search github issue"',
+        'command=describe_group groupId="outlook/mail-read"',
         'command=describe_skill skillId="outlook"',
         'command=describe_tool toolName="outlook_search_emails"',
         'command=list_domains',
+        'command=list_groups',
       ],
       notes: [
         'Discovery-only tool — it never executes skills directly.',
@@ -118,6 +120,20 @@ export const helkin_skill_search: ToolHandler = async (args) => {
           matchReasons: hit.matchReasons,
         };
       }),
+      capabilityGroups: result.capabilityGroups.map((hit) => {
+        const group = getDiscoveryCapabilityGroup(hit.id);
+        return {
+          id: hit.id,
+          domain: hit.domain,
+          displayName: group?.displayName ?? hit.id,
+          shortDescription: group?.shortDescription ?? '',
+          toolCount: group?.toolCount ?? 0,
+          toolNames: group?.toolNames ?? [],
+          upstreamNamespace: group?.upstreamNamespace ?? null,
+          score: hit.score,
+          matchReasons: hit.matchReasons,
+        };
+      }),
       tools: result.tools.map((hit) => {
         const tool = getDiscoveryTool(hit.id);
         return {
@@ -131,6 +147,33 @@ export const helkin_skill_search: ToolHandler = async (args) => {
           matchReasons: hit.matchReasons,
         };
       }),
+    };
+  }
+
+  if (command === 'describe_group') {
+    const groupId = String(args['groupId'] ?? '').trim();
+    if (!groupId) {
+      return { status: 'error', message: 'groupId is required when command=describe_group.' };
+    }
+
+    const group = getDiscoveryCapabilityGroup(groupId);
+    if (!group) {
+      return { status: 'not-found', message: `No capability group found for '${groupId}'.`, groupId };
+    }
+
+    return {
+      status: 'success',
+      command: 'describe_group',
+      groupId: group.id,
+      domain: group.domain,
+      displayName: group.displayName,
+      shortDescription: group.shortDescription,
+      discoveryHints: group.discoveryHints,
+      useWhen: group.useWhen,
+      toolNames: group.toolNames,
+      toolCount: group.toolCount,
+      upstreamNamespace: group.upstreamNamespace ?? null,
+      upstreamToolSelectors: group.upstreamToolSelectors,
     };
   }
 
@@ -204,6 +247,22 @@ export const helkin_skill_search: ToolHandler = async (args) => {
         displayName: skill.displayName,
         shortDescription: skill.shortDescription,
         toolCount: skill.toolCount,
+      })),
+    };
+  }
+
+  if (command === 'list_groups') {
+    const index = getSkillDiscoveryIndex();
+    return {
+      status: 'success',
+      command: 'list_groups',
+      groups: index.capabilityGroups.map((group) => ({
+        id: group.id,
+        domain: group.domain,
+        displayName: group.displayName,
+        shortDescription: group.shortDescription,
+        toolCount: group.toolCount,
+        upstreamNamespace: group.upstreamNamespace ?? null,
       })),
     };
   }

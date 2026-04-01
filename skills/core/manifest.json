@@ -40,7 +40,7 @@
     },
     {
       "name": "helkin_skill_search",
-      "description": "Discovery-only capability browser for installed skills and tools. Supports help, search, describe_skill, describe_tool, and list_domains. Use this to narrow the skill/tool universe before selecting execution tools.",
+      "description": "Discovery-only capability browser for installed skills and tools. Supports help, search, describe_group, describe_skill, describe_tool, list_domains, and list_groups. Use this to narrow the skill/tool universe before selecting execution tools.",
       "risk": "low",
       "dataSensitivity": "non-pii",
       "allowedModelLane": "any",
@@ -56,11 +56,17 @@
             "enum": [
               "help",
               "search",
+              "describe_group",
               "describe_skill",
               "describe_tool",
-              "list_domains"
+              "list_domains",
+              "list_groups"
             ],
             "description": "Discovery operation to run. Use help for usage guidance."
+          },
+          "groupId": {
+            "type": "string",
+            "description": "Capability group id for command=describe_group (for example: 'outlook/mail-read')."
           },
           "query": {
             "type": "string",

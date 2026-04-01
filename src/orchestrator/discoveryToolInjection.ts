@@ -1,6 +1,6 @@
 import { toolRegistry } from '../tools/toolRegistry.js';
 import type { ToolDefinition } from '../llm/foundryClient.js';
-import { getDiscoverySkill } from '../capabilities/skillDiscoveryIndex.js';
+import { getDiscoveryCapabilityGroup, getDiscoverySkill } from '../capabilities/skillDiscoveryIndex.js';
 import type { ModelAffinity } from '../capabilities/manifestSchema.js';
 
 export type DeterministicFollowUpToolCall = {
@@ -16,12 +16,20 @@ type ToolResult = {
 
 type DiscoverySearchResultShape = {
   tools?: Array<{ name?: string }>;
+  capabilityGroups?: Array<{ id?: string; toolNames?: string[] }>;
   skills?: Array<{ domain?: string; recommendedEntryTools?: string[] }>;
 };
 
 type ReadOnlyDiscoverySearchResultShape = {
   command?: string;
   query?: string;
+  capabilityGroups?: Array<{
+    id?: string;
+    domain?: string;
+    displayName?: string;
+    shortDescription?: string;
+    toolCount?: number;
+  }>;
   tools?: Array<{
     name?: string;
     domain?: string;
@@ -338,6 +346,17 @@ export function deriveSelectiveFollowUpToolSchemas(
       selectedNames.add(tool.name);
     }
   }
+  for (const group of discoveryResult.result.capabilityGroups ?? []) {
+    for (const toolName of group.toolNames ?? []) {
+      selectedNames.add(toolName);
+    }
+    if (group.id) {
+      const manifestGroup = getDiscoveryCapabilityGroup(group.id);
+      for (const toolName of manifestGroup?.toolNames ?? []) {
+        selectedNames.add(toolName);
+      }
+    }
+  }
   for (const skill of discoveryResult.result.skills ?? []) {
     for (const toolName of skill.recommendedEntryTools ?? []) {
       selectedNames.add(toolName);
@@ -387,17 +406,24 @@ export function buildReadOnlyDiscoveryResponse(
     ? discoveryResult.result
     : undefined;
   const topTool = result?.tools?.[0];
+  const topGroup = result?.capabilityGroups?.[0];
   const topSkill = result?.skills?.[0];
   const alternateTools = (result?.tools ?? [])
     .slice(1, 4)
     .map((tool: NonNullable<ReadOnlyDiscoverySearchResultShape['tools']>[number]) => tool.name)
     .filter((name: string | undefined): name is string => typeof name === 'string' && name.length > 0);
 
-  if (!topTool && !topSkill) {
+  if (!topTool && !topGroup && !topSkill) {
     return `I stayed in discovery-only mode and searched for \`${query}\`, but I did not find a strong matching skill or tool. Try a broader request or use \`/skillSearch ${query}\` for a direct read-only lookup.`;
   }
 
   const parts = ['I stayed in discovery-only mode.'];
+
+  if (topGroup?.id) {
+    const domain = topGroup.domain ? ` (${topGroup.domain})` : '';
+    const description = topGroup.shortDescription ? ` — ${topGroup.shortDescription}` : '';
+    parts.push(`Best matching capability group: \`${topGroup.id}\`${domain}${description}.`);
+  }
 
   if (topTool?.name) {
     const domain = topTool.domain ? ` (${topTool.domain}${topTool.risk ? `, risk: ${topTool.risk}` : ''})` : '';
@@ -422,13 +448,13 @@ export function buildReadOnlyDiscoveryResponse(
 function isDiscoverySearchResult(value: unknown): value is DiscoverySearchResultShape {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
-  return Array.isArray(candidate['tools']) || Array.isArray(candidate['skills']);
+  return Array.isArray(candidate['tools']) || Array.isArray(candidate['skills']) || Array.isArray(candidate['capabilityGroups']);
 }
 
 function isReadOnlyDiscoverySearchResult(value: unknown): value is ReadOnlyDiscoverySearchResultShape {
   if (!value || typeof value !== 'object') return false;
   const candidate = value as Record<string, unknown>;
-  return candidate['command'] === 'search' && (Array.isArray(candidate['tools']) || Array.isArray(candidate['skills']));
+  return candidate['command'] === 'search' && (Array.isArray(candidate['tools']) || Array.isArray(candidate['skills']) || Array.isArray(candidate['capabilityGroups']));
 }
 
 export function getDiscoveryFollowUpModelOverride(

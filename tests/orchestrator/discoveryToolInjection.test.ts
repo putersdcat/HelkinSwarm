@@ -13,6 +13,26 @@ const discoveryManifests: CapabilityManifest[] = [
     deploymentScenario: 'personal-user-centric',
     onboardingMethod: 'post-install-link',
     lifecycleRules: 'keep-credentials',
+    capabilityGroups: [
+      {
+        id: 'mail-read',
+        displayName: 'Mail Read Operations',
+        shortDescription: 'Read mailbox content',
+        discoveryHints: ['mailbox', 'attachments'],
+        useWhen: ['inspect or find email'],
+        upstreamNamespace: 'mail.read',
+        upstreamToolSelectors: ['search', 'attachments'],
+      },
+      {
+        id: 'calendar',
+        displayName: 'Calendar Operations',
+        shortDescription: 'Create and inspect events',
+        discoveryHints: ['calendar'],
+        useWhen: ['schedule meetings'],
+        upstreamNamespace: 'calendar',
+        upstreamToolSelectors: ['create-event'],
+      },
+    ],
     discoveryHints: ['email', 'calendar'],
     orchestratorUseCases: ['read email and inspect meetings'],
     recommendedEntryTools: ['outlook_search_emails'],
@@ -33,6 +53,7 @@ const discoveryManifests: CapabilityManifest[] = [
         useWhen: [],
         avoidWhen: [],
         typicalInputs: [],
+        capabilityGroup: 'mail-read',
       },
       {
         name: 'outlook_create_calendar_event',
@@ -49,6 +70,7 @@ const discoveryManifests: CapabilityManifest[] = [
         useWhen: [],
         avoidWhen: [],
         typicalInputs: [],
+        capabilityGroup: 'calendar',
       },
     ],
   },
@@ -166,6 +188,28 @@ describe('discoveryToolInjection', () => {
         success: true,
         result: {
           tools: [{ name: 'outlook_search_emails' }],
+          skills: [],
+        },
+      },
+    ]);
+
+    expect(tools?.map((tool) => tool.function.name)).toEqual([
+      'helkin_skill_search',
+      'helkin_health_check',
+      'outlook_search_emails',
+    ]);
+  });
+
+  it('narrows second-hop tool schemas from matched capability groups', async () => {
+    const { deriveSelectiveFollowUpToolSchemas } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const tools = deriveSelectiveFollowUpToolSchemas([
+      {
+        toolName: 'helkin_skill_search',
+        success: true,
+        result: {
+          capabilityGroups: [{ id: 'outlook/mail-read' }],
+          tools: [],
           skills: [],
         },
       },
@@ -409,6 +453,13 @@ describe('discoveryToolInjection', () => {
         result: {
           command: 'search',
           query: 'search mailbox emails',
+          capabilityGroups: [{
+            id: 'outlook/mail-read',
+            domain: 'outlook',
+            displayName: 'Mail Read Operations',
+            shortDescription: 'Read mailbox content',
+            toolCount: 1,
+          }],
           skills: [{ domain: 'outlook', displayName: 'Outlook', shortDescription: 'Email and calendar management' }],
           tools: [{
             name: 'outlook_search_emails',
@@ -421,6 +472,7 @@ describe('discoveryToolInjection', () => {
     ], 'Use discovery only and tell me which tool you would use to search mailbox emails. Do not execute any non-discovery tools.');
 
     expect(response).toContain('I stayed in discovery-only mode.');
+    expect(response).toContain('`outlook/mail-read`');
     expect(response).toContain('`outlook_search_emails`');
     expect(response).toContain('No non-discovery tools were executed.');
   });

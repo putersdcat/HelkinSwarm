@@ -13,6 +13,17 @@ const manifests: CapabilityManifest[] = [
     deploymentScenario: 'personal-user-centric',
     onboardingMethod: 'post-install-link',
     lifecycleRules: 'keep-credentials',
+    capabilityGroups: [
+      {
+        id: 'mail-read',
+        displayName: 'Mail Read Operations',
+        shortDescription: 'Read mailbox content',
+        discoveryHints: ['mailbox'],
+        useWhen: ['inspect or find email'],
+        upstreamNamespace: 'mail.read',
+        upstreamToolSelectors: ['search'],
+      },
+    ],
     discoveryHints: ['email', 'calendar'],
     orchestratorUseCases: ['read email and inspect meetings'],
     recommendedEntryTools: ['outlook_search_emails'],
@@ -33,6 +44,7 @@ const manifests: CapabilityManifest[] = [
         avoidWhen: ['you already have a message id'],
         typicalInputs: ['find emails from GitHub'],
         returnsSummaryShape: 'array of matching email summaries',
+        capabilityGroup: 'mail-read',
       },
     ],
   },
@@ -56,11 +68,26 @@ describe('helkin_skill_search', () => {
     const { helkin_skill_search } = await import('../../skills/core/handlers.js');
     const result = await helkin_skill_search({ command: 'search', query: 'search mailbox emails' }) as {
       skills: Array<{ domain: string }>;
+      capabilityGroups: Array<{ id: string }>;
       tools: Array<{ name: string }>;
     };
 
     expect(result.skills[0]?.domain).toBe('outlook');
+    expect(result.capabilityGroups[0]?.id).toBe('outlook/mail-read');
     expect(result.tools[0]?.name).toBe('outlook_search_emails');
+  });
+
+  it('describes a specific capability group', async () => {
+    const { helkin_skill_search } = await import('../../skills/core/handlers.js');
+    const result = await helkin_skill_search({ command: 'describe_group', groupId: 'outlook/mail-read' }) as {
+      groupId: string;
+      toolNames: string[];
+      upstreamNamespace: string | null;
+    };
+
+    expect(result.groupId).toBe('outlook/mail-read');
+    expect(result.toolNames).toContain('outlook_search_emails');
+    expect(result.upstreamNamespace).toBe('mail.read');
   });
 
   it('describes a specific tool', async () => {
