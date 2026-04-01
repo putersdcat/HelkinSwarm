@@ -188,13 +188,14 @@ export async function buildMcpForgeDraftBundle(
   const manifestDraft = buildManifestDraft(candidate, stdioPackage, draftSkillId, evaluation);
   const manifestDraftPath = `drafts/mcpforge/${draftSkillId}/manifest.draft.json`;
   const reviewNotesPath = `drafts/mcpforge/${draftSkillId}/review.md`;
+  const branchName = `mcpforge/${draftSkillId}`;
   const reviewTitle = `McpForge draft: ${evaluation.displayName}`;
   const reviewBody = buildReviewBody(candidate, evaluation, manifestDraftPath, reviewNotesPath);
   const files: SkillForgeBundleFile[] = [
     {
       path: manifestDraftPath,
       content: JSON.stringify(manifestDraft, null, 2),
-      purpose: 'draft manifest for human review before activation',
+      purpose: 'draft manifest for AI smoke-test approval and later source graduation',
     },
     {
       path: reviewNotesPath,
@@ -208,6 +209,7 @@ export async function buildMcpForgeDraftBundle(
     candidateName: candidate.name,
     draftSkillId,
     displayName: evaluation.displayName,
+    branchName,
     status: 'drafted',
     reviewTitle,
     reviewBody,
@@ -231,7 +233,7 @@ export async function buildMcpForgeDraftBundle(
       `Draft manifest: \`${manifestDraftPath}\``,
       `Review notes: \`${reviewNotesPath}\``,
       persistedBundlePath ? `Persisted bundle: \`${persistedBundlePath}\`` : 'Persisted bundle path unavailable on this stamp.',
-      'This bundle is review-only and is not an active skill.',
+      'This bundle is not active yet; it can be AI-approved into the running stamp after smoke test passes.',
     ].join('\n'),
     persistedBundlePath,
     reviewTitle,
@@ -312,7 +314,7 @@ function buildManifestDraft(
     tools: [
       {
         name: placeholderToolName,
-        description: `Draft-only placeholder tool for ${evaluation.displayName}. Replace after real MCP tool inventory capture and human review.`,
+        description: `Draft-only placeholder tool for ${evaluation.displayName}. Replace after real MCP tool inventory capture and AI smoke-test approval.`,
         risk: evaluation.risk,
         dataSensitivity: evaluation.dataSensitivity,
         allowedModelLane: 'any',
@@ -324,10 +326,10 @@ function buildManifestDraft(
         longTermMemorySchema: [],
         aliases: ['draft placeholder'],
         discoveryTerms: ['pending inventory capture', candidate.name],
-        useWhen: ['only while reviewing the candidate bundle before activation'],
+        useWhen: ['only while the candidate is still in draft or smoke-test approval stage'],
         avoidWhen: ['you need actual runtime MCP tool execution'],
         typicalInputs: ['capture the actual remote MCP tool inventory'],
-        returnsSummaryShape: 'draft placeholder result pending human review',
+        returnsSummaryShape: 'draft placeholder result pending AI smoke-test approval',
         inputSchema: {
           type: 'object',
           properties: {
@@ -386,6 +388,7 @@ function buildRejectedBundle(
     candidateName: candidate.name,
     draftSkillId,
     displayName: evaluation.displayName,
+    branchName: `mcpforge/${draftSkillId}`,
     status: 'rejected',
     reviewTitle,
     reviewBody,
@@ -428,9 +431,9 @@ function buildReviewBody(
     '',
     'Review checklist:',
     '- verify candidate trust, publisher, and repository provenance',
-    '- capture the actual MCP tool inventory before any activation PR',
+    '- capture the actual MCP tool inventory before any source-graduation PR',
     '- confirm runtime launch assumptions and auth prerequisites',
-    '- keep this draft outside active skills until human review is complete',
+    '- keep this draft outside active skills until the AI smoke test approves it locally',
     '',
     `Fit summary: ${evaluation.fitSummary}`,
   ].join('\n');

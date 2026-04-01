@@ -111,7 +111,7 @@ describe('mcpForgeDraft', () => {
     expect(manifest.mcpServer.args).toEqual(['-y', '@azure/mcp@2.0.0-beta.36']);
     expect(manifest.tools[0]?.name).toContain('pending_inventory_capture');
     expect(manifest.tools[0]?.requiresConfirmation).toBe(true);
-    expect(result.summary).toContain('review-only');
+    expect(result.summary).toContain('AI-approved into the running stamp');
   });
 
   it('rejects a candidate that cannot be normalized into the current stdio-only runtime draft shape', async () => {

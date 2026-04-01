@@ -38,7 +38,8 @@ export const PersistedMcpForgeBundleSchema = z.object({
   candidateName: z.string().min(1),
   draftSkillId: z.string().min(1),
   displayName: z.string().min(1),
-  status: z.enum(['drafted', 'rejected']),
+  branchName: z.string().min(1).optional(),
+  status: z.enum(['drafted', 'rejected', 'approved-local']),
   reviewTitle: z.string().min(1),
   reviewBody: z.string().min(1),
   evaluationSummary: z.string().min(1),
@@ -55,6 +56,15 @@ export const PersistedMcpForgeBundleSchema = z.object({
     websiteUrl: z.string().nullable(),
     transportTypes: z.array(z.enum(['stdio', 'streamable-http', 'sse'])),
   }),
+  smokeTest: z.object({
+    passed: z.boolean(),
+    toolCount: z.number().int().nonnegative(),
+    toolNames: z.array(z.string().min(1)),
+  }).optional(),
+  localActivation: z.object({
+    manifestPath: z.string().min(1),
+    activatedAt: z.string().datetime(),
+  }).optional(),
   files: z.array(SkillForgeBundleFileSchema).min(1),
 });
 export type PersistedMcpForgeBundle = z.infer<typeof PersistedMcpForgeBundleSchema>;

@@ -17,11 +17,14 @@ import {
 } from '../capabilities/capabilityLoader.js';
 import { validateTabTokenFromRequest } from '../auth/tabTokenValidator.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
+import { searchMcpRegistryCatalog } from '../mcp/mcpRegistryCatalog.js';
+import { buildMcpForgeDraftBundle } from '../mcp/mcpForgeDraft.js';
+import { approveMcpForgeBundleLocally } from '../mcp/mcpForgeActivation.js';
 
 const TAB_CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': 'https://helkinswarmtabsst.z20.web.core.windows.net',
-  'Access-Control-Allow-Headers': 'x-helkinswarm-user-id, Authorization',
-  'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  'Access-Control-Allow-Headers': 'x-helkinswarm-user-id, Authorization, Content-Type',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
 };
 
 app.http('tab-skills', {
@@ -93,6 +96,14 @@ async function authenticateOwner(req: HttpRequest): Promise<{ ok: true; userId: 
   }
 
   return { ok: true, userId };
+}
+
+async function parseJsonBody(req: HttpRequest): Promise<Record<string, unknown>> {
+  try {
+    return ((await req.json()) as Record<string, unknown>) ?? {};
+  } catch {
+    return {};
+  }
 }
 
 app.http('tab-skill-install-readiness', {
@@ -174,6 +185,105 @@ app.http('tab-skills-reload', {
         message: `Reloaded ${result.skillsLoaded} skills and ${result.toolsRegistered} tools.`,
         ...result,
       },
+    };
+  },
+});
+
+app.http('tab-skills-mcp-registry-search', {
+  methods: ['POST', 'OPTIONS'],
+  authLevel: 'anonymous',
+  route: 'tab/skills/mcp-registry/search',
+  handler: async (req: HttpRequest): Promise<HttpResponseInit> => {
+    if (req.method === 'OPTIONS') {
+      return { status: 204, headers: TAB_CORS_HEADERS };
+    }
+
+    const auth = await authenticateOwner(req);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    const body = await parseJsonBody(req);
+    const query = typeof body.query === 'string' ? body.query.trim() : '';
+    if (!query) {
+      return { status: 400, headers: TAB_CORS_HEADERS, jsonBody: { error: 'query required.' } };
+    }
+
+    const result = await searchMcpRegistryCatalog(query, {
+      limit: typeof body.limit === 'number' ? body.limit : 12,
+      includeDeprecated: body.includeDeprecated === undefined ? true : Boolean(body.includeDeprecated),
+      includeDeleted: Boolean(body.includeDeleted),
+      forceRefresh: Boolean(body.forceRefresh),
+    });
+
+    return {
+      status: 200,
+      headers: TAB_CORS_HEADERS,
+      jsonBody: result,
+    };
+  },
+});
+
+app.http('tab-skills-mcp-forge-draft', {
+  methods: ['POST', 'OPTIONS'],
+  authLevel: 'anonymous',
+  route: 'tab/skills/mcp-registry/draft',
+  handler: async (req: HttpRequest): Promise<HttpResponseInit> => {
+    if (req.method === 'OPTIONS') {
+      return { status: 204, headers: TAB_CORS_HEADERS };
+    }
+
+    const auth = await authenticateOwner(req);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    const body = await parseJsonBody(req);
+    const candidateName = typeof body.candidateName === 'string' ? body.candidateName.trim() : '';
+    if (!candidateName) {
+      return { status: 400, headers: TAB_CORS_HEADERS, jsonBody: { error: 'candidateName required.' } };
+    }
+
+    const result = await buildMcpForgeDraftBundle({
+      candidateName,
+      userId: auth.userId,
+      correlationId: crypto.randomUUID(),
+      useCase: typeof body.useCase === 'string' ? body.useCase : undefined,
+    });
+
+    return {
+      status: 200,
+      headers: TAB_CORS_HEADERS,
+      jsonBody: result,
+    };
+  },
+});
+
+app.http('tab-skills-mcp-forge-approve', {
+  methods: ['POST', 'OPTIONS'],
+  authLevel: 'anonymous',
+  route: 'tab/skills/mcp-registry/approve',
+  handler: async (req: HttpRequest): Promise<HttpResponseInit> => {
+    if (req.method === 'OPTIONS') {
+      return { status: 204, headers: TAB_CORS_HEADERS };
+    }
+
+    const auth = await authenticateOwner(req);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    const body = await parseJsonBody(req);
+    const bundlePath = typeof body.bundlePath === 'string' ? body.bundlePath.trim() : '';
+    if (!bundlePath) {
+      return { status: 400, headers: TAB_CORS_HEADERS, jsonBody: { error: 'bundlePath required.' } };
+    }
+
+    const result = await approveMcpForgeBundleLocally(bundlePath);
+    return {
+      status: 200,
+      headers: TAB_CORS_HEADERS,
+      jsonBody: result,
     };
   },
 });

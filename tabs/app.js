@@ -492,14 +492,19 @@
     });
   }
 
-  function apiPost(endpoint) {
+  function apiPost(endpoint, body) {
     if (!_userOid) return Promise.reject(new Error("Not authenticated."));
     return Promise.all([getAadToken(), resolveTabApiBase()]).then(function (values) {
       var token = values[0];
       var apiBase = values[1];
       if (!token) throw new Error("Authentication required.");
       var headers = { "x-helkinswarm-user-id": _userOid, "Authorization": "Bearer " + token };
-      return fetch(apiBase + "/" + endpoint, { method: "POST", headers: headers });
+      if (body !== undefined) headers["Content-Type"] = "application/json";
+      return fetch(apiBase + "/" + endpoint, {
+        method: "POST",
+        headers: headers,
+        body: body !== undefined ? JSON.stringify(body) : undefined
+      });
     }).then(function (resp) {
       if (!resp.ok) throw new Error("Tab API error: " + resp.status);
       return resp.json();
@@ -1239,6 +1244,7 @@
     var tabs = [
       { key: "installed", label: "Installed" },
       { key: "manage", label: "Manage" },
+      { key: "registry", label: "MCP Registry" },
       { key: "connections", label: "Connections" },
       { key: "catalog", label: "Catalog" }
     ];
@@ -1271,6 +1277,24 @@
           '<div class="card"><h2>Inspection Result</h2><div id="skill-inspection-panel">' +
           '<p class="empty-state">Choose a skill action to inspect onboarding, dependencies, lifecycle rules, or uninstall blockers.</p>' +
           '</div></div>';
+      },
+      registry: function (_data) {
+        return '<div class="kpi-row">' +
+          kpiTile("Mode", "Search / Draft", "kpi-ok") +
+          kpiTile("Registry", "Official MCP") +
+          kpiTile("Approval", "AI smoke test") +
+          '</div>' +
+          '<div class="card"><h2>MCP Registry Search</h2>' +
+          '<p>Search the official MCP Registry, send a candidate to McpForge, and auto-approve it into this stamp only if the draft survives the same MCP smoke test used by the runtime connector.</p>' +
+          '<div class="registry-search-form">' +
+          '<input id="mcp-registry-query" class="registry-input" type="text" placeholder="Search official MCP Registry (for example: azure mcp, graph, docs)" />' +
+          '<input id="mcp-registry-usecase" class="registry-input" type="text" placeholder="Optional HelkinSwarm use case (for example: Azure operations oversight)" />' +
+          '<button class="cmd-btn cmd-btn-primary" id="mcp-registry-search-btn">Search Registry</button>' +
+          '<span id="mcp-registry-status" class="muted"></span>' +
+          '</div>' +
+          '</div>' +
+          '<div class="card"><h2>Registry Results</h2><div id="mcp-registry-results"><p class="empty-state">No registry search yet.</p></div></div>' +
+          '<div class="card"><h2>McpForge Result</h2><div id="mcp-forge-draft-panel"><p class="empty-state">Draft and approval results will appear here.</p></div></div>';
       },
       catalog: function (data) {
         var skills = data.skills || [];
@@ -1308,6 +1332,77 @@
       _refreshFn: renderSkillsLibrary,
       afterRender: function (key, data, container) {
         wireSkillIconFallbacks(container);
+        if (key === "registry") {
+          var searchBtn = container.querySelector("#mcp-registry-search-btn");
+          var searchStatus = container.querySelector("#mcp-registry-status");
+          var resultsPanel = container.querySelector("#mcp-registry-results");
+          var draftPanel = container.querySelector("#mcp-forge-draft-panel");
+          var queryInput = container.querySelector("#mcp-registry-query");
+          var useCaseInput = container.querySelector("#mcp-registry-usecase");
+
+          function wireDraftButtons() {
+            resultsPanel.querySelectorAll('.registry-draft-btn').forEach(function (btn) {
+              btn.addEventListener('click', function () {
+                var candidateName = btn.getAttribute('data-candidate');
+                if (!candidateName) return;
+                draftPanel.innerHTML = '<p class="empty-state">Drafting candidate via McpForge...</p>';
+                apiPost('skills/mcp-registry/draft', {
+                  candidateName: candidateName,
+                  useCase: useCaseInput && useCaseInput.value ? useCaseInput.value : undefined
+                }).then(function (draftResult) {
+                  draftPanel.innerHTML = renderMcpForgeDraftResult(draftResult);
+                  var approveBtn = draftPanel.querySelector('.mcp-approve-btn');
+                  if (approveBtn) {
+                    approveBtn.addEventListener('click', function () {
+                      var bundlePath = approveBtn.getAttribute('data-bundle');
+                      if (!bundlePath) return;
+                      draftPanel.innerHTML = '<p class="empty-state">Running AI smoke test and hot reloading local skill...</p>';
+                      apiPost('skills/mcp-registry/approve', { bundlePath: bundlePath })
+                        .then(function (approvalResult) {
+                          draftPanel.innerHTML = renderMcpApprovalResult(approvalResult);
+                          renderSkillsLibrary();
+                        })
+                        .catch(function (err) {
+                          draftPanel.innerHTML = '<p class="error-msg">' + esc(err.message) + '</p>';
+                        });
+                    });
+                  }
+                }).catch(function (err) {
+                  draftPanel.innerHTML = '<p class="error-msg">' + esc(err.message) + '</p>';
+                });
+              });
+            });
+          }
+
+          if (searchBtn) {
+            searchBtn.addEventListener('click', function () {
+              var query = queryInput && queryInput.value ? queryInput.value.trim() : '';
+              if (!query) {
+                if (searchStatus) searchStatus.textContent = 'Enter a search query first.';
+                return;
+              }
+              if (searchStatus) searchStatus.textContent = 'Searching official registry...';
+              resultsPanel.innerHTML = '<p class="empty-state">Searching registry...</p>';
+              apiPost('skills/mcp-registry/search', { query: query, limit: 12 })
+                .then(function (result) {
+                  var candidates = (result && result.candidates) || [];
+                  if (searchStatus) searchStatus.textContent = candidates.length + ' candidate(s) returned.';
+                  resultsPanel.innerHTML = candidates.length > 0
+                    ? candidates.map(function (candidate) {
+                      return renderRegistryResultCard(candidate, useCaseInput && useCaseInput.value || '');
+                    }).join('')
+                    : '<p class="empty-state">No candidates matched that registry query.</p>';
+                  wireDraftButtons();
+                })
+                .catch(function (err) {
+                  if (searchStatus) searchStatus.textContent = err.message;
+                  resultsPanel.innerHTML = '<p class="error-msg">' + esc(err.message) + '</p>';
+                });
+            });
+          }
+          return;
+        }
+
         if (key !== "manage") return;
 
         var resultPanel = container.querySelector("#skill-inspection-panel");
@@ -1393,6 +1488,59 @@
       '<span class="inline-tag">' + esc(s.lifecycleRules) + '</span> ' +
       '<span class="inline-tag">' + esc(String(s.maintenanceTaskCount)) + ' maintenance</span>' +
       '</div>' +
+      '</div>';
+  }
+
+  function renderRegistryResultCard(candidate, useCaseValue) {
+    return '<div class="card registry-result-card">' +
+      '<div class="registry-result-head">' +
+      '<div><h3>' + esc(candidate.title || candidate.name) + '</h3><p class="muted">' + esc(candidate.name) + '</p></div>' +
+      '<span class="badge ' + (candidate.status === 'active' ? 'badge-ok' : candidate.status === 'deprecated' ? 'badge-warn' : 'badge-error') + '">' + esc(candidate.status) + '</span>' +
+      '</div>' +
+      '<p>' + esc(candidate.description || 'No description provided.') + '</p>' +
+      '<div class="skill-facts">' +
+      '<span class="inline-tag">v' + esc(candidate.latestVersion || '?') + '</span>' +
+      ((candidate.transportTypes || []).map(function (transport) { return '<span class="inline-tag">' + esc(transport) + '</span>'; }).join(' ')) +
+      '</div>' +
+      '<div class="manage-actions">' +
+      '<button class="cmd-btn cmd-btn-primary registry-draft-btn" data-candidate="' + esc(candidate.name) + '" data-use-case="' + esc(useCaseValue || '') + '">Send to McpForge</button>' +
+      '</div>' +
+      '</div>';
+  }
+
+  function renderMcpForgeDraftResult(result) {
+    if (!result) {
+      return '<p class="empty-state">Search the registry, then send a candidate to McpForge.</p>';
+    }
+
+    var statusCls = result.status === 'drafted' ? 'badge-ok' : result.status === 'rejected' ? 'badge-warn' : 'badge-error';
+    var approveBtn = result.status === 'drafted' && result.persistedBundlePath
+      ? '<button class="cmd-btn cmd-btn-primary mcp-approve-btn" data-bundle="' + esc(result.persistedBundlePath) + '">Approve + Hot Reload</button>'
+      : '';
+
+    return '<div class="inspection-card">' +
+      '<div class="inspection-head"><strong>' + esc(result.displayName || result.candidateName || 'McpForge') + '</strong>' +
+      ' <span class="badge ' + statusCls + '">' + esc(result.status || 'info') + '</span></div>' +
+      '<p>' + esc(result.summary || 'No summary returned.') + '</p>' +
+      (result.reviewTitle ? configRow('Review Title', '<span class="config-value">' + esc(result.reviewTitle) + '</span>') : '') +
+      (result.persistedBundlePath ? configRow('Bundle', '<code>' + esc(result.persistedBundlePath) + '</code>') : '') +
+      (result.uncertainties && result.uncertainties.length ? '<div class="card-section"><h3>Uncertainties</h3><ul class="mini-steps">' + result.uncertainties.map(function (item) {
+        return '<li>' + esc(item) + '</li>';
+      }).join('') + '</ul></div>' : '') +
+      (result.recommendedNextSteps && result.recommendedNextSteps.length ? '<div class="card-section"><h3>Next Steps</h3><ul class="mini-steps">' + result.recommendedNextSteps.map(function (item) {
+        return '<li>' + esc(item) + '</li>';
+      }).join('') + '</ul></div>' : '') +
+      '<div class="manage-actions">' + approveBtn + '</div>' +
+      '</div>';
+  }
+
+  function renderMcpApprovalResult(result) {
+    return '<div class="inspection-card">' +
+      '<div class="inspection-head"><strong>' + esc(result.skillId || 'MCP skill') + '</strong> <span class="badge badge-ok">' + esc(result.status || 'approved-local') + '</span></div>' +
+      '<p>The MCP candidate passed smoke test and was hot-reloaded into this stamp as a local skill.</p>' +
+      configRow('Manifest', '<code>' + esc(result.manifestPath || '(unknown)') + '</code>') +
+      configRow('Smoke Test', '<span class="config-value">' + esc(String((result.smokeTest && result.smokeTest.toolCount) || 0)) + ' tools</span>') +
+      configRow('Source Graduation', '<span class="config-value">' + esc(result.sourcePromotion && result.sourcePromotion.note ? result.sourcePromotion.note : 'Available later via GitHub App lane.') + '</span>') +
       '</div>';
   }
 

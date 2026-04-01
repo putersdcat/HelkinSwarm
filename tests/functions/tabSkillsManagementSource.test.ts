@@ -8,7 +8,13 @@ describe('tab skills management wiring', () => {
     expect(source).toContain("route: 'tab/skills/{skillId}/install-readiness'");
     expect(source).toContain("route: 'tab/skills/{skillId}/uninstall-impact'");
     expect(source).toContain("route: 'tab/skills/reload'");
+    expect(source).toContain("route: 'tab/skills/mcp-registry/search'");
+    expect(source).toContain("route: 'tab/skills/mcp-registry/draft'");
+    expect(source).toContain("route: 'tab/skills/mcp-registry/approve'");
     expect(source).toContain('inspectSkillInstall');
     expect(source).toContain('inspectSkillUninstall');
+    expect(source).toContain('searchMcpRegistryCatalog');
+    expect(source).toContain('buildMcpForgeDraftBundle');
+    expect(source).toContain('approveMcpForgeBundleLocally');
   });
 });

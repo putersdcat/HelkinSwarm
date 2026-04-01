@@ -26,6 +26,13 @@ type McpClientState = {
 	remoteTools: Map<string, McpToolDescriptor>;
 };
 
+export interface McpSmokeTestResult {
+	passed: boolean;
+	toolCount: number;
+	tools: McpToolDescriptor[];
+	stderrLines: string[];
+}
+
 const clientStates = new Map<string, Promise<McpClientState>>();
 const MAX_STDERR_LINES = 20;
 
@@ -48,6 +55,59 @@ export async function registerMcpHandlersForManifest(
 				callRemoteTool(input.manifest, tool, args),
 			),
 		);
+	}
+}
+
+export async function smokeTestMcpServerForManifest(
+	manifest: CapabilityManifest,
+): Promise<McpSmokeTestResult> {
+	if (!manifest.mcpServer) {
+		throw new Error(`Skill '${manifest.domain}' does not declare an MCP server.`);
+	}
+
+	if (manifest.mcpServer.transport !== 'stdio') {
+		throw new Error(`Unsupported MCP transport '${manifest.mcpServer.transport}' for skill '${manifest.domain}'.`);
+	}
+
+	const stderrLines: string[] = [];
+	const transport = new StdioClientTransport(resolveServerParameters(manifest));
+	bindStderrCapture(transport, stderrLines);
+
+	const client = new Client(
+		{ name: `helkinswarm-${manifest.domain}-mcp-smoketest`, version: '1.0.0' },
+		{ capabilities: {} },
+	);
+
+	try {
+		await withTimeout(
+			client.connect(transport),
+			manifest.mcpServer.timeoutMs,
+			`Timed out connecting to MCP server for skill '${manifest.domain}'.`,
+		);
+
+		const listToolsResult = await withTimeout(
+			client.listTools(),
+			manifest.mcpServer.timeoutMs,
+			`Timed out listing tools from MCP server for skill '${manifest.domain}'.`,
+		);
+
+		const tools = listToolsResult.tools.map((tool) => ({
+			name: tool.name,
+			description: tool.description,
+		}));
+
+		return {
+			passed: tools.length > 0,
+			toolCount: tools.length,
+			tools,
+			stderrLines: [...stderrLines],
+		};
+	} catch (error) {
+		const message = error instanceof Error ? error.message : String(error);
+		const stderrSummary = stderrLines.length > 0 ? ` STDERR: ${stderrLines.join(' | ')}` : '';
+		throw new Error(`MCP smoke test failed for skill '${manifest.domain}': ${message}.${stderrSummary}`);
+	} finally {
+		await safeCloseTransport(transport);
 	}
 }
 
@@ -147,20 +207,7 @@ async function createMcpClientState(
 
 	const stderrLines: string[] = [];
 	const transport = new StdioClientTransport(resolveServerParameters(manifest));
-	const stderr = transport.stderr;
-	if (stderr) {
-		stderr.on('data', (chunk) => {
-			const text = String(chunk).trim();
-			if (!text) {
-				return;
-			}
-
-			stderrLines.push(text);
-			if (stderrLines.length > MAX_STDERR_LINES) {
-				stderrLines.splice(0, stderrLines.length - MAX_STDERR_LINES);
-			}
-		});
-	}
+	bindStderrCapture(transport, stderrLines);
 
 	const client = new Client(
 		{ name: `helkinswarm-${manifest.domain}-mcp-client`, version: '1.0.0' },
@@ -199,6 +246,25 @@ async function createMcpClientState(
 			: '';
 		throw new Error(`Failed to initialize MCP server for skill '${manifest.domain}': ${message}.${stderrSummary}`);
 	}
+}
+
+function bindStderrCapture(transport: StdioClientTransport, stderrLines: string[]): void {
+	const stderr = transport.stderr;
+	if (!stderr) {
+		return;
+	}
+
+	stderr.on('data', (chunk) => {
+		const text = String(chunk).trim();
+		if (!text) {
+			return;
+		}
+
+		stderrLines.push(text);
+		if (stderrLines.length > MAX_STDERR_LINES) {
+			stderrLines.splice(0, stderrLines.length - MAX_STDERR_LINES);
+		}
+	});
 }
 
 function resolveServerParameters(manifest: CapabilityManifest): StdioServerParameters {
