@@ -85,6 +85,8 @@ This keeps scale-to-zero enabled while making the first post-idle turn truthful 
 
 Startup lifecycle notices must also stay honest: a fresh "runtime online" notice is **not** proof that inbound Teams delivery has already succeeded. Until the first successful inbound `/api/messages` turn is observed, owner-facing startup notices should warn that inbound delivery is still being verified and that a no-reply first message may need to be resent.
 
+Health honesty must also survive **post-idle** periods on warm stamps. If the runtime has gone a prolonged period without any successful inbound Teams turn, `/api/health` should degrade the message-path signal again rather than continuing to claim that inbound delivery is proven forever.
+
 ### Slash Commands (Handled Before Overseer)
 
 | Command               | Access       | Action |

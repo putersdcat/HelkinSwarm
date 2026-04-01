@@ -11,6 +11,7 @@ import { STALE_ACK_THRESHOLD_MS } from '../bot/staleAckRecovery.js';
 import { getContainerAgeMs } from '../bot/lifecycleNotices.js';
 
 const POST_START_MESSAGE_READINESS_GRACE_MS = 15 * 60_000;
+const POST_IDLE_MESSAGE_READINESS_GAP_MS = 10 * 60_000;
 
 interface HealthResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -91,9 +92,10 @@ export async function healthHandler(
   _request: HttpRequest,
   _context: InvocationContext,
 ): Promise<HttpResponseInit> {
+  const nowMs = Date.now();
   const env = getEnvConfig();
   const memoryStatus = await checkMemoryStatus();
-  const messagePath = await getMessagePathSnapshot();
+  const messagePath = await getMessagePathSnapshot(nowMs);
   const pendingAckSnapshot = await getPendingAckSnapshot(STALE_ACK_THRESHOLD_MS);
   const llmHealth = getLlmAggregateHealth();
   const llmSnapshot = getLlmHealthSnapshot();
@@ -106,8 +108,19 @@ export async function healthHandler(
     messagePath.pendingTurns === 0 &&
     pendingAckSnapshot.pendingAcks === 0;
 
+  const lastSuccessAtMs = messagePath.lastSuccessAt
+    ? new Date(messagePath.lastSuccessAt).getTime()
+    : null;
+  const idleAcceptanceGap =
+    lastSuccessAtMs !== null &&
+    nowMs - lastSuccessAtMs >= POST_IDLE_MESSAGE_READINESS_GAP_MS &&
+    messagePath.pendingTurns === 0 &&
+    pendingAckSnapshot.pendingAcks === 0;
+
   const effectiveMessagePathStatus: HealthResponse['components']['messagePath'] =
     startupAcceptanceGap && messagePath.status === 'ok'
+      ? 'degraded'
+      : idleAcceptanceGap && messagePath.status === 'ok'
       ? 'degraded'
       : pendingAckSnapshot.stalePendingAcks > 0 && messagePath.status === 'ok'
       ? 'degraded'
