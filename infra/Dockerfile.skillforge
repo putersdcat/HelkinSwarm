@@ -59,11 +59,13 @@ COPY infra/skillforge-bootstrap.mjs /opt/skillforge/bootstrap.mjs
 ENV SKILLFORGE_SYSTEM_PROMPT_PATH=/opt/skillforge/skillforge-prompt.md
 ENV SKILLFORGE_PROMPT_SHIELD_POLICY=continuous
 ENV SKILLFORGE_AUDIT_LOG_PATH=/tmp/skillforge-audit.jsonl
+ENV SKILLFORGE_TIMEOUT_MINUTES=15
+ENV SKILLFORGE_CPU_KILL_THRESHOLD=80
+ENV SKILLFORGE_MEMORY_LIMIT_MB=2048
 
-# ── Resource guardrails (enforced by ACI, not container-level) ──
-# CPU: capped by ACI configuration
-# Memory: capped by ACI configuration
-# Timeout: 15 min default, enforced by orchestrator
+# ── Resource guardrails ──
+# Container bootstrap enforces timeout / sustained CPU / memory ceilings.
+# Azure hosting should still layer outer caps (ACI/job/container limits) on top.
 
 # Switch to non-root user
 USER forge

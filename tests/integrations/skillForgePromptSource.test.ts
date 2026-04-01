@@ -18,18 +18,25 @@ describe('SkillForge prompt source wiring', () => {
     expect(bootstrapSource).toContain('export function loadSkillForgePrompt');
     expect(bootstrapSource).toContain('export function assertSkillForgeEnvironmentSafe');
     expect(bootstrapSource).toContain('export function emitSkillForgeAuditEvent');
+    expect(bootstrapSource).toContain('export function createSkillForgeGuardrailConfig');
+    expect(bootstrapSource).toContain('export function startSkillForgeGuardrails');
+    expect(bootstrapSource).toContain('export function createSkillForgeAppInsightsClient');
     expect(bootstrapSource).toContain("readFileSync(promptPath, 'utf8').trim()");
     expect(bootstrapSource).toContain('prompt shields=');
+    expect(bootstrapSource).toContain("emitSkillForgeAuditEvent('guardrails-configured'");
     expect(bootstrapSource).toContain("emitSkillForgeAuditEvent('bootstrap-ready'");
     expect(bootstrapSource).toContain('startSkillForgeBootstrap()');
     expect(bootstrapSource).toContain('const keepAliveTimer = setInterval');
-    expect(bootstrapSource).toContain("process.once('SIGTERM', shutdown);");
+    expect(bootstrapSource).toContain("process.once('SIGTERM', () => shutdown('SIGTERM'));");
 
     expect(dockerfile).toContain('COPY src/skillforge/skillforge-prompt.md /opt/skillforge/skillforge-prompt.md');
     expect(dockerfile).toContain('COPY infra/skillforge-bootstrap.mjs /opt/skillforge/bootstrap.mjs');
     expect(dockerfile).toContain('ENV SKILLFORGE_SYSTEM_PROMPT_PATH=/opt/skillforge/skillforge-prompt.md');
     expect(dockerfile).toContain('ENV SKILLFORGE_PROMPT_SHIELD_POLICY=continuous');
     expect(dockerfile).toContain('ENV SKILLFORGE_AUDIT_LOG_PATH=/tmp/skillforge-audit.jsonl');
+    expect(dockerfile).toContain('ENV SKILLFORGE_TIMEOUT_MINUTES=15');
+    expect(dockerfile).toContain('ENV SKILLFORGE_CPU_KILL_THRESHOLD=80');
+    expect(dockerfile).toContain('ENV SKILLFORGE_MEMORY_LIMIT_MB=2048');
     expect(dockerfile).toContain('CMD ["node", "/opt/skillforge/bootstrap.mjs"]');
   });
 });

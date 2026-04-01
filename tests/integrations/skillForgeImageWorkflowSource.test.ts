@@ -30,8 +30,11 @@ describe('SkillForge image workflow source wiring', () => {
     expect(workflow).toContain('SkillForge toolchain/isolation smoke failed');
     expect(workflow).toContain('exceeded 10s');
 
+    expect(bicep).toContain("APPLICATIONINSIGHTS_CONNECTION_STRING");
     expect(bicep).toContain("{ name: 'SKILLFORGE_TIMEOUT_MINUTES', value: '15' }");
     expect(bicep).toContain("{ name: 'SKILLFORGE_CPU_KILL_THRESHOLD', value: '80' }");
     expect(bicep).toContain("{ name: 'SKILLFORGE_MEMORY_LIMIT_MB', value: '2048' }");
+
+    expect(workflow).toContain('Startup smoke');
   });
 });
