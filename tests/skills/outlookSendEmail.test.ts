@@ -4,11 +4,23 @@ const INLINE_ASSET_ID = '11111111-1111-1111-1111-111111111111';
 const FILE_ASSET_ID = '22222222-2222-2222-2222-222222222222';
 const TEXT_ASSET_ID = '33333333-3333-3333-3333-333333333333';
 
+const runtimeAssetHarness = vi.hoisted(() => ({
+  persistRuntimeAsset: vi.fn(),
+  readRuntimeAssetContent: vi.fn(),
+}));
+
+vi.mock('../../src/integrations/runtimeAssetStore.js', () => ({
+  persistRuntimeAsset: runtimeAssetHarness.persistRuntimeAsset,
+  readRuntimeAssetContent: runtimeAssetHarness.readRuntimeAssetContent,
+}));
+
 async function loadHandlersModule() {
   vi.resetModules();
 
-  const persistRuntimeAsset = vi.fn();
-  const readRuntimeAssetContent = vi.fn(async ({ assetId }: { assetId: string }) => {
+  runtimeAssetHarness.persistRuntimeAsset.mockReset();
+  runtimeAssetHarness.readRuntimeAssetContent.mockReset();
+
+  runtimeAssetHarness.readRuntimeAssetContent.mockImplementation(async ({ assetId }: { assetId: string }) => {
     if (assetId === INLINE_ASSET_ID) {
       return {
         reference: {
@@ -48,26 +60,20 @@ async function loadHandlersModule() {
     return null;
   });
 
-  vi.doMock('../../src/integrations/runtimeAssetStore.js', async () => {
-    const mod = await vi.importActual<typeof import('../../src/integrations/runtimeAssetStore.js')>(
-      '../../src/integrations/runtimeAssetStore.js',
-    );
-    return {
-      ...mod,
-      persistRuntimeAsset,
-      readRuntimeAssetContent,
-    };
-  });
-
   const mod = await import('../../skills/outlook/handlers.js');
-  return { ...mod, persistRuntimeAsset, readRuntimeAssetContent };
+  return {
+    ...mod,
+    persistRuntimeAsset: runtimeAssetHarness.persistRuntimeAsset,
+    readRuntimeAssetContent: runtimeAssetHarness.readRuntimeAssetContent,
+  };
 }
 
 describe('outlook_send_email runtime-asset attachments', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.resetModules();
-    vi.doUnmock('../../src/integrations/runtimeAssetStore.js');
+    runtimeAssetHarness.persistRuntimeAsset.mockReset();
+    runtimeAssetHarness.readRuntimeAssetContent.mockReset();
   });
 
   it('rejects cid-based inline image HTML when no inline runtime assets are provided', async () => {
