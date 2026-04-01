@@ -108,7 +108,7 @@ export function buildDuplicateSuppressedToolResult(call: GuardedToolCall): {
   toolCallId: string;
   toolName: string;
   success: true;
-  result: { status: 'duplicate-suppressed'; message: string };
+  result: { status: 'duplicate-suppressed'; deliveredEarlierInTurn: true; message: string };
   requiresExecutor: false;
 } {
   return {
@@ -117,7 +117,8 @@ export function buildDuplicateSuppressedToolResult(call: GuardedToolCall): {
     success: true,
     result: {
       status: 'duplicate-suppressed',
-      message: `Suppressed duplicate ${call.name} call because an identical mutating action already succeeded earlier in this turn.`,
+      deliveredEarlierInTurn: true,
+      message: `An identical ${call.name} action already succeeded earlier in this turn. This duplicate retry was suppressed, so the original action should still be treated as completed and no second side effect was emitted.`,
     },
     requiresExecutor: false,
   };
