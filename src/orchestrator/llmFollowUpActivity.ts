@@ -103,6 +103,18 @@ export function buildFallbackToolResultContent(
     return 'I couldn’t complete that email request. Outlook inline embedded images from Teams/runtime assets are not supported yet, so I did not send the requested inline-image email.';
   }
 
+  const missingRuntimeInlineAssetFailure = requestedInlineMedia
+    ? toolResults.find((tr) =>
+      tr.toolName === 'outlook_send_email'
+      && !tr.success
+      && /runtime asset .* is not available anymore|upload or re-materialize it again/i.test(tr.error ?? ''),
+    )
+    : undefined;
+
+  if (missingRuntimeInlineAssetFailure) {
+    return 'I couldn’t complete that inline-image email. The referenced runtime asset is no longer available, so I did not send the email. Please upload or re-materialize the image again and retry.';
+  }
+
   if (requestedAction && requestedInlineMedia && onlyReadOnlyOrDiscovery) {
     return 'I couldn’t complete that request. I only reached discovery/read steps, and HelkinSwarm does not yet have a reliable path to send an Outlook email with a Teams-provided image or GIF embedded inline in the message body. I did not send the requested inline-image email.';
   }

@@ -55,6 +55,37 @@ describe('llmFollowUpActivity execution prompt', () => {
     });
   });
 
+  it('returns an honest blocker when an inline-email runtime asset reference has expired or cannot be resolved', () => {
+    return loadFollowUpModule().then(({ buildFallbackToolResultContent }) => {
+      const content = buildFallbackToolResultContent(
+        [
+          {
+            role: 'user',
+            content: 'Please send this image inline in the email body.',
+          },
+        ],
+        [
+          {
+            toolCallId: '1',
+            toolName: 'helkin_skill_search',
+            success: true,
+            result: { tools: ['outlook_send_email'] },
+          },
+          {
+            toolCallId: '2',
+            toolName: 'outlook_send_email',
+            success: false,
+            error: "Runtime asset '11111111-1111-1111-1111-111111111111' is not available anymore. Please upload or re-materialize it again before sending the email.",
+          },
+        ],
+      );
+
+      expect(content).toContain('The referenced runtime asset is no longer available');
+      expect(content).toContain('Please upload or re-materialize the image again and retry');
+      expect(content).not.toContain('helkin_skill_search');
+    });
+  });
+
   it('stops retrying an identical tool call after a deterministic unsupported-action failure', () => {
     return loadFollowUpModule().then(({ shouldStopOnRepeatedToolFailure }) => {
       const shouldStop = shouldStopOnRepeatedToolFailure(
