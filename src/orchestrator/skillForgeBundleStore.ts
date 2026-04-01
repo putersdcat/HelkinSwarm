@@ -2,6 +2,7 @@ import { BlobServiceClient } from '@azure/storage-blob';
 import { z } from 'zod';
 import { getCredential } from '../auth/identity.js';
 import { CapabilityManifestSchema } from '../capabilities/manifestSchema.js';
+import { McpActivationGateSchema, McpLifecycleSnapshotSchema } from '../mcp/mcpOnboardingGates.js';
 
 const CONTAINER_NAME = 'helkinswarm-skillforge';
 
@@ -56,6 +57,8 @@ export const PersistedMcpForgeBundleSchema = z.object({
     websiteUrl: z.string().nullable(),
     transportTypes: z.array(z.enum(['stdio', 'streamable-http', 'sse'])),
   }),
+  activationGate: McpActivationGateSchema,
+  lifecycle: McpLifecycleSnapshotSchema,
   smokeTest: z.object({
     passed: z.boolean(),
     toolCount: z.number().int().nonnegative(),

@@ -8,6 +8,7 @@ import {
   type McpRegistryCandidate,
 } from './mcpRegistryCatalog.js';
 import { persistSkillForgeBundle, type PersistedMcpForgeBundle, type SkillForgeBundleFile } from '../orchestrator/skillForgeBundleStore.js';
+import { assessMcpCandidateForOnboarding, createLifecycleSnapshot, draftSkillIdForCandidate } from './mcpOnboardingGates.js';
 
 const McpForgeDraftInputSchema = z.object({
   candidateName: z.string().min(1),
@@ -135,6 +136,7 @@ export async function buildMcpForgeDraftBundle(
   }
 
   const draftSkillId = draftSkillIdForCandidate(candidate.name);
+  const onboardingAssessment = assessMcpCandidateForOnboarding(candidate);
   const evaluation = await (dependencies.evaluateCandidate ?? evaluateCandidateWithLlm)(candidate, input, draftSkillId);
 
   const stdioPackage = selectDraftableStdioPackage(candidate);
@@ -217,6 +219,19 @@ export async function buildMcpForgeDraftBundle(
     uncertainties: dedupe(evaluation.uncertainties),
     recommendedNextSteps: dedupe(evaluation.recommendedNextSteps),
     candidateSnapshot: buildCandidateSnapshot(candidate),
+    activationGate: onboardingAssessment.activationGate,
+    lifecycle: createLifecycleSnapshot('review-required', [
+      {
+        state: 'discovered',
+        at: new Date().toISOString(),
+        reason: 'Candidate entered HelkinSwarm from the official MCP Registry cache.',
+      },
+      {
+        state: 'review-required',
+        at: new Date().toISOString(),
+        reason: onboardingAssessment.activationGate.reviewReasons[0] ?? 'Draft bundle created and awaiting activation gate evaluation.',
+      },
+    ]),
     files,
   };
 
@@ -372,6 +387,7 @@ function buildRejectedBundle(
   forcedUncertainties?: string[],
   forcedNextSteps?: string[],
 ): { bundle: PersistedMcpForgeBundle; summary: string } {
+  const baseAssessment = assessMcpCandidateForOnboarding(candidate);
   const uncertainties = dedupe(forcedUncertainties ?? evaluation.uncertainties);
   const recommendedNextSteps = dedupe(forcedNextSteps ?? evaluation.recommendedNextSteps);
   const reviewPath = `drafts/mcpforge/${draftSkillId}/review.md`;
@@ -396,6 +412,26 @@ function buildRejectedBundle(
     uncertainties,
     recommendedNextSteps,
     candidateSnapshot: buildCandidateSnapshot(candidate),
+    activationGate: {
+      ...baseAssessment.activationGate,
+      aiApprovalEligible: false,
+      blockedReasons: dedupe([
+        ...baseAssessment.activationGate.blockedReasons,
+        evaluation.rejectionReason ?? 'Candidate was rejected by McpForge evaluation.',
+      ]),
+    },
+    lifecycle: createLifecycleSnapshot('blocked', [
+      {
+        state: 'discovered',
+        at: new Date().toISOString(),
+        reason: 'Candidate entered HelkinSwarm from the official MCP Registry cache.',
+      },
+      {
+        state: 'blocked',
+        at: new Date().toISOString(),
+        reason: evaluation.rejectionReason ?? 'Candidate was blocked during McpForge evaluation.',
+      },
+    ]),
     files: [
       {
         path: reviewPath,
@@ -535,10 +571,6 @@ async function persistMcpForgeBundle(
     correlationId: input.correlationId,
     payload: bundle,
   });
-}
-
-function draftSkillIdForCandidate(candidateName: string): string {
-  return `mcp-${candidateName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48)}`;
 }
 
 function dedupe(values: string[]): string[] {

@@ -74,7 +74,7 @@ describe('helkin_mcp_registry_search', () => {
 
     const { helkin_mcp_registry_search } = await import('../../skills/core/handlers.js');
     const result = await helkin_mcp_registry_search({ command: 'search', query: 'azure operations', limit: 5 }) as {
-      candidates: Array<{ name: string; status: string; transportTypes: string[] }>;
+      candidates: Array<{ name: string; status: string; currentState: string; transportTypes: string[]; activationGate: { aiApprovalEligible: boolean } }>;
       syncStatus: { totalCached: number };
       excluded: { deleted: number; malformed: number };
     };
@@ -82,6 +82,8 @@ describe('helkin_mcp_registry_search', () => {
     expect(result.syncStatus.totalCached).toBe(2);
     expect(result.candidates[0]?.name).toBe('io.github.microsoft/azure-mcp');
     expect(result.candidates[0]?.status).toBe('active');
+    expect(result.candidates[0]?.currentState).toBe('discovered');
+    expect(result.candidates[0]?.activationGate.aiApprovalEligible).toBe(true);
     expect(result.candidates[0]?.transportTypes).toEqual(['stdio']);
     expect(result.excluded).toEqual({ deleted: 0, malformed: 0 });
   });

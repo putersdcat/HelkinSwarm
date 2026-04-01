@@ -4,6 +4,7 @@ import { type CapabilityManifest, CapabilityManifestSchema, type ToolManifestEnt
 import { loadCapabilities } from '../capabilities/capabilityLoader.js';
 import { smokeTestMcpServerForManifest, type McpSmokeTestResult } from './mcpConnector.js';
 import { loadMcpForgeBundle, persistSkillForgeBundle } from '../orchestrator/skillForgeBundleStore.js';
+import { createLifecycleSnapshot, type McpLifecycleTransition } from './mcpOnboardingGates.js';
 
 export interface ApproveMcpForgeBundleResult {
   status: 'approved-local';
@@ -33,6 +34,14 @@ export async function approveMcpForgeBundleLocally(bundlePath: string): Promise<
     throw new Error(`Cannot approve rejected McpForge bundle '${bundlePath}'.`);
   }
 
+  if (bundle.activationGate.blockedReasons.length > 0) {
+    throw new Error(`McpForge bundle '${bundlePath}' is blocked from activation: ${bundle.activationGate.blockedReasons.join(' ')}`);
+  }
+
+  if (!bundle.activationGate.aiApprovalEligible) {
+    throw new Error(`McpForge bundle '${bundlePath}' is review-required and cannot be AI-approved directly: ${bundle.activationGate.reviewReasons.join(' ')}`);
+  }
+
   const draftManifestFile = bundle.files.find((file) => file.path.endsWith('/manifest.draft.json'));
   if (!draftManifestFile) {
     throw new Error(`McpForge bundle '${bundlePath}' does not include a draft manifest.`);
@@ -50,6 +59,25 @@ export async function approveMcpForgeBundleLocally(bundlePath: string): Promise<
   await writeFile(manifestPath, `${JSON.stringify(activatedManifest, null, 2)}\n`, 'utf8');
 
   const reloadSummary = await loadCapabilities();
+  const transitionTime = new Date().toISOString();
+  const transitions: McpLifecycleTransition[] = [
+    ...bundle.lifecycle.transitions,
+    {
+      state: 'approved',
+      at: transitionTime,
+      reason: 'AI smoke-test approval passed for this bundle.',
+    },
+    {
+      state: 'installed',
+      at: transitionTime,
+      reason: `Activated manifest written to ${relativeManifestPath(manifestPath)}.`,
+    },
+    {
+      state: 'enabled',
+      at: transitionTime,
+      reason: 'Capabilities reloaded successfully after manifest activation.',
+    },
+  ];
 
   await persistSkillForgeBundle({
     userId: extractUserIdFromBundlePath(bundlePath),
@@ -63,6 +91,11 @@ export async function approveMcpForgeBundleLocally(bundlePath: string): Promise<
         toolCount: smokeTest.toolCount,
         toolNames: smokeTest.tools.map((tool) => tool.name),
       },
+      activationGate: {
+        ...bundle.activationGate,
+        installedSkillId: bundle.draftSkillId,
+      },
+      lifecycle: createLifecycleSnapshot('enabled', transitions),
       localActivation: {
         manifestPath: relativeManifestPath(manifestPath),
         activatedAt: new Date().toISOString(),

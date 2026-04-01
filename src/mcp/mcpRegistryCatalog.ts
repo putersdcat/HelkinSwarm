@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { getManifest } from '../capabilities/capabilityLoader.js';
+import { assessMcpCandidateForOnboarding, draftSkillIdForCandidate, type McpActivationGate } from './mcpOnboardingGates.js';
 
 const REGISTRY_BASE_URL = 'https://registry.modelcontextprotocol.io';
 const DEFAULT_PAGE_LIMIT = 100;
@@ -50,7 +52,12 @@ export type McpRegistrySearchResult = {
     deleted: number;
     malformed: number;
   };
-  candidates: Array<McpRegistryCandidate & { score: number; matchReasons: string[] }>;
+  candidates: Array<McpRegistryCandidate & {
+    score: number;
+    matchReasons: string[];
+    currentState: 'discovered' | 'review-required' | 'blocked' | 'enabled';
+    activationGate: McpActivationGate;
+  }>;
 };
 
 export type McpRegistryCatalogStatus = {
@@ -154,6 +161,16 @@ export async function searchMcpRegistryCatalog(
     .filter((candidate) => includeDeprecated || candidate.status !== 'deprecated')
     .map((candidate) => buildCandidateHit(candidate, normalizedTokens))
     .filter((candidate): candidate is McpRegistryCandidate & { score: number; matchReasons: string[] } => candidate !== null)
+    .map((candidate) => {
+      const skillId = draftSkillIdForCandidate(candidate.name);
+      const installedSkillId = getManifest(skillId) ? skillId : null;
+      const assessment = assessMcpCandidateForOnboarding(candidate, { installedSkillId });
+      return {
+        ...candidate,
+        currentState: assessment.currentState,
+        activationGate: assessment.activationGate,
+      };
+    })
     .sort((left, right) => right.score - left.score || left.name.localeCompare(right.name))
     .slice(0, limit);
 

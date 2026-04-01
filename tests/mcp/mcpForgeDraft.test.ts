@@ -61,6 +61,8 @@ const evaluation = {
 describe('mcpForgeDraft', () => {
   beforeEach(() => {
     vi.resetModules();
+    process.env['AZURE_CONTENT_SAFETY_ENDPOINT'] = 'https://example.cognitiveservices.azure.com';
+    process.env['AZURE_CONTENT_SAFETY_KEY'] = 'test-key';
   });
 
   afterEach(async () => {
@@ -70,6 +72,7 @@ describe('mcpForgeDraft', () => {
   });
 
   it('builds a persisted review bundle with a draft manifest for a draftable stdio npm candidate', async () => {
+    let persistedBundle: Record<string, unknown> | null = null;
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       servers: [
         buildServerResponse({
@@ -93,7 +96,10 @@ describe('mcpForgeDraft', () => {
       },
       {
         evaluateCandidate: async () => evaluation,
-        persistBundle: async () => 'bundles/owner-user/mcp-com-microsoft-azure/corr-451.json',
+        persistBundle: async (bundle) => {
+          persistedBundle = bundle as Record<string, unknown>;
+          return 'bundles/owner-user/mcp-com-microsoft-azure/corr-451.json';
+        },
       },
     );
 
@@ -112,9 +118,18 @@ describe('mcpForgeDraft', () => {
     expect(manifest.tools[0]?.name).toContain('pending_inventory_capture');
     expect(manifest.tools[0]?.requiresConfirmation).toBe(true);
     expect(result.summary).toContain('AI-approved into the running stamp');
+    expect(persistedBundle?.['activationGate']).toMatchObject({
+      sourceStatus: 'active',
+      aiApprovalEligible: true,
+      blockedReasons: [],
+    });
+    expect(persistedBundle?.['lifecycle']).toMatchObject({
+      currentState: 'review-required',
+    });
   });
 
   it('rejects a candidate that cannot be normalized into the current stdio-only runtime draft shape', async () => {
+    let persistedBundle: Record<string, unknown> | null = null;
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
       servers: [
         buildServerResponse({
@@ -140,7 +155,10 @@ describe('mcpForgeDraft', () => {
           ...evaluation,
           displayName: 'Remote Only Server',
         }),
-        persistBundle: async () => 'bundles/owner-user/mcp-io-github-example-remote-only-server/corr-remote.json',
+        persistBundle: async (bundle) => {
+          persistedBundle = bundle as Record<string, unknown>;
+          return 'bundles/owner-user/mcp-io-github-example-remote-only-server/corr-remote.json';
+        },
       },
     );
 
@@ -149,5 +167,12 @@ describe('mcpForgeDraft', () => {
     expect(result.files[0]?.path).toBe('drafts/mcpforge/mcp-io-github-example-remote-only-server/review.md');
     expect(result.recommendedNextSteps.join(' ')).toContain('runtime launch instructions');
     expect(result.uncertainties.join(' ')).toContain('stdio');
+    expect(persistedBundle?.['activationGate']).toMatchObject({
+      metadataQuality: 'insufficient',
+      aiApprovalEligible: false,
+    });
+    expect(persistedBundle?.['lifecycle']).toMatchObject({
+      currentState: 'blocked',
+    });
   });
 });

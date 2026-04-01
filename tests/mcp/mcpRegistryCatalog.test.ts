@@ -47,6 +47,8 @@ function buildServerResponse(input: {
 describe('mcpRegistryCatalog', () => {
   beforeEach(() => {
     vi.resetModules();
+    process.env['AZURE_CONTENT_SAFETY_ENDPOINT'] = 'https://example.cognitiveservices.azure.com';
+    process.env['AZURE_CONTENT_SAFETY_KEY'] = 'test-key';
   });
 
   afterEach(async () => {
@@ -98,6 +100,11 @@ describe('mcpRegistryCatalog', () => {
     expect(search.candidates[0]?.name).toBe('io.github.microsoft/azure-mcp');
     expect(search.candidates[0]?.transportTypes).toEqual(['stdio']);
     expect(search.syncStatus.deprecated).toBe(1);
+
+    const deprecatedSearch = await searchMcpRegistryCatalog('official docs search', { includeDeprecated: true });
+    expect(deprecatedSearch.candidates[0]?.name).toBe('io.github.microsoftdocs/learn-mcp');
+    expect(deprecatedSearch.candidates[0]?.currentState).toBe('review-required');
+    expect(deprecatedSearch.candidates[0]?.activationGate.aiApprovalEligible).toBe(false);
 
     const status = getMcpRegistryCatalogStatus();
     expect(status.searchable).toBe(2);

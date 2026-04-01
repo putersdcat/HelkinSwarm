@@ -1492,18 +1492,24 @@
   }
 
   function renderRegistryResultCard(candidate, useCaseValue) {
+    var gateReasons = [];
+    if (candidate.activationGate) {
+      gateReasons = (candidate.activationGate.blockedReasons || []).concat(candidate.activationGate.reviewReasons || []);
+    }
     return '<div class="card registry-result-card">' +
       '<div class="registry-result-head">' +
       '<div><h3>' + esc(candidate.title || candidate.name) + '</h3><p class="muted">' + esc(candidate.name) + '</p></div>' +
-      '<span class="badge ' + (candidate.status === 'active' ? 'badge-ok' : candidate.status === 'deprecated' ? 'badge-warn' : 'badge-error') + '">' + esc(candidate.status) + '</span>' +
+      '<div><span class="badge ' + (candidate.status === 'active' ? 'badge-ok' : candidate.status === 'deprecated' ? 'badge-warn' : 'badge-error') + '">' + esc(candidate.status) + '</span> ' +
+      '<span class="badge ' + (candidate.currentState === 'blocked' ? 'badge-error' : candidate.currentState === 'review-required' ? 'badge-warn' : 'badge-info') + '">' + esc(candidate.currentState || 'discovered') + '</span></div>' +
       '</div>' +
       '<p>' + esc(candidate.description || 'No description provided.') + '</p>' +
+      (gateReasons.length ? '<p class="muted">' + esc(gateReasons[0]) + '</p>' : '') +
       '<div class="skill-facts">' +
       '<span class="inline-tag">v' + esc(candidate.latestVersion || '?') + '</span>' +
       ((candidate.transportTypes || []).map(function (transport) { return '<span class="inline-tag">' + esc(transport) + '</span>'; }).join(' ')) +
       '</div>' +
       '<div class="manage-actions">' +
-      '<button class="cmd-btn cmd-btn-primary registry-draft-btn" data-candidate="' + esc(candidate.name) + '" data-use-case="' + esc(useCaseValue || '') + '">Send to McpForge</button>' +
+      '<button class="cmd-btn cmd-btn-primary registry-draft-btn" data-candidate="' + esc(candidate.name) + '" data-use-case="' + esc(useCaseValue || '') + '"' + (candidate.currentState === 'blocked' ? ' disabled' : '') + '>Send to McpForge</button>' +
       '</div>' +
       '</div>';
   }
