@@ -21,7 +21,7 @@ on:
           - 'false'
           - 'true'
       LOW_COST_DEV_MODE:
-        description: 'Enable Low Cost Dev Mode: 30-day minimum-valid retention, 0.1 GB/day Log Analytics ingestion cap, minimal App Insights sampling. (#303, #341)'
+        description: 'Enable Low Cost Dev Mode: keep the global router warm, but reduce spend via 30-day minimum-valid retention, 0.1 GB/day Log Analytics ingestion cap, and minimal App Insights sampling. (#303, #341, #410, #442)'
         required: false
         type: boolean
         default: false

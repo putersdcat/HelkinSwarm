@@ -33,7 +33,7 @@
       "type": "bool",
       "defaultValue": false,
       "metadata": {
-        "description": "Low Cost Dev Mode — 7-day log retention (minimum for PerGB2018), 0.1 GB/day ingestion cap, minimal App Insights sampling. (#303)"
+        "description": "Low Cost Dev Mode — keeps the global router warm while reducing observability spend via ingestion cap + sampling. (#303, #410, #442)"
       }
     },
     "delegatedAuthClientId": {
@@ -67,7 +67,7 @@
     "routerLawRetentionDays": 30,
     "routerLawDailyCapGb": "[if(parameters('lowCostDevMode'), json('0.1'), json('-1'))]",
     "routerAppInsSamplingPct": "[if(parameters('lowCostDevMode'), 10, 100)]",
-    "routerMinReplicas": "[if(parameters('lowCostDevMode'), 0, 1)]"
+    "routerMinReplicas": 1
   },
   "resources": [
     {

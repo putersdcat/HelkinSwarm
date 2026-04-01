@@ -26,7 +26,7 @@ param userPrincipalId string
 @description('Create/update the GraphOAuth Bot Service connection. Set true only on first deploy or when scopes change.')
 param createOAuthConnection bool = false
 
-@description('Low Cost Dev Mode — 7-day log retention (minimum for PerGB2018), 0.1 GB/day ingestion cap, minimal App Insights sampling. (#303)')
+@description('Low Cost Dev Mode — keeps the global router warm while reducing observability spend via ingestion cap + sampling. (#303, #410, #442)')
 param lowCostDevMode bool = false
 
 @description('Client ID of the HelkinSwarm-DelegatedAuth Entra app for user-delegated Graph access.')
@@ -53,13 +53,15 @@ var roleStorageQueueContributor = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
 var roleStorageTableContributor = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
 var roleAcrPull                 = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 
-// Low Cost Dev Mode derived values (#303, #341)
-// The router uses a paid Log Analytics workspace as well, so retention stays at
-// the minimum valid 30 days and low-cost savings come from cap/sampling/scale.
+// Low Cost Dev Mode derived values (#303, #341, #410, #442)
+// The router is the global Teams ingress front door. Letting it scale to zero
+// recreates the exact no-visible-artifact failure family where the first human
+// turn can vanish before the user stamp sees any /api/messages request at all.
+// Keep the router warm even in low-cost mode; save money via cap/sampling only.
 var routerLawRetentionDays  = 30
 var routerLawDailyCapGb     = lowCostDevMode ? json('0.1') : json('-1')
 var routerAppInsSamplingPct = lowCostDevMode ? 10 : 100
-var routerMinReplicas       = lowCostDevMode ? 0  : 1
+var routerMinReplicas       = 1
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  1. USER-ASSIGNED MANAGED IDENTITY (global bot identity — fresh, not Alpha)
