@@ -93,7 +93,7 @@ param openrouterFallbackSecondary string = 'moonshotai/kimi-k2.5'
 @allowed(['off', 'minimal', 'standard', 'verbose'])
 param devTelemetryMode string = 'verbose'
 
-@description('Low Cost Dev Mode — reduces Log Analytics retention, telemetry verbosity, and scale floor to minimise dev spend. (#303)')
+@description('Low Cost Dev Mode — reduces observability spend while preserving the stamped chat runtime warm floor so the first user turn cannot vanish behind stamp scale-to-zero. (#303, #393, #410)')
 param lowCostDevMode bool = false
 
 @description('Dirty Dev Mode — disables paid Azure observability for the stamp (no Log Analytics persistence, no Application Insights resource, no Azure Monitor exporter). Intended for short-lived personal dev stamps only. (#382)')
@@ -119,14 +119,16 @@ var funcName      = 'helkinswarm-func-${userAlias}'
 var botName       = 'helkinswarm-bot-${userAlias}'
 
 // Built-in ARM role definition IDs
-// ─── Low Cost Dev Mode derived values (#303, #341) ─────────────────────────
+// ─── Low Cost Dev Mode derived values (#303, #341, #393, #410) ─────────────
 // Paid Log Analytics workspaces and workspace-based Application Insights can't
 // use the old 7-day profile here; 30 days is the current minimum valid tier.
-// Low Cost Dev Mode therefore keeps retention at 30 days and reduces spend via
-// ingestion caps, sampling, forced minimal telemetry, and scale-to-zero.
+// Earlier low-cost mode also dropped the stamp to zero replicas, but the repo's
+// own live evidence showed the first real post-idle user turn could still vanish
+// before the handler existed. Preserve the personal-copilot stamp warm floor and
+// save money through caps, sampling, and minimal telemetry instead.
 var lawRetentionDays       = 30
 var appInsRetentionDays    = 30
-var funcInstanceMin        = lowCostDevMode ? 0   : 1
+var funcInstanceMin        = 1
 var effectiveTelemetryMode = lowCostDevMode ? 'minimal' : devTelemetryMode
 var lawDailyCapGb          = lowCostDevMode ? json('0.1') : json('-1')  // -1 = no cap
 var appInsSamplingPct      = lowCostDevMode ? 10  : 100

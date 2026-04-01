@@ -37,10 +37,10 @@ All workflows use **OIDC federation** (no secrets stored in GitHub).
 Key parameter (propagated everywhere):
 ```bicep
 param euResidencyMode bool = false   // ← default = global frontier performance
-param lowCostDevMode bool = false     // ← reduces ingestion cap/sampling; stamp scale floor can drop, but the global router stays warm (#303, #341, #410, #442)
+param lowCostDevMode bool = false     // ← reduces ingestion cap/sampling while keeping both the stamp and router warm for first-turn chat reliability (#303, #341, #393, #410)
 ```
 
-Changing `euResidencyMode` and pushing to `main` automatically switches the entire LLM, embeddings, memory, and routing layer. Activating `lowCostDevMode` requires triggering a manual `workflow_dispatch` with `LOW_COST_DEV_MODE=true` (push-triggered deploys always default to `false` to preserve existing resource state). On stamped runtimes, low-cost mode can still drop the stamp to an idle scale floor. On the **global router**, low-cost mode now preserves `minReplicas = 1` because the Teams ingress front door must not scale to zero.
+Changing `euResidencyMode` and pushing to `main` automatically switches the entire LLM, embeddings, memory, and routing layer. Activating `lowCostDevMode` requires triggering a manual `workflow_dispatch` with `LOW_COST_DEV_MODE=true` (push-triggered deploys always default to `false` to preserve existing resource state). The current low-cost profile preserves a warm floor on both the stamped chat runtime and the global router because live backlog work showed that either layer scaling to zero could break the first-turn chat contract.
 
 ### workflow_dispatch Inputs (`deploy-stamp.yml`)
 
@@ -52,7 +52,7 @@ Changing `euResidencyMode` and pushing to `main` automatically switches the enti
 | `MODEL_QUOTA_OVERRIDES_JSON` | `''` | Per-model TPM overrides as JSON |
 | `EU_RESIDENCY_MODE` | `false` | EU DataZoneStandard toggle |
 | `CREATE_OAUTH_CONNECTION` | `false` | Recreate GraphOAuth Bot Service connection |
-| `LOW_COST_DEV_MODE` | `false` | Activate Low Cost Dev Mode cost controls; router stays warm, stamp low-cost knobs still apply (#303, #410, #442) |
+| `LOW_COST_DEV_MODE` | `false` | Activate Low Cost Dev Mode cost controls; both stamp and router stay warm while observability-cost knobs still apply (#303, #393, #410) |
 | `DIRTY_DEV_MODE` | `false` | Disable paid Log Analytics/App Insights for the dev stamp (#382) |
 
 

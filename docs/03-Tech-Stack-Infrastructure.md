@@ -136,7 +136,7 @@ Key environment variables set via Bicep and propagated to the Function App:
 
 Added in #303 and corrected in #341. A single Bicep boolean param controls a bundle of cost-reduction settings designed for personal dev use.
 
-Because HelkinSwarm uses a paid Log Analytics workspace plus workspace-based Application Insights, the original 7-day retention profile turned out to be deployment-invalid. Low Cost Dev Mode now keeps retention at the minimum valid 30 days and reduces cost through ingestion caps, sampling, minimal telemetry, and selective scale reduction. The **global router** is excluded from scale-to-zero because it is the Teams ingress front door.
+Because HelkinSwarm uses a paid Log Analytics workspace plus workspace-based Application Insights, the original 7-day retention profile turned out to be deployment-invalid. Low Cost Dev Mode now keeps retention at the minimum valid 30 days and reduces cost through ingestion caps, sampling, and minimal telemetry. The stamped chat runtime and the global router are both kept warm because live backlog work on `#393` / `#410` showed that the first user turn cannot be guaranteed once either ingress layer scales to zero.
 
 | Setting | Normal | Low Cost Dev Mode |
 |---------|--------|-------------------|
@@ -145,14 +145,14 @@ Because HelkinSwarm uses a paid Log Analytics workspace plus workspace-based App
 | Log Analytics daily ingestion cap | unlimited | 0.1 GB/day |
 | App Insights sampling | 100% | 10% (~90% ingestion reduction) |
 | `DEV_TELEMETRY_MODE` override | from param | forced `minimal` |
-| Stamp `minimumElasticInstanceCount` | 1 (always warm) | 0 (scale to zero when idle) |
+| Stamp `minimumElasticInstanceCount` | 1 (always warm) | 1 (kept warm to preserve first-turn chat reliability) |
 | Router `minReplicas` | 1 | 1 (kept warm to preserve first-turn ingress reliability) |
 
 **Activation**: Trigger `deploy-stamp.yml` with `LOW_COST_DEV_MODE=true`. The default (`false`) preserves existing behaviour for all push-triggered deploys.
 
-Estimated monthly savings when active: ~$11–25 (Container Apps scale-to-zero + ingestion reduction). Actual verification requires a full billing cycle.
+Expected savings now come primarily from ingestion caps, sampling, and reduced telemetry volume rather than stamp/router scale-to-zero. Exact monthly impact still requires a real billing-cycle comparison.
 
-> ⚠️ Stamp scale-to-zero still means cold starts (~2–5s extra) for the first message after idle. The global router stays warm so the Teams ingress front door does not disappear before the stamp can even observe the turn.
+> ⚠️ The queue/replay cold-start logic remains useful for deploy/startup races, but the personal copilot stamp and the global router now both keep a warm floor because first-turn chat reliability won the tradeoff over idle scale-to-zero savings.
 
 ### Dirty Dev Mode (`dirtyDevMode`, #382)
 

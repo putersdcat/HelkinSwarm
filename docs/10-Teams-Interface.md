@@ -70,18 +70,18 @@ Current contract:
 
 This keeps inbound file/image handling aligned with the same runtime asset transport used by downstream tools and outbound replies.
 
-### Scale-to-Zero Wake-Up Behavior
+### Cold-Start and Wake-Up Behavior
 
 When a message reaches the bot during the first few seconds after a cold start, HelkinSwarm must not silently drop it behind a vague "try again" response.
 
 The current runtime contract is:
 
-1. if the stamp is already warm enough to enter the normal turn path, send the usual correlated ack and route to the overseer
-2. if the message lands during the explicit cold-start guard window, persist the exact turn as a `pendingIntent`
+1. the personal copilot stamp keeps a warm floor for normal chat traffic, so the first post-idle turn should enter the normal ack path instead of depending on idle scale-to-zero wake-up behavior
+2. if a message still lands during the explicit cold-start guard window (for example right after deploy/startup), persist the exact turn as a `pendingIntent`
 3. immediately tell the user that the bot is waking up and that the message has been queued for automatic replay
 4. attempt replay as soon as the cold-start window passes, with the existing pending-intent replay path as fallback
 
-This keeps scale-to-zero enabled while making the first post-idle turn truthful and recoverable instead of disposable.
+This reflects the current design decision from backlog work on `#393` / `#410`: for the main stamped personal copilot, reliable first-turn chat delivery beat idle scale-to-zero savings.
 
 Startup lifecycle notices must also stay honest: a fresh "runtime online" notice is **not** proof that inbound Teams delivery has already succeeded. Until the first successful inbound `/api/messages` turn is observed, owner-facing startup notices should warn that inbound delivery is still being verified and that a no-reply first message may need to be resent.
 
