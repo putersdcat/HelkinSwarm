@@ -1,7 +1,81 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const harness = vi.hoisted(() => ({
+  continueConversationAsync: vi.fn(),
+  getConversationReference: vi.fn(),
+  getPendingAckId: vi.fn(),
+  clearPendingAckId: vi.fn(),
+  claimOutboundArtifact: vi.fn(),
+  releaseOutboundArtifactClaim: vi.fn(),
+  cacheSentMessage: vi.fn(),
+  readRuntimeAssetContent: vi.fn(),
+  loadRuntimeAssetReference: vi.fn(),
+  clearOrchestratorStage: vi.fn(),
+  recordSubstage: vi.fn(),
+  getCorrelatedSpinnerAck: vi.fn(),
+}));
+
+vi.mock('../../src/bot/conversationStore.js', () => ({
+  getConversationReference: harness.getConversationReference,
+  getPendingAckId: harness.getPendingAckId,
+  clearPendingAckId: harness.clearPendingAckId,
+  claimOutboundArtifact: harness.claimOutboundArtifact,
+  releaseOutboundArtifactClaim: harness.releaseOutboundArtifactClaim,
+}));
+
+vi.mock('../../src/bot/sentMessageCache.js', () => ({
+  cacheSentMessage: harness.cacheSentMessage,
+}));
+
+vi.mock('../../src/bot/ackVariants.js', () => ({
+  getCorrelatedSpinnerAck: harness.getCorrelatedSpinnerAck,
+}));
+
+vi.mock('../../src/integrations/runtimeAssetStore.js', () => ({
+  readRuntimeAssetContent: harness.readRuntimeAssetContent,
+  loadRuntimeAssetReference: harness.loadRuntimeAssetReference,
+}));
+
+vi.mock('../../src/config/envConfig.js', () => ({
+  getEnvConfig: () => ({
+    microsoftAppId: 'test-app-id',
+    microsoftAppTenantId: 'test-tenant-id',
+  }),
+}));
+
+vi.mock('../../src/observability/orchestratorStageHealth.js', () => ({
+  clearOrchestratorStage: harness.clearOrchestratorStage,
+  recordSubstage: harness.recordSubstage,
+}));
+
+vi.mock('botbuilder', () => ({
+  ActivityTypes: { Message: 'message' },
+  CloudAdapter: class {
+    continueConversationAsync = harness.continueConversationAsync;
+  },
+  ConfigurationBotFrameworkAuthentication: class {
+    constructor(_config?: unknown) {}
+  },
+}));
+
+function configureCommonHarness(): void {
+  harness.getConversationReference.mockResolvedValue({ conversation: { id: 'conv-1' } });
+  harness.getPendingAckId.mockResolvedValue('ack-activity-1');
+  harness.clearPendingAckId.mockResolvedValue(undefined);
+  harness.claimOutboundArtifact.mockResolvedValue(true);
+  harness.releaseOutboundArtifactClaim.mockResolvedValue(undefined);
+  harness.cacheSentMessage.mockImplementation(() => undefined);
+  harness.readRuntimeAssetContent.mockResolvedValue(null);
+  harness.loadRuntimeAssetReference.mockResolvedValue(null);
+  harness.clearOrchestratorStage.mockResolvedValue(undefined);
+  harness.recordSubstage.mockImplementation(() => undefined);
+  harness.getCorrelatedSpinnerAck.mockReturnValue('⠋ Still thinking... [corr:abc12345]');
+}
+
 async function loadSendReplyModule(options?: { hangUpdate?: boolean; fastPath?: boolean }) {
   vi.resetModules();
+  vi.clearAllMocks();
+  configureCommonHarness();
 
   if (options?.fastPath) {
     process.env['SENDREPLY_FAST_PATH'] = '1';
@@ -9,7 +83,7 @@ async function loadSendReplyModule(options?: { hangUpdate?: boolean; fastPath?: 
     delete process.env['SENDREPLY_FAST_PATH'];
   }
 
-  const continueConversationAsync = vi.fn(async (_appId, conversationReference, callback) => {
+  harness.continueConversationAsync.mockImplementation(async (_appId, conversationReference, callback) => {
     const updateActivity = vi.fn(async () => {
       if (options?.hangUpdate) {
         return await new Promise(() => undefined);
@@ -21,118 +95,45 @@ async function loadSendReplyModule(options?: { hangUpdate?: boolean; fastPath?: 
     return { conversationReference, updateActivity, sendActivity };
   });
 
-  const getPendingAckId = vi.fn(async () => 'ack-activity-1');
-  const clearPendingAckId = vi.fn(async () => undefined);
-  const claimOutboundArtifact = vi.fn(async () => true);
-  const releaseOutboundArtifactClaim = vi.fn(async () => undefined);
-
-  vi.doMock('../../src/bot/conversationStore.js', () => ({
-    getConversationReference: vi.fn(async () => ({ conversation: { id: 'conv-1' } })),
-    getPendingAckId,
-    clearPendingAckId,
-    claimOutboundArtifact,
-    releaseOutboundArtifactClaim,
-  }));
-
-  vi.doMock('../../src/bot/sentMessageCache.js', () => ({
-    cacheSentMessage: vi.fn(),
-  }));
-
-  vi.doMock('../../src/integrations/runtimeAssetStore.js', () => ({
-    readRuntimeAssetContent: vi.fn(async () => null),
-    loadRuntimeAssetReference: vi.fn(async () => null),
-  }));
-
-  vi.doMock('../../src/config/envConfig.js', () => ({
-    getEnvConfig: () => ({
-      microsoftAppId: 'test-app-id',
-      microsoftAppTenantId: 'test-tenant-id',
-    }),
-  }));
-
-  const clearOrchestratorStage = vi.fn(async () => undefined);
-  const recordSubstage = vi.fn(() => undefined);
-
-  vi.doMock('../../src/observability/orchestratorStageHealth.js', () => ({
-    clearOrchestratorStage,
-    recordSubstage,
-  }));
-
-  vi.doMock('botbuilder', () => ({
-    ActivityTypes: { Message: 'message' },
-    CloudAdapter: class {
-      continueConversationAsync = continueConversationAsync;
-    },
-    ConfigurationBotFrameworkAuthentication: class {
-      constructor(_config?: unknown) {}
-    },
-  }));
-
   const mod = await import('../../src/orchestrator/sendReplyActivity.js');
   return {
     ...mod,
-    getPendingAckId,
-    clearPendingAckId,
-    claimOutboundArtifact,
-    releaseOutboundArtifactClaim,
-    continueConversationAsync,
-    clearOrchestratorStage,
-    recordSubstage,
+    getPendingAckId: harness.getPendingAckId,
+    clearPendingAckId: harness.clearPendingAckId,
+    claimOutboundArtifact: harness.claimOutboundArtifact,
+    releaseOutboundArtifactClaim: harness.releaseOutboundArtifactClaim,
+    continueConversationAsync: harness.continueConversationAsync,
+    clearOrchestratorStage: harness.clearOrchestratorStage,
+    recordSubstage: harness.recordSubstage,
   };
 }
 
 async function loadSpinnerModule() {
   vi.resetModules();
+  vi.clearAllMocks();
+  configureCommonHarness();
 
-  const continueConversationAsync = vi.fn(async (_appId, conversationReference, callback) => {
+  harness.getConversationReference.mockResolvedValue({ conversation: { id: 'conv-2' } });
+  harness.getPendingAckId.mockResolvedValue('ack-activity-2');
+  harness.continueConversationAsync.mockImplementation(async (_appId, conversationReference, callback) => {
     const updateActivity = vi.fn(async () => undefined);
     await callback({ updateActivity });
     return { conversationReference, updateActivity };
   });
 
-  const getPendingAckId = vi.fn(async () => 'ack-activity-2');
-
-  vi.doMock('../../src/bot/conversationStore.js', () => ({
-    getConversationReference: vi.fn(async () => ({ conversation: { id: 'conv-2' } })),
-    getPendingAckId,
-  }));
-
-  vi.doMock('../../src/bot/ackVariants.js', () => ({
-    getCorrelatedSpinnerAck: vi.fn(() => '⠋ Still thinking... [corr:abc12345]'),
-  }));
-
-  vi.doMock('../../src/config/envConfig.js', () => ({
-    getEnvConfig: () => ({
-      microsoftAppId: 'test-app-id',
-      microsoftAppTenantId: 'test-tenant-id',
-    }),
-  }));
-
-  vi.doMock('botbuilder', () => ({
-    ActivityTypes: { Message: 'message' },
-    CloudAdapter: class {
-      continueConversationAsync = continueConversationAsync;
-    },
-    ConfigurationBotFrameworkAuthentication: class {
-      constructor(_config?: unknown) {}
-    },
-  }));
-
   const mod = await import('../../src/orchestrator/spinnerHeartbeatActivity.js');
-  return { ...mod, getPendingAckId, continueConversationAsync };
+  return {
+    ...mod,
+    getPendingAckId: harness.getPendingAckId,
+    continueConversationAsync: harness.continueConversationAsync,
+  };
 }
 
 describe('ack correlation scoping', () => {
   afterEach(() => {
     vi.useRealTimers();
+    vi.clearAllMocks();
     vi.resetModules();
-    vi.doUnmock('../../src/bot/conversationStore.js');
-    vi.doUnmock('../../src/bot/sentMessageCache.js');
-    vi.doUnmock('../../src/bot/ackVariants.js');
-    vi.doUnmock('../../src/config/envConfig.js');
-    vi.doUnmock('../../src/integrations/runtimeAssetStore.js');
-    vi.doUnmock('../../src/observability/orchestratorStageHealth.js');
-    vi.doUnmock('botbuilder');
     delete process.env['SENDREPLY_FAST_PATH'];
   });
 
@@ -162,9 +163,6 @@ describe('ack correlation scoping', () => {
     });
 
     expect(result.success).toBe(true);
-    // The important invariant here is that the sendReply path still completes
-    // successfully after the ack-update timeout path is exercised (#329), even
-    // with the newer outbound-artifact dedup claim in front of the send path.
   }, 10_000);
 
   it('spinnerHeartbeat resolves the pending ack by correlationId, not userId', async () => {

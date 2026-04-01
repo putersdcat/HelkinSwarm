@@ -13,7 +13,7 @@ import { getGraphTokenForUser } from '../../src/auth/graphTokenHelper.js';
 import { isPlaceholderScopedToken } from '../../src/auth/scopedTokenMinter.js';
 import { registerHandler } from '../../src/capabilities/capabilityLoader.js';
 import { trackEvent } from '../../src/observability/telemetry.js';
-import { persistRuntimeAsset } from '../../src/integrations/runtimeAssetStore.js';
+import { persistRuntimeAsset, readRuntimeAssetContent } from '../../src/integrations/runtimeAssetStore.js';
 
 // ---------------------------------------------------------------------------
 // Constants & helpers
@@ -101,20 +101,83 @@ async function graphFetch<T>(
 export function detectUnsupportedInlineEmailBody(
   body: string,
   bodyType: string,
+  providedInlineAssets: EmailInlineAssetInput[] = [],
 ): string | null {
-  if (bodyType.toLowerCase() !== 'html') {
-    return null;
+  const normalizedBodyType = bodyType.toLowerCase();
+
+  if (providedInlineAssets.length > 0 && normalizedBodyType !== 'html') {
+    return 'Inline runtime assets require an HTML body with matching cid: references.';
   }
 
-  if (/\bcid:/i.test(body)) {
-    return 'The HTML body references a cid: inline image, but this tool cannot send the matching inline attachment payload yet.';
+  if (bodyType.toLowerCase() !== 'html') {
+    return null;
   }
 
   if (/src\s*=\s*["']data:image\//i.test(body)) {
     return 'The HTML body embeds a data:image payload, but this tool does not support sending embedded image bytes inline yet.';
   }
 
+  const bodyCidReferences = extractCidReferences(body);
+  if (bodyCidReferences.size === 0) {
+    if (providedInlineAssets.length > 0) {
+      return 'Inline runtime assets were provided, but the HTML body does not reference them with cid: links.';
+    }
+    return null;
+  }
+
+  if (providedInlineAssets.length === 0) {
+    return 'The HTML body references cid: inline images, but no inline runtime assets were supplied.';
+  }
+
+  const providedContentIds = new Map<string, string>();
+  for (const asset of providedInlineAssets) {
+    const normalizedContentId = normalizeContentId(asset.contentId);
+    if (!normalizedContentId) {
+      return `Inline runtime asset '${asset.assetId}' is missing a usable contentId.`;
+    }
+
+    const key = normalizedContentId.toLowerCase();
+    if (providedContentIds.has(key)) {
+      return `Multiple inline runtime assets were supplied for cid:${normalizedContentId}.`;
+    }
+
+    providedContentIds.set(key, normalizedContentId);
+  }
+
+  const missingContentIds = Array.from(bodyCidReferences).filter((contentId) => !providedContentIds.has(contentId));
+  if (missingContentIds.length > 0) {
+    return `The HTML body references ${missingContentIds.map((contentId) => `cid:${contentId}`).join(', ')}, but matching inline runtime assets were not supplied.`;
+  }
+
+  const unusedInlineAssets = Array.from(providedContentIds.values()).filter(
+    (contentId) => !bodyCidReferences.has(contentId.toLowerCase()),
+  );
+  if (unusedInlineAssets.length > 0) {
+    return `Inline runtime assets were supplied for ${unusedInlineAssets.map((contentId) => `cid:${contentId}`).join(', ')}, but the HTML body does not reference them.`;
+  }
+
   return null;
+}
+
+const EmailAttachmentAssetInputSchema = z.object({
+  assetId: z.string().min(1),
+  fileName: z.string().min(1).optional(),
+});
+
+const EmailInlineAssetInputSchema = EmailAttachmentAssetInputSchema.extend({
+  contentId: z.string().min(1),
+});
+
+type EmailAttachmentAssetInput = z.infer<typeof EmailAttachmentAssetInputSchema>;
+type EmailInlineAssetInput = z.infer<typeof EmailInlineAssetInputSchema>;
+
+interface GraphFileAttachmentPayload {
+  '@odata.type': '#microsoft.graph.fileAttachment';
+  name: string;
+  contentType: string;
+  contentBytes: string;
+  isInline: boolean;
+  contentId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -222,6 +285,14 @@ interface OutlookAttachmentMetadata {
   downloadSupported: boolean;
 }
 
+function buildAttachmentFileName(
+  preferredFileName: string | undefined,
+  fallbackFileName: string,
+): string {
+  const trimmed = preferredFileName?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : fallbackFileName;
+}
+
 function normalizeContentId(contentId: string | null | undefined): string | undefined {
   const trimmed = contentId?.trim();
   if (!trimmed) {
@@ -322,6 +393,66 @@ async function getMessageAttachmentContext(
     bodyCidReferences: Array.from(cidReferences),
     attachments: attachmentResult.value.map((attachment) => mapOutlookAttachmentMetadata(attachment, cidReferences)),
   };
+}
+
+async function loadGraphRuntimeAttachment(
+  userId: string,
+  asset: EmailAttachmentAssetInput,
+  options?: { inlineContentId?: string },
+): Promise<GraphFileAttachmentPayload> {
+  const loadedAsset = await readRuntimeAssetContent({ userId, assetId: asset.assetId });
+  if (!loadedAsset) {
+    throw new Error(
+      `Runtime asset '${asset.assetId}' is not available anymore. Please upload or re-materialize it again before sending the email.`,
+    );
+  }
+
+  const inlineContentId = options?.inlineContentId;
+  if (inlineContentId && !loadedAsset.reference.contentType.toLowerCase().startsWith('image/')) {
+    throw new Error(
+      `Runtime asset '${asset.assetId}' has content type '${loadedAsset.reference.contentType}' and cannot be embedded inline. Only image runtime assets can be embedded inline right now.`,
+    );
+  }
+
+  const fallbackFileName = inlineContentId
+    ? `inline-${inlineContentId}`
+    : `attachment-${asset.assetId}`;
+
+  return {
+    '@odata.type': '#microsoft.graph.fileAttachment',
+    name: buildAttachmentFileName(asset.fileName ?? loadedAsset.reference.fileName, fallbackFileName),
+    contentType: loadedAsset.reference.contentType,
+    contentBytes: Buffer.from(loadedAsset.content).toString('base64'),
+    isInline: !!inlineContentId,
+    ...(inlineContentId ? { contentId: inlineContentId } : {}),
+  };
+}
+
+async function loadSendMailAttachments(
+  userId: string,
+  attachmentAssetIds: string[],
+  inlineAssets: EmailInlineAssetInput[],
+): Promise<GraphFileAttachmentPayload[]> {
+  const standardAttachments = await Promise.all(
+    attachmentAssetIds.map((assetId) => loadGraphRuntimeAttachment(userId, { assetId })),
+  );
+
+  const inlineAttachments = await Promise.all(
+    inlineAssets.map((asset) => {
+      const normalizedContentId = normalizeContentId(asset.contentId);
+      if (!normalizedContentId) {
+        throw new Error(`Inline runtime asset '${asset.assetId}' is missing a usable contentId.`);
+      }
+
+      return loadGraphRuntimeAttachment(
+        userId,
+        { assetId: asset.assetId, ...(asset.fileName ? { fileName: asset.fileName } : {}) },
+        { inlineContentId: normalizedContentId },
+      );
+    }),
+  );
+
+  return [...standardAttachments, ...inlineAttachments];
 }
 
 const outlookListEmails: ToolHandler = async (args) => {
@@ -456,20 +587,24 @@ const outlookDownloadAttachment: ToolHandler = async (args) => {
 };
 
 const outlookSendEmail: ToolHandler = async (args) => {
-  z.string().parse(args['userId']);
+  const userId = z.string().parse(args['userId']);
   const to = z.array(z.string()).parse(args['to']);
   const subject = z.string().parse(args['subject']);
   const body = z.string().parse(args['body']);
   const bodyType = z.string().default('text').parse(args['bodyType'] ?? 'text');
   const cc = z.array(z.string()).default([]).parse(args['cc'] ?? []);
+  const attachmentAssetIds = z.array(z.string().min(1)).default([]).parse(args['attachmentAssetIds'] ?? []);
+  const inlineAssets = z.array(EmailInlineAssetInputSchema).default([]).parse(args['inlineAssets'] ?? []);
 
-  const inlineImageBlocker = detectUnsupportedInlineEmailBody(body, bodyType);
+  const inlineImageBlocker = detectUnsupportedInlineEmailBody(body, bodyType, inlineAssets);
   if (inlineImageBlocker) {
     throw new Error(
-      'Embedded inline images in outgoing Outlook email are not supported yet. ' +
-      `${inlineImageBlocker} I have not sent the requested inline-image email.`,
+      'Inline runtime-asset email composition could not be completed. ' +
+      `${inlineImageBlocker} I have not sent the requested email.`,
     );
   }
+
+  const attachments = await loadSendMailAttachments(userId, attachmentAssetIds, inlineAssets);
 
   const token = await resolveToken(args);
 
@@ -485,6 +620,7 @@ const outlookSendEmail: ToolHandler = async (args) => {
         body: { contentType: bodyType === 'html' ? 'HTML' : 'Text', content: body },
         toRecipients: to.map((addr) => ({ emailAddress: { address: addr } })),
         ccRecipients: cc.map((addr) => ({ emailAddress: { address: addr } })),
+        ...(attachments.length > 0 ? { attachments } : {}),
       },
     }),
   });

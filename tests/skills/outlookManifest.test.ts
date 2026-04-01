@@ -26,7 +26,7 @@ describe('outlook manifest safety flags', () => {
     const createEvent = manifest.tools.find((tool) => tool.name === 'outlook_create_calendar_event');
 
     expect(send?.requiresConfirmation).toBe(true);
-    expect(send?.description).toContain('does not support embedded inline images or file attachments yet');
+    expect(send?.description).toContain('runtime-asset file attachments, and inline runtime-asset images');
     expect(replyLatest?.requiresConfirmation).toBe(false);
     expect(createEvent?.requiresConfirmation).toBe(true);
   });
@@ -63,5 +63,18 @@ describe('outlook manifest safety flags', () => {
     expect(downloadAttachment?.inputSchema?.properties).toHaveProperty('attachmentId');
     expect(manifest.recommendedEntryTools).toContain('outlook_list_attachments');
     expect(manifest.discoveryHints).toContain('attachment');
+  });
+
+  it('distinguishes normal runtime-asset attachments from inline runtime-asset embeds on outlook_send_email', () => {
+    const manifest = JSON.parse(readFileSync('skills/outlook/manifest.json', 'utf8')) as {
+      tools: ToolEntry[];
+      orchestratorUseCases?: string[];
+    };
+
+    const send = manifest.tools.find((tool) => tool.name === 'outlook_send_email');
+
+    expect(send?.inputSchema?.properties).toHaveProperty('attachmentAssetIds');
+    expect(send?.inputSchema?.properties).toHaveProperty('inlineAssets');
+    expect(manifest.orchestratorUseCases).toContain('send email with runtime-asset attachments or inline runtime-asset images');
   });
 });

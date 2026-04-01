@@ -39,9 +39,15 @@ async function loadHandlersModule() {
     },
   }));
 
-  vi.doMock('../../src/integrations/runtimeAssetStore.js', () => ({
-    persistRuntimeAsset,
-  }));
+  vi.doMock('../../src/integrations/runtimeAssetStore.js', async () => {
+    const mod = await vi.importActual<typeof import('../../src/integrations/runtimeAssetStore.js')>(
+      '../../src/integrations/runtimeAssetStore.js',
+    );
+    return {
+      ...mod,
+      persistRuntimeAsset,
+    };
+  });
 
   const mod = await import('../../skills/outlook/handlers.js');
   return { ...mod, persistRuntimeAsset };

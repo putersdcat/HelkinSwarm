@@ -172,7 +172,7 @@
     },
     {
       "name": "outlook_send_email",
-      "description": "Send an email on behalf of the user. Requires linked account (OBO). Supports plain text or HTML body content, but does not support embedded inline images or file attachments yet. High risk, but manifest-configured to skip extra confirmation for this personal environment.",
+      "description": "Send an email on behalf of the user. Requires linked account (OBO). Supports plain text or HTML body content, runtime-asset file attachments, and inline runtime-asset images referenced by matching cid: links in HTML. Inline data:image payloads are still not supported. High risk, but manifest-configured to skip extra confirmation for this personal environment.",
       "risk": "high",
       "dataSensitivity": "pii",
       "allowedModelLane": "any",
@@ -224,6 +224,38 @@
               "type": "string"
             },
             "description": "CC recipient email addresses"
+          },
+          "attachmentAssetIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional runtime asset IDs to attach as normal file attachments to the outgoing email"
+          },
+          "inlineAssets": {
+            "type": "array",
+            "description": "Optional runtime assets to embed inline. Each entry must provide the runtime asset ID and the contentId referenced in the HTML body via cid:...",
+            "items": {
+              "type": "object",
+              "properties": {
+                "assetId": {
+                  "type": "string",
+                  "description": "Runtime asset ID for the inline image payload"
+                },
+                "contentId": {
+                  "type": "string",
+                  "description": "CID/contentId referenced by the HTML body, for example hero-image for <img src=\"cid:hero-image\" />"
+                },
+                "fileName": {
+                  "type": "string",
+                  "description": "Optional display filename to use for the inline attachment instead of the stored runtime asset filename"
+                }
+              },
+              "required": [
+                "assetId",
+                "contentId"
+              ]
+            }
           }
         },
         "required": [
@@ -491,6 +523,7 @@
   ],
   "orchestratorUseCases": [
     "find, read, summarize, reply to, or send email",
+    "send email with runtime-asset attachments or inline runtime-asset images",
     "inspect Outlook attachments and download them into runtime asset storage",
     "inspect upcoming meetings and create calendar events"
   ],
