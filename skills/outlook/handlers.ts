@@ -7,13 +7,14 @@
 // OAuth connection token cached by manual /link in the Bot Token Service.
 
 import type { ToolHandler } from '../../src/capabilities/capabilityLoader.js';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { getGraphTokenForUser } from '../../src/auth/graphTokenHelper.js';
 import { isPlaceholderScopedToken } from '../../src/auth/scopedTokenMinter.js';
 import { registerHandler } from '../../src/capabilities/capabilityLoader.js';
 import { trackEvent } from '../../src/observability/telemetry.js';
 import { persistRuntimeAsset, readRuntimeAssetContent } from '../../src/integrations/runtimeAssetStore.js';
+import { claimOutboundArtifact, releaseOutboundArtifactClaim } from '../../src/bot/conversationStore.js';
 
 // ---------------------------------------------------------------------------
 // Constants & helpers
@@ -302,6 +303,35 @@ function normalizeContentId(contentId: string | null | undefined): string | unde
   return trimmed.replace(/^<+/, '').replace(/>+$/, '');
 }
 
+function buildEmailSendDedupKey(input: {
+  to: string[];
+  cc: string[];
+  subject: string;
+  body: string;
+  bodyType: string;
+  attachmentAssetIds: string[];
+  inlineAssets: EmailInlineAssetInput[];
+}): string {
+  const normalized = {
+    to: [...input.to].map((value) => value.trim()).sort((a, b) => a.localeCompare(b)),
+    cc: [...input.cc].map((value) => value.trim()).sort((a, b) => a.localeCompare(b)),
+    subject: input.subject,
+    body: input.body,
+    bodyType: input.bodyType.trim().toLowerCase(),
+    attachmentAssetIds: [...input.attachmentAssetIds].map((value) => value.trim()).sort((a, b) => a.localeCompare(b)),
+    inlineAssets: [...input.inlineAssets]
+      .map((asset) => ({
+        assetId: asset.assetId.trim(),
+        contentId: asset.contentId.trim().toLowerCase(),
+        ...(asset.fileName?.trim() ? { fileName: asset.fileName.trim() } : {}),
+      }))
+      .sort((a, b) => `${a.contentId}:${a.assetId}:${a.fileName ?? ''}`.localeCompare(`${b.contentId}:${b.assetId}:${b.fileName ?? ''}`)),
+  };
+
+  const hash = createHash('sha256').update(JSON.stringify(normalized)).digest('hex');
+  return `mail:${hash}`;
+}
+
 function extractCidReferences(bodyContent: string | undefined): Set<string> {
   const references = new Set<string>();
   if (!bodyContent) {
@@ -588,6 +618,8 @@ const outlookDownloadAttachment: ToolHandler = async (args) => {
 
 const outlookSendEmail: ToolHandler = async (args) => {
   const userId = z.string().parse(args['userId']);
+  const conversationId = z.string().optional().parse(args['conversationId']) ?? userId;
+  const correlationId = z.string().optional().parse(args['correlationId']) ?? userId;
   const to = z.array(z.string()).parse(args['to']);
   const subject = z.string().parse(args['subject']);
   const body = z.string().parse(args['body']);
@@ -606,33 +638,53 @@ const outlookSendEmail: ToolHandler = async (args) => {
 
   const attachments = await loadSendMailAttachments(userId, attachmentAssetIds, inlineAssets);
 
+  const dedupKey = `${correlationId}:${buildEmailSendDedupKey({
+    to,
+    cc,
+    subject,
+    body,
+    bodyType,
+    attachmentAssetIds,
+    inlineAssets,
+  })}`;
+
+  const claimed = await claimOutboundArtifact(conversationId, userId, 'email-send', dedupKey);
+  if (!claimed) {
+    return { success: true, message: `Duplicate email send suppressed for ${to.join(', ')}` };
+  }
+
   const token = await resolveToken(args);
 
-  const response = await fetch(`${GRAPH_BASE}/me/sendMail`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      message: {
-        subject,
-        body: { contentType: bodyType === 'html' ? 'HTML' : 'Text', content: body },
-        toRecipients: to.map((addr) => ({ emailAddress: { address: addr } })),
-        ccRecipients: cc.map((addr) => ({ emailAddress: { address: addr } })),
-        ...(attachments.length > 0 ? { attachments } : {}),
+  try {
+    const response = await fetch(`${GRAPH_BASE}/me/sendMail`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
       },
-    }),
-  });
+      body: JSON.stringify({
+        message: {
+          subject,
+          body: { contentType: bodyType === 'html' ? 'HTML' : 'Text', content: body },
+          toRecipients: to.map((addr) => ({ emailAddress: { address: addr } })),
+          ccRecipients: cc.map((addr) => ({ emailAddress: { address: addr } })),
+          ...(attachments.length > 0 ? { attachments } : {}),
+        },
+      }),
+    });
 
-  if (!response.ok) {
-    const errorBody = await response.text();
-    if (response.status === 403 && errorBody.includes('ErrorAccessDenied')) {
-      throw new Error(
-        'Outlook Graph API 403 ErrorAccessDenied — your Outlook link is present, but send permission is not usable yet. Refresh consent with /relink outlook and try again.',
-      );
+    if (!response.ok) {
+      const errorBody = await response.text();
+      if (response.status === 403 && errorBody.includes('ErrorAccessDenied')) {
+        throw new Error(
+          'Outlook Graph API 403 ErrorAccessDenied — your Outlook link is present, but send permission is not usable yet. Refresh consent with /relink outlook and try again.',
+        );
+      }
+      throw new Error(`Graph API ${response.status}: ${errorBody}`);
     }
-    throw new Error(`Graph API ${response.status}: ${errorBody}`);
+  } catch (error) {
+    await releaseOutboundArtifactClaim(conversationId, 'email-send', dedupKey);
+    throw error;
   }
 
   return { success: true, message: `Email sent to ${to.join(', ')}` };

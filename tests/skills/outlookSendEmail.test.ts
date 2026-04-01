@@ -9,9 +9,19 @@ const runtimeAssetHarness = vi.hoisted(() => ({
   readRuntimeAssetContent: vi.fn(),
 }));
 
+const outboundArtifactHarness = vi.hoisted(() => ({
+  claimOutboundArtifact: vi.fn(),
+  releaseOutboundArtifactClaim: vi.fn(),
+}));
+
 vi.mock('../../src/integrations/runtimeAssetStore.js', () => ({
   persistRuntimeAsset: runtimeAssetHarness.persistRuntimeAsset,
   readRuntimeAssetContent: runtimeAssetHarness.readRuntimeAssetContent,
+}));
+
+vi.mock('../../src/bot/conversationStore.js', () => ({
+  claimOutboundArtifact: outboundArtifactHarness.claimOutboundArtifact,
+  releaseOutboundArtifactClaim: outboundArtifactHarness.releaseOutboundArtifactClaim,
 }));
 
 async function loadHandlersModule() {
@@ -19,6 +29,11 @@ async function loadHandlersModule() {
 
   runtimeAssetHarness.persistRuntimeAsset.mockReset();
   runtimeAssetHarness.readRuntimeAssetContent.mockReset();
+  outboundArtifactHarness.claimOutboundArtifact.mockReset();
+  outboundArtifactHarness.releaseOutboundArtifactClaim.mockReset();
+
+  outboundArtifactHarness.claimOutboundArtifact.mockResolvedValue(true);
+  outboundArtifactHarness.releaseOutboundArtifactClaim.mockResolvedValue(undefined);
 
   runtimeAssetHarness.readRuntimeAssetContent.mockImplementation(async ({ assetId }: { assetId: string }) => {
     if (assetId === INLINE_ASSET_ID) {
@@ -74,6 +89,8 @@ describe('outlook_send_email runtime-asset attachments', () => {
     vi.resetModules();
     runtimeAssetHarness.persistRuntimeAsset.mockReset();
     runtimeAssetHarness.readRuntimeAssetContent.mockReset();
+    outboundArtifactHarness.claimOutboundArtifact.mockReset();
+    outboundArtifactHarness.releaseOutboundArtifactClaim.mockReset();
   });
 
   it('rejects cid-based inline image HTML when no inline runtime assets are provided', async () => {
@@ -125,6 +142,7 @@ describe('outlook_send_email runtime-asset attachments', () => {
     }) as { success: boolean; message: string };
 
     expect(readRuntimeAssetContent).toHaveBeenCalledWith({ userId: 'user-1', assetId: INLINE_ASSET_ID });
+    expect(outboundArtifactHarness.claimOutboundArtifact).toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [, init] = fetchMock.mock.calls[0] ?? [];
     const payload = JSON.parse(String(init?.body ?? '{}')) as {
@@ -248,5 +266,61 @@ describe('outlook_send_email runtime-asset attachments', () => {
     ).rejects.toThrow(/Only image runtime assets can be embedded inline right now/i);
 
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('suppresses a duplicate email send when the outbound artifact claim is already held', async () => {
+    process.env['AZURE_CONTENT_SAFETY_ENDPOINT'] = 'https://example.test';
+    process.env['AZURE_CONTENT_SAFETY_KEY'] = 'test-key';
+
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { handlers } = await loadHandlersModule();
+    outboundArtifactHarness.claimOutboundArtifact.mockResolvedValue(false);
+
+    const result = await handlers['outlook_send_email']({
+      userId: 'user-1',
+      conversationId: 'conv-1',
+      correlationId: 'corr-duplicate-send',
+      to: ['eric@example.com'],
+      subject: 'Duplicate suppression',
+      body: 'Hello once.',
+      _scopedToken: 'scoped-test-token',
+    }) as { success: boolean; message: string };
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result).toEqual({ success: true, message: 'Duplicate email send suppressed for eric@example.com' });
+  });
+
+  it('releases the outbound email claim when Graph send fails before delivery', async () => {
+    process.env['AZURE_CONTENT_SAFETY_ENDPOINT'] = 'https://example.test';
+    process.env['AZURE_CONTENT_SAFETY_KEY'] = 'test-key';
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: async () => 'boom',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { handlers } = await loadHandlersModule();
+
+    await expect(
+      handlers['outlook_send_email']({
+        userId: 'user-1',
+        conversationId: 'conv-1',
+        correlationId: 'corr-send-fail',
+        to: ['eric@example.com'],
+        subject: 'Release claim on failure',
+        body: 'This should fail.',
+        _scopedToken: 'scoped-test-token',
+      }),
+    ).rejects.toThrow(/Graph API 500: boom/i);
+
+    expect(outboundArtifactHarness.releaseOutboundArtifactClaim).toHaveBeenCalledWith(
+      'conv-1',
+      'email-send',
+      expect.stringMatching(/^corr-send-fail:mail:/),
+    );
   });
 });
