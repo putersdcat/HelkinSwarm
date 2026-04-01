@@ -204,6 +204,10 @@ export function getMcpRegistryCatalogStatus(): McpRegistryCatalogStatus {
   };
 }
 
+export function getMcpRegistryCandidate(name: string): McpRegistryCandidate | undefined {
+  return catalogState.entries.get(name);
+}
+
 export function resetMcpRegistryCatalogForTests(): void {
   catalogState.entries.clear();
   catalogState.lastSuccessfulSyncAt = null;

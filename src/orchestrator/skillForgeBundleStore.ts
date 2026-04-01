@@ -20,6 +20,7 @@ const SkillForgeBundleFileSchema = z.object({
   content: z.string(),
   purpose: z.string().min(1),
 });
+export type SkillForgeBundleFile = z.infer<typeof SkillForgeBundleFileSchema>;
 
 export const PersistedSkillForgeBundleSchema = z.object({
   skillId: z.string().min(1),
@@ -31,6 +32,32 @@ export const PersistedSkillForgeBundleSchema = z.object({
 });
 
 export type PersistedSkillForgeBundle = z.infer<typeof PersistedSkillForgeBundleSchema>;
+
+export const PersistedMcpForgeBundleSchema = z.object({
+  bundleKind: z.literal('mcpforge'),
+  candidateName: z.string().min(1),
+  draftSkillId: z.string().min(1),
+  displayName: z.string().min(1),
+  status: z.enum(['drafted', 'rejected']),
+  reviewTitle: z.string().min(1),
+  reviewBody: z.string().min(1),
+  evaluationSummary: z.string().min(1),
+  uncertainties: z.array(z.string().min(1)),
+  recommendedNextSteps: z.array(z.string().min(1)),
+  candidateSnapshot: z.object({
+    name: z.string().min(1),
+    title: z.string().nullable(),
+    description: z.string().min(1),
+    latestVersion: z.string().min(1),
+    status: z.enum(['active', 'deprecated', 'deleted']),
+    statusMessage: z.string().nullable(),
+    repositoryUrl: z.string().nullable(),
+    websiteUrl: z.string().nullable(),
+    transportTypes: z.array(z.enum(['stdio', 'streamable-http', 'sse'])),
+  }),
+  files: z.array(SkillForgeBundleFileSchema).min(1),
+});
+export type PersistedMcpForgeBundle = z.infer<typeof PersistedMcpForgeBundleSchema>;
 
 function getBlobServiceClient(): BlobServiceClient | undefined {
   if (blobServiceClient) {
@@ -118,6 +145,25 @@ export async function loadSkillForgeBundle(path: string): Promise<PersistedSkill
   const download = await blobClient.download();
   const content = await streamToString(download.readableStreamBody);
   return PersistedSkillForgeBundleSchema.parse(JSON.parse(content) as unknown);
+}
+
+export async function loadMcpForgeBundle(path: string): Promise<PersistedMcpForgeBundle> {
+  const serviceClient = getBlobServiceClient();
+  if (!serviceClient) {
+    throw new Error('SkillForge bundle storage is not configured.');
+  }
+
+  if (!path.startsWith('bundles/')) {
+    throw new Error(`Invalid McpForge bundle path: ${path}`);
+  }
+
+  const blobClient = serviceClient
+    .getContainerClient(CONTAINER_NAME)
+    .getBlobClient(path);
+
+  const download = await blobClient.download();
+  const content = await streamToString(download.readableStreamBody);
+  return PersistedMcpForgeBundleSchema.parse(JSON.parse(content) as unknown);
 }
 
 export function validatePromotableSkillForgeBundle(bundle: PersistedSkillForgeBundle): PersistedSkillForgeBundle {

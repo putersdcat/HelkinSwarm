@@ -152,6 +152,48 @@
       "requiresSubAgent": false
     },
     {
+      "name": "helkin_mcp_forge",
+      "description": "Create and inspect review-only McpForge onboarding bundles for discovered MCP Registry candidates. Supports help, draft_candidate, and inspect_bundle. This drafts artifacts for human review; it never activates the candidate.",
+      "risk": "medium",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "enum": [
+              "help",
+              "draft_candidate",
+              "inspect_bundle"
+            ],
+            "description": "McpForge operation to run. Use help for usage guidance."
+          },
+          "candidateName": {
+            "type": "string",
+            "description": "Exact MCP Registry server name for command=draft_candidate."
+          },
+          "useCase": {
+            "type": "string",
+            "description": "Optional intended HelkinSwarm use case to help the draft evaluation stay grounded."
+          },
+          "bundlePath": {
+            "type": "string",
+            "description": "Persisted bundle path for command=inspect_bundle."
+          }
+        },
+        "required": [
+          "command"
+        ]
+      },
+      "privilegeClass": "create",
+      "requiresSubAgent": false
+    },
+    {
       "name": "helkin_get_costs",
       "description": "Returns current month Azure spend breakdown by resource. Requires Azure Cost Management access.",
       "risk": "low",

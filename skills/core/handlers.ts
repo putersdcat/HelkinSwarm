@@ -386,6 +386,61 @@ export const helkin_mcp_registry_search: ToolHandler = async (args) => {
   };
 };
 
+export const helkin_mcp_forge: ToolHandler = async (args) => {
+  const { buildMcpForgeDraftBundle, inspectMcpForgeBundle } = await import('../../src/mcp/mcpForgeDraft.js');
+
+  const command = String(args['command'] ?? 'help');
+
+  if (command === 'help') {
+    return {
+      status: 'success',
+      command: 'help',
+      usage: [
+        'command=help',
+        'command=draft_candidate candidateName="com.microsoft/azure"',
+        'command=inspect_bundle bundlePath="bundles/<user>/<skill>/<id>.json"',
+      ],
+      notes: [
+        'McpForge creates review bundles for discovered MCP candidates; it does not activate or install them.',
+        'Draft bundles stay outside active skills until a human reviews and promotes them through a later flow.',
+      ],
+    };
+  }
+
+  if (command === 'draft_candidate') {
+    const candidateName = String(args['candidateName'] ?? '').trim();
+    if (!candidateName) {
+      return { status: 'error', message: 'candidateName is required when command=draft_candidate.' };
+    }
+
+    return buildMcpForgeDraftBundle({
+      candidateName,
+      userId: String(args['userId'] ?? 'anonymous'),
+      correlationId: String(args['correlationId'] ?? crypto.randomUUID()),
+      useCase: typeof args['useCase'] === 'string' ? args['useCase'] : undefined,
+    });
+  }
+
+  if (command === 'inspect_bundle') {
+    const bundlePath = String(args['bundlePath'] ?? '').trim();
+    if (!bundlePath) {
+      return { status: 'error', message: 'bundlePath is required when command=inspect_bundle.' };
+    }
+
+    const bundle = await inspectMcpForgeBundle(bundlePath);
+    return {
+      status: 'success',
+      command: 'inspect_bundle',
+      bundle,
+    };
+  }
+
+  return {
+    status: 'error',
+    message: `Unknown command '${command}'. Use command=help for supported operations.`,
+  };
+};
+
 export const helkin_get_costs: ToolHandler = async (_args) => {
   const { getAzureResourceGroupCostSummary } = await import('../../src/integrations/azureCostManagement.js');
   return getAzureResourceGroupCostSummary();
