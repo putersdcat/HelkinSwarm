@@ -388,6 +388,7 @@ export const helkin_mcp_registry_search: ToolHandler = async (args) => {
 
 export const helkin_mcp_forge: ToolHandler = async (args) => {
   const { buildMcpForgeDraftBundle, inspectMcpForgeBundle } = await import('../../src/mcp/mcpForgeDraft.js');
+  const { approveMcpForgeBundleLocally } = await import('../../src/mcp/mcpForgeActivation.js');
 
   const command = String(args['command'] ?? 'help');
 
@@ -398,11 +399,12 @@ export const helkin_mcp_forge: ToolHandler = async (args) => {
       usage: [
         'command=help',
         'command=draft_candidate candidateName="com.microsoft/azure"',
+        'command=approve_bundle bundlePath="bundles/<user>/<skill>/<id>.json"',
         'command=inspect_bundle bundlePath="bundles/<user>/<skill>/<id>.json"',
       ],
       notes: [
-        'McpForge creates review bundles for discovered MCP candidates; it does not activate or install them.',
-        'Draft bundles stay outside active skills until a human reviews and promotes them through a later flow.',
+        'McpForge drafts review bundles for discovered MCP candidates and can locally approve them after smoke test passes.',
+        'Locally approved MCP skills can later graduate back to source via the existing SkillForge GitHub App lane.',
       ],
     };
   }
@@ -419,6 +421,15 @@ export const helkin_mcp_forge: ToolHandler = async (args) => {
       correlationId: String(args['correlationId'] ?? crypto.randomUUID()),
       useCase: typeof args['useCase'] === 'string' ? args['useCase'] : undefined,
     });
+  }
+
+  if (command === 'approve_bundle') {
+    const bundlePath = String(args['bundlePath'] ?? '').trim();
+    if (!bundlePath) {
+      return { status: 'error', message: 'bundlePath is required when command=approve_bundle.' };
+    }
+
+    return approveMcpForgeBundleLocally(bundlePath);
   }
 
   if (command === 'inspect_bundle') {

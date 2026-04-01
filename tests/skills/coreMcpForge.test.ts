@@ -42,6 +42,22 @@ vi.mock('../../src/mcp/mcpForgeDraft.js', () => ({
   })),
 }));
 
+vi.mock('../../src/mcp/mcpForgeActivation.js', () => ({
+  approveMcpForgeBundleLocally: vi.fn(async (bundlePath: string) => ({
+    status: 'approved-local',
+    bundlePath,
+    skillId: 'mcp-com-microsoft-azure',
+    manifestPath: 'skills/custom/mcp-com-microsoft-azure/manifest.json',
+    smokeTest: { passed: true, toolCount: 4, toolNames: ['list_subscriptions', 'get_resource'] },
+    reloadSummary: { skillsLoaded: 12, toolsRegistered: 50, errors: [] },
+    sourcePromotion: {
+      branchName: 'mcpforge/mcp-com-microsoft-azure',
+      eligible: true,
+      note: 'Eligible for later source graduation.',
+    },
+  })),
+}));
+
 describe('helkin_mcp_forge', () => {
   beforeEach(() => {
     vi.resetModules();
@@ -78,5 +94,20 @@ describe('helkin_mcp_forge', () => {
     expect(result.status).toBe('success');
     expect(result.bundle.bundleKind).toBe('mcpforge');
     expect(result.bundle.draftSkillId).toBe('mcp-com-microsoft-azure');
+  });
+
+  it('approves a persisted draft bundle through the local smoke-test activation path', async () => {
+    const { helkin_mcp_forge } = await import('../../skills/core/handlers.js');
+    const result = await helkin_mcp_forge({ command: 'approve_bundle', bundlePath: 'bundles/demo.json' }) as {
+      status: string;
+      skillId: string;
+      manifestPath: string;
+      smokeTest: { toolCount: number };
+    };
+
+    expect(result.status).toBe('approved-local');
+    expect(result.skillId).toBe('mcp-com-microsoft-azure');
+    expect(result.manifestPath).toBe('skills/custom/mcp-com-microsoft-azure/manifest.json');
+    expect(result.smokeTest.toolCount).toBe(4);
   });
 });

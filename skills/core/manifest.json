@@ -153,7 +153,7 @@
     },
     {
       "name": "helkin_mcp_forge",
-      "description": "Create and inspect review-only McpForge onboarding bundles for discovered MCP Registry candidates. Supports help, draft_candidate, and inspect_bundle. This drafts artifacts for human review; it never activates the candidate.",
+      "description": "Create, approve, and inspect McpForge onboarding bundles for discovered MCP Registry candidates. Supports help, draft_candidate, approve_bundle, and inspect_bundle. Approval runs an MCP smoke test and can hot-reload the candidate locally into the running stamp.",
       "risk": "medium",
       "dataSensitivity": "non-pii",
       "allowedModelLane": "any",
@@ -169,6 +169,7 @@
             "enum": [
               "help",
               "draft_candidate",
+              "approve_bundle",
               "inspect_bundle"
             ],
             "description": "McpForge operation to run. Use help for usage guidance."
