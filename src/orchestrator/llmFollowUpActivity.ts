@@ -96,7 +96,7 @@ export function buildFallbackToolResultContent(
   const inlineEmailSendFailure = toolResults.find((tr) =>
     tr.toolName === 'outlook_send_email'
     && !tr.success
-    && /embedded inline images|inline-image email|cid: inline image|data:image/i.test(tr.error ?? ''),
+    && /embedded inline images|inline-image email|cid: inline image|data:image|matching inline runtime assets were not supplied|inline runtime-asset email composition could not be completed/i.test(tr.error ?? ''),
   );
 
   if (inlineEmailSendFailure) {

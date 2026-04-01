@@ -86,6 +86,37 @@ describe('llmFollowUpActivity execution prompt', () => {
     });
   });
 
+  it('returns an honest blocker when cid mappings do not match supplied inline runtime assets', () => {
+    return loadFollowUpModule().then(({ buildFallbackToolResultContent }) => {
+      const content = buildFallbackToolResultContent(
+        [
+          {
+            role: 'user',
+            content: 'Please send this gif inline in the email body.',
+          },
+        ],
+        [
+          {
+            toolCallId: '1',
+            toolName: 'helkin_skill_search',
+            success: true,
+            result: { tools: ['outlook_send_email'] },
+          },
+          {
+            toolCallId: '2',
+            toolName: 'outlook_send_email',
+            success: false,
+            error: 'Inline runtime-asset email composition could not be completed. The HTML body references cid:gif-inline, but matching inline runtime assets were not supplied. I have not sent the requested email.',
+          },
+        ],
+      );
+
+      expect(content).toContain('I couldn’t complete that email request');
+      expect(content).toContain('I did not send the requested inline-image email');
+      expect(content).not.toContain('helkin_skill_search');
+    });
+  });
+
   it('stops retrying an identical tool call after a deterministic unsupported-action failure', () => {
     return loadFollowUpModule().then(({ shouldStopOnRepeatedToolFailure }) => {
       const shouldStop = shouldStopOnRepeatedToolFailure(

@@ -10,6 +10,11 @@ import { canInvokeTool } from '../auth/roles.js';
 import { scopedTokenMinter } from '../auth/scopedTokenMinter.js';
 import type { ScopedTokenScope } from '../auth/scopedTokenMinter.js';
 import { mapPrivilegeClassToScopedTokenScope } from '../auth/tokenScopeMapping.js';
+import {
+  buildDuplicateSuppressedToolResult,
+  buildToolCallFingerprint,
+  isMutatingTool,
+} from './toolCallGuards.js';
 
 export interface ToolDispatchInput {
   toolCalls: Array<{ id: string; name: string; arguments: string }>;
@@ -37,9 +42,18 @@ export interface ToolDispatchResult {
 df.app.activity('toolDispatchActivity', {
   handler: async (input: ToolDispatchInput): Promise<ToolDispatchResult> => {
     const results: ToolDispatchResult['results'] = [];
+    const successfulMutatingFingerprints = new Set<string>();
 
     for (const call of input.toolCalls) {
       const tool = toolRegistry.get(call.name);
+
+      if (tool && isMutatingTool(tool)) {
+        const fingerprint = buildToolCallFingerprint(call.name, call.arguments);
+        if (successfulMutatingFingerprints.has(fingerprint)) {
+          results.push(buildDuplicateSuppressedToolResult(call));
+          continue;
+        }
+      }
 
       if (!tool) {
         results.push({
@@ -159,6 +173,9 @@ df.app.activity('toolDispatchActivity', {
           scopedTokenMethod,
           scopedTokenScope,
         });
+        if (isMutatingTool(tool)) {
+          successfulMutatingFingerprints.add(buildToolCallFingerprint(call.name, call.arguments));
+        }
       } catch (err) {
         trackEvent({ name: 'ToolExecuted', correlationId: input.correlationId, userId: input.userId, properties: {
           toolName: call.name,

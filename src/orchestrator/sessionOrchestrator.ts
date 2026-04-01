@@ -40,6 +40,12 @@ import {
   sortToolCallsByPlan,
 } from './planExecutionHints.js';
 import {
+  buildDuplicateSuppressedToolResult,
+  buildToolCallFingerprint,
+  isMutatingTool,
+  recordSuccessfulMutatingFingerprints,
+} from './toolCallGuards.js';
+import {
   buildReadOnlyDiscoveryQuery,
   buildReadOnlyDiscoveryResponse,
   buildDiscoveryDeadEndResponse,
@@ -365,6 +371,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
   if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
     let completedPlanStepOrders: number[] = [];
+    const successfulMutatingFingerprints = new Set<string>();
 
     // Compute adaptive tool budget (#139)
     const domains = new Set(
@@ -396,20 +403,36 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       ? initialPlanBatch.selectedCalls
       : toolCallsForDispatch;
 
+    const initialSeenMutatingFingerprints = new Set<string>();
+    const filteredInitialToolCalls = gatedToolCallsForDispatch.filter((call) => {
+      const tool = toolRegistry.get(call.name);
+      if (!isMutatingTool(tool)) {
+        return true;
+      }
+
+      const fingerprint = buildToolCallFingerprint(call.name, call.arguments);
+      if (successfulMutatingFingerprints.has(fingerprint) || initialSeenMutatingFingerprints.has(fingerprint)) {
+        return false;
+      }
+
+      initialSeenMutatingFingerprints.add(fingerprint);
+      return true;
+    });
+
     // Determine aggregate risk from the tool registry
-    const isLowRiskOnly = gatedToolCallsForDispatch.every((tc: { name: string }) => {
+    const isLowRiskOnly = filteredInitialToolCalls.every((tc: { name: string }) => {
       const def = toolRegistry.get(tc.name);
       return def?.risk === 'low';
     });
 
     // Any tool with declarative requiresConfirmation must trigger the pipeline regardless of risk (#247)
-    const anyDeclarativeConfirmation = gatedToolCallsForDispatch.some((tc: { name: string }) =>
+    const anyDeclarativeConfirmation = filteredInitialToolCalls.some((tc: { name: string }) =>
       toolRegistry.get(tc.name)?.requiresConfirmation === true,
     );
 
     // Per-tool opt-out: if ALL tools in the batch have requiresConfirmation:false,
     // skip the confirmation card even for medium/high risk (#302).
-    const allToolsSkipConfirmation = gatedToolCallsForDispatch.every((tc: { name: string }) =>
+    const allToolsSkipConfirmation = filteredInitialToolCalls.every((tc: { name: string }) =>
       toolRegistry.get(tc.name)?.requiresConfirmation === false,
     );
 
@@ -419,7 +442,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
     if (!isLowRiskOnly || anyDeclarativeConfirmation) {
       // Determine the highest risk level among requested tools
-      const highestRisk = gatedToolCallsForDispatch.some((tc: { name: string }) =>
+      const highestRisk = filteredInitialToolCalls.some((tc: { name: string }) =>
         toolRegistry.get(tc.name)?.risk === 'high') ? 'high' as const : 'medium' as const;
 
       // Run pre-execution verification pipeline (steps 1-4: schema, data min, spot check, shields)
@@ -427,9 +450,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         correlationId,
         sessionId: input.state.userId,
         userId: input.state.userId,
-          toolName: gatedToolCallsForDispatch.map((tc: { name: string }) => tc.name).join(', '),
+          toolName: filteredInitialToolCalls.map((tc: { name: string }) => tc.name).join(', '),
         risk: highestRisk,
-          rawOutput: gatedToolCallsForDispatch,
+          rawOutput: filteredInitialToolCalls,
         originalQuery: effectiveTaskMessage,
         skipConfirmation: allToolsSkipConfirmation,
       });
@@ -446,9 +469,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         // Steps 1-4 passed but human confirmation required for medium/high risk
         const cardInput: SendConfirmationCardInput = {
           userId: input.state.userId,
-          toolName: gatedToolCallsForDispatch.map((tc: { name: string }) => tc.name).join(', '),
+          toolName: filteredInitialToolCalls.map((tc: { name: string }) => tc.name).join(', '),
           risk: highestRisk,
-          description: `Execute ${gatedToolCallsForDispatch.length} tool(s): ${gatedToolCallsForDispatch.map((tc: { name: string }) => tc.name).join(', ')}`,
+          description: `Execute ${filteredInitialToolCalls.length} tool(s): ${filteredInitialToolCalls.map((tc: { name: string }) => tc.name).join(', ')}`,
           correlationId,
           sessionInstanceId: context.df.instanceId,
         };
@@ -491,7 +514,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       const subAgentCalls: typeof toolCallsForDispatch = [];
       const directCalls: typeof toolCallsForDispatch = [];
 
-      for (const tc of gatedToolCallsForDispatch) {
+      for (const tc of filteredInitialToolCalls) {
         const def = toolRegistry.get(tc.name);
         const executionHint = resolveExecutionHint(tc.name, def, planResult.steps, completedPlanStepOrders);
         if (executionHint.useSubAgent) {
@@ -598,6 +621,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         results: mergedResults,
         totalCalls: mergedResults.length,
       };
+      recordSuccessfulMutatingFingerprints(
+        filteredInitialToolCalls,
+        mergedResults,
+        (toolName) => toolRegistry.get(toolName),
+        successfulMutatingFingerprints,
+      );
       completedPlanStepOrders = collectCompletedPlanStepOrders(
         mergedResults.map((result) => ({ toolName: result.toolName, success: result.success })),
         planResult.steps,
@@ -654,7 +683,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         originalMessages: promptWithPlan.messages,
         assistantToolCallMessage: {
           content: llmResult.content,
-            toolCalls: gatedToolCallsForDispatch,
+            toolCalls: filteredInitialToolCalls,
         },
         toolResults: toolResults?.results ?? [],
         correlationId,
@@ -711,7 +740,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             originalMessages: promptWithPlan.messages,
             assistantToolCallMessage: {
               content: llmResult.content,
-              toolCalls: gatedToolCallsForDispatch,
+              toolCalls: filteredInitialToolCalls,
             },
             toolResults: toolResults?.results.slice(0, initialResultCount) ?? [],
             correlationId,
@@ -767,9 +796,42 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           },
         );
 
-        if (roundCallsForDispatch.length === 0) break;
+        const suppressedRoundResults = roundCallsForDispatch
+          .filter((call) => {
+            const tool = toolRegistry.get(call.name);
+            if (!isMutatingTool(tool)) {
+              return false;
+            }
 
-        const roundToolDefs = roundCallsForDispatch
+            const fingerprint = buildToolCallFingerprint(call.name, call.arguments);
+            return successfulMutatingFingerprints.has(fingerprint);
+          })
+          .map((call) => buildDuplicateSuppressedToolResult(call));
+
+        const filteredRoundCallsForDispatch = roundCallsForDispatch.filter((call) => {
+          const tool = toolRegistry.get(call.name);
+          if (!isMutatingTool(tool)) {
+            return true;
+          }
+
+          const fingerprint = buildToolCallFingerprint(call.name, call.arguments);
+          return !successfulMutatingFingerprints.has(fingerprint);
+        });
+
+        if (filteredRoundCallsForDispatch.length === 0) {
+          if (suppressedRoundResults.length > 0) {
+            additionalTurns.push({
+              assistantContent: followUp.content,
+              assistantToolCalls: roundCallsForDispatch,
+              toolResults: suppressedRoundResults,
+            });
+            toolResults.results.push(...suppressedRoundResults);
+            toolResults.totalCalls += suppressedRoundResults.length;
+          }
+          break;
+        }
+
+        const roundToolDefs = filteredRoundCallsForDispatch
           .map((tc: { name: string }) => toolRegistry.get(tc.name))
           .filter((def): def is NonNullable<typeof def> => !!def);
         const highestRoundRisk = getHighestMultiRoundRisk(roundToolDefs);
@@ -780,9 +842,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             correlationId,
             sessionId: input.state.userId,
             userId: input.state.userId,
-            toolName: roundCallsForDispatch.map((tc: { name: string }) => tc.name).join(', '),
+            toolName: filteredRoundCallsForDispatch.map((tc: { name: string }) => tc.name).join(', '),
             risk: highestRoundRisk,
-            rawOutput: roundCallsForDispatch,
+            rawOutput: filteredRoundCallsForDispatch,
             originalQuery: effectiveTaskMessage,
             // Multi-round remains non-interactive; only batches whose tools all
             // explicitly skip confirmation may proceed here.
@@ -802,9 +864,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           if (roundVerification.requiresConfirmation) {
             const cardInput: SendConfirmationCardInput = {
               userId: input.state.userId,
-              toolName: roundCallsForDispatch.map((tc: { name: string }) => tc.name).join(', '),
+              toolName: filteredRoundCallsForDispatch.map((tc: { name: string }) => tc.name).join(', '),
               risk: highestRoundRisk,
-              description: `Execute ${roundCallsForDispatch.length} tool(s): ${roundCallsForDispatch.map((tc: { name: string }) => tc.name).join(', ')}`,
+              description: `Execute ${filteredRoundCallsForDispatch.length} tool(s): ${filteredRoundCallsForDispatch.map((tc: { name: string }) => tc.name).join(', ')}`,
               correlationId,
               sessionInstanceId: context.df.instanceId,
             };
@@ -857,7 +919,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         // Split into sub-agent vs direct dispatch (same as initial dispatch) (#319)
         const roundSubAgentCalls: typeof roundCallsForDispatch = [];
         const roundDirectCalls: typeof roundCallsForDispatch = [];
-        for (const tc of roundCallsForDispatch) {
+        for (const tc of filteredRoundCallsForDispatch) {
           const def = toolRegistry.get(tc.name);
           const executionHint = resolveExecutionHint(tc.name, def, planResult.steps, completedPlanStepOrders);
           if (executionHint.useSubAgent) {
@@ -873,7 +935,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           userId: input.state.userId,
           properties: {
             round: toolRound,
-            toolCount: roundCallsForDispatch.length,
+            toolCount: filteredRoundCallsForDispatch.length,
             subAgentCount: roundSubAgentCalls.length,
             directCount: roundDirectCalls.length,
             planComplexity: planResult.complexity,
@@ -944,14 +1006,22 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         // Accumulate this turn for conversation history
         additionalTurns.push({
           assistantContent: followUp.content,
-          assistantToolCalls: roundCallsForDispatch,
-          toolResults: roundResults.results,
+          assistantToolCalls: filteredRoundCallsForDispatch,
+          toolResults: [...suppressedRoundResults, ...roundResults.results],
         });
 
         // Accumulate into overall tool results for telemetry
+        toolResults.results.push(...suppressedRoundResults);
+        toolResults.totalCalls += suppressedRoundResults.length;
         toolResults.results.push(...roundResults.results);
         toolResults.totalCalls += roundResults.results.length;
         scopedTokenMintCount += roundResults.results.filter((result) => result.scopedTokenMinted).length;
+        recordSuccessfulMutatingFingerprints(
+          filteredRoundCallsForDispatch,
+          roundResults.results,
+          (toolName) => toolRegistry.get(toolName),
+          successfulMutatingFingerprints,
+        );
 
         const shouldForceFinalTextResponse = highestRoundRisk === 'high'
           && roundResults.results.some((result) => result.success);
@@ -965,7 +1035,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           originalMessages: promptWithPlan.messages,
           assistantToolCallMessage: {
             content: llmResult.content,
-            toolCalls: gatedToolCallsForDispatch,
+            toolCalls: filteredInitialToolCalls,
           },
           toolResults: toolResults?.results.slice(0, initialResultCount) ?? [],
           correlationId,
