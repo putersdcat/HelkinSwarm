@@ -91,6 +91,12 @@ You should see a clean status report with model health, memory, and safety mode.
 
 Full technical specification lives in the `docs/` folder (01-Project-Overview.md through 0m-Agentic-Tooling-Evaluation-Automation-and-Self-Tuning-Loop.md). Start with `01-Project-Overview.md`.
 
+Current issue-backed design/research ledgers also live there. For the bot-vs-user-identity design fork opened on 2026-04-01, see `docs/hybrid-identity-design-inflection-2026-04-01.md`.
+
+### Comparisons
+
+- [KlaudeChode vs HelkinSwarm](docs/OtherToolComparisons/KlaudeChode/README.md) — two platforms that share similar concepts but execute them so differently at the code level that the gap matters
+
 ---
 
 ### Local Development Setup
