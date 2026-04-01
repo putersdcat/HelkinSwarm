@@ -3,7 +3,7 @@ applyTo: "skills/**,src/capabilities/**"
 ---
 
 # Skills Library Standards
-**Spec ref:** `docs/skills-system-enhancement-2026-03-24v2.md`, `docs/05-Capabilities-Framework.md`
+**Spec ref:** `docs/skills-system-enhancement-2026-03-24v2.md`, `docs/05-Capabilities-Framework.md`, `docs/0t-Idempotency-and-External-Side-Effects.md`
 
 ## Critical Rule
 Every skill **must** have a JSON manifest at `skills/<domain>/manifest.json` conforming to schema v2. No broken skills reach production — all prerequisites, credentials, and dependencies must be handled by the onboarding pipeline.
@@ -104,6 +104,7 @@ Tools that should **NOT** use sub-agents:
 - ✅ Validate manifest against schema v2 before merging
 - ✅ Declare all external account requirements upfront
 - ✅ Include `lifecycleRules` even for read-only skills (declare `"keep-credentials"`)
+- ✅ Add idempotency guards for externally visible create/update/delete side-effects near the real emit point
 
 ## Never
 - ❌ Do NOT ship a skill without a manifest
@@ -111,3 +112,4 @@ Tools that should **NOT** use sub-agents:
 - ❌ Do NOT hard-code API keys — use Key Vault via managed identity
 - ❌ Do NOT import between skill domains (`skills/outlook/` cannot import from `skills/github/`)
 - ❌ Do NOT allow silent failures on missing credentials — surface actionable errors
+- ❌ Do NOT trust the model alone to avoid duplicate external side-effects

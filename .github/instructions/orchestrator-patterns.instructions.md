@@ -3,7 +3,7 @@ applyTo: "src/orchestrator/**"
 ---
 
 # Orchestrator Patterns Rules
-**Spec ref:** `docs/08-Orchestrator-Patterns.md`, `docs/0h-Long-Running-Workflows-Persistent-Triggers-and-Durable-Hooks.md`
+**Spec ref:** `docs/08-Orchestrator-Patterns.md`, `docs/0h-Long-Running-Workflows-Persistent-Triggers-and-Durable-Hooks.md`, `docs/0t-Idempotency-and-External-Side-Effects.md`
 
 ## Critical Rule
 The orchestrator must remain **completely deterministic**. Every side-effect — LLM calls, tool execution, reply sending, hook registration — must be an **activity function**. No I/O of any kind in orchestrator code.
@@ -56,6 +56,7 @@ Every tool call runs in a **fresh, isolated LLM session** (`subAgentActivity.ts`
 
 ## Always
 - ✅ All side-effects go through activity functions
+- ✅ Guard user-visible side-effects with stable idempotency claims before emission
 - ✅ Check token budget before each new message — ContinueAsNew if ≥ 80%
 - ✅ Drain all pending external events before ContinueAsNew
 - ✅ Carry summary + active hook IDs through every ContinueAsNew call
@@ -63,6 +64,7 @@ Every tool call runs in a **fresh, isolated LLM session** (`subAgentActivity.ts`
 
 ## Never
 - ❌ Do NOT Call the LLM, write to Cosmos, or send a Teams message from orchestrator code directly
+- ❌ Do NOT Assume planner-level dedup is enough for external side-effects — protect the emitting activity/handler too
 - ❌ Do NOT Use `await` on non-Durable-aware async functions inside orchestrators
 - ❌ Do NOT Share conversation history between the overseer and a sub-agent session
 - ❌ Do NOT Allow recursive tool calls (sub-agents cannot call tools)

@@ -57,6 +57,22 @@ Current contract:
 
 This keeps outbound file/image responses aligned with the runtime asset model introduced for attachment-bearing workflows.
 
+### Idempotent Outbound Effects
+
+Teams is only one ingress path into a larger side-effect system, so the chat layer must remain safe under retries and duplicate deliveries.
+
+Current rule:
+- user-visible or externally committed sends must claim a stable outbound-artifact idempotency key before emission
+- duplicate retries must be suppressed instead of emitting the side-effect twice
+- if delivery definitely failed before commit, the claim may be released
+
+Today this primitive is used for:
+- Teams replies (`reply`)
+- confirmation cards (`confirmation-card`)
+- Outlook email sends (`email-send`)
+
+The shared claim store lives in `src/bot/conversationStore.ts`. See `docs/0t-Idempotency-and-External-Side-Effects.md` for the reusable pattern.
+
 ### Inbound Attachments
 
 Inbound Teams attachments are no longer treated as an image-only side-channel.

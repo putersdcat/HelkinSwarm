@@ -68,6 +68,9 @@ All communication from the bot, DevLoop relay (0g), and durable hooks uses Durab
 **Activity Functions**  
 Every side-effect (LLM call, tool execution, reply sending, hook registration) must be an activity function. The orchestrator itself must remain deterministic.
 
+**Idempotent Side-Effects**  
+Externally visible side-effects must also be idempotent. Durable retries, planner retries, and multi-round tool loops are allowed to revisit intent, but the emitting activity/handler must suppress duplicate external effects using a stable semantic dedup key. The canonical primitive is the outbound-artifact claim path documented in `docs/0t-Idempotency-and-External-Side-Effects.md`.
+
 **Sub-Agent Isolation**  
 Tool calls run in isolated sub-agent sessions (fresh LLM context, secondary model, minimal context only).
 
@@ -100,6 +103,7 @@ This keeps multimodal and file workflows composable while preserving data minimi
 | `src/orchestrator/tokenBudget.ts` | 80% context threshold logic |
 | `src/orchestrator/stateManager.ts` | Loads session context from Cosmos (includes `recentHistory`, model, safetyMode) |
 | `src/orchestrator/durableHookActivity.ts` | Registers and manages long-running hooks (0h) |
+| `src/bot/conversationStore.ts` | Canonical outbound-artifact idempotency claim store |
 
 ### What NOT to Do
 
@@ -108,3 +112,4 @@ This keeps multimodal and file workflows composable while preserving data minimi
 - ❌ Never store full conversation history in the orchestrator input forever — always summarize at threshold.
 - ❌ Never bypass the safety pipeline or skill-memory injection.
 - ❌ Never treat durable hooks as simple sub-agents — they are first-class persistent entities.
+- ❌ Never assume a mutating tool is safe just because the orchestrator already filtered duplicate calls once.
