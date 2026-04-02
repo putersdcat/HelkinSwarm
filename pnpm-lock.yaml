@@ -17,6 +17,9 @@ importers:
       '@azure/identity':
         specifier: ^4.13.1
         version: 4.13.1
+      '@azure/mcp':
+        specifier: 3.0.0-beta.1
+        version: 3.0.0-beta.1
       '@azure/monitor-opentelemetry':
         specifier: ^1.16.0
         version: 1.16.0
@@ -161,6 +164,55 @@ packages:
   '@azure/logger@1.3.0':
     resolution: {integrity: sha512-fCqPIfOcLE+CGqGPd66c8bZpwAji98tZ4JI9i/mlTNTlsIWslCfpg48s/ypyLxZTump5sypjrKn2/kY7q8oAbA==}
     engines: {node: '>=20.0.0'}
+
+  '@azure/mcp-darwin-arm64@3.0.0-beta.1':
+    resolution: {integrity: sha512-iSw5z0qNheJHy2yxZAWXzJbQwPELRtXQQqHnKVNngOiQb8qAci7F7BSk4xl3MZnSLIidDucLp4o2b7I1/fQaYA==}
+    engines: {node: '>=20.0.0'}
+    cpu: [arm64]
+    os: [darwin]
+    hasBin: true
+
+  '@azure/mcp-darwin-x64@3.0.0-beta.1':
+    resolution: {integrity: sha512-VAD1HVUdGE/fx2mtEVkg0tQRTo4xhkQyIj0oZrTctrvwa8dxv5Fq4wYv4YQS+DzKiLoIe3Z5tHAm2LGtMNGSOg==}
+    engines: {node: '>=20.0.0'}
+    cpu: [x64]
+    os: [darwin]
+    hasBin: true
+
+  '@azure/mcp-linux-arm64@3.0.0-beta.1':
+    resolution: {integrity: sha512-5OMHTqNLdGyLRZPWeov4Gvm2xoBT8abPEszK66n751xzooT4q7TG5AWTMTUG48cNO16FkQgzaCbq+rjdX5R1yA==}
+    engines: {node: '>=20.0.0'}
+    cpu: [arm64]
+    os: [linux]
+    hasBin: true
+
+  '@azure/mcp-linux-x64@3.0.0-beta.1':
+    resolution: {integrity: sha512-eFuvFAVGgWH9CK6BECEWejTAmuKYaAXkLuiJLva+0TZ/MOwKmrcHdRnCHjqPjBEWf8lQuMrETKYvGuAo9g4xgQ==}
+    engines: {node: '>=20.0.0'}
+    cpu: [x64]
+    os: [linux]
+    hasBin: true
+
+  '@azure/mcp-win32-arm64@3.0.0-beta.1':
+    resolution: {integrity: sha512-OcC8rrhoSTu/wcRWIqmBkgQAgGYpAnFmQt/+lRX/w2xsDUo32e2gTVAZ0C3Yrq9zz0GfhNP1buQluAfHc1e5pQ==}
+    engines: {node: '>=20.0.0'}
+    cpu: [arm64]
+    os: [win32]
+    hasBin: true
+
+  '@azure/mcp-win32-x64@3.0.0-beta.1':
+    resolution: {integrity: sha512-TMFMTblyxfhaxdFxw8XNG2ZmpXDotNun3moPaI64sruv2tfzfor4XffD9oOXDwM1UZThdHCkyeql62rII3JqbA==}
+    engines: {node: '>=20.0.0'}
+    cpu: [x64]
+    os: [win32]
+    hasBin: true
+
+  '@azure/mcp@3.0.0-beta.1':
+    resolution: {integrity: sha512-oO98ksg7DakDQElEorRBKf5pDeiUKr3yyAO/4Mij9X6AmH/ReycNaShprxSFlIwT9nxfyxKYgF78Y4pDCdO1tQ==}
+    engines: {node: '>=20.0.0'}
+    cpu: [x64, arm64]
+    os: [linux, darwin, win32]
+    hasBin: true
 
   '@azure/monitor-opentelemetry-exporter@1.0.0-beta.39':
     resolution: {integrity: sha512-ljvm3PBe5em/kudINq3kA7wzwCQihYn/1HiO1/lKocK68QGahr6qiTwsadBXWJ2cDUS64iWbHtSM1TsJteBS0A==}
@@ -2697,6 +2749,33 @@ snapshots:
       tslib: 2.8.1
     transitivePeerDependencies:
       - supports-color
+
+  '@azure/mcp-darwin-arm64@3.0.0-beta.1':
+    optional: true
+
+  '@azure/mcp-darwin-x64@3.0.0-beta.1':
+    optional: true
+
+  '@azure/mcp-linux-arm64@3.0.0-beta.1':
+    optional: true
+
+  '@azure/mcp-linux-x64@3.0.0-beta.1':
+    optional: true
+
+  '@azure/mcp-win32-arm64@3.0.0-beta.1':
+    optional: true
+
+  '@azure/mcp-win32-x64@3.0.0-beta.1':
+    optional: true
+
+  '@azure/mcp@3.0.0-beta.1':
+    optionalDependencies:
+      '@azure/mcp-darwin-arm64': 3.0.0-beta.1
+      '@azure/mcp-darwin-x64': 3.0.0-beta.1
+      '@azure/mcp-linux-arm64': 3.0.0-beta.1
+      '@azure/mcp-linux-x64': 3.0.0-beta.1
+      '@azure/mcp-win32-arm64': 3.0.0-beta.1
+      '@azure/mcp-win32-x64': 3.0.0-beta.1
 
   '@azure/monitor-opentelemetry-exporter@1.0.0-beta.39':
     dependencies:

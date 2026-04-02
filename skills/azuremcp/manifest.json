@@ -1,0 +1,708 @@
+{
+  "domain": "azuremcp",
+  "version": "1.0",
+  "shortName": "azure-mcp",
+  "displayName": "Azure MCP Server",
+  "shortDescription": "Scoped read-only Azure estate, cost, quota, and health operations through the official Azure MCP Server.",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/core.png",
+  "deploymentScenario": "enterprise-commercial",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials",
+  "dependencies": [],
+  "requiredPermissions": [],
+  "externalAccountsNeeded": [
+    "Azure access through Azure CLI login, managed identity, or equivalent Azure Identity credential context"
+  ],
+  "capabilityGroups": [
+    {
+      "id": "estate-inventory",
+      "displayName": "Estate Inventory",
+      "shortDescription": "Inspect subscriptions, resource groups, Function Apps, storage accounts, and resource inventories.",
+      "discoveryHints": [
+        "azure subscriptions",
+        "resource groups",
+        "function app inventory",
+        "storage account details"
+      ],
+      "useWhen": [
+        "you need to list subscriptions or resource groups before acting",
+        "you want to inspect which resources exist in a given resource group",
+        "you need read-only visibility into Function Apps or storage accounts"
+      ],
+      "upstreamNamespace": "azure_inventory",
+      "upstreamToolSelectors": [
+        "subscription_list",
+        "group_list",
+        "group_resource_list",
+        "functionapp_get",
+        "storage_account_get"
+      ]
+    },
+    {
+      "id": "costs-quotas",
+      "displayName": "Costs & Quotas",
+      "shortDescription": "Check Azure retail pricing and regional quota readiness for planned workloads.",
+      "discoveryHints": [
+        "azure pricing",
+        "quota check",
+        "regional capacity",
+        "cost estimate"
+      ],
+      "useWhen": [
+        "you need to verify SKU pricing before provisioning",
+        "you want to confirm whether a region has quota headroom for planned resource types"
+      ],
+      "upstreamNamespace": "azure_governance",
+      "upstreamToolSelectors": [
+        "pricing_get",
+        "quota_usage_check"
+      ]
+    },
+    {
+      "id": "operational-health",
+      "displayName": "Operational Health",
+      "shortDescription": "Inspect activity logs, Azure Resource Health, and service health events for operational triage.",
+      "discoveryHints": [
+        "azure activity logs",
+        "resource health",
+        "service incidents",
+        "availability status"
+      ],
+      "useWhen": [
+        "you need to inspect why an Azure resource failed to deploy or changed state",
+        "you want the current health or recent service events affecting Azure resources"
+      ],
+      "upstreamNamespace": "azure_monitoring",
+      "upstreamToolSelectors": [
+        "monitor_activitylog_list",
+        "resourcehealth_availability-status_get",
+        "resourcehealth_health-events_list"
+      ]
+    }
+  ],
+  "discoveryHints": [
+    "azure operations",
+    "azure inventory",
+    "azure pricing",
+    "azure quota",
+    "azure resource health"
+  ],
+  "orchestratorUseCases": [
+    "inspect Azure subscription and resource-group state before provisioning support infrastructure",
+    "check quota and pricing readiness for Azure workload planning",
+    "triage Azure runtime incidents through activity logs and resource health without enabling destructive operations"
+  ],
+  "recommendedEntryTools": [
+    "azuremcp_subscription_list",
+    "azuremcp_group_list",
+    "azuremcp_pricing_get",
+    "azuremcp_resourcehealth_availability_status_get"
+  ],
+  "modelAffinity": {
+    "discovery": "fast",
+    "execution": "reasoning",
+    "synthesis": "fast"
+  },
+  "maintenanceTasks": [
+    {
+      "name": "review-azure-mcp-readonly-slice",
+      "type": "event-driven",
+      "description": "Reassess the explicit Azure MCP tool allowlist when HelkinSwarm needs additional namespaces or when upstream tool annotations materially change."
+    }
+  ],
+  "mcpServer": {
+    "transport": "stdio",
+    "command": "node",
+    "args": [
+      "${workspaceRoot}/node_modules/@azure/mcp/index.js",
+      "server",
+      "start",
+      "--read-only",
+      "true",
+      "--tool",
+      "subscription_list",
+      "--tool",
+      "group_list",
+      "--tool",
+      "group_resource_list",
+      "--tool",
+      "functionapp_get",
+      "--tool",
+      "storage_account_get",
+      "--tool",
+      "pricing_get",
+      "--tool",
+      "quota_usage_check",
+      "--tool",
+      "monitor_activitylog_list",
+      "--tool",
+      "resourcehealth_availability-status_get",
+      "--tool",
+      "resourcehealth_health-events_list"
+    ],
+    "timeoutMs": 30000
+  },
+  "tools": [
+    {
+      "name": "azuremcp_subscription_list",
+      "remoteToolName": "subscription_list",
+      "description": "List Azure subscriptions visible to the current credential context and identify the default subscription when one exists.",
+      "risk": "low",
+      "dataSensitivity": "mixed",
+      "allowedModelLane": "global",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": true,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "aliases": [
+        "list azure subscriptions",
+        "show my azure subscriptions"
+      ],
+      "discoveryTerms": [
+        "azure subscription list",
+        "default subscription",
+        "tenant subscriptions"
+      ],
+      "useWhen": [
+        "you need to see which Azure subscriptions are available before running a more specific query"
+      ],
+      "avoidWhen": [
+        "you already know the target subscription and need a resource-specific query instead"
+      ],
+      "typicalInputs": [
+        "list my subscriptions",
+        "which Azure subscription is default"
+      ],
+      "returnsSummaryShape": "Azure subscriptions with display name, subscription id, state, tenant id, and default marker",
+      "capabilityGroup": "estate-inventory",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tenant": {
+            "type": "string",
+            "description": "Optional tenant id or tenant display name to scope the subscription lookup."
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "azuremcp_group_list",
+      "remoteToolName": "group_list",
+      "description": "List Azure resource groups in a subscription.",
+      "risk": "low",
+      "dataSensitivity": "mixed",
+      "allowedModelLane": "global",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": true,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "aliases": [
+        "list resource groups",
+        "show azure resource groups"
+      ],
+      "discoveryTerms": [
+        "resource group list",
+        "azure group inventory"
+      ],
+      "useWhen": [
+        "you need to inspect which Azure resource groups exist in a subscription"
+      ],
+      "avoidWhen": [
+        "you need resources within a specific group rather than the groups themselves"
+      ],
+      "typicalInputs": [
+        "list resource groups in my subscription",
+        "show groups in subscription X"
+      ],
+      "returnsSummaryShape": "Azure resource group names and ids",
+      "capabilityGroup": "estate-inventory",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subscription": {
+            "type": "string",
+            "description": "Optional Azure subscription id or display name."
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "azuremcp_group_resource_list",
+      "remoteToolName": "group_resource_list",
+      "description": "List Azure resources inside a specific resource group.",
+      "risk": "low",
+      "dataSensitivity": "mixed",
+      "allowedModelLane": "global",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": true,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "aliases": [
+        "list resources in group",
+        "show resources in resource group"
+      ],
+      "discoveryTerms": [
+        "resource group contents",
+        "azure resource inventory"
+      ],
+      "useWhen": [
+        "you need to inventory the resources inside one Azure resource group"
+      ],
+      "avoidWhen": [
+        "you need details for a single resource rather than a group inventory"
+      ],
+      "typicalInputs": [
+        "list resources in rg-helkinswarm-prod",
+        "what is in this resource group"
+      ],
+      "returnsSummaryShape": "resource names, ids, types, and locations for a resource group",
+      "capabilityGroup": "estate-inventory",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subscription": {
+            "type": "string",
+            "description": "Optional Azure subscription id or display name."
+          },
+          "resourceGroup": {
+            "type": "string",
+            "description": "Azure resource group name to inspect."
+          }
+        },
+        "required": [
+          "resourceGroup"
+        ]
+      }
+    },
+    {
+      "name": "azuremcp_functionapp_get",
+      "remoteToolName": "functionapp_get",
+      "description": "List Azure Function Apps or get details for a specific Function App.",
+      "risk": "low",
+      "dataSensitivity": "mixed",
+      "allowedModelLane": "global",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": true,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "aliases": [
+        "list function apps",
+        "get function app details"
+      ],
+      "discoveryTerms": [
+        "azure function apps",
+        "function app inventory"
+      ],
+      "useWhen": [
+        "you need read-only visibility into Azure Function Apps in a subscription or resource group"
+      ],
+      "avoidWhen": [
+        "you need to deploy or mutate Function App settings"
+      ],
+      "typicalInputs": [
+        "list function apps in my resource group",
+        "show the details for function app helkinswarm-func"
+      ],
+      "returnsSummaryShape": "Function App details including name, location, status, and App Service plan",
+      "capabilityGroup": "estate-inventory",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subscription": {
+            "type": "string",
+            "description": "Optional Azure subscription id or display name."
+          },
+          "resourceGroup": {
+            "type": "string",
+            "description": "Optional Azure resource group name."
+          },
+          "functionApp": {
+            "type": "string",
+            "description": "Optional Function App name when targeting a specific app."
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "azuremcp_storage_account_get",
+      "remoteToolName": "storage_account_get",
+      "description": "Get details for Azure Storage accounts, including SKU, location, and security-relevant configuration flags.",
+      "risk": "low",
+      "dataSensitivity": "mixed",
+      "allowedModelLane": "global",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": true,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "aliases": [
+        "list storage accounts",
+        "get storage account details"
+      ],
+      "discoveryTerms": [
+        "azure storage account",
+        "storage security settings"
+      ],
+      "useWhen": [
+        "you need to inspect storage account configuration without mutating it"
+      ],
+      "avoidWhen": [
+        "you need to create containers or upload blobs"
+      ],
+      "typicalInputs": [
+        "show my storage accounts",
+        "get the details for storage account mystorage"
+      ],
+      "returnsSummaryShape": "storage account inventory or detailed account settings",
+      "capabilityGroup": "estate-inventory",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subscription": {
+            "type": "string",
+            "description": "Optional Azure subscription id or display name."
+          },
+          "account": {
+            "type": "string",
+            "description": "Optional Azure Storage account name when targeting one account."
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "azuremcp_pricing_get",
+      "remoteToolName": "pricing_get",
+      "description": "Get Azure retail pricing for a specific service, region, or SKU. Use this after the request is specific enough to avoid guesswork.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "global",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": true,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "aliases": [
+        "get azure pricing",
+        "estimate azure sku cost"
+      ],
+      "discoveryTerms": [
+        "azure retail pricing",
+        "service sku pricing",
+        "azure cost estimate"
+      ],
+      "useWhen": [
+        "you need a concrete Azure pricing lookup for a known service, SKU, region, or filter"
+      ],
+      "avoidWhen": [
+        "the request only names a broad service and still needs SKU clarification"
+      ],
+      "typicalInputs": [
+        "price Standard_D4s_v5 in eastus",
+        "get SQL Database pricing in westeurope"
+      ],
+      "returnsSummaryShape": "Azure retail pricing matches for the supplied filters",
+      "capabilityGroup": "costs-quotas",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string",
+            "description": "Optional currency code such as USD or EUR."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Optional ARM SKU name such as Standard_D4s_v5."
+          },
+          "service": {
+            "type": "string",
+            "description": "Optional Azure service name such as Virtual Machines or SQL Database."
+          },
+          "region": {
+            "type": "string",
+            "description": "Optional Azure region such as eastus or westeurope."
+          },
+          "serviceFamily": {
+            "type": "string",
+            "description": "Optional service family such as Compute, Storage, or Databases."
+          },
+          "priceType": {
+            "type": "string",
+            "description": "Optional price type such as Consumption, Reservation, or DevTestConsumption."
+          },
+          "includeSavingsPlan": {
+            "type": "boolean",
+            "description": "Optional flag to include savings plan pricing where supported."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Optional raw OData filter for advanced pricing lookups."
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "azuremcp_quota_usage_check",
+      "remoteToolName": "quota_usage_check",
+      "description": "Check Azure regional quota availability for planned resource types before provisioning.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "global",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": true,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "aliases": [
+        "check azure quota",
+        "check regional capacity"
+      ],
+      "discoveryTerms": [
+        "azure quota usage",
+        "regional quota check",
+        "capacity readiness"
+      ],
+      "useWhen": [
+        "you need to validate quota headroom for a set of Azure resource types in a region"
+      ],
+      "avoidWhen": [
+        "you only need static pricing rather than capacity readiness"
+      ],
+      "typicalInputs": [
+        "check eastus quota for container apps and cognitive services",
+        "do we have quota for these resource types in westus2"
+      ],
+      "returnsSummaryShape": "regional quota and usage readiness for the requested Azure resource types",
+      "capabilityGroup": "costs-quotas",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subscription": {
+            "type": "string",
+            "description": "Optional Azure subscription id or display name."
+          },
+          "region": {
+            "type": "string",
+            "description": "Azure region such as eastus or westeurope."
+          },
+          "resourceTypes": {
+            "type": "string",
+            "description": "Comma-separated Azure resource types such as Microsoft.App/containerApps,Microsoft.Web/sites."
+          }
+        },
+        "required": [
+          "region",
+          "resourceTypes"
+        ]
+      }
+    },
+    {
+      "name": "azuremcp_monitor_activitylog_list",
+      "remoteToolName": "monitor_activitylog_list",
+      "description": "List Azure activity log events for a specific resource to diagnose deployments, state changes, or access patterns.",
+      "risk": "low",
+      "dataSensitivity": "mixed",
+      "allowedModelLane": "global",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": true,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "aliases": [
+        "get azure activity logs",
+        "show resource activity log"
+      ],
+      "discoveryTerms": [
+        "azure activity log",
+        "deployment history",
+        "resource operations"
+      ],
+      "useWhen": [
+        "you need to inspect what happened to an Azure resource over the last few hours"
+      ],
+      "avoidWhen": [
+        "you need platform-wide service health rather than a resource activity trail"
+      ],
+      "typicalInputs": [
+        "show the last 24 hours of activity logs for this function app",
+        "why did this storage account change"
+      ],
+      "returnsSummaryShape": "activity log events with timestamp, operation, status, and caller information",
+      "capabilityGroup": "operational-health",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subscription": {
+            "type": "string",
+            "description": "Optional Azure subscription id or display name."
+          },
+          "resourceGroup": {
+            "type": "string",
+            "description": "Optional Azure resource group containing the resource."
+          },
+          "resourceName": {
+            "type": "string",
+            "description": "Azure resource name to inspect."
+          },
+          "resourceType": {
+            "type": "string",
+            "description": "Optional resource type such as Microsoft.Storage/storageAccounts when disambiguation is needed."
+          },
+          "hours": {
+            "type": "string",
+            "description": "Optional lookback window in hours."
+          },
+          "eventLevel": {
+            "type": "string",
+            "description": "Optional activity-log level such as Error, Warning, or Informational."
+          },
+          "top": {
+            "type": "string",
+            "description": "Optional maximum number of events to return."
+          }
+        },
+        "required": [
+          "resourceName"
+        ]
+      }
+    },
+    {
+      "name": "azuremcp_resourcehealth_availability_status_get",
+      "remoteToolName": "resourcehealth_availability-status_get",
+      "description": "Get Azure Resource Health availability status for a resource or resource group.",
+      "risk": "low",
+      "dataSensitivity": "mixed",
+      "allowedModelLane": "global",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": true,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "aliases": [
+        "get azure resource health",
+        "check resource availability"
+      ],
+      "discoveryTerms": [
+        "resource health status",
+        "azure availability status",
+        "resource outage"
+      ],
+      "useWhen": [
+        "you need the current availability or health status for an Azure resource"
+      ],
+      "avoidWhen": [
+        "you need subscription-wide service advisories rather than a specific resource health check"
+      ],
+      "typicalInputs": [
+        "is this VM healthy",
+        "get the availability status for this storage account"
+      ],
+      "returnsSummaryShape": "resource health state such as Available, Unavailable, Degraded, or Unknown with details",
+      "capabilityGroup": "operational-health",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subscription": {
+            "type": "string",
+            "description": "Optional Azure subscription id or display name."
+          },
+          "resourceId": {
+            "type": "string",
+            "description": "Optional full Azure resource id for the target resource."
+          },
+          "resourceGroup": {
+            "type": "string",
+            "description": "Optional Azure resource group name when checking multiple resources in a group."
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "azuremcp_resourcehealth_health_events_list",
+      "remoteToolName": "resourcehealth_health-events_list",
+      "description": "List Azure service health events such as incidents, advisories, planned maintenance, and security events.",
+      "risk": "low",
+      "dataSensitivity": "mixed",
+      "allowedModelLane": "global",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": true,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "aliases": [
+        "list azure service health events",
+        "show azure incidents"
+      ],
+      "discoveryTerms": [
+        "service health events",
+        "planned maintenance",
+        "azure advisories"
+      ],
+      "useWhen": [
+        "you need recent Azure service incidents, advisories, or maintenance events affecting a subscription"
+      ],
+      "avoidWhen": [
+        "you need current health for one specific resource rather than subscription-level service events"
+      ],
+      "typicalInputs": [
+        "show active Azure incidents",
+        "list planned maintenance events in this subscription"
+      ],
+      "returnsSummaryShape": "service health events with tracking id, title, event type, status, timing, and impacted services",
+      "capabilityGroup": "operational-health",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "subscription": {
+            "type": "string",
+            "description": "Optional Azure subscription id or display name."
+          },
+          "eventType": {
+            "type": "string",
+            "description": "Optional event type such as ServiceIssue, PlannedMaintenance, HealthAdvisory, or Security."
+          },
+          "status": {
+            "type": "string",
+            "description": "Optional status filter such as Active or Resolved."
+          },
+          "trackingId": {
+            "type": "string",
+            "description": "Optional tracking id for a specific service health event."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Optional raw OData filter expression."
+          },
+          "queryStartTime": {
+            "type": "string",
+            "description": "Optional ISO 8601 start time for the query window."
+          },
+          "queryEndTime": {
+            "type": "string",
+            "description": "Optional ISO 8601 end time for the query window."
+          }
+        },
+        "required": []
+      }
+    }
+  ]
+}

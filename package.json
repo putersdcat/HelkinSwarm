@@ -21,6 +21,7 @@
     "@azure/cosmos": "^4.9.2",
     "@azure/functions": "^4.6.0",
     "@azure/identity": "^4.13.1",
+    "@azure/mcp": "3.0.0-beta.1",
     "@azure/monitor-opentelemetry": "^1.16.0",
     "@azure/msal-node": "^3.8.10",
     "@azure/storage-blob": "^12.31.0",
