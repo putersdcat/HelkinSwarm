@@ -867,6 +867,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     } catch (err) {
       // Overseer unreachable — persist as pending intent for startup recovery (#116)
       const conversationReference = TurnContextClass.getConversationReference(context.activity);
+      const failureReason = err instanceof Error ? err.message : String(err);
       const { trackingId } = await createPendingIntent({
         userId,
         messageText,
@@ -875,11 +876,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
           runtimeAssets: inboundAssets.runtimeAssets,
           attachmentNotices: inboundAssets.notices,
         devLoopContextJson: devLoopCtx ? JSON.stringify(devLoopCtx) : undefined,
+        failureReason,
       });
       await context.sendActivity(
         `⏳ Your message has been queued (tracking: ${trackingId}). I'll process it when I'm back online.`,
       );
-      console.error(`[HelkinSwarmBot] Queued pending intent ${trackingId}: ${err instanceof Error ? err.message : err}`);
+      console.error(`[HelkinSwarmBot] Queued pending intent ${trackingId}: ${failureReason}`);
     }
   }
 

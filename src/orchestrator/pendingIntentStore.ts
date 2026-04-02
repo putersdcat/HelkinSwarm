@@ -80,6 +80,7 @@ export async function createPendingIntent(input: {
   correlationId?: string;
   creationReason?: string;
   userNotified?: boolean;
+  failureReason?: string;
 }): Promise<{ trackingId: string; id: string; intent: PendingIntent }> {
   const container = getContainer(CONTAINER_NAME);
   const id = randomUUID();
@@ -105,6 +106,7 @@ export async function createPendingIntent(input: {
     imageUrls: input.imageUrls ?? [],
     runtimeAssets: input.runtimeAssets ?? [],
     attachmentNotices: input.attachmentNotices ?? [],
+    failureReason: input.failureReason,
     ttl: 604800, // 7 days
   };
 
@@ -119,6 +121,7 @@ export async function createPendingIntent(input: {
       textLength: String(input.messageText.length),
       creationReason: input.creationReason ?? 'overseer-unreachable',
       userNotified: input.userNotified ?? false,
+      ...(input.failureReason ? { failureReason: input.failureReason } : {}),
     },
   });
 

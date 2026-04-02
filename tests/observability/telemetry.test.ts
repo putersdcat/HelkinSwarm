@@ -140,4 +140,24 @@ describe('telemetry trace detail enrichment', () => {
     expect(writtenPhase?.detail).toContain('interruptedInstanceId: overseer-u1-old');
     expect(readPhase?.detail).toContain('found: true');
   });
+
+  it('records pending-intent queue reasons in the runtime trace', () => {
+    const correlationId = 'corr-510-proof';
+
+    trackEvent({
+      name: 'PendingIntentCreated',
+      correlationId,
+      userId: 'u1',
+      properties: {
+        trackingId: 'PI-TEST123',
+        creationReason: 'overseer-unreachable',
+        failureReason: 'durable start failed',
+      },
+    });
+
+    const trace = getTraceTree(correlationId);
+    const phase = trace?.phases.find((p) => p.name === 'PendingIntentCreated');
+    expect(phase?.detail).toContain('trackingId: PI-TEST123');
+    expect(phase?.detail).toContain('failureReason: durable start failed');
+  });
 });

@@ -98,6 +98,8 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   SkillMemoryInjected: 'memory',
   StateLoaded: 'memory',
   StateSaved: 'memory',
+  PendingIntentCreated: 'orchestrator',
+  PendingIntentRecovered: 'orchestrator',
   ChronoBackplaneRead: 'memory',
   ChronoBackplaneWritten: 'memory',
   InterruptionBreadcrumbWritten: 'memory',
@@ -217,6 +219,9 @@ function buildTraceDetail(event: TelemetryEvent): string {
   if (p['handler']) parts.push(`handler: ${p['handler']}`);
   if (p['query']) parts.push(`query: ${p['query']}`);
   if (p['selectedTools']) parts.push(`selected: ${p['selectedTools']}`);
+  if (p['trackingId']) parts.push(`trackingId: ${p['trackingId']}`);
+  if (p['creationReason']) parts.push(`creationReason: ${p['creationReason']}`);
+  if (p['failureReason']) parts.push(`failureReason: ${p['failureReason']}`);
   if (p['authority']) parts.push(`authority: ${p['authority']}`);
   if (p['source']) parts.push(`source: ${p['source']}`);
   if (p['decision']) parts.push(`decision: ${p['decision']}`);
