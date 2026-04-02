@@ -96,4 +96,39 @@ describe('scopedTokenMinter', () => {
     expect(token.method).toBe('placeholder');
     expect(token.token.startsWith('placeholder_')).toBe(true);
   });
+
+  it('requests Enterprise MCP delegated scopes for the graphenterprise skill domain', async () => {
+    mockLoadOboSession.mockResolvedValue({
+      id: 'obo-session-user-4',
+      userId: 'user-4',
+      type: 'obo-session',
+      localAccountId: 'local-4',
+      bootstrappedAt: '2026-04-02T00:00:00.000Z',
+      updatedAt: '2026-04-02T00:00:00.000Z',
+      source: 'teams-token-exchange',
+    });
+    mockAcquireCachedTokenForUser.mockResolvedValue({
+      accessToken: 'enterprise-mcp-token',
+      expiresOn: new Date('2026-04-02T01:00:00.000Z'),
+      scopes: ['api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4/MCP.User.Read.All'],
+    });
+
+    const token = await scopedTokenMinter.mint({
+      toolName: 'graphenterprise_get',
+      scope: 'read',
+      targetResource: 'graphenterprise',
+      userId: 'user-4',
+      correlationId: 'corr-4',
+    });
+
+    expect(token.method).toBe('obo');
+    expect(token.token).toBe('enterprise-mcp-token');
+    expect(mockAcquireCachedTokenForUser).toHaveBeenCalledWith(expect.objectContaining({
+      userId: 'user-4',
+      scopes: expect.arrayContaining([
+        'api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4/MCP.User.Read.All',
+        'api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4/MCP.Organization.Read.All',
+      ]),
+    }));
+  });
 });

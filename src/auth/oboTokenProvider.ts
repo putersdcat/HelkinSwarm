@@ -97,9 +97,7 @@ export async function acquireTokenOnBehalfOf(
 
   const result: AuthenticationResult | null = await client.acquireTokenOnBehalfOf({
     oboAssertion: request.assertion,
-    scopes: request.scopes.map((s) =>
-      s.startsWith('https://') ? s : `https://graph.microsoft.com/${s}`,
-    ),
+    scopes: request.scopes.map(normalizeDownstreamScope),
     correlationId: request.correlationId,
   });
 
@@ -138,7 +136,7 @@ export async function acquireCachedTokenForUser(
 
   const result = await client.acquireTokenSilent({
     account,
-    scopes: request.scopes.map((s) => s.startsWith('https://') ? s : `https://graph.microsoft.com/${s}`),
+    scopes: request.scopes.map(normalizeDownstreamScope),
     correlationId: request.correlationId,
   });
 
@@ -155,6 +153,10 @@ export async function acquireCachedTokenForUser(
     scopes: result.scopes,
     account: result.account,
   };
+}
+
+function normalizeDownstreamScope(scope: string): string {
+  return scope.includes('://') ? scope : `https://graph.microsoft.com/${scope}`;
 }
 
 async function resolveAccount(

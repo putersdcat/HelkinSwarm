@@ -28,6 +28,10 @@ type McpClientState = {
 	remoteTools: Map<string, McpToolDescriptor>;
 };
 
+type McpRuntimeContext = {
+	headers?: Record<string, string>;
+};
+
 export interface McpSmokeTestResult {
 	passed: boolean;
 	toolCount: number;
@@ -119,7 +123,8 @@ async function callRemoteTool(
 	tool: ToolManifestEntry,
 	args: Record<string, unknown>,
 ): Promise<unknown> {
-	const state = await getOrCreateMcpClientState(manifest);
+	const runtimeContext = resolveRuntimeContext(manifest, args);
+	const state = await getOrCreateMcpClientState(manifest, runtimeContext);
 	const remoteToolName = tool.remoteToolName ?? tool.name;
 	if (!state.remoteTools.has(remoteToolName)) {
 		throw new Error(
@@ -172,14 +177,15 @@ async function callRemoteTool(
 
 async function getOrCreateMcpClientState(
 	manifest: CapabilityManifest,
+	runtimeContext?: McpRuntimeContext,
 ): Promise<McpClientState> {
-	const cacheKey = manifest.domain;
+	const cacheKey = buildClientStateCacheKey(manifest, runtimeContext);
 	const existing = clientStates.get(cacheKey);
 	if (existing) {
 		return existing;
 	}
 
-	const created = createMcpClientState(manifest).catch((error) => {
+	const created = createMcpClientState(manifest, runtimeContext).catch((error) => {
 		clientStates.delete(cacheKey);
 		throw error;
 	});
@@ -189,13 +195,14 @@ async function getOrCreateMcpClientState(
 
 async function createMcpClientState(
 	manifest: CapabilityManifest,
+	runtimeContext?: McpRuntimeContext,
 ): Promise<McpClientState> {
 	if (!manifest.mcpServer) {
 		throw new Error(`Skill '${manifest.domain}' does not declare an MCP server.`);
 	}
 
 	const stderrLines: string[] = [];
-	const transport = buildTransport(manifest.mcpServer, stderrLines);
+	const transport = buildTransport(manifest.mcpServer, stderrLines, runtimeContext?.headers);
 
 	const client = new Client(
 		{ name: `helkinswarm-${manifest.domain}-mcp-client`, version: '1.0.0' },
@@ -258,6 +265,7 @@ function bindStderrCapture(transport: StdioClientTransport, stderrLines: string[
 function buildTransport(
 	config: McpServerConfig,
 	stderrLines: string[],
+	runtimeHeaders?: Record<string, string>,
 ): StdioClientTransport | StreamableHTTPClientTransport {
 	if (config.transport === 'stdio') {
 		const transport = new StdioClientTransport(resolveServerParameters(config));
@@ -267,9 +275,77 @@ function buildTransport(
 
 	return new StreamableHTTPClientTransport(new URL(config.url), {
 		requestInit: {
-			headers: config.headers,
+			headers: {
+				...config.headers,
+				...runtimeHeaders,
+			},
 		},
 	});
+}
+
+function buildClientStateCacheKey(
+	manifest: CapabilityManifest,
+	runtimeContext?: McpRuntimeContext,
+): string {
+	const headersKey = runtimeContext?.headers ? JSON.stringify(runtimeContext.headers) : '{}';
+	return `${manifest.domain}::${headersKey}`;
+}
+
+function resolveRuntimeContext(
+	manifest: CapabilityManifest,
+	args: Record<string, unknown>,
+): McpRuntimeContext {
+	if (!manifest.mcpServer || manifest.mcpServer.transport !== 'streamable-http') {
+		return {};
+	}
+
+	const resolvedHeaders = resolveHeaderTemplates(manifest.mcpServer.headers, args);
+	return Object.keys(resolvedHeaders).length > 0
+		? { headers: resolvedHeaders }
+		: {};
+}
+
+function resolveHeaderTemplates(
+	headers: Record<string, string>,
+	args: Record<string, unknown>,
+): Record<string, string> {
+	const runtimeValues = buildRuntimeTemplateValues(args);
+	const resolvedHeaders: Record<string, string> = {};
+
+	for (const [headerName, rawValue] of Object.entries(headers)) {
+		const placeholders = [...rawValue.matchAll(/\$\{([a-zA-Z0-9_]+)\}/g)].map((match) => match[1]);
+		if (placeholders.length === 0) {
+			resolvedHeaders[headerName] = rawValue;
+			continue;
+		}
+
+		let resolvedValue = rawValue;
+		for (const placeholder of placeholders) {
+			const replacement = runtimeValues[placeholder];
+			if (!replacement) {
+				throw new Error(
+					`Missing runtime value '${placeholder}' required to build MCP header '${headerName}'.`,
+				);
+			}
+			resolvedValue = resolvedValue.replaceAll(`\${${placeholder}}`, replacement);
+		}
+
+		resolvedHeaders[headerName] = resolvedValue;
+	}
+
+	return resolvedHeaders;
+}
+
+function buildRuntimeTemplateValues(args: Record<string, unknown>): Record<string, string> {
+	return {
+		scopedToken: asTemplateString(args['_scopedToken']),
+		userId: asTemplateString(args['userId']),
+		correlationId: asTemplateString(args['correlationId']),
+	};
+}
+
+function asTemplateString(value: unknown): string {
+	return typeof value === 'string' ? value : '';
 }
 
 function resolveServerParameters(config: Extract<McpServerConfig, { transport: 'stdio' }>): StdioServerParameters {

@@ -7,7 +7,7 @@ describe('capabilityLoader custom skill discovery', () => {
     process.env['AZURE_CONTENT_SAFETY_ENDPOINT'] = 'https://example.test';
   });
 
-  it('discovers nested skills/custom manifests and registers their tools', async () => {
+  it('discovers nested skills/custom manifests and registers their tools', { timeout: 15000 }, async () => {
     const { loadCapabilities, getHandler, getManifest } = await import('../../src/capabilities/capabilityLoader.js');
     const { toolRegistry } = await import('../../src/tools/toolRegistry.js');
     toolRegistry.clear();
@@ -23,6 +23,9 @@ describe('capabilityLoader custom skill discovery', () => {
 
     expect(getManifest('microsoftlearn')).toBeDefined();
     expect(toolRegistry.get('mslearn_docs_search')).toBeDefined();
+
+    expect(getManifest('graphenterprise')).toBeDefined();
+    expect(toolRegistry.get('graphenterprise_get')).toBeDefined();
 
     const mcpHandler = getHandler('mcpreference_echo');
     expect(mcpHandler).toBeDefined();

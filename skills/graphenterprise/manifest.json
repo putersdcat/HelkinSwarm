@@ -1,0 +1,230 @@
+{
+  "domain": "graphenterprise",
+  "version": "1.0",
+  "shortName": "graph-enterprise",
+  "displayName": "Microsoft Graph Enterprise MCP",
+  "shortDescription": "Read-only Microsoft Entra and Graph tenant insight via the Microsoft MCP Server for Enterprise.",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/core.png",
+  "deploymentScenario": "enterprise-commercial",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials",
+  "dependencies": [],
+  "requiredPermissions": [
+    "api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4/MCP.User.Read.All",
+    "api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4/MCP.GroupMember.Read.All",
+    "api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4/MCP.Organization.Read.All",
+    "api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4/MCP.Application.Read.All",
+    "api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4/MCP.Device.Read.All",
+    "api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4/MCP.LicenseAssignment.Read.All",
+    "api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4/MCP.Reports.Read.All"
+  ],
+  "externalAccountsNeeded": [
+    "Microsoft Entra work or school account in the target tenant"
+  ],
+  "capabilityGroups": [
+    {
+      "id": "directory-reporting",
+      "displayName": "Directory Reporting",
+      "shortDescription": "Conversational Entra and Microsoft Graph tenant reporting for users, groups, devices, apps, and license posture.",
+      "discoveryHints": [
+        "entra tenant reporting",
+        "graph enterprise mcp",
+        "directory insights",
+        "license visibility"
+      ],
+      "useWhen": [
+        "you need tenant-wide identity or directory reporting grounded in Microsoft Graph",
+        "you want read-only administrative answers about users, groups, applications, devices, or licenses",
+        "you need Graph query suggestion before choosing or scripting a concrete endpoint"
+      ],
+      "upstreamNamespace": "microsoft_graph",
+      "upstreamToolSelectors": [
+        "microsoft_graph_suggest_queries",
+        "microsoft_graph_get",
+        "microsoft_graph_list_properties"
+      ]
+    }
+  ],
+  "discoveryHints": [
+    "microsoft graph enterprise",
+    "entra reporting",
+    "tenant directory reporting",
+    "license posture",
+    "read-only graph admin"
+  ],
+  "orchestratorUseCases": [
+    "answer tenant-level Microsoft Entra and Graph reporting questions without writing custom endpoint logic",
+    "suggest and execute read-only Graph queries for identity, app, device, and license investigations",
+    "support virtual admin reporting while leaving write-plane automation to native Graph or Exchange execution lanes"
+  ],
+  "recommendedEntryTools": [
+    "graphenterprise_suggest_queries",
+    "graphenterprise_get"
+  ],
+  "modelAffinity": {
+    "discovery": "fast",
+    "execution": "reasoning",
+    "synthesis": "fast"
+  },
+  "maintenanceTasks": [
+    {
+      "name": "review-enterprise-mcp-scope-pack",
+      "type": "event-driven",
+      "description": "Reassess the delegated MCP scope pack when Microsoft expands preview capabilities or when the admin reporting slice changes materially."
+    }
+  ],
+  "mcpServer": {
+    "transport": "streamable-http",
+    "url": "https://mcp.svc.cloud.microsoft/enterprise",
+    "headers": {
+      "Authorization": "Bearer ${scopedToken}"
+    },
+    "timeoutMs": 30000
+  },
+  "tools": [
+    {
+      "name": "graphenterprise_suggest_queries",
+      "remoteToolName": "microsoft_graph_suggest_queries",
+      "description": "Suggest read-only Microsoft Graph queries for Entra and tenant-admin reporting scenarios.",
+      "risk": "low",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "global",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": true,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "aliases": [
+        "suggest graph enterprise query",
+        "find entra reporting query"
+      ],
+      "discoveryTerms": [
+        "entra query suggestion",
+        "microsoft graph reporting",
+        "tenant admin query"
+      ],
+      "useWhen": [
+        "you need a safe read-only Graph query suggestion before executing a tenant reporting lookup"
+      ],
+      "avoidWhen": [
+        "you need a write operation or Exchange configuration change"
+      ],
+      "typicalInputs": [
+        "how many guest users are in the tenant",
+        "show unassigned licenses",
+        "find inactive users"
+      ],
+      "returnsSummaryShape": "suggested Microsoft Graph queries and explanation for an Entra admin reporting question",
+      "capabilityGroup": "directory-reporting",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "Natural-language tenant admin question to turn into candidate Graph queries."
+          }
+        },
+        "required": [
+          "question"
+        ]
+      }
+    },
+    {
+      "name": "graphenterprise_get",
+      "remoteToolName": "microsoft_graph_get",
+      "description": "Execute a read-only Microsoft Graph request through the Microsoft MCP Server for Enterprise under delegated user context.",
+      "risk": "low",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "global",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": true,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "aliases": [
+        "run graph enterprise get",
+        "query entra directory"
+      ],
+      "discoveryTerms": [
+        "graph get tenant data",
+        "entra directory query",
+        "read-only graph request"
+      ],
+      "useWhen": [
+        "you already know the read-only Graph path or selected it from a prior query suggestion"
+      ],
+      "avoidWhen": [
+        "the request would modify tenant state"
+      ],
+      "typicalInputs": [
+        "GET /users/$count",
+        "GET /subscribedSkus",
+        "GET /groups?$top=25"
+      ],
+      "returnsSummaryShape": "raw or structured result of a read-only Microsoft Graph request executed through Enterprise MCP",
+      "capabilityGroup": "directory-reporting",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "uri": {
+            "type": "string",
+            "description": "Microsoft Graph request URI or path to execute as a read-only GET."
+          }
+        },
+        "required": [
+          "uri"
+        ]
+      }
+    },
+    {
+      "name": "graphenterprise_list_properties",
+      "remoteToolName": "microsoft_graph_list_properties",
+      "description": "List available Microsoft Graph properties and relationships for an entity before forming a tenant report query.",
+      "risk": "low",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "global",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": true,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "aliases": [
+        "list graph entity properties",
+        "inspect entra schema"
+      ],
+      "discoveryTerms": [
+        "graph properties",
+        "directory object schema",
+        "entra entity fields"
+      ],
+      "useWhen": [
+        "you need to inspect an entity schema before building a Graph reporting query"
+      ],
+      "avoidWhen": [
+        "you already know the required fields and just need to execute the request"
+      ],
+      "typicalInputs": [
+        "user entity properties",
+        "service principal fields",
+        "device schema"
+      ],
+      "returnsSummaryShape": "available properties and relationships for the requested Microsoft Graph entity",
+      "capabilityGroup": "directory-reporting",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "entity": {
+            "type": "string",
+            "description": "Microsoft Graph entity name to inspect, such as user, group, servicePrincipal, or device."
+          }
+        },
+        "required": [
+          "entity"
+        ]
+      }
+    }
+  ]
+}

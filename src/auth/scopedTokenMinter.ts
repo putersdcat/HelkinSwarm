@@ -34,6 +34,15 @@ export interface ScopedTokenRequest {
 /** Default Graph scopes per-skill domain — least-privilege per spec §11 */
 const DOMAIN_GRAPH_SCOPES: Record<string, string[]> = {
   outlook: ['Mail.Read', 'Mail.Send', 'Calendars.Read', 'Calendars.ReadWrite'],
+  graphenterprise: [
+    'api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4/MCP.User.Read.All',
+    'api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4/MCP.GroupMember.Read.All',
+    'api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4/MCP.Organization.Read.All',
+    'api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4/MCP.Application.Read.All',
+    'api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4/MCP.Device.Read.All',
+    'api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4/MCP.LicenseAssignment.Read.All',
+    'api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4/MCP.Reports.Read.All',
+  ],
   github: [], // Uses App installation tokens, not Graph OBO
   core: [],   // Uses UAMI, not user-delegated tokens
 };

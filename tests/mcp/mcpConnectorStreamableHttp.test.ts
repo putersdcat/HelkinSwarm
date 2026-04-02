@@ -37,11 +37,17 @@ vi.mock('@modelcontextprotocol/sdk/client/index.js', () => ({
         tools: [
           { name: 'microsoft_docs_search', description: 'Search docs' },
           { name: 'microsoft_docs_fetch', description: 'Fetch docs' },
+          { name: 'microsoft_graph_get', description: 'Run read-only Graph GET' },
         ],
       };
     }
     async callTool(): Promise<never> {
-      throw new Error('not used in this test');
+      return {
+        isError: false,
+        structuredContent: {
+          ok: true,
+        },
+      } as never;
     }
   },
 }));
@@ -104,7 +110,87 @@ describe('mcpConnector streamable-http support', () => {
       },
     ]);
     expect(result.passed).toBe(true);
-    expect(result.toolCount).toBe(2);
-    expect(result.tools.map((tool) => tool.name)).toEqual(['microsoft_docs_search', 'microsoft_docs_fetch']);
+    expect(result.toolCount).toBe(3);
+    expect(result.tools.map((tool) => tool.name)).toEqual([
+      'microsoft_docs_search',
+      'microsoft_docs_fetch',
+      'microsoft_graph_get',
+    ]);
+  });
+
+  it('injects per-call bearer headers for streamable-http MCP handlers when the manifest uses scopedToken templates', async () => {
+    const { registerMcpHandlersForManifest } = await import('../../src/mcp/mcpConnector.js');
+
+    let handler: ((args: Record<string, unknown>) => Promise<unknown>) | undefined;
+    await registerMcpHandlersForManifest({
+      relativeSkillDir: 'graphenterprise',
+      manifest: {
+        domain: 'graphenterprise',
+        version: '1.0',
+        shortName: 'graph-enterprise',
+        displayName: 'Microsoft Graph Enterprise MCP',
+        shortDescription: 'Enterprise reporting',
+        iconUrl: 'https://example.com/icon.png',
+        deploymentScenario: 'enterprise-commercial',
+        onboardingMethod: 'automatic-agentic',
+        lifecycleRules: 'keep-credentials',
+        dependencies: [],
+        requiredPermissions: [],
+        externalAccountsNeeded: [],
+        capabilityGroups: [],
+        discoveryHints: [],
+        orchestratorUseCases: [],
+        recommendedEntryTools: ['graphenterprise_get'],
+        mcpServer: {
+          transport: 'streamable-http',
+          url: 'https://mcp.svc.cloud.microsoft/enterprise',
+          headers: {
+            Authorization: 'Bearer ${scopedToken}',
+            'X-Correlation-Id': '${correlationId}',
+          },
+          timeoutMs: 30000,
+        },
+        tools: [
+          {
+            name: 'graphenterprise_get',
+            remoteToolName: 'microsoft_graph_get',
+            description: 'Execute read-only Graph GET',
+            risk: 'low',
+            dataSensitivity: 'pii',
+            allowedModelLane: 'global',
+            requiresConfirmation: false,
+            requiresExecutor: false,
+            requiresSubAgent: true,
+            privilegeClass: 'read-only',
+            externalAutomationCapabilities: [],
+            longTermMemorySchema: [],
+            inputSchema: { type: 'object', properties: {}, required: [] },
+          },
+        ],
+      },
+      registerHandler: (toolName, registeredHandler) => {
+        if (toolName === 'graphenterprise_get') {
+          handler = registeredHandler;
+        }
+      },
+    });
+
+    const result = await handler?.({
+      uri: 'GET /users/$count',
+      userId: 'user-1',
+      correlationId: 'corr-1',
+      _scopedToken: 'delegated-enterprise-token',
+    });
+
+    expect(result).toEqual({ ok: true });
+    expect(transportHarness.instances).toContainEqual({
+      url: 'https://mcp.svc.cloud.microsoft/enterprise',
+      options: {
+        headers: {
+          Authorization: 'Bearer delegated-enterprise-token',
+          'X-Correlation-Id': 'corr-1',
+        },
+      },
+    });
   });
 });
