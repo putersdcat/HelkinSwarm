@@ -45,6 +45,7 @@ import {
   recordSuccessfulMutatingFingerprints,
 } from './toolCallGuards.js';
 import {
+  buildContextAwareRoutingMessage,
   buildReadOnlyDiscoveryQuery,
   buildReadOnlyDiscoveryResponse,
   buildDeterministicExactToolResponse,
@@ -57,6 +58,7 @@ import {
   isReadOnlyDiscoveryRequest,
   isDiscoveryOnlyDeadEnd,
   synthesizeRuntimeAssetInlineEmailToolCall,
+  synthesizeDeterministicReadOnlyInitialToolCall,
   synthesizeExactToolCall,
   synthesizeDeterministicFollowUpToolCall,
 } from './discoveryToolInjection.js';
@@ -119,7 +121,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     ? input.devLoopContext.body
     : canonicalizedMessage;
 
-  if (isReadOnlyDiscoveryRequest(userMessageForLlm)) {
+  const isExplicitReadOnlyDiscoveryRequest = isReadOnlyDiscoveryRequest(userMessageForLlm);
+
+  if (isExplicitReadOnlyDiscoveryRequest) {
     userMessageForLlm = buildReadOnlyDiscoveryQuery(userMessageForLlm);
   }
 
@@ -282,7 +286,13 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     } satisfies SessionResult;
   }
 
-  const effectiveTaskMessage = userMessageForLlm;
+  const recentAssistantText = [...input.state.recentHistory]
+    .reverse()
+    .find((turn) => turn.role === 'assistant')?.content;
+  const effectiveTaskMessage = buildContextAwareRoutingMessage(userMessageForLlm, {
+    quotedText: input.quotedContext?.text,
+    recentAssistantText,
+  });
 
   if (persistClarificationClearBeforeLongRunningWork) {
     const preConfirmationState: OverseerState = {
@@ -346,7 +356,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   const deterministicInitialToolCall = synthesizeRuntimeAssetInlineEmailToolCall(
     effectiveTaskMessage,
     input.runtimeAssets,
-  ) ?? synthesizeExactToolCall(effectiveTaskMessage, allToolSchemas);
+  )
+    ?? synthesizeExactToolCall(effectiveTaskMessage, allToolSchemas)
+    ?? synthesizeDeterministicReadOnlyInitialToolCall(effectiveTaskMessage, allToolSchemas);
   const llmResult: LlmResult = deterministicInitialToolCall
     ? {
         content: '',
@@ -663,7 +675,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       scopedTokenMintCount += mergedResults.filter((result) => result.scopedTokenMinted).length;
       spans.push({ label: 'tools', durationMs: context.df.currentUtcDateTime.getTime() - toolDispatchStart });
 
-      if (isReadOnlyDiscoveryRequest(effectiveTaskMessage)) {
+      if (isExplicitReadOnlyDiscoveryRequest) {
         responseContent = buildReadOnlyDiscoveryResponse(toolResults.results, effectiveTaskMessage);
       } else {
       const deterministicExactToolResponse = buildDeterministicExactToolResponse(
