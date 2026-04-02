@@ -44,6 +44,7 @@ This is the bridge to the Iain M. Banks “Special Circumstances” forward-depl
    - SkillForge can be called by any employee (with approval gating).
 
 ### 4. Key Use Cases (must be architected Day 1, delivered post-MVP)
+- **Virtual Tax Advisor / CPA**: Handles historical filings, amendments, payments, and receipt gathering with human confirmation gates for any filing decision. Concrete backlog exemplar tracked in #461 and specified further in `docs/0s-Personal-vs-Business-Skills-Taxonomy-Meta-Ecosystem-Integrations-and-Virtual-Tax-Advisor_01-04-2026.md`.
 - **Secretary Employee**: Answers Teams/Outlook calls silently, transcribes, books meetings, surfaces daily summary to master on demand.
 - **Movie Specialist**: Lives with its own Fandango vault; triggered by “book movie” → acts autonomously with perks knowledge.
 - **GitHub Maintainer**: Dedicated employee with narrow GitHub tools; monitors issues, creates PRs, reports only when human review needed.
@@ -77,5 +78,6 @@ This is the bridge to the Iain M. Banks “Special Circumstances” forward-depl
 
 ### 9. Backlog Linkage
 - Built directly on 0g (Bidirectional), 0h (Durable Hooks), 0i (Skill Memory), and 0a (Modularity).
+- Concrete personal-side exemplar: #461 — Virtual Tax Advisor / CPA employee, sourced from `docs/0s-Personal-vs-Business-Skills-Taxonomy-Meta-Ecosystem-Integrations-and-Virtual-Tax-Advisor_01-04-2026.md`.
 - Enables the full “digital body” and self-scaling vision discussed today.
 - Ties into future multimodal embeddings and native LLM-to-LLM communication.
