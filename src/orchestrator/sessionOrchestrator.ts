@@ -8,6 +8,7 @@ import type { BuildPromptInput, PromptResult } from './buildPromptActivity.js';
 import type { LlmResult } from './llmActivity.js';
 import type { SendReplyInput, SendReplyResult } from './sendReplyActivity.js';
 import type { ConversationReference } from 'botbuilder';
+import type { SteeringInjectionResult } from './steeringInjectionActivity.js';
 
 import type { ToolDispatchInput, ToolDispatchResult } from './toolDispatchActivity.js';
 import type { LlmFollowUpInput } from './llmFollowUpActivity.js';
@@ -304,10 +305,22 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     } satisfies SaveStateInput);
   }
 
+  const steeringInjection: SteeringInjectionResult = yield context.df.callActivity(
+    'steeringInjectionActivity',
+    {
+      state: input.state,
+      userMessage: userMessageForLlm,
+      correlationId,
+      quotedContext: input.quotedContext,
+      devLoopContext: input.devLoopContext,
+    },
+  );
+
   // 1. Build prompt (persona + summary + user message)
   const promptInput: BuildPromptInput = {
     state: input.state,
     userMessage: userMessageForLlm,
+    steeringContext: steeringInjection.injectionBlock,
     runtimeAssets: input.runtimeAssets,
     attachmentNotices: input.attachmentNotices,
     devLoopContext: input.devLoopContext,

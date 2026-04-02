@@ -45,6 +45,7 @@ export type TelemetryEventName =
   | 'PendingIntentCreated'
   | 'PendingIntentRecovered'
   | 'LimbicDecision'
+  | 'SteeringInjectionApplied'
   | 'StaleAckRecovered'
   | 'StateLoaded'
   | 'StateSaved'
@@ -112,6 +113,7 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   McpRegistryCatalogRefreshed: 'tool-dispatch',
   McpRegistrySearchExecuted: 'tool-dispatch',
   LimbicDecision: 'orchestrator',
+  SteeringInjectionApplied: 'orchestrator',
   PolicyOverrideApplied: 'orchestrator',
   ClarificationRequested: 'orchestrator',
   ClarificationRetryRequested: 'orchestrator',

@@ -23,6 +23,7 @@ import type { RuntimeAssetReference } from '../integrations/runtimeAssetStore.js
 export interface BuildPromptInput {
   state: OverseerState;
   userMessage: string;
+  steeringContext?: string;
   /** Structured runtime asset references extracted from inbound Teams attachments (#416) */
   runtimeAssets?: RuntimeAssetReference[];
   /** Prompt-safe notes about inbound attachment ingestion outcomes (#416) */
@@ -201,6 +202,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
     persona,
     modelIdentity,
     buildPriorsPromptFragment(),
+    input.steeringContext ?? '',
     devLoopBlock,
     !isDevLoop && preferencesFragment ? `User preferences: ${preferencesFragment}` : '',
     !isDevLoop ? onboardingInstructions : '',
