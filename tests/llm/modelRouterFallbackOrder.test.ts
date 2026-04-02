@@ -37,6 +37,15 @@ describe('modelRouter fallback ordering (#411)', () => {
     ]);
   });
 
+  it('routes unlabeled global prompts through the fast secondary lane during active development', async () => {
+    const modelRouter = await loadModelRouterWithDefaults();
+
+    const routing = modelRouter.getModelRouting();
+
+    expect(routing.deploymentName).toBe('gpt-5.4-mini');
+    expect(routing.isReasoning).toBe(false);
+  });
+
   it('falls from gpt-5.4-mini into tertiary defaults before circling back to Grok primary', async () => {
     const modelRouter = await loadModelRouterWithDefaults();
 

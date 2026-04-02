@@ -123,7 +123,11 @@ function getAzureRouting(config: ReturnType<typeof getEnvConfig>): ModelRouting 
   }
 
   const lane = getGlobalLane(config);
-  const deploymentName = lane.primary;
+  // The global default front-door lane intentionally prefers the fast secondary slot.
+  // /heavy still opts into reasoning explicitly, and the Grok slot remains available via
+  // fallback plus direct override, but default unlabeled prompts should stay on the most
+  // reliable lane during active development/debugging (#480).
+  const deploymentName = lane.secondary;
   return {
     lane,
     laneName: 'global',

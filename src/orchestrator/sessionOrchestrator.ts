@@ -25,7 +25,6 @@ import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
 import { buildModelOverrideDisclosure, formatTelemetryFooter } from './turnTelemetry.js';
 import type { TurnTelemetryData, TelemetrySpan } from './turnTelemetry.js';
-import { getEnvConfig } from '../config/envConfig.js';
 import { trackEvent } from '../observability/telemetry.js';
 import type { RuntimeAssetReference } from '../integrations/runtimeAssetStore.js';
 import {
@@ -231,8 +230,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   const spans: TelemetrySpan[] = [];
   if (clarificationShortCircuitResponse) {
     let replyMessage = clarificationShortCircuitResponse;
-    const envConfig = getEnvConfig();
-    replyMessage += formatTelemetryFooter(envConfig.devTelemetryMode, {
+    const telemetryMode = 'verbose' as const;
+    replyMessage += formatTelemetryFooter(telemetryMode, {
       correlationId,
       totalMs: context.df.currentUtcDateTime.getTime() - turnStartTime,
       model: 'clarification-loop',
@@ -1122,8 +1121,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
   // 5a. Append debug telemetry footer (#174, #254, spec: 0n)
   // Always appended — even in 'off' mode, a correlation ID suffix is shown.
-  const envConfig = getEnvConfig();
   {
+    const telemetryMode = 'verbose' as const;
     const turnEndTime = context.df.currentUtcDateTime.getTime();
     const toolNames: string[] = toolResults?.results?.map(
       (r: { toolName: string }) => r.toolName,
@@ -1143,7 +1142,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       subAgentCount: subAgentSpawnCount > 0 ? subAgentSpawnCount : undefined,
       scopedTokenMintCount: scopedTokenMintCount > 0 ? scopedTokenMintCount : undefined,
     };
-    replyMessage += formatTelemetryFooter(envConfig.devTelemetryMode, telemetryData);
+    replyMessage += formatTelemetryFooter(telemetryMode, telemetryData);
   }
 
   if (input.devLoopContext?.isDevLoop) {
