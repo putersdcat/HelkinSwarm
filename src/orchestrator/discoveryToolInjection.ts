@@ -294,6 +294,7 @@ export function synthesizeDeterministicReadOnlyInitialToolCall(
   tools: ToolDefinition[] | null | undefined,
 ): DeterministicFollowUpToolCall | null {
   if (!tools || tools.length === 0) return null;
+  if (isReadOnlyDiscoveryRequest(userMessage)) return null;
 
   const toolNames = new Set(tools.map((tool) => tool.function.name));
 

@@ -645,6 +645,26 @@ describe('discoveryToolInjection', () => {
     });
   });
 
+  it('does not synthesize a non-discovery Outlook call when the prompt explicitly demands discovery-only mode', async () => {
+    const { synthesizeDeterministicReadOnlyInitialToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const call = synthesizeDeterministicReadOnlyInitialToolCall(
+      '/light Use discovery only and tell me which tool you would use to search mailbox emails. Do not execute any non-discovery tools.',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_search_emails',
+            description: 'search emails',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(call).toBeNull();
+  });
+
   it('synthesizes a deterministic graphenterprise verification call when a proof prompt carries prior skill context', async () => {
     const { synthesizeDeterministicReadOnlyInitialToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
 
