@@ -95,11 +95,17 @@ app.http('devloopPush', {
         messageType: doc.messageType,
         messageId: doc.id,
         deliveredToOverseer: activeOverseerInstanceId !== undefined,
+        instanceId: activeOverseerInstanceId ?? 'none',
       },
     });
     return {
       status: 202,
-      jsonBody: { messageId: doc.id, correlationTag: doc.correlationTag },
+      jsonBody: {
+        messageId: doc.id,
+        correlationTag: doc.correlationTag,
+        deliveredToOverseer: activeOverseerInstanceId !== undefined,
+        instanceId: activeOverseerInstanceId ?? null,
+      },
     };
   },
 });

@@ -88,4 +88,24 @@ describe('telemetry trace detail enrichment', () => {
     expect(limbicPhase?.detail).toContain('decision: compat-start');
     expect(overridePhase?.detail).toContain('authority: living-mind-compatibility-mode');
   });
+
+  it('records live external-event routing outcomes in the runtime trace detail', () => {
+    const correlationId = 'corr-500-proof-surface';
+
+    trackEvent({
+      name: 'DevLoopRelayPush',
+      correlationId,
+      userId: 'u1',
+      properties: {
+        messageType: 'DEVLOOP',
+        deliveredToOverseer: true,
+        instanceId: 'overseer-u1-abc123',
+      },
+    });
+
+    const trace = getTraceTree(correlationId);
+    const phase = trace?.phases.find((p) => p.name === 'DevLoopRelayPush');
+    expect(phase?.detail).toContain('deliveredToOverseer: true');
+    expect(phase?.detail).toContain('instanceId: overseer-u1-abc123');
+  });
 });

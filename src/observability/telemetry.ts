@@ -103,6 +103,8 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   ContinueAsNewTriggered: 'orchestrator',
   DurableHookRegistered: 'orchestrator',
   DurableHookTriggered: 'orchestrator',
+  DevLoopRelayPush: 'orchestrator',
+  DevLoopRelayPoll: 'orchestrator',
   ExecutorVerifiedSetBinding: 'executor',
   ScopedTokenMinted: 'executor',
   HandlerTokenSource: 'executor',
@@ -216,8 +218,10 @@ function buildTraceDetail(event: TelemetryEvent): string {
   if (p['decision']) parts.push(`decision: ${p['decision']}`);
   if (p['reason']) parts.push(`reason: ${p['reason']}`);
   if (p['type']) parts.push(`type: ${p['type']}`);
+  if (p['instanceId']) parts.push(`instanceId: ${p['instanceId']}`);
   if (p['found'] !== undefined) parts.push(`found: ${p['found']}`);
   if (p['injected'] !== undefined) parts.push(`injected: ${p['injected']}`);
+  if (p['deliveredToOverseer'] !== undefined) parts.push(`deliveredToOverseer: ${p['deliveredToOverseer']}`);
 
   return parts.length > 0 ? parts.join(', ') : event.name;
 }
