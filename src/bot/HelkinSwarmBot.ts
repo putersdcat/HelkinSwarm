@@ -872,6 +872,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         userId,
         messageText,
         conversationReferenceJson: JSON.stringify(conversationReference),
+        correlationId,
           imageUrls: inboundAssets.imageUrls,
           runtimeAssets: inboundAssets.runtimeAssets,
           attachmentNotices: inboundAssets.notices,
