@@ -78,6 +78,10 @@ import { ingestTeamsAttachments } from './inboundAttachmentIngestion.js';
 import { buildOverseerDedupIdentity } from './overseerDedupIdentity.js';
 import { buildTeamsNativeEmojiEasterEggReply } from './teamsNativeEmojiEasterEggs.js';
 import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';
+import {
+  readMindSessionGuardState,
+  signalMindSessionAcquire,
+} from '../orchestrator/mindSessionGuard.js';
 
 const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
 
@@ -1011,16 +1015,38 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       );
       if (existingInstanceId) return false;
 
+      const guardState = await readMindSessionGuardState(client, userId);
+      const hasActiveGuard = guardState?.activeInstanceId !== undefined && guardState.activeInstanceId !== identity.instanceId;
+
       recordLimbicIngressDecision({
         source: 'teams-message',
         userId,
         correlationId: eventCorrelationId,
         compatibilityMode: getEnvConfig().livingMindCompatibilityMode,
-        hasActiveSession: false,
+        hasActiveSession: hasActiveGuard,
       });
+
+      if (hasActiveGuard) {
+        trackEvent({
+          name: 'PolicyOverrideApplied',
+          correlationId: eventCorrelationId,
+          userId,
+          properties: {
+            authority: 'mind-session-guard-compatibility-mode',
+            source: 'teams-message',
+            activeInstanceId: guardState.activeInstanceId ?? 'unknown',
+            requestedInstanceId: identity.instanceId,
+          },
+        });
+      }
 
       console.info(`[HelkinSwarmBot] DEDUP-PASS durable — starting ${identity.instanceId} bucket=${identity.timeBucket}`);
       await client.startNew('overseer', { instanceId: identity.instanceId, input: event });
+      await signalMindSessionAcquire(client, userId, {
+        instanceId: identity.instanceId,
+        correlationId: eventCorrelationId,
+        source: 'teams-message',
+      });
       return true;
     } catch (err: unknown) {
       // 409 = instance already exists (race condition) — safe to ignore (#300)

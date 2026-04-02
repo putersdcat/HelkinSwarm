@@ -15,6 +15,10 @@ import {
   type PendingIntent,
 } from './pendingIntentStore.js';
 import { recordLimbicIngressDecision } from './limbicIngressActivity.js';
+import {
+  readMindSessionGuardState,
+  signalMindSessionAcquire,
+} from './mindSessionGuard.js';
 import type { NewMessageEvent } from './overseer.js';
 
 export interface PendingIntentReplayDecision {
@@ -96,15 +100,37 @@ export async function replayPendingIntent(
     };
 
     try {
+      const guardState = await readMindSessionGuardState(client, intent.userId);
+      const hasActiveGuard = guardState?.activeInstanceId !== undefined && guardState.activeInstanceId !== instanceId;
+
       recordLimbicIngressDecision({
         source: 'pending-intent-replay',
         userId: intent.userId,
         correlationId: intent.correlationId ?? intent.id,
         compatibilityMode: getEnvConfig().livingMindCompatibilityMode,
-        hasActiveSession: false,
+        hasActiveSession: hasActiveGuard,
       });
 
+      if (hasActiveGuard) {
+        trackEvent({
+          name: 'PolicyOverrideApplied',
+          correlationId: intent.correlationId ?? intent.id,
+          userId: intent.userId,
+          properties: {
+            authority: 'mind-session-guard-compatibility-mode',
+            source: 'pending-intent-replay',
+            activeInstanceId: guardState.activeInstanceId ?? 'unknown',
+            requestedInstanceId: instanceId,
+          },
+        });
+      }
+
       await client.startNew('overseer', { instanceId, input: event });
+      await signalMindSessionAcquire(client, intent.userId, {
+        instanceId,
+        correlationId: intent.correlationId ?? intent.id,
+        source,
+      });
     } catch (error) {
       if (!isReplayConflict(error)) {
         throw error;

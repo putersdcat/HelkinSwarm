@@ -23,6 +23,7 @@ import type { PurgeOrchestrationInput } from './terminateOrchestrationActivity.j
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
 import type { RuntimeAssetReference } from '../integrations/runtimeAssetStore.js';
+import { MIND_SESSION_GUARD_ENTITY_NAME, MindSessionGuardReleaseInputSchema } from './mindSessionGuard.js';
 
 /** Spinner starts after this many ms. Only long turns get spinner updates. */
 const SPINNER_INITIAL_DELAY_MS = 8_000;
@@ -210,6 +211,14 @@ function* processTurn(
     // Dedup hold on error path — keep Running to block retries (#300)
     const errDedupDeadline = new Date(context.df.currentUtcDateTime.getTime() + DEDUP_HOLD_MS);
     yield context.df.createTimer(errDedupDeadline);
+    context.df.signalEntity(
+      new df.EntityId(MIND_SESSION_GUARD_ENTITY_NAME, state.userId),
+      'release',
+      MindSessionGuardReleaseInputSchema.parse({
+        instanceId: context.df.instanceId,
+        correlationId: sessionInput.correlationId,
+      }),
+    );
     return;
   }
 
@@ -239,5 +248,13 @@ function* processTurn(
   // dedup layer for cross-container retries (#300).
   const dedupDeadline = new Date(context.df.currentUtcDateTime.getTime() + DEDUP_HOLD_MS);
   yield context.df.createTimer(dedupDeadline);
+  context.df.signalEntity(
+    new df.EntityId(MIND_SESSION_GUARD_ENTITY_NAME, state.userId),
+    'release',
+    MindSessionGuardReleaseInputSchema.parse({
+      instanceId: context.df.instanceId,
+      correlationId: sessionInput.correlationId,
+    }),
+  );
   // Overseer completes naturally after the dedup hold — no ContinueAsNew (#280)
 }
