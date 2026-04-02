@@ -75,6 +75,39 @@ const discoveryManifests: CapabilityManifest[] = [
     ],
   },
   {
+    domain: 'graphenterprise',
+    version: '1.0',
+    shortName: 'graphenterprise',
+    displayName: 'Graph Enterprise',
+    shortDescription: 'Enterprise Microsoft Graph tenant reporting',
+    iconUrl: 'https://example.com/graphenterprise.png',
+    deploymentScenario: 'enterprise-commercial',
+    onboardingMethod: 'automatic-agentic',
+    lifecycleRules: 'keep-credentials',
+    requiredPermissions: ['Directory.Read.All'],
+    discoveryHints: ['entra', 'directory', 'tenant reporting'],
+    orchestratorUseCases: ['inspect tenant-wide graph metadata'],
+    recommendedEntryTools: ['graphenterprise_list_properties'],
+    tools: [
+      {
+        name: 'graphenterprise_list_properties',
+        description: 'list graph enterprise properties',
+        risk: 'low',
+        dataSensitivity: 'non-pii',
+        allowedModelLane: 'any',
+        requiresConfirmation: false,
+        requiresExecutor: false,
+        requiresSubAgent: false,
+        privilegeClass: 'read-only',
+        aliases: [],
+        discoveryTerms: [],
+        useWhen: [],
+        avoidWhen: [],
+        typicalInputs: [],
+      },
+    ],
+  },
+  {
     domain: 'weather',
     version: '1.0',
     shortName: 'weather',
@@ -160,6 +193,17 @@ async function seedRegistry(): Promise<void> {
     requiresExecutor: false,
     requiresSubAgent: true,
     privilegeClass: 'create',
+    inputSchema: { type: 'object', properties: {}, required: [] },
+  });
+  toolRegistry.register({
+    name: 'graphenterprise_list_properties',
+    description: 'list graph enterprise properties',
+    risk: 'low',
+    dataSensitivity: 'non-pii',
+    requiresConfirmation: false,
+    requiresExecutor: false,
+    requiresSubAgent: false,
+    privilegeClass: 'read-only',
     inputSchema: { type: 'object', properties: {}, required: [] },
   });
 }
@@ -444,6 +488,30 @@ describe('discoveryToolInjection', () => {
     ]);
   });
 
+  it('keeps non-chat-recoverable skills out of the post-discovery execution subset', async () => {
+    const { deriveSelectiveFollowUpToolSchemas } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const tools = deriveSelectiveFollowUpToolSchemas([
+      {
+        toolName: 'helkin_skill_search',
+        success: true,
+        result: {
+          tools: [{ name: 'graphenterprise_list_properties', domain: 'graphenterprise' }],
+          skills: [{
+            domain: 'graphenterprise',
+            operationalState: 'operator-setup-required',
+            recommendedEntryTools: ['graphenterprise_list_properties'],
+          }],
+        },
+      },
+    ]);
+
+    expect(tools?.map((tool) => tool.function.name)).toEqual([
+      'helkin_skill_search',
+      'helkin_health_check',
+    ]);
+  });
+
   it('derives a primary follow-up model override when matched skills consistently prefer reasoning/primary execution', async () => {
     const { getDiscoveryFollowUpModelOverride } = await import('../../src/orchestrator/discoveryToolInjection.js');
 
@@ -496,7 +564,7 @@ describe('discoveryToolInjection', () => {
     ];
 
     expect(isDiscoveryOnlyDeadEnd(toolResults)).toBe(true);
-    expect(buildDiscoveryDeadEndResponse('Schedule lunch tomorrow at 12:30')).toContain('have not created an event');
+    expect(buildDiscoveryDeadEndResponse('Schedule lunch tomorrow at 12:30')).toContain('did not reach a runnable calendar action yet');
   });
 
   it('builds a deterministic read-only discovery response without claiming any action was executed', async () => {
@@ -527,10 +595,79 @@ describe('discoveryToolInjection', () => {
       },
     ], 'Use discovery only and tell me which tool you would use to search mailbox emails. Do not execute any non-discovery tools.');
 
-    expect(response).toContain('I stayed in discovery-only mode.');
+    expect(response).toContain('I checked the installed skills without executing anything yet.');
     expect(response).toContain('`outlook/mail-read`');
     expect(response).toContain('`outlook_search_emails`');
-    expect(response).toContain('No non-discovery tools were executed.');
+    expect(response).toContain('status: action-required');
+    expect(response).toContain('I have not run the underlying skill yet.');
+  });
+
+  it('builds a context-aware routing message for proof-style follow-ups using quoted or recent assistant context', async () => {
+    const { buildContextAwareRoutingMessage } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const routed = buildContextAwareRoutingMessage(
+      'please do a simple functional test of the skill and output the results',
+      {
+        quotedText: 'Microsoft Graph Enterprise MCP is available. Recommended entry tools: graphenterprise_suggest_queries, graphenterprise_get.',
+        recentAssistantText: 'Best matching skill: Microsoft Graph Enterprise MCP `graphenterprise`.',
+      },
+    );
+
+    expect(routed).toContain('functional test');
+    expect(routed).toContain('graphenterprise_suggest_queries');
+    expect(routed).toContain('Best matching skill');
+  });
+
+  it('synthesizes a deterministic read-only initial call for natural Outlook mailbox-search prompts', async () => {
+    const { synthesizeDeterministicReadOnlyInitialToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const call = synthesizeDeterministicReadOnlyInitialToolCall(
+      '/light Search my Outlook inbox for emails with attachments. Return only the top 5 message ids, subjects, and receivedAt values as compact JSON.',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_search_emails',
+            description: 'search emails',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(call).toEqual({
+      name: 'outlook_search_emails',
+      arguments: {
+        query: 'hasAttachment:true',
+        folder: 'inbox',
+        top: 5,
+      },
+    });
+  });
+
+  it('synthesizes a deterministic graphenterprise verification call when a proof prompt carries prior skill context', async () => {
+    const { synthesizeDeterministicReadOnlyInitialToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const call = synthesizeDeterministicReadOnlyInitialToolCall(
+      'please do a simple functional test of the skill and output the results\n\n[Quoted context]\nMicrosoft Graph Enterprise MCP is available. Recommended entry tools: graphenterprise_suggest_queries, graphenterprise_get.',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'graphenterprise_list_properties',
+            description: 'list graph entity properties',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(call).toEqual({
+      name: 'graphenterprise_list_properties',
+      arguments: {
+        entity: 'user',
+      },
+    });
   });
 
   it('synthesizes a deterministic calendar-event follow-up call for the issue #394 prompt shape', async () => {

@@ -92,7 +92,7 @@ export async function renderSkillSearchCommandResponse(messageText: string): Pro
       '📚 **Available skill domains**',
       '',
       ...domains.map((skill) =>
-        `- \`${skill.domain}\` — **${skill.displayName}** (${skill.toolCount} tool${skill.toolCount === 1 ? '' : 's'}) — ${skill.shortDescription}`,
+        `- \`${skill.domain}\` — **${skill.displayName}** (${skill.toolCount} tool${skill.toolCount === 1 ? '' : 's'}) — status: ${skill.operationalState} — ${skill.shortDescription}`,
       ),
       '',
       'Use `/skillSearch <terms>` to search, `/skillSearch skill <domain>` for more detail, or `/skillSearch tool <tool_name>` to inspect one tool.',
@@ -110,6 +110,8 @@ export async function renderSkillSearchCommandResponse(messageText: string): Pro
       '',
       skill.shortDescription,
       '',
+      `- operational state: ${skill.operationalState}`,
+      `- readiness summary: ${skill.operationalSummary}`,
       `- recommended entry tools: ${formatInlineCodeList(skill.recommendedEntryTools)}`,
       `- tool count: ${skill.toolCount}`,
       skill.orchestratorUseCases.length > 0
@@ -137,6 +139,7 @@ export async function renderSkillSearchCommandResponse(messageText: string): Pro
       tool.description,
       '',
       `- domain: \`${tool.domain}\``,
+      `- skill state: ${getDiscoverySkill(tool.domain)?.operationalState ?? 'operational'}`,
       `- risk: ${tool.risk}`,
       `- data sensitivity: ${tool.dataSensitivity}`,
       `- allowed model lane: ${tool.allowedModelLane}`,
@@ -171,7 +174,7 @@ export async function renderSkillSearchCommandResponse(messageText: string): Pro
           '**Skills**',
           ...result.skills.map((hit) => {
             const skill = getDiscoverySkill(hit.id);
-            return `- \`${hit.domain}\` — **${skill?.displayName ?? hit.id}** — ${skill?.shortDescription ?? ''} ${formatMatchReasons(hit.matchReasons)}${formatEntryTools(skill?.recommendedEntryTools ?? [])}`.trim();
+            return `- \`${hit.domain}\` — **${skill?.displayName ?? hit.id}** — status: ${skill?.operationalState ?? 'operational'} — ${skill?.shortDescription ?? ''} ${formatMatchReasons(hit.matchReasons)}${formatEntryTools(skill?.recommendedEntryTools ?? [])}`.trim();
           }),
         ].join('\n')
       : '**Skills**\n- none matched strongly enough',
@@ -181,7 +184,8 @@ export async function renderSkillSearchCommandResponse(messageText: string): Pro
           '**Tools**',
           ...result.tools.map((hit) => {
             const tool = getDiscoveryTool(hit.id);
-            return `- \`${hit.id}\` (${tool?.domain ?? hit.domain}, risk: ${tool?.risk ?? 'unknown'}) — ${tool?.description ?? ''} ${formatMatchReasons(hit.matchReasons)}`.trim();
+            const skill = getDiscoverySkill(tool?.domain ?? hit.domain);
+            return `- \`${hit.id}\` (${tool?.domain ?? hit.domain}, risk: ${tool?.risk ?? 'unknown'}, skill: ${skill?.operationalState ?? 'operational'}) — ${tool?.description ?? ''} ${formatMatchReasons(hit.matchReasons)}`.trim();
           }),
         ].join('\n')
       : '**Tools**\n- none matched strongly enough',

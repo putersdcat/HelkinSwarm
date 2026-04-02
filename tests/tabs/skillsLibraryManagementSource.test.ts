@@ -17,5 +17,8 @@ describe('Skills Library management UI wiring', () => {
     expect(source).toContain('skills/mcp-registry/approve');
     expect(source).toContain('Send to McpForge');
     expect(source).toContain('Approve + Hot Reload');
+    expect(source).toContain('operationalState');
+    expect(source).toContain('renderOperationalBadge');
+    expect(source).toContain('operator-setup-required');
   });
 });

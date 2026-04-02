@@ -9,6 +9,10 @@ import type { CapabilityManifest, MaintenanceTask } from './manifestSchema.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { clearSkillDiscoveryIndex, rebuildSkillDiscoveryIndex } from './skillDiscoveryIndex.js';
 import { registerMcpHandlersForManifest } from '../mcp/mcpConnector.js';
+import {
+  assessSkillOperationalState,
+  type SkillOperationalState,
+} from './skillOperationalState.js';
 
 // ---------------------------------------------------------------------------
 // Tool handler type — async function that executes a tool
@@ -288,12 +292,16 @@ export interface SkillCatalogEntry {
   requiredPermissions: string[];
   externalAccountsNeeded: string[];
   maintenanceTaskCount: number;
+  operationalState: SkillOperationalState;
+  operationalSummary: string;
 }
 
 /** Returns rich skill metadata from loaded manifests for the Skills Library tab. */
 export function getSkillCatalog(): SkillCatalogEntry[] {
   const catalog: SkillCatalogEntry[] = [];
+  const installedDomains = new Set(manifestRegistry.keys());
   for (const manifest of manifestRegistry.values()) {
+    const assessment = assessSkillOperationalState(manifest, installedDomains);
     catalog.push({
       domain: manifest.domain,
       displayName: manifest.displayName,
@@ -311,13 +319,15 @@ export function getSkillCatalog(): SkillCatalogEntry[] {
       requiredPermissions: manifest.requiredPermissions ?? [],
       externalAccountsNeeded: manifest.externalAccountsNeeded ?? [],
       maintenanceTaskCount: manifest.maintenanceTasks?.length ?? 0,
+      operationalState: assessment.operationalState,
+      operationalSummary: assessment.message,
     });
   }
   return catalog.sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
 export interface SkillInstallInspection {
-  status: 'ready' | 'blocked' | 'not-installed';
+  status: 'operational' | 'action-required' | 'operator-setup-required' | 'blocked' | 'not-installed';
   skillId: string;
   displayName?: string;
   onboardingMethod?: string;
@@ -349,55 +359,32 @@ export function inspectSkillInstall(skillId: string): SkillInstallInspection {
     };
   }
 
-  const requiredDeps = getDependenciesOf(skillId);
-  const missingDeps = requiredDeps.filter((dep) => !getManifest(dep));
-  const externalAccounts = manifest.externalAccountsNeeded ?? [];
-  const requiredPermissions = manifest.requiredPermissions ?? [];
-  const onboardingMethod = manifest.onboardingMethod;
-  const softOnboarding = manifest.softOnboarding;
+  const assessment = assessSkillOperationalState(manifest, manifestRegistry.keys());
 
-  if (missingDeps.length > 0) {
+  if (assessment.operationalState === 'blocked') {
     return {
       status: 'blocked',
       skillId,
       displayName: manifest.displayName,
-      onboardingMethod,
-      dependencies: requiredDeps,
-      missingDependencies: missingDeps,
-      externalAccountsNeeded: externalAccounts,
-      requiredPermissions,
-      message: `Skill '${skillId}' requires these dependencies which are not installed: ${missingDeps.join(', ')}. Install them first.`,
+      onboardingMethod: assessment.onboardingMethod,
+      dependencies: assessment.dependencies,
+      missingDependencies: assessment.missingDependencies,
+      externalAccountsNeeded: assessment.externalAccountsNeeded,
+      requiredPermissions: assessment.requiredPermissions,
+      message: assessment.message,
     };
   }
 
-  const steps: string[] = [];
-  if (onboardingMethod === 'post-install-link' || onboardingMethod === 'both') {
-    const linkName = manifest.linkConfig?.connectionName ?? skillId;
-    steps.push(`Complete OAuth authorisation via /link (connection: ${linkName})`);
-  } else if (onboardingMethod === 'automatic-agentic') {
-    steps.push('Automatic onboarding — no user action required.');
-  }
-
-  if (externalAccounts.length > 0) {
-    steps.push(`Create external account(s): ${externalAccounts.join(', ')}`);
-  }
-  if (requiredPermissions.length > 0) {
-    steps.push(`Grant permissions: ${requiredPermissions.join(', ')}`);
-  }
-  if (softOnboarding) {
-    steps.push('Complete first-run preference questions (soft onboarding).');
-  }
-
   return {
-    status: 'ready',
+    status: assessment.operationalState,
     skillId,
     displayName: manifest.displayName,
-    onboardingMethod,
-    dependencies: requiredDeps,
-    externalAccountsNeeded: externalAccounts,
-    requiredPermissions,
-    steps: steps.length > 0 ? steps : ['No setup required — skill is ready to use.'],
-    message: `Skill '${skillId}' is installed. ${steps.length > 0 ? 'Complete the steps listed to activate it.' : 'Ready to use.'}`,
+    onboardingMethod: assessment.onboardingMethod,
+    dependencies: assessment.dependencies,
+    externalAccountsNeeded: assessment.externalAccountsNeeded,
+    requiredPermissions: assessment.requiredPermissions,
+    steps: assessment.steps.length > 0 ? assessment.steps : ['No setup required — skill is ready to use.'],
+    message: assessment.message,
   };
 }
 

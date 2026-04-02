@@ -1,9 +1,12 @@
 import type { CapabilityManifest, CapabilityGroup as CapabilityGroupManifestEntry, ModelAffinity, ToolManifestEntry } from './manifestSchema.js';
+import { assessSkillOperationalState, type SkillOperationalState } from './skillOperationalState.js';
 
 export interface SkillDiscoverySkillEntry {
   domain: string;
   displayName: string;
   shortDescription: string;
+  operationalState: SkillOperationalState;
+  operationalSummary: string;
   discoveryHints: string[];
   orchestratorUseCases: string[];
   recommendedEntryTools: string[];
@@ -85,17 +88,23 @@ export function clearSkillDiscoveryIndex(): void {
 }
 
 export function rebuildSkillDiscoveryIndex(manifests: CapabilityManifest[]): SkillDiscoveryIndex {
-  const skills: SkillDiscoverySkillEntry[] = manifests.map((manifest) => ({
-    domain: manifest.domain,
-    displayName: manifest.displayName,
-    shortDescription: manifest.shortDescription,
-    discoveryHints: manifest.discoveryHints ?? [],
-    orchestratorUseCases: manifest.orchestratorUseCases ?? [],
-    recommendedEntryTools: manifest.recommendedEntryTools ?? [],
-    modelAffinity: manifest.modelAffinity,
-    toolNames: manifest.tools.map((tool) => tool.name),
-    toolCount: manifest.tools.length,
-  }));
+  const installedDomains = new Set(manifests.map((manifest) => manifest.domain));
+  const skills: SkillDiscoverySkillEntry[] = manifests.map((manifest) => {
+    const assessment = assessSkillOperationalState(manifest, installedDomains);
+    return {
+      domain: manifest.domain,
+      displayName: manifest.displayName,
+      shortDescription: manifest.shortDescription,
+      operationalState: assessment.operationalState,
+      operationalSummary: assessment.message,
+      discoveryHints: manifest.discoveryHints ?? [],
+      orchestratorUseCases: manifest.orchestratorUseCases ?? [],
+      recommendedEntryTools: manifest.recommendedEntryTools ?? [],
+      modelAffinity: manifest.modelAffinity,
+      toolNames: manifest.tools.map((tool) => tool.name),
+      toolCount: manifest.tools.length,
+    };
+  });
 
   const capabilityGroups: SkillDiscoveryCapabilityGroupEntry[] = manifests.flatMap((manifest) =>
     (manifest.capabilityGroups ?? []).map((group: CapabilityGroupManifestEntry) => ({

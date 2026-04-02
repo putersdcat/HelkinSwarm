@@ -75,6 +75,7 @@ describe('/skillSearch command formatting', () => {
 
     expect(response).toContain('**Skills**');
     expect(response).toContain('`outlook`');
+    expect(response).toContain('status: action-required');
     expect(response).toContain('`outlook_search_emails`');
     expect(response).toContain('This command stays read-only');
   });
@@ -84,8 +85,17 @@ describe('/skillSearch command formatting', () => {
     const response = await renderSkillSearchCommandResponse('/skillSearch tool outlook_search_emails');
 
     expect(response).toContain('**Tool:** `outlook_search_emails`');
+    expect(response).toContain('skill state: action-required');
     expect(response).toContain('requires sub-agent: yes');
     expect(response).toContain('This command is discovery-only and does not invoke the tool');
+  });
+
+  it('renders skill drilldown output with readiness truth', async () => {
+    const { renderSkillSearchCommandResponse } = await requireSkillSearchCommand();
+    const response = await renderSkillSearchCommandResponse('/skillSearch skill outlook');
+
+    expect(response).toContain('operational state: action-required');
+    expect(response).toContain('needs user action before it is fully operational');
   });
 
   it('is wired into the bot slash-command routing before overseer handoff', () => {

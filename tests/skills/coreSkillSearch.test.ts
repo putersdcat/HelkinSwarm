@@ -67,14 +67,16 @@ describe('helkin_skill_search', () => {
   it('returns ranked skill and tool matches for search', async () => {
     const { helkin_skill_search } = await import('../../skills/core/handlers.js');
     const result = await helkin_skill_search({ command: 'search', query: 'search mailbox emails' }) as {
-      skills: Array<{ domain: string }>;
+      skills: Array<{ domain: string; operationalState: string }>;
       capabilityGroups: Array<{ id: string }>;
-      tools: Array<{ name: string }>;
+      tools: Array<{ name: string; skillOperationalState: string }>;
     };
 
     expect(result.skills[0]?.domain).toBe('outlook');
+    expect(result.skills[0]?.operationalState).toBe('action-required');
     expect(result.capabilityGroups[0]?.id).toBe('outlook/mail-read');
     expect(result.tools[0]?.name).toBe('outlook_search_emails');
+    expect(result.tools[0]?.skillOperationalState).toBe('action-required');
   });
 
   it('describes a specific capability group', async () => {
@@ -96,10 +98,25 @@ describe('helkin_skill_search', () => {
       toolName: string;
       safetyCompatible: boolean;
       requiresSubAgent: boolean;
+      skillOperationalState: string;
     };
 
     expect(result.toolName).toBe('outlook_search_emails');
     expect(result.requiresSubAgent).toBe(true);
     expect(result.safetyCompatible).toBe(true);
+    expect(result.skillOperationalState).toBe('action-required');
+  });
+
+  it('describes a specific skill with operational honesty', async () => {
+    const { helkin_skill_search } = await import('../../skills/core/handlers.js');
+    const result = await helkin_skill_search({ command: 'describe_skill', skillId: 'outlook' }) as {
+      skill: string;
+      operationalState: string;
+      operationalSummary: string;
+    };
+
+    expect(result.skill).toBe('outlook');
+    expect(result.operationalState).toBe('action-required');
+    expect(result.operationalSummary).toContain('needs user action');
   });
 });

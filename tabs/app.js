@@ -571,10 +571,15 @@
   }
 
   function badgeForStatus(status) {
-    if (status === "ready" || status === "success") return "badge-ok";
-    if (status === "blocked" || status === "action-required") return "badge-warn";
-    if (status === "not-installed" || status === "error") return "badge-error";
+    if (status === "ready" || status === "success" || status === "operational") return "badge-ok";
+    if (status === "action-required") return "badge-warn";
+    if (status === "operator-setup-required" || status === "blocked" || status === "not-installed" || status === "error") return "badge-error";
     return "badge-info";
+  }
+
+  function renderOperationalBadge(status) {
+    if (!status) return '';
+    return '<span class="badge ' + badgeForStatus(status) + '">' + esc(status) + '</span>';
   }
 
   function renderInlineTags(items, cls) {
@@ -1450,16 +1455,19 @@
 
   function renderSkillCard(s, showMetadata) {
     var badge = s.installed ? '<span class="badge badge-ok">Installed</span>' : '<span class="badge">Available</span>';
+    var operationalBadge = s.operationalState ? (' ' + renderOperationalBadge(s.operationalState)) : '';
     var linkBadge = s.linkRequired ? ' <span class="badge badge-warn">OAuth</span>' : '';
     var tools = (s.toolNames || []).map(function (t) { return '<code>' + esc(t) + '</code>'; }).join(', ');
     var fallbackSrc = buildSkillIconDataUrl(s);
     return '<div class="card skill-card">' +
       '<div class="skill-card-header">' +
       '<img src="' + esc(s.iconUrl) + '" alt="' + esc(s.displayName) + '" class="skill-icon" width="32" height="32" data-fallback-src="' + fallbackSrc + '" />' +
-      '<div><h3>' + esc(s.displayName) + '</h3>' + badge + linkBadge + '</div></div>' +
+      '<div><h3>' + esc(s.displayName) + '</h3>' + badge + operationalBadge + linkBadge + '</div></div>' +
       '<p>' + esc(s.shortDescription) + '</p>' +
+      (s.operationalSummary ? '<p class="muted">' + esc(s.operationalSummary) + '</p>' : '') +
       '<p class="muted">' + s.toolCount + ' tool' + (s.toolCount !== 1 ? 's' : '') + ': ' + tools + '</p>' +
       (showMetadata ? '<div class="skill-meta">' +
+        configRow('Operational', renderOperationalBadge(s.operationalState || 'unknown')) +
         configRow('Onboarding', '<span class="badge badge-info">' + esc(s.onboardingMethod) + '</span>') +
         configRow('Lifecycle', '<span class="badge badge-info">' + esc(s.lifecycleRules) + '</span>') +
         configRow('Dependencies', renderInlineTags(s.dependencies)) +
@@ -1476,9 +1484,11 @@
       '<img src="' + esc(s.iconUrl) + '" alt="' + esc(s.displayName) + '" class="skill-icon" width="32" height="32" data-fallback-src="' + fallbackSrc + '" />' +
       '<div><h3>' + esc(s.displayName) + '</h3>' +
       '<span class="badge badge-ok">Loaded</span>' +
+      (s.operationalState ? (' ' + renderOperationalBadge(s.operationalState)) : '') +
       (s.linkRequired ? ' <span class="badge badge-warn">OAuth</span>' : '') +
       '</div></div>' +
       '<p>' + esc(s.shortDescription) + '</p>' +
+      (s.operationalSummary ? '<p class="muted">' + esc(s.operationalSummary) + '</p>' : '') +
       '<div class="manage-actions">' +
       '<button class="cmd-btn cmd-btn-primary skill-action-btn" data-action="install" data-skill="' + esc(s.domain) + '">Check Activation</button>' +
       '<button class="cmd-btn skill-action-btn" data-action="uninstall" data-skill="' + esc(s.domain) + '">Check Uninstall Impact</button>' +

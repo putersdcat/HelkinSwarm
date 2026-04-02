@@ -9,6 +9,11 @@ export type DeterministicFollowUpToolCall = {
   arguments: Record<string, unknown>;
 };
 
+type RoutingMessageContext = {
+  quotedText?: string;
+  recentAssistantText?: string;
+};
+
 type ToolResult = {
   toolName: string;
   success: boolean;
@@ -17,9 +22,13 @@ type ToolResult = {
 };
 
 type DiscoverySearchResultShape = {
-  tools?: Array<{ name?: string }>;
+  tools?: Array<{ name?: string; domain?: string }>;
   capabilityGroups?: Array<{ id?: string; toolNames?: string[] }>;
-  skills?: Array<{ domain?: string; recommendedEntryTools?: string[] }>;
+  skills?: Array<{
+    domain?: string;
+    recommendedEntryTools?: string[];
+    operationalState?: string;
+  }>;
 };
 
 type ReadOnlyDiscoverySearchResultShape = {
@@ -30,6 +39,7 @@ type ReadOnlyDiscoverySearchResultShape = {
     domain?: string;
     displayName?: string;
     shortDescription?: string;
+    operationalState?: string;
     toolCount?: number;
   }>;
   tools?: Array<{
@@ -37,11 +47,13 @@ type ReadOnlyDiscoverySearchResultShape = {
     domain?: string;
     description?: string;
     risk?: string;
+    skillOperationalState?: string;
   }>;
   skills?: Array<{
     domain?: string;
     displayName?: string;
     shortDescription?: string;
+    operationalState?: string;
   }>;
 };
 
@@ -49,6 +61,10 @@ type DiscoveryModelOverride = 'primary' | 'secondary';
 
 function isCoreTool(name: string): boolean {
   return name.startsWith('helkin_');
+}
+
+function isNonChatRecoverableSkillState(state: string | undefined): boolean {
+  return state === 'operator-setup-required' || state === 'blocked';
 }
 
 function splitRecipients(raw: string): string[] {
@@ -73,6 +89,33 @@ function stripValidationNoise(userMessage: string): string {
 
 function collapseWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
+}
+
+function isExecutionProofPrompt(userMessage: string): boolean {
+  const normalized = stripValidationNoise(userMessage).toLowerCase();
+  return /(functional test|simple test|smoke test|test (?:it|this|that|the skill|the tool)|verify (?:it|this|that|the skill|the tool)|prove (?:it|this|that)|demonstrate|output the results|show the results)/.test(normalized);
+}
+
+export function buildContextAwareRoutingMessage(
+  userMessage: string,
+  context?: RoutingMessageContext,
+): string {
+  const cleaned = collapseWhitespace(userMessage);
+  if (!isExecutionProofPrompt(cleaned)) {
+    return cleaned;
+  }
+
+  const hints: string[] = [];
+  if (context?.quotedText) {
+    hints.push(`[Quoted context]\n${context.quotedText}`);
+  }
+  if (context?.recentAssistantText) {
+    hints.push(`[Recent assistant context]\n${context.recentAssistantText}`);
+  }
+
+  return hints.length > 0
+    ? `${cleaned}\n\n${hints.join('\n\n')}`
+    : cleaned;
 }
 
 function findExplicitToolNameMention(normalizedMessage: string, toolNames: Set<string>): string | undefined {
@@ -199,6 +242,69 @@ export function synthesizeExactToolCall(
     name: toolName,
     arguments: argumentsObject,
   };
+}
+
+function parseDeterministicSkillVerificationIntent(
+  userMessage: string,
+  toolNames: Set<string>,
+): DeterministicFollowUpToolCall | null {
+  const cleanedMessage = stripValidationNoise(userMessage);
+  const normalizedMessage = cleanedMessage.toLowerCase();
+
+  if (!isExecutionProofPrompt(cleanedMessage)) {
+    return null;
+  }
+
+  const mentionsGraphEnterprise = /(graphenterprise|microsoft graph enterprise mcp|graphenterprise_suggest_queries|graphenterprise_get|graphenterprise_list_properties)/.test(normalizedMessage);
+  if (mentionsGraphEnterprise) {
+    if (toolNames.has('graphenterprise_list_properties')) {
+      return {
+        name: 'graphenterprise_list_properties',
+        arguments: { entity: 'user' },
+      };
+    }
+
+    if (toolNames.has('graphenterprise_suggest_queries')) {
+      return {
+        name: 'graphenterprise_suggest_queries',
+        arguments: {
+          question: 'Show a safe read-only Microsoft Graph tenant reporting query for user counts.',
+        },
+      };
+    }
+  }
+
+  const mentionsOutlook = /(outlook|mailbox|email|attachments?)/.test(normalizedMessage);
+  if (mentionsOutlook && toolNames.has('outlook_search_emails')) {
+    return {
+      name: 'outlook_search_emails',
+      arguments: {
+        query: 'hasAttachment:true',
+        folder: 'inbox',
+        top: 5,
+      },
+    };
+  }
+
+  return null;
+}
+
+export function synthesizeDeterministicReadOnlyInitialToolCall(
+  userMessage: string,
+  tools: ToolDefinition[] | null | undefined,
+): DeterministicFollowUpToolCall | null {
+  if (!tools || tools.length === 0) return null;
+
+  const toolNames = new Set(tools.map((tool) => tool.function.name));
+
+  if (toolNames.has('outlook_search_emails')) {
+    const mailboxSearchIntent = parseDeterministicOutlookSearchIntent(userMessage);
+    if (mailboxSearchIntent) {
+      return mailboxSearchIntent;
+    }
+  }
+
+  return parseDeterministicSkillVerificationIntent(userMessage, toolNames);
 }
 
 export function buildDeterministicExactToolResponse(
@@ -675,10 +781,13 @@ export function synthesizeDeterministicFollowUpToolCall(
   }
 
   if (toolNames.has('outlook_send_email')) {
-    return parseQuotedSendEmailIntent(userMessage);
+    const sendEmailIntent = parseQuotedSendEmailIntent(userMessage);
+    if (sendEmailIntent) {
+      return sendEmailIntent;
+    }
   }
 
-  return null;
+  return parseDeterministicSkillVerificationIntent(userMessage, toolNames);
 }
 
 export function deriveSelectiveFollowUpToolSchemas(
@@ -693,12 +802,24 @@ export function deriveSelectiveFollowUpToolSchemas(
   }
 
   const selectedNames = new Set<string>();
+  let suppressedNonChatRecoverableSkill = false;
+
   for (const tool of discoveryResult.result.tools ?? []) {
-    if (tool.name) {
+    const skill = tool.domain ? getDiscoverySkill(tool.domain) : undefined;
+    if (tool.name && !isNonChatRecoverableSkillState(skill?.operationalState)) {
       selectedNames.add(tool.name);
+    } else if (tool.name && isNonChatRecoverableSkillState(skill?.operationalState)) {
+      suppressedNonChatRecoverableSkill = true;
     }
   }
   for (const group of discoveryResult.result.capabilityGroups ?? []) {
+    const groupDomain = group.id?.split('/')[0];
+    const skill = groupDomain ? getDiscoverySkill(groupDomain) : undefined;
+    if (isNonChatRecoverableSkillState(skill?.operationalState)) {
+      suppressedNonChatRecoverableSkill = true;
+      continue;
+    }
+
     for (const toolName of group.toolNames ?? []) {
       selectedNames.add(toolName);
     }
@@ -710,13 +831,20 @@ export function deriveSelectiveFollowUpToolSchemas(
     }
   }
   for (const skill of discoveryResult.result.skills ?? []) {
+    if (isNonChatRecoverableSkillState(skill.operationalState)) {
+      suppressedNonChatRecoverableSkill = true;
+      continue;
+    }
+
     for (const toolName of skill.recommendedEntryTools ?? []) {
       selectedNames.add(toolName);
     }
   }
 
   if (selectedNames.size === 0) {
-    return null;
+    return suppressedNonChatRecoverableSkill
+      ? toolRegistry.toFunctionSchemas().filter((tool) => isCoreTool(tool.function.name))
+      : null;
   }
 
   return toolRegistry.toFunctionSchemas().filter((tool) =>
@@ -739,10 +867,10 @@ export function buildDiscoveryDeadEndResponse(userMessage: string): string {
   const normalized = userMessage.toLowerCase();
 
   if (/(calendar|meeting|appointment|event|schedule)/.test(normalized)) {
-    return 'I searched the installed skills for a calendar action, but I did not reach an executable calendar tool from discovery, so I have not created an event. Please restate the request with the event subject plus the date and time, and include any attendees or reminder details you want.';
+    return 'I found the relevant calendar capability, but I did not reach a runnable calendar action yet, so I have not created an event. Please restate the request with the event subject plus the date and time, and include any attendees or reminder details you want.';
   }
 
-  return 'I searched the installed skills for a matching action, but I did not reach an executable tool from discovery, so I have not changed anything yet. Please restate the request with the exact action and the key details you want me to use.';
+  return 'I found a likely matching capability, but I did not reach a runnable tool yet, so I have not changed anything. Please restate the request with the exact action and the key details you want me to use.';
 }
 
 export function buildReadOnlyDiscoveryResponse(
@@ -766,34 +894,43 @@ export function buildReadOnlyDiscoveryResponse(
     .filter((name: string | undefined): name is string => typeof name === 'string' && name.length > 0);
 
   if (!topTool && !topGroup && !topSkill) {
-    return `I stayed in discovery-only mode and searched for \`${query}\`, but I did not find a strong matching skill or tool. Try a broader request or use \`/skillSearch ${query}\` for a direct read-only lookup.`;
+    return `I checked the installed skills without executing anything and searched for \`${query}\`, but I did not find a strong matching skill or tool. Try a broader request or use \`/skillSearch ${query}\` for a direct read-only lookup.`;
   }
 
-  const parts = ['I stayed in discovery-only mode.'];
+  const parts = ['I checked the installed skills without executing anything yet.'];
 
   if (topGroup?.id) {
     const domain = topGroup.domain ? ` (${topGroup.domain})` : '';
     const description = topGroup.shortDescription ? ` — ${topGroup.shortDescription}` : '';
-    parts.push(`Best matching capability group: \`${topGroup.id}\`${domain}${description}.`);
+    const readinessState = topGroup.operationalState
+      ?? (topGroup.domain ? getDiscoverySkill(topGroup.domain)?.operationalState : undefined);
+    const readiness = readinessState ? ` — status: ${readinessState}` : '';
+    parts.push(`Best matching capability group: \`${topGroup.id}\`${domain}${description}${readiness}.`);
   }
 
   if (topTool?.name) {
     const domain = topTool.domain ? ` (${topTool.domain}${topTool.risk ? `, risk: ${topTool.risk}` : ''})` : '';
     const description = topTool.description ? ` — ${topTool.description}` : '';
-    parts.push(`Best matching tool: \`${topTool.name}\`${domain}${description}.`);
+    const readinessState = topTool.skillOperationalState
+      ?? (topTool.domain ? getDiscoverySkill(topTool.domain)?.operationalState : undefined);
+    const readiness = readinessState ? ` — skill status: ${readinessState}` : '';
+    parts.push(`Best matching tool: \`${topTool.name}\`${domain}${description}${readiness}.`);
   }
 
   if (topSkill?.domain) {
     const displayName = topSkill.displayName ? `${topSkill.displayName} ` : '';
     const description = topSkill.shortDescription ? ` — ${topSkill.shortDescription}` : '';
-    parts.push(`Best matching skill: ${displayName}\`${topSkill.domain}\`${description}.`);
+    const readinessState = topSkill.operationalState
+      ?? getDiscoverySkill(topSkill.domain)?.operationalState;
+    const readiness = readinessState ? ` — status: ${readinessState}` : '';
+    parts.push(`Best matching skill: ${displayName}\`${topSkill.domain}\`${description}${readiness}.`);
   }
 
   if (alternateTools.length > 0) {
     parts.push(`Other likely matches: ${alternateTools.map((toolName: string) => `\`${toolName}\``).join(', ')}.`);
   }
 
-  parts.push('No non-discovery tools were executed.');
+  parts.push('I have not run the underlying skill yet.');
   return parts.join(' ');
 }
 

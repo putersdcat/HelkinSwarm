@@ -210,6 +210,15 @@ Use one of these classes when evaluating whether a skill is ready to be shown to
 
 The first three values are current manifest-backed onboarding modes. The fourth is an operational rollout classification that must be applied during design and release review even if the manifest schema has not yet been extended to encode it directly.
 
+For runtime/UI honesty, the product-facing skill state should be expressed separately from the rollout class. At minimum, a surfaced skill should be distinguishable as:
+
+- `operational`
+- `action-required`
+- `operator-setup-required`
+- `blocked`
+
+This prevents the UI from collapsing "manifest exists" into "fully usable right now." A skill can be installed and still be non-operational until link, tenant, permission, or backend prerequisites are genuinely satisfied.
+
 #### Mandatory preflight readiness checks
 
 Before a config-gated skill is treated as available to the orchestrator, the rollout must prove all of the following:
@@ -284,6 +293,8 @@ The `core` skill is always present and cannot be uninstalled. It provides Helkin
 | `helkin_health_check` | low | Returns bot version, runtime health, and component status |
 | `helkin_list_skills` | low | Lists all loaded skill manifests and their domains |
 | `helkin_skill_search` | low | Discovery-only skill/tool browser with `help`, `search`, `describe_skill`, `describe_tool`, and `list_domains` for narrowing the capability surface before execution |
+| `helkin_mcp_registry_search` | low | Searches a synced local cache of official MCP Registry candidates with `help`, `search`, `status`, and `refresh`, keeping external candidates distinct from installed HelkinSwarm skills |
+| `helkin_mcp_forge` | medium | Drafts, inspects, and locally approves McpForge onboarding bundles for discovered MCP Registry candidates after MCP smoke-test validation |
 | `helkin_get_costs` | low | Queries Azure Cost Management for real MTD spend in the stamp resource group (#232) |
 | `helkin_test_confirmation` | medium | Sends a test Adaptive Card confirmation to verify the verification pipeline end-to-end |
 | `helkin_save_preferences` | low | Persists user preferences to Cosmos DB skill vault |
@@ -292,6 +303,13 @@ The `core` skill is always present and cannot be uninstalled. It provides Helkin
 | `helkin_install_skill` | low | Checks installation readiness for a skill; resolves dependencies and returns step-by-step onboarding guide (#200) |
 | `helkin_uninstall_skill` | medium | Checks if a skill can be safely uninstalled; blocks if any installed skill depends on it (bidirectional dependency check) (#200) |
 | `helkin_whoami` | low | Returns the current user's role (`owner`/`user`/`guest`) and permissions in HelkinSwarm (#248) |
+
+The MCP tools above are explicit management/discovery surfaces that are already wired today via `skills/core/handlers.ts`.
+
+Important scope note:
+- their existence does **not** mean the orchestrator already performs an automatic fallback from local installed-skill discovery into MCP Registry candidate search
+- current verified MCP Registry entry points are the explicit core tools and the owner-facing Skills Library registry UI
+- follow-on automatic fallback and update-tracking work is tracked in `docs/0u-MCP-Forge-Lightweight-Skill-Integration-and-Automatic-Update-Mechanism.md`, `#481`, and `#482`
 
 ### Application-Level RBAC (`src/auth/roles.ts`)
 

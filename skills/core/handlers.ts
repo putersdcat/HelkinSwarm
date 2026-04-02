@@ -34,13 +34,27 @@ export const helkin_health_check: ToolHandler = async (_args) => {
 
 export const helkin_list_skills: ToolHandler = async () => {
   const { toolRegistry } = await import('../../src/tools/toolRegistry.js');
+  const { getDiscoverySkill } = await import('../../src/capabilities/skillDiscoveryIndex.js');
 
   const tools = toolRegistry.getAll();
-  const domains = new Map<string, { toolCount: number; tools: string[] }>();
+  const domains = new Map<string, {
+    toolCount: number;
+    tools: string[];
+    displayName?: string;
+    operationalState?: string;
+    operationalSummary?: string;
+  }>();
 
   for (const tool of tools) {
     const domain = tool.name.split('_')[0] ?? 'unknown';
-    const entry = domains.get(domain) ?? { toolCount: 0, tools: [] };
+    const discoverySkill = getDiscoverySkill(domain);
+    const entry = domains.get(domain) ?? {
+      toolCount: 0,
+      tools: [],
+      displayName: discoverySkill?.displayName,
+      operationalState: discoverySkill?.operationalState,
+      operationalSummary: discoverySkill?.operationalSummary,
+    };
     entry.toolCount++;
     entry.tools.push(tool.name);
     domains.set(domain, entry);
@@ -115,6 +129,8 @@ export const helkin_skill_search: ToolHandler = async (args) => {
           domain: hit.domain,
           displayName: skill?.displayName ?? hit.id,
           shortDescription: skill?.shortDescription ?? '',
+          operationalState: skill?.operationalState ?? 'operational',
+          operationalSummary: skill?.operationalSummary ?? '',
           recommendedEntryTools: skill?.recommendedEntryTools ?? [],
           score: hit.score,
           matchReasons: hit.matchReasons,
@@ -122,11 +138,14 @@ export const helkin_skill_search: ToolHandler = async (args) => {
       }),
       capabilityGroups: result.capabilityGroups.map((hit) => {
         const group = getDiscoveryCapabilityGroup(hit.id);
+        const skill = getDiscoverySkill(hit.domain);
         return {
           id: hit.id,
           domain: hit.domain,
           displayName: group?.displayName ?? hit.id,
           shortDescription: group?.shortDescription ?? '',
+          operationalState: skill?.operationalState ?? 'operational',
+          operationalSummary: skill?.operationalSummary ?? '',
           toolCount: group?.toolCount ?? 0,
           toolNames: group?.toolNames ?? [],
           upstreamNamespace: group?.upstreamNamespace ?? null,
@@ -136,11 +155,14 @@ export const helkin_skill_search: ToolHandler = async (args) => {
       }),
       tools: result.tools.map((hit) => {
         const tool = getDiscoveryTool(hit.id);
+        const skill = getDiscoverySkill(hit.domain);
         return {
           name: hit.id,
           domain: hit.domain,
           description: tool?.description ?? '',
           risk: tool?.risk ?? 'low',
+          skillOperationalState: skill?.operationalState ?? 'operational',
+          skillOperationalSummary: skill?.operationalSummary ?? '',
           allowedModelLane: tool?.allowedModelLane ?? 'any',
           safetyCompatible: tool ? toolRegistry.isAllowedBySafetyMode(tool.name) : false,
           score: hit.score,
@@ -170,6 +192,8 @@ export const helkin_skill_search: ToolHandler = async (args) => {
       shortDescription: group.shortDescription,
       discoveryHints: group.discoveryHints,
       useWhen: group.useWhen,
+      operationalState: getDiscoverySkill(group.domain)?.operationalState ?? 'operational',
+      operationalSummary: getDiscoverySkill(group.domain)?.operationalSummary ?? '',
       toolNames: group.toolNames,
       toolCount: group.toolCount,
       upstreamNamespace: group.upstreamNamespace ?? null,
@@ -194,6 +218,8 @@ export const helkin_skill_search: ToolHandler = async (args) => {
       skill: skill.domain,
       displayName: skill.displayName,
       shortDescription: skill.shortDescription,
+      operationalState: skill.operationalState,
+      operationalSummary: skill.operationalSummary,
       discoveryHints: skill.discoveryHints,
       orchestratorUseCases: skill.orchestratorUseCases,
       recommendedEntryTools: skill.recommendedEntryTools,
@@ -219,6 +245,8 @@ export const helkin_skill_search: ToolHandler = async (args) => {
       command: 'describe_tool',
       toolName: tool.name,
       domain: tool.domain,
+      skillOperationalState: getDiscoverySkill(tool.domain)?.operationalState ?? 'operational',
+      skillOperationalSummary: getDiscoverySkill(tool.domain)?.operationalSummary ?? '',
       description: tool.description,
       risk: tool.risk,
       dataSensitivity: tool.dataSensitivity,
@@ -246,6 +274,8 @@ export const helkin_skill_search: ToolHandler = async (args) => {
         domain: skill.domain,
         displayName: skill.displayName,
         shortDescription: skill.shortDescription,
+        operationalState: skill.operationalState,
+        operationalSummary: skill.operationalSummary,
         toolCount: skill.toolCount,
       })),
     };
