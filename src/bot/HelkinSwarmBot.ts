@@ -77,6 +77,7 @@ import { RuntimeFileConsentContextSchema } from '../orchestrator/sendReplyActivi
 import { ingestTeamsAttachments } from './inboundAttachmentIngestion.js';
 import { buildOverseerDedupIdentity } from './overseerDedupIdentity.js';
 import { buildTeamsNativeEmojiEasterEggReply } from './teamsNativeEmojiEasterEggs.js';
+import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';
 
 const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
 
@@ -1009,6 +1010,14 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         messageId,
       );
       if (existingInstanceId) return false;
+
+      recordLimbicIngressDecision({
+        source: 'teams-message',
+        userId,
+        correlationId: eventCorrelationId,
+        compatibilityMode: getEnvConfig().livingMindCompatibilityMode,
+        hasActiveSession: false,
+      });
 
       console.info(`[HelkinSwarmBot] DEDUP-PASS durable — starting ${identity.instanceId} bucket=${identity.timeBucket}`);
       await client.startNew('overseer', { instanceId: identity.instanceId, input: event });

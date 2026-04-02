@@ -13,4 +13,20 @@ describe('HelkinSwarmBot overseer dedup guard routing', () => {
     expect(source).toContain('await this.suppressDuplicateAck(context, userId, correlationId, ackResponse.id);');
     expect(helperSource).toContain('message:${input.messageId ?? \'none\'}');
   });
+
+  it('routes overseer starts through the limbic ingress compatibility seam', () => {
+    const botSource = readFileSync('src/bot/HelkinSwarmBot.ts', 'utf8');
+    const replaySource = readFileSync('src/orchestrator/pendingIntentReplay.ts', 'utf8');
+    const indexSource = readFileSync('src/functions/index.ts', 'utf8');
+    const envSource = readFileSync('src/config/envConfig.ts', 'utf8');
+
+    expect(indexSource).toContain("import '../orchestrator/limbicIngressActivity.js';");
+    expect(botSource).toContain("import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';");
+    expect(botSource).toContain("source: 'teams-message'");
+    expect(botSource).toContain('compatibilityMode: getEnvConfig().livingMindCompatibilityMode');
+    expect(replaySource).toContain("import { recordLimbicIngressDecision } from './limbicIngressActivity.js';");
+    expect(replaySource).toContain("source: 'pending-intent-replay'");
+    expect(envSource).toContain('livingMindCompatibilityMode: z.boolean().default(true),');
+    expect(envSource).toContain("process.env['LIVING_MIND_COMPAT_MODE'] === undefined");
+  });
 });

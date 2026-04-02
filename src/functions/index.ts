@@ -56,6 +56,7 @@ import '../orchestrator/hookResolutionActivity.js';
 import '../orchestrator/startupRecoveryActivity.js';
 import '../orchestrator/terminateOrchestrationActivity.js';
 import '../orchestrator/planActivity.js';
+import '../orchestrator/limbicIngressActivity.js';
 import '../orchestrator/skillForgePrototypeActivity.js';
 
 // Capability loader — scan skills/ directory and register tool handlers

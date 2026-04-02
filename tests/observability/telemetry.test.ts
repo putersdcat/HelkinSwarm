@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { trackEvent } from '../../src/observability/telemetry.js';
 import { getTraceTree } from '../../src/observability/sessionTracer.js';
+import {
+  evaluateLimbicIngress,
+  recordLimbicIngressDecision,
+} from '../../src/orchestrator/limbicIngressActivity.js';
 
 describe('telemetry trace detail enrichment', () => {
   it('records auth method/source/scope details in the runtime trace for proof workflows', () => {
@@ -44,5 +48,44 @@ describe('telemetry trace detail enrichment', () => {
     expect(handlerPhase?.detail).toContain('scope: write');
     expect(handlerPhase?.detail).toContain('source: scoped');
     expect(handlerPhase?.detail).toContain('handler: outlook');
+  });
+
+  it('records limbic ingress source and decision details for compatibility-mode proof', () => {
+    const compatDecision = evaluateLimbicIngress({
+      source: 'teams-message',
+      userId: 'u1',
+      correlationId: 'corr-499-compat',
+      compatibilityMode: true,
+      hasActiveSession: false,
+    });
+    expect(compatDecision.decision).toBe('compat-start');
+    expect(compatDecision.reason).toContain('Compatibility mode');
+
+    const queuedDecision = evaluateLimbicIngress({
+      source: 'teams-message',
+      userId: 'u1',
+      correlationId: 'corr-499-queue',
+      compatibilityMode: false,
+      hasActiveSession: true,
+    });
+    expect(queuedDecision.decision).toBe('queue');
+    expect(queuedDecision.reason).toContain('active session');
+
+    const correlationId = 'corr-499-trace';
+    recordLimbicIngressDecision({
+      source: 'pending-intent-replay',
+      userId: 'u1',
+      correlationId,
+      compatibilityMode: true,
+      hasActiveSession: false,
+    });
+
+    const trace = getTraceTree(correlationId);
+    const limbicPhase = trace?.phases.find((phase) => phase.name === 'LimbicDecision');
+    const overridePhase = trace?.phases.find((phase) => phase.name === 'PolicyOverrideApplied');
+
+    expect(limbicPhase?.detail).toContain('source: pending-intent-replay');
+    expect(limbicPhase?.detail).toContain('decision: compat-start');
+    expect(overridePhase?.detail).toContain('authority: living-mind-compatibility-mode');
   });
 });

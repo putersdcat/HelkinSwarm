@@ -3,6 +3,7 @@
 import type { DurableClient } from 'durable-functions';
 import type { ConversationReference } from 'botbuilder';
 import { saveConversationReference } from '../bot/conversationStore.js';
+import { getEnvConfig } from '../config/envConfig.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import { trackEvent } from '../observability/telemetry.js';
 import {
@@ -13,6 +14,7 @@ import {
   markIntentReceived,
   type PendingIntent,
 } from './pendingIntentStore.js';
+import { recordLimbicIngressDecision } from './limbicIngressActivity.js';
 import type { NewMessageEvent } from './overseer.js';
 
 export interface PendingIntentReplayDecision {
@@ -94,6 +96,14 @@ export async function replayPendingIntent(
     };
 
     try {
+      recordLimbicIngressDecision({
+        source: 'pending-intent-replay',
+        userId: intent.userId,
+        correlationId: intent.correlationId ?? intent.id,
+        compatibilityMode: getEnvConfig().livingMindCompatibilityMode,
+        hasActiveSession: false,
+      });
+
       await client.startNew('overseer', { instanceId, input: event });
     } catch (error) {
       if (!isReplayConflict(error)) {

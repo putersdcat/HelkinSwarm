@@ -44,6 +44,7 @@ export type TelemetryEventName =
   | 'GraphSubscriptionRenewed'
   | 'PendingIntentCreated'
   | 'PendingIntentRecovered'
+  | 'LimbicDecision'
   | 'StaleAckRecovered'
   | 'StateLoaded'
   | 'StateSaved'
@@ -110,6 +111,7 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   DiscoveryToolSubsetSelected: 'orchestrator',
   McpRegistryCatalogRefreshed: 'tool-dispatch',
   McpRegistrySearchExecuted: 'tool-dispatch',
+  LimbicDecision: 'orchestrator',
   PolicyOverrideApplied: 'orchestrator',
   ClarificationRequested: 'orchestrator',
   ClarificationRetryRequested: 'orchestrator',
@@ -204,6 +206,9 @@ function buildTraceDetail(event: TelemetryEvent): string {
   if (p['query']) parts.push(`query: ${p['query']}`);
   if (p['selectedTools']) parts.push(`selected: ${p['selectedTools']}`);
   if (p['authority']) parts.push(`authority: ${p['authority']}`);
+  if (p['source']) parts.push(`source: ${p['source']}`);
+  if (p['decision']) parts.push(`decision: ${p['decision']}`);
+  if (p['reason']) parts.push(`reason: ${p['reason']}`);
 
   return parts.length > 0 ? parts.join(', ') : event.name;
 }
