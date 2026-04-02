@@ -640,6 +640,39 @@ describe('discoveryToolInjection', () => {
     });
   });
 
+  it('synthesizes a deterministic exact-tool call for non-core initial-turn prompts too', async () => {
+    const { synthesizeExactToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const call = synthesizeExactToolCall(
+      'Use the exact tool outlook_list_attachments with messageId "msg-123". Return only compact JSON with messageId and attachments.',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'helkin_skill_search',
+            description: 'discover tools',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_list_attachments',
+            description: 'list attachments',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(call).toEqual({
+      name: 'outlook_list_attachments',
+      arguments: {
+        messageId: 'msg-123',
+      },
+    });
+  });
+
   it('synthesizes a deterministic exact-tool call for structured core-tool validation prompts', async () => {
     const { synthesizeExactToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
 

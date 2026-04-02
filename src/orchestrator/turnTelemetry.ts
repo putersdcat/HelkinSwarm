@@ -15,6 +15,7 @@ export interface TurnTelemetryData {
   correlationId: string;
   totalMs: number;
   model: string;
+  modelSequence?: string[];
   promptTokens: number;
   completionTokens: number;
   spans: TelemetrySpan[];
@@ -151,7 +152,7 @@ export function formatTelemetryFooter(
   const uptime = formatUptime();
 
   if (mode === 'minimal') {
-    const line = `[E2E:${data.totalMs}ms|m:${shortModel}|${moneyEmoji}${costStr}|🕐${uptime}]`;
+    const line = `[E2E:${data.totalMs}ms|m:${shortModel}|${moneyEmoji}${costStr}|🕐${uptime}|corr:${shortCorr}]`;
     return '\n\n---\n`' + line + '`';
   }
 
@@ -173,6 +174,10 @@ export function formatTelemetryFooter(
     `pt:${data.promptTokens}`,
     `ct:${data.completionTokens}`,
   ];
+
+  if (data.modelSequence && data.modelSequence.length > 1) {
+    parts.push(`models:${data.modelSequence.map(abbreviateModel).join('→')}`);
+  }
 
   // Add span breakdowns
   for (const span of data.spans) {

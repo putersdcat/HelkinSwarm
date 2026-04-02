@@ -341,8 +341,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
   // 2. Call LLM (global frontier model via Foundry client)
   spanStart = context.df.currentUtcDateTime.getTime();
+  const allToolSchemas = toolRegistry.toFunctionSchemas();
   const initialToolSchemas = getDiscoveryFirstToolSchemas();
-  const deterministicInitialToolCall = synthesizeExactToolCall(effectiveTaskMessage, initialToolSchemas);
+  const deterministicInitialToolCall = synthesizeExactToolCall(effectiveTaskMessage, allToolSchemas);
   const llmResult: LlmResult = deterministicInitialToolCall
     ? {
         content: '',
@@ -374,6 +375,14 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // Cumulative token tracking across all LLM calls in this session (#253)
   let cumulativeTokensUsed = llmResult.tokensUsed + planResult.planTokensUsed;
   let cumulativePromptTokens = llmResult.promptTokens;
+  let telemetryModel = llmResult.model;
+  const telemetryModelSequence: string[] = [llmResult.model];
+  const rememberTelemetryModel = (model: string): void => {
+    telemetryModel = model;
+    if (telemetryModelSequence[telemetryModelSequence.length - 1] !== model) {
+      telemetryModelSequence.push(model);
+    }
+  };
   const operationalNotices = new Set(llmResult.operationalNotices ?? []);
 
   // Counters for telemetry footer (#321)
@@ -667,7 +676,6 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       // enabling chained reasoning (e.g. "find my latest email, then forward it").
       // Max rounds from toolBudget or default 5, capped at 10.
       const maxToolRounds = Math.min(input.toolBudget ?? 5, 10);
-      const allToolSchemas = toolRegistry.toFunctionSchemas();
       const selectiveFollowUpSchemas = deriveSelectiveFollowUpToolSchemas(toolResults?.results ?? []);
       const discoveryFollowUpModelOverride = getDiscoveryFollowUpModelOverride(toolResults?.results ?? []);
       const effectiveFollowUpModelOverride = resolvedModelOverride ?? discoveryFollowUpModelOverride;
@@ -735,6 +743,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             operationalNotices: [],
           }
         : yield context.df.callActivity('llmFollowUpActivity', followUpInput);
+      rememberTelemetryModel(followUp.model);
       cumulativeTokensUsed += followUp.tokensUsed;
       cumulativePromptTokens += followUp.promptTokens;
       for (const notice of followUp.operationalNotices ?? []) {
@@ -788,6 +797,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             ],
           };
           followUp = yield context.df.callActivity('llmFollowUpActivity', truncRetryInput);
+          rememberTelemetryModel(followUp.model);
           cumulativeTokensUsed += followUp.tokensUsed;
           cumulativePromptTokens += followUp.promptTokens;
           for (const notice of followUp.operationalNotices ?? []) {
@@ -1075,6 +1085,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           additionalTurns,
         };
         followUp = yield context.df.callActivity('llmFollowUpActivity', roundFollowUpInput);
+        rememberTelemetryModel(followUp.model);
         cumulativeTokensUsed += followUp.tokensUsed;
         cumulativePromptTokens += followUp.promptTokens;
         for (const notice of followUp.operationalNotices ?? []) {
@@ -1104,7 +1115,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     : responseContent;
   let replyMessage = displayResponse;
 
-  const modelDisclosure = buildModelOverrideDisclosure(resolvedModelOverride, llmResult.model);
+  const modelDisclosure = buildModelOverrideDisclosure(resolvedModelOverride, telemetryModel);
   if (modelDisclosure) {
     replyMessage = `${modelDisclosure}\n\n${replyMessage}`;
   }
@@ -1121,7 +1132,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     const telemetryData: TurnTelemetryData = {
       correlationId,
       totalMs: turnEndTime - turnStartTime,
-      model: llmResult.model,
+      model: telemetryModel,
+      modelSequence: telemetryModelSequence,
       promptTokens: cumulativePromptTokens,
       completionTokens: cumulativeTokensUsed - cumulativePromptTokens,
       spans,

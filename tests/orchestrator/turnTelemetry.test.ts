@@ -74,6 +74,7 @@ describe('formatTelemetryFooter', () => {
     expect(result).toContain('m:grok-4.1f');
     expect(result).toContain('$');
     expect(result).toContain('🕐');
+    expect(result).toContain('corr:abcdef12');
   });
 
   it('standard mode includes tokens, tools count, cost, uptime, and correlation', () => {
@@ -101,11 +102,13 @@ describe('formatTelemetryFooter', () => {
     const data: TurnTelemetryData = {
       ...baseTelemetry,
       toolCalls: ['outlook_list_messages', 'github_search_repos'],
+      modelSequence: ['grok-4-1-fast-non-reasoning', 'gpt-5.4-mini'],
     };
     const result = formatTelemetryFooter('verbose', data);
     expect(result).toContain('safe:✓');
     expect(result).toContain('outlook_list_messages');
     expect(result).toContain('github_search_repos');
+    expect(result).toContain('models:grok-4.1f→gpt-5.4-mini');
     expect(result).toContain('$');
     expect(result).toContain('corr:abcdef12');
   });

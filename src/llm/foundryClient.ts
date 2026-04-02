@@ -6,7 +6,7 @@ import { getModelRouting, getFallbackChain, type ModelRouting } from './modelRou
 import { getBearerToken } from '../auth/identity.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { isModelDegraded, markModelDegraded, clearModelDegraded } from './modelCircuitBreaker.js';
-import { reportLlmSuccess, reportLlmFailure, registerModels, isAllModelsDown } from './llmHealthTracker.js';
+import { reportLlmSuccess, reportLlmFailure, registerModels, isAllModelsDown, isModelTrackedDown } from './llmHealthTracker.js';
 import { trackEvent } from '../observability/telemetry.js';
 
 // ---------------------------------------------------------------------------
@@ -250,7 +250,7 @@ export class FoundryClient {
 
       // Re-check degraded status before EACH attempt — catches models degraded
       // by concurrent requests during the cascade (#313-B).
-      if (isModelDegraded(routing.deploymentName)) {
+      if (isModelDegraded(routing.deploymentName) || isModelTrackedDown(routing.deploymentName)) {
         // Skip silently; don't count as an "attempt" or waste budget.
         continue;
       }
@@ -274,6 +274,7 @@ export class FoundryClient {
         clearModelDegraded(routing.deploymentName);
         reportLlmSuccess(routing.deploymentName);
         if (failoverSteps.length > 0) {
+          result.model = routing.deploymentName;
           result.failoverSteps = [...failoverSteps];
           // Emit chain-level summary telemetry (#313-D)
           trackEvent({
@@ -308,7 +309,9 @@ export class FoundryClient {
           markModelDegraded(routing.deploymentName, reason, retryAfterCooldown);
 
           // Find the next non-degraded candidate for the failover step log.
-          const nextCandidate = chain.slice(i + 1).find(r => !isModelDegraded(r.deploymentName));
+          const nextCandidate = chain.slice(i + 1).find((r) =>
+            !isModelDegraded(r.deploymentName) && !isModelTrackedDown(r.deploymentName),
+          );
           if (nextCandidate) {
             failoverSteps.push({
               fromModel: routing.deploymentName,

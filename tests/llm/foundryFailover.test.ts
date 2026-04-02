@@ -205,6 +205,30 @@ describe('FoundryClient failover', () => {
     expect(response.model).toBe('FW-Kimi-K2.5');
   });
 
+  it('skips a primary model already marked down by the aggregate health tracker and starts on the next fallback', async () => {
+    const { FoundryClient } = await loadFoundryClientModule();
+    const tracker = await import('../../src/llm/llmHealthTracker.js');
+
+    tracker.reportLlmFailure('grok-4-1-fast-non-reasoning');
+    tracker.reportLlmFailure('grok-4-1-fast-non-reasoning');
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(makeOkResponse('gpt-5.4-mini'));
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new FoundryClient(makeRoutingConfig());
+
+    const response = await client.chatCompletion({
+      messages: [{ role: 'user', content: 'skip the down primary' }],
+      correlationId: 'corr-skip-down-primary',
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('/deployments/gpt-5.4-mini/chat/completions');
+    expect(response.model).toBe('gpt-5.4-mini');
+  });
+
   it('converts a hung fetch into a TimeoutError via the hard timeout wrapper (#325)', async () => {
     const { fetchWithHardTimeout } = await loadFoundryClientModule();
 

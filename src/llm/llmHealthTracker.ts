@@ -59,6 +59,11 @@ function isModelDown(entry: ModelHealthEntry | undefined): boolean {
   return (Date.now() - entry.lastFailureAt) < FAILURE_WINDOW_MS;
 }
 
+/** Check whether a specific model is currently considered down by the health tracker. */
+export function isModelTrackedDown(deploymentName: string): boolean {
+  return isModelDown(healthMap.get(deploymentName));
+}
+
 /**
  * Get aggregate LLM health across all known models.
  * - 'ok': at least one model has succeeded recently or never failed

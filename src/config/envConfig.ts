@@ -42,7 +42,7 @@ const EnvConfigSchema = z.object({
   devLoopEnabled: z.boolean().default(false),
 
   // Turn-by-turn debug telemetry (spec: 0n-Turn-by-Turn-Debug-Telemetry.md)
-  devTelemetryMode: z.enum(['off', 'minimal', 'standard', 'verbose']).default('off'),
+  devTelemetryMode: z.enum(['off', 'minimal', 'standard', 'verbose']).default('verbose'),
 
   // Dirty dev / observability-off mode (#382)
   dirtyDevMode: z.boolean().default(false),
