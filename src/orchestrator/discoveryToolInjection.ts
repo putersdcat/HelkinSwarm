@@ -77,6 +77,70 @@ function findExplicitToolNameMention(normalizedMessage: string, toolNames: Set<s
   return undefined;
 }
 
+function parseScalarExactToolArgumentValue(rawValue: string): string | number | boolean {
+  const trimmed = rawValue.trim();
+  if (/^(true|false)$/i.test(trimmed)) {
+    return trimmed.toLowerCase() === 'true';
+  }
+
+  if (/^-?\d+(?:\.\d+)?$/.test(trimmed)) {
+    return Number(trimmed);
+  }
+
+  return trimmed;
+}
+
+function parseExactToolArgumentSegment(argumentSegment: string): Record<string, unknown> {
+  const parsedArgs: Record<string, unknown> = {};
+  const assignmentPattern = /([a-zA-Z][a-zA-Z0-9_]*)\s+(?:"([^"]*)"|'([^']*)'|`([^`]*)`|(true|false|-?\d+(?:\.\d+)?))/g;
+
+  for (const match of argumentSegment.matchAll(assignmentPattern)) {
+    const key = match[1]?.trim();
+    const rawValue = match[2] ?? match[3] ?? match[4] ?? match[5];
+    if (!key || rawValue === undefined) {
+      continue;
+    }
+
+    parsedArgs[key] = parseScalarExactToolArgumentValue(rawValue);
+  }
+
+  return parsedArgs;
+}
+
+export function synthesizeExactToolCall(
+  userMessage: string,
+  tools: ToolDefinition[] | null | undefined,
+): DeterministicFollowUpToolCall | null {
+  if (!tools || tools.length === 0) return null;
+
+  const cleaned = stripValidationNoise(userMessage);
+  const match = cleaned.match(/use the exact tool\s+([a-z][a-z0-9_]*)\s+with\s+(.+?)(?:\.\s*return only\b|$)/i);
+  if (!match) {
+    return null;
+  }
+
+  const toolName = match[1]?.trim();
+  const argumentSegment = match[2]?.trim();
+  if (!toolName || !argumentSegment) {
+    return null;
+  }
+
+  const availableToolNames = new Set(tools.map((tool) => tool.function.name));
+  if (!availableToolNames.has(toolName)) {
+    return null;
+  }
+
+  const argumentsObject = parseExactToolArgumentSegment(argumentSegment);
+  if (Object.keys(argumentsObject).length === 0) {
+    return null;
+  }
+
+  return {
+    name: toolName,
+    arguments: argumentsObject,
+  };
+}
+
 export function isReadOnlyDiscoveryRequest(userMessage: string): boolean {
   const normalized = stripValidationNoise(userMessage).toLowerCase();
   const hasReadOnlyConstraint = /(discovery[- ]only|read[- ]only|do not execute|don't execute|without executing|non-discovery tools)/.test(normalized);

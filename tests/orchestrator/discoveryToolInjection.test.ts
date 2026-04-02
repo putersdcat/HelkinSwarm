@@ -587,4 +587,38 @@ describe('discoveryToolInjection', () => {
       },
     });
   });
+
+  it('synthesizes a deterministic exact-tool call for structured core-tool validation prompts', async () => {
+    const { synthesizeExactToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const call = synthesizeExactToolCall(
+      '/heavy Use the exact tool helkin_mcp_forge with command "approve_bundle" and bundlePath "bundles/demo.json". Return only compact JSON with status and skillId.',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'helkin_skill_search',
+            description: 'discover tools',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'helkin_mcp_forge',
+            description: 'draft and approve MCP onboarding bundles',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(call).toEqual({
+      name: 'helkin_mcp_forge',
+      arguments: {
+        command: 'approve_bundle',
+        bundlePath: 'bundles/demo.json',
+      },
+    });
+  });
 });

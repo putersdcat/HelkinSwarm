@@ -56,6 +56,7 @@ import {
   getDiscoveryFirstToolSchemas,
   isReadOnlyDiscoveryRequest,
   isDiscoveryOnlyDeadEnd,
+  synthesizeExactToolCall,
   synthesizeDeterministicFollowUpToolCall,
 } from './discoveryToolInjection.js';
 import {
@@ -340,18 +341,33 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // 2. Call LLM (global frontier model via Foundry client)
   spanStart = context.df.currentUtcDateTime.getTime();
   const initialToolSchemas = getDiscoveryFirstToolSchemas();
-  const llmResult: LlmResult = yield context.df.callActivity(
-    'llmActivity',
-    {
-      ...promptWithPlan,
-      correlationId,
-      userId: input.state.userId,
-      modelOverride: resolvedModelOverride,
-      imageUrls: input.imageUrls,
-      tools: initialToolSchemas,
-      toolChoice: getForcedInitialToolChoice(effectiveTaskMessage, initialToolSchemas) ?? 'auto',
-    },
-  );
+  const deterministicInitialToolCall = synthesizeExactToolCall(effectiveTaskMessage, initialToolSchemas);
+  const llmResult: LlmResult = deterministicInitialToolCall
+    ? {
+        content: '',
+        model: 'deterministic-exact-tool',
+        tokensUsed: 0,
+        promptTokens: 0,
+        toolCalls: [{
+          id: crypto.randomUUID(),
+          name: deterministicInitialToolCall.name,
+          arguments: JSON.stringify(deterministicInitialToolCall.arguments),
+        }],
+        finishReason: 'tool_calls',
+        operationalNotices: [],
+      }
+    : yield context.df.callActivity(
+      'llmActivity',
+      {
+        ...promptWithPlan,
+        correlationId,
+        userId: input.state.userId,
+        modelOverride: resolvedModelOverride,
+        imageUrls: input.imageUrls,
+        tools: initialToolSchemas,
+        toolChoice: getForcedInitialToolChoice(effectiveTaskMessage, initialToolSchemas) ?? 'auto',
+      },
+    );
   spans.push({ label: 'llm', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
 
   // Cumulative token tracking across all LLM calls in this session (#253)
