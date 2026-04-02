@@ -66,6 +66,23 @@ function mergeFreshStageEntries(
   return Array.from(merged.values());
 }
 
+async function getFreshStageEntries(nowMs: number): Promise<ActiveTurnStage[]> {
+  try {
+    const container = getContainer(SESSIONS_CONTAINER);
+    const { resources } = await withTimeout(container.items
+      .query<OrchestratorStageDocument>({
+        query: 'SELECT * FROM c WHERE c.type = @type',
+        parameters: [{ name: '@type', value: 'orchestrator-stage' }],
+      })
+      .fetchAll(), STAGE_IO_TIMEOUT_MS);
+
+    return mergeFreshStageEntries(resources, Array.from(activeTurns.values()), nowMs);
+  } catch {
+    return Array.from(activeTurns.values())
+      .filter((entry) => isStageEntryFresh(entry, nowMs) && isVisibleStage(entry));
+  }
+}
+
 function buildClearedStageDocument(
   correlationId: string,
   userId: string,
@@ -199,48 +216,26 @@ export async function getOrchestratorStageSnapshot(nowMs = Date.now()): Promise<
     updatedAt: string;
   }>;
 }> {
-  try {
-    const container = getContainer(SESSIONS_CONTAINER);
-    const { resources } = await withTimeout(container.items
-      .query<OrchestratorStageDocument>({
-        query: 'SELECT * FROM c WHERE c.type = @type',
-        parameters: [{ name: '@type', value: 'orchestrator-stage' }],
-      })
-      .fetchAll(), STAGE_IO_TIMEOUT_MS);
+  const turns = (await getFreshStageEntries(nowMs))
+    .map((entry) => ({
+      correlationId: entry.correlationId,
+      userId: entry.userId,
+      stage: entry.stage,
+      ageMs: nowMs - entry.startedAtMs,
+      updatedAt: new Date(entry.updatedAtMs).toISOString(),
+    }))
+    .sort((a, b) => b.ageMs - a.ageMs);
 
-    const turns = mergeFreshStageEntries(resources, Array.from(activeTurns.values()), nowMs)
-      .map((entry) => ({
-        correlationId: entry.correlationId,
-        userId: entry.userId,
-        stage: entry.stage,
-        ageMs: nowMs - entry.startedAtMs,
-        updatedAt: new Date(entry.updatedAtMs).toISOString(),
-      }))
-      .sort((a, b) => b.ageMs - a.ageMs);
+  return {
+    activeTurns: turns.length,
+    oldestAgeMs: turns.length > 0 ? turns[0]!.ageMs : null,
+    turns: turns.slice(0, 10),
+  };
+}
 
-    return {
-      activeTurns: turns.length,
-      oldestAgeMs: turns.length > 0 ? turns[0]!.ageMs : null,
-      turns: turns.slice(0, 10),
-    };
-  } catch {
-    const turns = Array.from(activeTurns.values())
-      .filter((entry) => isStageEntryFresh(entry, nowMs) && isVisibleStage(entry))
-      .map((entry) => ({
-        correlationId: entry.correlationId,
-        userId: entry.userId,
-        stage: entry.stage,
-        ageMs: nowMs - entry.startedAtMs,
-        updatedAt: new Date(entry.updatedAtMs).toISOString(),
-      }))
-      .sort((a, b) => b.ageMs - a.ageMs);
-
-    return {
-      activeTurns: turns.length,
-      oldestAgeMs: turns.length > 0 ? turns[0]!.ageMs : null,
-      turns: turns.slice(0, 10),
-    };
-  }
+export async function getActiveTurnCountForUser(userId: string, nowMs = Date.now()): Promise<number> {
+  const entries = await getFreshStageEntries(nowMs);
+  return entries.filter((entry) => entry.userId === userId).length;
 }
 
 export function resetOrchestratorStageHealth(): void {

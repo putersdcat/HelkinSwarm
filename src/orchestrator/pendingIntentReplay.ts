@@ -5,6 +5,7 @@ import type { ConversationReference } from 'botbuilder';
 import { saveConversationReference } from '../bot/conversationStore.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
+import { getActiveTurnCountForUser } from '../observability/orchestratorStageHealth.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { resolveActiveOverseerSummary } from './activeOverseerInstance.js';
 import {
@@ -107,12 +108,13 @@ export async function replayPendingIntent(
     try {
       const guardState = await readMindSessionGuardState(client, intent.userId);
       const activeSummary = await resolveActiveOverseerSummary(client, intent.userId);
+      const activeTurnCount = await getActiveTurnCountForUser(intent.userId);
       const observedActiveInstanceId = activeSummary.latestInstanceId;
-      const effectiveActiveInstanceId = observedActiveInstanceId ?? guardState?.activeInstanceId;
-      const hasActiveGuard = effectiveActiveInstanceId !== undefined && effectiveActiveInstanceId !== instanceId;
+      const effectiveActiveInstanceId = observedActiveInstanceId ?? (activeTurnCount > 0 ? guardState?.activeInstanceId : undefined);
+      const hasActiveGuard = activeTurnCount > 0 && effectiveActiveInstanceId !== instanceId;
       const interruptionDepth = Math.max(
         guardState?.interruptionDepth ?? 0,
-        Math.max(0, activeSummary.activeCount - 1),
+        Math.max(0, activeTurnCount - 1),
       );
 
       const ingressDecision = recordLimbicIngressDecision({

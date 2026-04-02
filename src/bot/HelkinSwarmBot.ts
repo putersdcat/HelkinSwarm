@@ -80,6 +80,7 @@ import { buildTeamsNativeEmojiEasterEggReply } from './teamsNativeEmojiEasterEgg
 import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';
 import { saveChronoInterruptionBreadcrumb } from '../orchestrator/chronoBackplane.js';
 import { resolveActiveOverseerSummary } from '../orchestrator/activeOverseerInstance.js';
+import { getActiveTurnCountForUser } from '../observability/orchestratorStageHealth.js';
 import {
   MAX_INTERRUPTION_DEPTH,
   readMindSessionGuardState,
@@ -1072,12 +1073,13 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
       const guardState = await readMindSessionGuardState(client, userId);
       const activeSummary = await resolveActiveOverseerSummary(client, userId);
+      const activeTurnCount = await getActiveTurnCountForUser(userId);
       const observedActiveInstanceId = activeSummary.latestInstanceId;
-      const effectiveActiveInstanceId = observedActiveInstanceId ?? guardState?.activeInstanceId;
-      const hasActiveGuard = effectiveActiveInstanceId !== undefined && effectiveActiveInstanceId !== identity.instanceId;
+      const effectiveActiveInstanceId = observedActiveInstanceId ?? (activeTurnCount > 0 ? guardState?.activeInstanceId : undefined);
+      const hasActiveGuard = activeTurnCount > 0 && effectiveActiveInstanceId !== identity.instanceId;
       const interruptionDepth = Math.max(
         guardState?.interruptionDepth ?? 0,
-        Math.max(0, activeSummary.activeCount - 1),
+        Math.max(0, activeTurnCount - 1),
       );
 
       const ingressDecision = recordLimbicIngressDecision({

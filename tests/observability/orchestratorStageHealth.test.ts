@@ -197,4 +197,48 @@ describe('orchestratorStageHealth', () => {
       }),
     ]);
   });
+
+  it('counts active turns for a specific user without confusing other users', async () => {
+    const {
+      getActiveTurnCountForUser,
+      resetOrchestratorStageHealth,
+    } = await loadModuleWithCosmosDouble({
+      queryResources: [
+        {
+          id: 'stage-corr-user-a-1',
+          type: 'orchestrator-stage',
+          correlationId: 'corr-user-a-1',
+          userId: 'user-a',
+          stage: 'llm',
+          startedAtMs: 1_000,
+          updatedAtMs: 2_000,
+          ttl: 900,
+        },
+        {
+          id: 'stage-corr-user-a-2',
+          type: 'orchestrator-stage',
+          correlationId: 'corr-user-a-2',
+          userId: 'user-a',
+          stage: 'build-prompt',
+          startedAtMs: 1_500,
+          updatedAtMs: 2_500,
+          ttl: 900,
+        },
+        {
+          id: 'stage-corr-user-b-1',
+          type: 'orchestrator-stage',
+          correlationId: 'corr-user-b-1',
+          userId: 'user-b',
+          stage: 'plan',
+          startedAtMs: 1_700,
+          updatedAtMs: 2_700,
+          ttl: 900,
+        },
+      ],
+    });
+    resetOrchestratorStageHealth();
+
+    await expect(getActiveTurnCountForUser('user-a', 5_000)).resolves.toBe(2);
+    await expect(getActiveTurnCountForUser('user-b', 5_000)).resolves.toBe(1);
+  });
 });
