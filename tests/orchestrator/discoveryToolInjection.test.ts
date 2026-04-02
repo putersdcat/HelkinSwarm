@@ -673,6 +673,100 @@ describe('discoveryToolInjection', () => {
     });
   });
 
+  it('synthesizes an inline-email tool call when image runtime assets are present for a natural send request', async () => {
+    const { synthesizeRuntimeAssetInlineEmailToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const call = synthesizeRuntimeAssetInlineEmailToolCall(
+      'can you send an email to my private address eric@eanderson.de with the image below inline.',
+      [
+        {
+          version: 1,
+          id: '11111111-1111-4111-8111-111111111111',
+          userId: 'user-1',
+          correlationId: 'corr-1',
+          kind: 'image',
+          contentType: 'image/png',
+          fileName: 'photo.png',
+          byteLength: 1024,
+          sha256: 'a'.repeat(64),
+          source: { channel: 'teams', attachmentKind: 'inline-image' },
+          createdAt: '2026-04-02T00:00:00.000Z',
+          expiresAt: '2026-04-02T06:00:00.000Z',
+          ttlSeconds: 21600,
+          storage: {
+            container: 'helkinswarm-runtime-assets',
+            payloadBlobPath: 'payload/photo.png',
+            metadataBlobPath: 'metadata/photo.json',
+          },
+        },
+      ],
+    );
+
+    expect(call).toEqual({
+      name: 'outlook_send_email',
+      arguments: {
+        to: ['eric@eanderson.de'],
+        subject: 'Inline image from HelkinSwarm',
+        body: '<p>Here is the inline image you requested.</p><img src="cid:photo" />',
+        bodyType: 'html',
+        inlineAssets: [
+          {
+            assetId: '11111111-1111-4111-8111-111111111111',
+            contentId: 'photo',
+            fileName: 'photo.png',
+          },
+        ],
+      },
+    });
+  });
+
+  it('prefers explicit subject and cid when synthesizing inline-email tool calls from runtime assets', async () => {
+    const { synthesizeRuntimeAssetInlineEmailToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const call = synthesizeRuntimeAssetInlineEmailToolCall(
+      'Use the exact tool outlook_send_email. Send an HTML email to eric@eanderson.de with subject "DL-inline-selftest-1234". The body must contain a short intro paragraph plus an inline image using <img src="cid:asset-ingest-selftest" />. Use the runtime asset for `asset-ingest-selftest.png` as inlineAssets with contentId `asset-ingest-selftest`.',
+      [
+        {
+          version: 1,
+          id: '22222222-2222-4222-8222-222222222222',
+          userId: 'user-1',
+          correlationId: 'corr-2',
+          kind: 'image',
+          contentType: 'image/png',
+          fileName: 'asset-ingest-selftest.png',
+          byteLength: 1024,
+          sha256: 'b'.repeat(64),
+          source: { channel: 'teams', attachmentKind: 'inline-image' },
+          createdAt: '2026-04-02T00:00:00.000Z',
+          expiresAt: '2026-04-02T06:00:00.000Z',
+          ttlSeconds: 21600,
+          storage: {
+            container: 'helkinswarm-runtime-assets',
+            payloadBlobPath: 'payload/selftest.png',
+            metadataBlobPath: 'metadata/selftest.json',
+          },
+        },
+      ],
+    );
+
+    expect(call).toEqual({
+      name: 'outlook_send_email',
+      arguments: {
+        to: ['eric@eanderson.de'],
+        subject: 'DL-inline-selftest-1234',
+        body: '<p>Here is the inline image you requested.</p><img src="cid:asset-ingest-selftest" />',
+        bodyType: 'html',
+        inlineAssets: [
+          {
+            assetId: '22222222-2222-4222-8222-222222222222',
+            contentId: 'asset-ingest-selftest',
+            fileName: 'asset-ingest-selftest.png',
+          },
+        ],
+      },
+    });
+  });
+
   it('synthesizes a deterministic exact-tool call for structured core-tool validation prompts', async () => {
     const { synthesizeExactToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
 

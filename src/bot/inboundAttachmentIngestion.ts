@@ -12,8 +12,10 @@ export interface IngestTeamsAttachmentsInput {
   conversationId?: string;
   messageId?: string;
   attachments?: Attachment[];
+  htmlContent?: string;
   fetchImpl?: typeof fetch;
   getBotToken?: () => Promise<string>;
+  getGraphToken?: () => Promise<string | undefined>;
 }
 
 export interface IngestTeamsAttachmentsResult {
@@ -32,6 +34,7 @@ const TeamsFileDownloadInfoSchema = z.object({
 const MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_RUNTIME_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 const INBOUND_ATTACHMENT_TIMEOUT_MS = 15_000;
+const HOSTED_CONTENT_URL_REGEX = /<img\b[^>]*\bsrc=["']([^"']*\/hostedContents\/[^"']*\/\$value)["'][^>]*>/gi;
 
 function isIgnorableAttachment(contentType: string | undefined): boolean {
   const normalized = (contentType ?? '').toLowerCase();
@@ -50,6 +53,42 @@ function deriveAttachmentName(attachment: Attachment): string | undefined {
   return typeof attachment.name === 'string' && attachment.name.trim().length > 0
     ? attachment.name.trim()
     : undefined;
+}
+
+function inferFileExtension(contentType: string): string {
+  const normalized = contentType.toLowerCase();
+  switch (normalized) {
+    case 'image/png':
+      return 'png';
+    case 'image/jpeg':
+      return 'jpg';
+    case 'image/gif':
+      return 'gif';
+    case 'image/webp':
+      return 'webp';
+    case 'image/bmp':
+      return 'bmp';
+    case 'image/svg+xml':
+      return 'svg';
+    default:
+      return 'bin';
+  }
+}
+
+function extractHostedContentImageUrls(htmlContent: string | undefined): string[] {
+  if (!htmlContent) {
+    return [];
+  }
+
+  const urls: string[] = [];
+  for (const match of htmlContent.matchAll(HOSTED_CONTENT_URL_REGEX)) {
+    const url = match[1]?.trim();
+    if (url) {
+      urls.push(url);
+    }
+  }
+
+  return urls;
 }
 
 async function downloadWithOptionalAuth(
@@ -78,7 +117,8 @@ export async function ingestTeamsAttachments(
   input: IngestTeamsAttachmentsInput,
 ): Promise<IngestTeamsAttachmentsResult> {
   const attachments = input.attachments ?? [];
-  if (attachments.length === 0) {
+  const hostedContentUrls = extractHostedContentImageUrls(input.htmlContent);
+  if (attachments.length === 0 && hostedContentUrls.length === 0) {
     return { runtimeAssets: [], imageUrls: [], notices: [] };
   }
 
@@ -86,9 +126,12 @@ export async function ingestTeamsAttachments(
   const runtimeAssets: RuntimeAssetReference[] = [];
   const imageUrls: string[] = [];
   const notices: string[] = [];
+  const seenSourceUrls = new Set<string>();
 
   let botToken: string | undefined;
   let botTokenLoaded = false;
+  let graphToken: string | undefined;
+  let graphTokenLoaded = false;
 
   for (const attachment of attachments) {
     const contentType = attachment.contentType ?? 'application/octet-stream';
@@ -111,6 +154,7 @@ export async function ingestTeamsAttachments(
     if (normalizedType.startsWith('image/') && attachment.contentUrl) {
       attachmentKind = 'inline-image';
       sourceUrl = attachment.contentUrl;
+      seenSourceUrls.add(sourceUrl);
       if (!botTokenLoaded && input.getBotToken) {
         botToken = await input.getBotToken();
         botTokenLoaded = true;
@@ -180,6 +224,58 @@ export async function ingestTeamsAttachments(
     runtimeAssets.push(reference);
 
     if (attachmentKind === 'inline-image' && attachmentBytes.byteLength <= MAX_INLINE_IMAGE_BYTES) {
+      imageUrls.push(buildDataUrl(contentType, attachmentBytes));
+    }
+  }
+
+  for (const [index, hostedContentUrl] of hostedContentUrls.entries()) {
+    if (seenSourceUrls.has(hostedContentUrl)) {
+      continue;
+    }
+
+    if (!graphTokenLoaded && input.getGraphToken) {
+      graphToken = await input.getGraphToken();
+      graphTokenLoaded = true;
+    }
+
+    const response = await downloadWithOptionalAuth(hostedContentUrl, fetchImpl, graphToken);
+    if (!response.ok) {
+      notices.push(`Skipped hosted inline image \`${hostedContentUrl}\`: download failed with ${response.status}.`);
+      continue;
+    }
+
+    const attachmentBytes = Buffer.from(await response.arrayBuffer());
+    if (attachmentBytes.byteLength > MAX_RUNTIME_ATTACHMENT_BYTES) {
+      notices.push(`Skipped hosted inline image \`${hostedContentUrl}\`: ${attachmentBytes.byteLength} bytes exceeds the ${MAX_RUNTIME_ATTACHMENT_BYTES} byte runtime attachment limit.`);
+      continue;
+    }
+
+    const contentType = response.headers.get('content-type')?.trim() || 'image/png';
+    const fileName = `teams-hosted-inline-${index + 1}.${inferFileExtension(contentType)}`;
+    const reference = await persistRuntimeAsset({
+      userId: input.userId,
+      correlationId: input.correlationId,
+      bytes: new Uint8Array(attachmentBytes),
+      contentType,
+      fileName,
+      source: {
+        channel: 'teams',
+        conversationId: input.conversationId,
+        messageId: input.messageId,
+        attachmentKind: 'inline-image',
+        externalId: hostedContentUrl,
+        detail: 'teams:hosted-inline-image',
+      },
+      summary: `Inbound Teams hosted-content inline image. Original filename: ${fileName}.`,
+    });
+
+    if (!reference) {
+      notices.push(`Skipped hosted inline image \`${fileName}\`: runtime asset storage is unavailable.`);
+      continue;
+    }
+
+    runtimeAssets.push(reference);
+    if (attachmentBytes.byteLength <= MAX_INLINE_IMAGE_BYTES) {
       imageUrls.push(buildDataUrl(contentType, attachmentBytes));
     }
   }

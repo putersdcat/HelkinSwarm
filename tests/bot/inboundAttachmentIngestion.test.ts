@@ -130,6 +130,35 @@ describe('inboundAttachmentIngestion', () => {
     expect(result.notices[0]).toContain('exceeds the 10485760 byte runtime attachment limit');
   });
 
+  it('ingests hosted-content inline images discovered from Teams HTML when attachment metadata is absent', async () => {
+    const { ingestTeamsAttachments, persistRuntimeAsset } = await loadModule();
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      expect(url).toBe('https://graph.microsoft.com/v1.0/chats/abc/messages/msg-1/hostedContents/foo/$value');
+      expect(init?.headers).toMatchObject({ Authorization: 'Bearer graph-token' });
+      return new Response(Buffer.from([137, 80, 78, 71]), {
+        status: 200,
+        headers: { 'Content-Type': 'image/png' },
+      });
+    });
+
+    const result = await ingestTeamsAttachments({
+      userId: 'user-hosted',
+      correlationId: 'corr-hosted',
+      conversationId: 'conv-hosted',
+      messageId: 'msg-hosted',
+      htmlContent: '<p>Hello</p><p><img src="https://graph.microsoft.com/v1.0/chats/abc/messages/msg-1/hostedContents/foo/$value" /></p>',
+      fetchImpl: fetchImpl as typeof fetch,
+      getGraphToken: async () => 'graph-token',
+    });
+
+    expect(persistRuntimeAsset).toHaveBeenCalledTimes(1);
+    expect(result.runtimeAssets).toHaveLength(1);
+    expect(result.runtimeAssets[0]?.source.detail).toBe('teams:hosted-inline-image');
+    expect(result.runtimeAssets[0]?.source.attachmentKind).toBe('inline-image');
+    expect(result.imageUrls).toHaveLength(1);
+    expect(result.notices).toEqual([]);
+  });
+
   it('builds a prompt-safe block from runtime assets and notices', async () => {
     const { buildInboundAttachmentPromptBlock } = await loadModule();
 

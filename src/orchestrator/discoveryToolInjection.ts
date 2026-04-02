@@ -2,6 +2,7 @@ import { toolRegistry } from '../tools/toolRegistry.js';
 import type { ToolDefinition } from '../llm/foundryClient.js';
 import { getDiscoveryCapabilityGroup, getDiscoverySkill } from '../capabilities/skillDiscoveryIndex.js';
 import type { ModelAffinity } from '../capabilities/manifestSchema.js';
+import type { RuntimeAssetReference } from '../integrations/runtimeAssetStore.js';
 
 export type DeterministicFollowUpToolCall = {
   name: string;
@@ -55,6 +56,12 @@ function splitRecipients(raw: string): string[] {
     .split(/,|\sand\s/i)
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
+}
+
+function extractEmailAddresses(raw: string): string[] {
+  return Array.from(raw.matchAll(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi))
+    .map((match) => match[0]?.trim())
+    .filter((value): value is string => !!value);
 }
 
 function stripValidationNoise(userMessage: string): string {
@@ -379,6 +386,101 @@ function parseQuotedSendEmailIntent(userMessage: string): DeterministicFollowUpT
       subject: subject.trim(),
       body: body.trim(),
       bodyType: 'text',
+    },
+  };
+}
+
+function buildDefaultInlineEmailBody(contentId: string): string {
+  return `<p>Here is the inline image you requested.</p><img src="cid:${contentId}" />`;
+}
+
+function normalizeInlineContentIdCandidate(rawValue: string | undefined): string | undefined {
+  const trimmed = rawValue?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return trimmed
+    .replace(/^cid:/i, '')
+    .replace(/^<+/, '')
+    .replace(/>+$/, '')
+    .replace(/[^a-z0-9._-]+/gi, '-')
+    .replace(/^-+|-+$/g, '')
+    .toLowerCase();
+}
+
+function selectInlineRuntimeAsset(
+  runtimeAssets: RuntimeAssetReference[],
+  userMessage: string,
+): RuntimeAssetReference | undefined {
+  const imageAssets = runtimeAssets.filter((asset) => asset.contentType.toLowerCase().startsWith('image/'));
+  if (imageAssets.length === 0) {
+    return undefined;
+  }
+
+  const fileNameMatch = userMessage.match(/`([^`]+\.(?:png|jpe?g|gif|webp|bmp|svg))`|\b([a-z0-9._-]+\.(?:png|jpe?g|gif|webp|bmp|svg))\b/i);
+  const requestedFileName = (fileNameMatch?.[1] ?? fileNameMatch?.[2])?.toLowerCase();
+  if (requestedFileName) {
+    const exactMatch = imageAssets.find((asset) => asset.fileName?.toLowerCase() === requestedFileName);
+    if (exactMatch) {
+      return exactMatch;
+    }
+  }
+
+  return imageAssets[0];
+}
+
+export function synthesizeRuntimeAssetInlineEmailToolCall(
+  userMessage: string,
+  runtimeAssets: RuntimeAssetReference[] | null | undefined,
+): DeterministicFollowUpToolCall | null {
+  if (!runtimeAssets || runtimeAssets.length === 0) {
+    return null;
+  }
+
+  const cleanedMessage = stripValidationNoise(userMessage);
+  const normalizedMessage = cleanedMessage.toLowerCase();
+  const looksLikeInlineEmailRequest = /(send|email|mail)/.test(normalizedMessage)
+    && /(inline|embedded|embed|cid:|image below|gif below|photo below|picture below|image in the body)/.test(normalizedMessage);
+
+  if (!looksLikeInlineEmailRequest) {
+    return null;
+  }
+
+  const selectedAsset = selectInlineRuntimeAsset(runtimeAssets, cleanedMessage);
+  if (!selectedAsset) {
+    return null;
+  }
+
+  const to = extractEmailAddresses(cleanedMessage);
+  if (to.length === 0) {
+    return null;
+  }
+
+  const subjectMatch = cleanedMessage.match(/\bsubject\s+["“'`](.+?)["”'`]/i);
+  const subject = subjectMatch?.[1]?.trim() || 'Inline image from HelkinSwarm';
+
+  const explicitCid = normalizeInlineContentIdCandidate(
+    cleanedMessage.match(/cid:([^"'`\s>]+)/i)?.[1]
+      ?? cleanedMessage.match(/contentid\s+[`"“'']?([^`"”'\s]+)[`"”'']?/i)?.[1],
+  );
+  const derivedCid = normalizeInlineContentIdCandidate(selectedAsset.fileName?.replace(/\.[^.]+$/, ''));
+  const contentId = explicitCid || derivedCid || 'inline-image-1';
+
+  return {
+    name: 'outlook_send_email',
+    arguments: {
+      to,
+      subject,
+      body: buildDefaultInlineEmailBody(contentId),
+      bodyType: 'html',
+      inlineAssets: [
+        {
+          assetId: selectedAsset.id,
+          contentId,
+          ...(selectedAsset.fileName ? { fileName: selectedAsset.fileName } : {}),
+        },
+      ],
     },
   };
 }

@@ -48,6 +48,7 @@ import {
   redeemMagicCodeForTurnContext,
   signOutUserFromTurnContext,
 } from '../auth/botUserTokenClient.js';
+import { getGraphTokenForUser } from '../auth/graphTokenHelper.js';
 import { extractBotFrameworkAuthCode } from '../auth/magicCode.js';
 import {
   clearPendingLinkChallenge,
@@ -81,6 +82,43 @@ const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
 
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
+
+  private extractInboundHtmlContent(activity: TurnContext['activity']): string | undefined {
+    const findHostedContentHtml = (value: unknown, depth = 0): string | undefined => {
+      if (depth > 4 || value === null || value === undefined) {
+        return undefined;
+      }
+
+      if (typeof value === 'string') {
+        return /<img\b/i.test(value) && /\/hostedContents\//i.test(value) ? value : undefined;
+      }
+
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          const found = findHostedContentHtml(item, depth + 1);
+          if (found) {
+            return found;
+          }
+        }
+        return undefined;
+      }
+
+      if (typeof value === 'object') {
+        for (const child of Object.values(value as Record<string, unknown>)) {
+          const found = findHostedContentHtml(child, depth + 1);
+          if (found) {
+            return found;
+          }
+        }
+      }
+
+      return undefined;
+    };
+
+    return findHostedContentHtml(activity.text)
+      ?? findHostedContentHtml(activity.channelData)
+      ?? findHostedContentHtml(activity.value);
+  }
 
   /**
    * In-memory dedup cache for Teams adapter retries (#280).
@@ -440,7 +478,16 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       conversationId: context.activity.conversation?.id ?? userId,
       messageId: context.activity.id,
       attachments: context.activity.attachments,
+      htmlContent: this.extractInboundHtmlContent(context.activity),
       getBotToken: async () => getBearerToken('https://api.botframework.com/.default'),
+      getGraphToken: async () => {
+        const userGraphToken = await getGraphTokenForUser(userId).catch(() => undefined);
+        if (userGraphToken) {
+          return userGraphToken;
+        }
+
+        return await getBearerToken('https://graph.microsoft.com/.default').catch(() => undefined);
+      },
     });
 
     if (isColdStarting()) {

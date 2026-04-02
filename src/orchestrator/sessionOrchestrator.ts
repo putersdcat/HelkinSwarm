@@ -56,6 +56,7 @@ import {
   getDiscoveryFirstToolSchemas,
   isReadOnlyDiscoveryRequest,
   isDiscoveryOnlyDeadEnd,
+  synthesizeRuntimeAssetInlineEmailToolCall,
   synthesizeExactToolCall,
   synthesizeDeterministicFollowUpToolCall,
 } from './discoveryToolInjection.js';
@@ -342,7 +343,10 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   spanStart = context.df.currentUtcDateTime.getTime();
   const allToolSchemas = toolRegistry.toFunctionSchemas();
   const initialToolSchemas = getDiscoveryFirstToolSchemas();
-  const deterministicInitialToolCall = synthesizeExactToolCall(effectiveTaskMessage, allToolSchemas);
+  const deterministicInitialToolCall = synthesizeRuntimeAssetInlineEmailToolCall(
+    effectiveTaskMessage,
+    input.runtimeAssets,
+  ) ?? synthesizeExactToolCall(effectiveTaskMessage, allToolSchemas);
   const llmResult: LlmResult = deterministicInitialToolCall
     ? {
         content: '',

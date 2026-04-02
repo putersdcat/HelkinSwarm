@@ -8,7 +8,8 @@ describe('sessionOrchestrator clarification routing', () => {
     expect(source).toContain('const effectiveTaskMessage = userMessageForLlm;');
     expect(source).toContain('const allToolSchemas = toolRegistry.toFunctionSchemas();');
     expect(source).toContain('const initialToolSchemas = getDiscoveryFirstToolSchemas();');
-    expect(source).toContain('const deterministicInitialToolCall = synthesizeExactToolCall(effectiveTaskMessage, allToolSchemas);');
+    expect(source).toContain('synthesizeRuntimeAssetInlineEmailToolCall(');
+    expect(source).toContain(') ?? synthesizeExactToolCall(effectiveTaskMessage, allToolSchemas);');
     expect(source).toContain('const deterministicExactToolResponse = buildDeterministicExactToolResponse(');
     expect(source).toContain('toolChoice: getForcedInitialToolChoice(effectiveTaskMessage, initialToolSchemas) ?? \'auto\'');
     expect(source).toContain('const followUpToolSchemas = selectiveFollowUpSchemas ?? allToolSchemas;');
