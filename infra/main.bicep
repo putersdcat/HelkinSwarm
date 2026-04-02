@@ -358,6 +358,18 @@ resource containerDurableHooks 'Microsoft.DocumentDB/databaseAccounts/sqlDatabas
   }
 }
 
+resource containerChronoBackplane 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: cosmosDatabase
+  name: 'chronoBackplane'
+  properties: {
+    resource: {
+      id: 'chronoBackplane'
+      partitionKey: { paths: [ '/userId' ], kind: 'Hash' }
+      defaultTtl: 604800 // 7 days — continuity / interruption breadcrumbs auto-expire
+    }
+  }
+}
+
 resource containerTentativeActions 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
   parent: cosmosDatabase
   name: 'tentativeActions'
