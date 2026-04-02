@@ -23,18 +23,20 @@ describe('steering injection activity', () => {
       },
       userMessage: 'Continue',
       correlationId: 'corr-steering-1',
+      chronoIntention: 'Continue debugging hook delivery.',
       quotedContext: { text: 'Previous hook result', mayBeTruncated: false },
     });
 
     expect(result.applied).toBe(true);
     expect(result.injectionBlock).toContain('[Steering Injection]');
+    expect(result.injectionBlock).toContain('You previously planned to address: Continue debugging hook delivery.');
     expect(result.injectionBlock).toContain('quoted material as active continuity context');
     expect(result.injectionBlock).toContain('carried session summary');
   });
 
-  it('records telemetry when steering injection is evaluated', () => {
+  it('records telemetry when steering injection is evaluated', async () => {
     const correlationId = 'corr-steering-2';
-    recordSteeringInjection({
+    const result = await recordSteeringInjection({
       state: {
         userId: 'u1',
         userAlias: 'User',
@@ -56,8 +58,11 @@ describe('steering injection activity', () => {
       devLoopContext: { isDevLoop: true, prefix: 'DEVLOOP', correlationTag: null, body: 'Hello', hasOver: false },
     });
 
+    expect(result.applied).toBe(true);
     const trace = getTraceTree(correlationId);
     const phase = trace?.phases.find((p) => p.name === 'SteeringInjectionApplied');
+    const chronoPhase = trace?.phases.find((p) => p.name === 'ChronoBackplaneRead');
+    expect(chronoPhase?.detail).toContain('type:');
     expect(phase?.detail).toContain('reason:');
   });
 });

@@ -56,6 +56,7 @@ import '../orchestrator/hookResolutionActivity.js';
 import '../orchestrator/startupRecoveryActivity.js';
 import '../orchestrator/terminateOrchestrationActivity.js';
 import '../orchestrator/planActivity.js';
+import '../orchestrator/chronoBackplane.js';
 import '../orchestrator/limbicIngressActivity.js';
 import '../orchestrator/mindSessionGuard.js';
 import '../orchestrator/steeringInjectionActivity.js';

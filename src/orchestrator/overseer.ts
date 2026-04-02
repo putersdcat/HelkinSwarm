@@ -24,6 +24,7 @@ import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
 import type { RuntimeAssetReference } from '../integrations/runtimeAssetStore.js';
 import { MIND_SESSION_GUARD_ENTITY_NAME, MindSessionGuardReleaseInputSchema } from './mindSessionGuard.js';
+import type { SaveChronoContinuityInput } from './chronoBackplane.js';
 
 /** Spinner starts after this many ms. Only long turns get spinner updates. */
 const SPINNER_INITIAL_DELAY_MS = 8_000;
@@ -240,6 +241,12 @@ function* processTurn(
   state.recentHistory = history.slice(-10);
 
   yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
+  yield context.df.callActivity('saveChronoContinuityActivity', {
+    userId: state.userId,
+    correlationId: sessionInput.correlationId,
+    userMessage: event.userMessage,
+    assistantReply: sessionResult.cleanResponse || sessionResult.response || '(no response)',
+  } satisfies SaveChronoContinuityInput);
 
   // Dedup hold:  keep this instance alive (Running) for 60s after processing so
   // that retried Bot Connector POSTs see a Running instance and get 409 from

@@ -45,6 +45,8 @@ export type TelemetryEventName =
   | 'PendingIntentCreated'
   | 'PendingIntentRecovered'
   | 'LimbicDecision'
+  | 'ChronoBackplaneRead'
+  | 'ChronoBackplaneWritten'
   | 'SteeringInjectionApplied'
   | 'StaleAckRecovered'
   | 'StateLoaded'
@@ -94,6 +96,8 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   SkillMemoryInjected: 'memory',
   StateLoaded: 'memory',
   StateSaved: 'memory',
+  ChronoBackplaneRead: 'memory',
+  ChronoBackplaneWritten: 'memory',
   TurnStarted: 'orchestrator',
   TurnCompleted: 'orchestrator',
   ContinueAsNewTriggered: 'orchestrator',
@@ -211,6 +215,9 @@ function buildTraceDetail(event: TelemetryEvent): string {
   if (p['source']) parts.push(`source: ${p['source']}`);
   if (p['decision']) parts.push(`decision: ${p['decision']}`);
   if (p['reason']) parts.push(`reason: ${p['reason']}`);
+  if (p['type']) parts.push(`type: ${p['type']}`);
+  if (p['found'] !== undefined) parts.push(`found: ${p['found']}`);
+  if (p['injected'] !== undefined) parts.push(`injected: ${p['injected']}`);
 
   return parts.length > 0 ? parts.join(', ') : event.name;
 }

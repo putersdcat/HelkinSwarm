@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { OverseerState } from './stateManager.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
+import { loadChronoContinuity } from './chronoBackplane.js';
 import { trackEvent } from '../observability/telemetry.js';
 
 export const SteeringInjectionInputSchema = z.object({
@@ -35,6 +36,10 @@ export const SteeringInjectionResultSchema = z.object({
   injectionBlock: z.string(),
 });
 
+export const SteeringCueInputSchema = SteeringInjectionInputSchema.extend({
+  chronoIntention: z.string().optional(),
+});
+
 export type SteeringInjectionInput = {
   state: OverseerState;
   userMessage: string;
@@ -45,9 +50,15 @@ export type SteeringInjectionInput = {
 
 export type SteeringInjectionResult = z.infer<typeof SteeringInjectionResultSchema>;
 
-export function buildSteeringInjection(rawInput: SteeringInjectionInput): SteeringInjectionResult {
-  const input = SteeringInjectionInputSchema.parse(rawInput);
+export function buildSteeringInjection(
+  rawInput: SteeringInjectionInput & { chronoIntention?: string },
+): SteeringInjectionResult {
+  const input = SteeringCueInputSchema.parse(rawInput);
   const cues: string[] = [];
+
+  if (input.chronoIntention) {
+    cues.push(`You previously planned to address: ${input.chronoIntention}`);
+  }
 
   if (input.state.pendingClarification) {
     cues.push(
@@ -89,9 +100,31 @@ export function buildSteeringInjection(rawInput: SteeringInjectionInput): Steeri
   });
 }
 
-export function recordSteeringInjection(rawInput: SteeringInjectionInput): SteeringInjectionResult {
+export async function recordSteeringInjection(rawInput: SteeringInjectionInput): Promise<SteeringInjectionResult> {
   const input = SteeringInjectionInputSchema.parse(rawInput);
-  const result = buildSteeringInjection(rawInput);
+  let chronoContinuity;
+  let chronoReadError: string | undefined;
+  try {
+    chronoContinuity = await loadChronoContinuity(input.state.userId);
+  } catch (err) {
+    chronoReadError = err instanceof Error ? err.message : String(err);
+  }
+  const chronoIntention = chronoContinuity && chronoContinuity.anchorCorrelationId !== input.correlationId
+    ? chronoContinuity.intention
+    : undefined;
+  const result = buildSteeringInjection({ ...rawInput, chronoIntention });
+
+  trackEvent({
+    name: 'ChronoBackplaneRead',
+    correlationId: input.correlationId,
+    userId: input.state.userId,
+    properties: {
+      found: chronoContinuity !== undefined,
+      injected: chronoIntention !== undefined,
+      type: chronoContinuity?.type ?? 'none',
+      ...(chronoReadError ? { error: chronoReadError } : {}),
+    },
+  });
 
   trackEvent({
     name: 'SteeringInjectionApplied',
@@ -104,6 +137,7 @@ export function recordSteeringInjection(rawInput: SteeringInjectionInput): Steer
       hasSummary: input.state.summary.trim().length > 0,
       recentHistoryCount: input.state.recentHistory.length,
       hasPendingClarification: input.state.pendingClarification !== undefined,
+      hasChronoIntention: chronoIntention !== undefined,
       isDevLoop: input.devLoopContext?.isDevLoop ?? false,
     },
   });
@@ -113,6 +147,6 @@ export function recordSteeringInjection(rawInput: SteeringInjectionInput): Steer
 
 df.app.activity('steeringInjectionActivity', {
   handler: async (rawInput: unknown): Promise<SteeringInjectionResult> => {
-    return recordSteeringInjection(rawInput as SteeringInjectionInput);
+    return await recordSteeringInjection(rawInput as SteeringInjectionInput);
   },
 });
