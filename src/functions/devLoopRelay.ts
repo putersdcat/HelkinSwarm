@@ -20,6 +20,7 @@ import {
 } from '../devloop/relayStore.js';
 import { ResurrectionCommandSchema } from '../devloop/radioProtocol.js';
 import type { NewMessageEvent } from '../orchestrator/overseer.js';
+import { resolveActiveOverseerInstanceId } from '../orchestrator/activeOverseerInstance.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { getTraceTree, findTraceTreeByShortCorrelation } from '../observability/sessionTracer.js';
 
@@ -72,14 +73,17 @@ app.http('devloopPush', {
 
     // Raise durable event to wake the overseer if it's listening for DevLoop messages
     const client = df.getClient(context);
-    try {
-      await client.raiseEvent(userId, 'DevLoopMessage', {
-        messageId: doc.id,
-        correlationTag: doc.correlationTag,
-        messageType: doc.messageType,
-      });
-    } catch {
-      // Overseer may not be running — message is persisted in Cosmos regardless
+    const activeOverseerInstanceId = await resolveActiveOverseerInstanceId(client, userId);
+    if (activeOverseerInstanceId) {
+      try {
+        await client.raiseEvent(activeOverseerInstanceId, 'DevLoopMessage', {
+          messageId: doc.id,
+          correlationTag: doc.correlationTag,
+          messageType: doc.messageType,
+        });
+      } catch {
+        // Overseer may no longer be running — message is persisted in Cosmos regardless
+      }
     }
 
     context.log(`[devloopRelay] Push: type=${doc.messageType} corr=${doc.correlationTag}`);
@@ -87,7 +91,11 @@ app.http('devloopPush', {
       name: 'DevLoopRelayPush',
       correlationId: doc.correlationTag,
       userId,
-      properties: { messageType: doc.messageType, messageId: doc.id },
+      properties: {
+        messageType: doc.messageType,
+        messageId: doc.id,
+        deliveredToOverseer: activeOverseerInstanceId !== undefined,
+      },
     });
     return {
       status: 202,
@@ -274,13 +282,13 @@ app.http('devloopResurrect', {
     }
 
     const targetUserId = body.userId;
-    const instanceId = `overseer-${targetUserId}`;
     const client = df.getClient(context);
+    const activeOverseerInstanceId = await resolveActiveOverseerInstanceId(client, targetUserId);
 
     // 1. Check current orchestrator status
     let wasTerminal = false;
-    try {
-      const status = await client.getStatus(instanceId);
+    if (activeOverseerInstanceId) {
+      const status = await client.getStatus(activeOverseerInstanceId);
       if (status && !TERMINAL_STATUSES.has(status.runtimeStatus)) {
         return {
           status: 200,
@@ -288,14 +296,13 @@ app.http('devloopResurrect', {
             resurrected: false,
             reason: 'Session is already running.',
             runtimeStatus: status.runtimeStatus,
+            instanceId: activeOverseerInstanceId,
           },
         };
       }
-      // Resurrect is technically obsolete #280 as overseer is a one-shot orchestrator now
-      wasTerminal = true;
-    } catch {
-      // expected
     }
+    // Resurrect is technically obsolete #280 as overseer is a one-shot orchestrator now
+    wasTerminal = true;
 
     const turnId = crypto.randomUUID().slice(0, 8);
     let startInstanceId = `overseer-${targetUserId}-${turnId}`;
@@ -337,7 +344,7 @@ app.http('devloopResurrect', {
       status: 200,
       jsonBody: {
         resurrected: true,
-        instanceId,
+        instanceId: startInstanceId,
         wasTerminal,
         initialMessageInjected: !!body.initialMessage,
       },

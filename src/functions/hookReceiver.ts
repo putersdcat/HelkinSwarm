@@ -12,6 +12,7 @@ import {
 import * as df from 'durable-functions';
 import { z } from 'zod';
 import { getHookById, recordHookFired } from '../orchestrator/hookCatalog.js';
+import { resolveActiveOverseerInstanceId } from '../orchestrator/activeOverseerInstance.js';
 
 const HookReceiverPayloadSchema = z.object({
   hookId: z.string().uuid(),
@@ -58,18 +59,27 @@ app.http('hookReceiver', {
       firedAt: new Date().toISOString(),
     };
 
-    // The overseer instance ID is the userId (singleton per user)
+    const activeOverseerInstanceId = await resolveActiveOverseerInstanceId(client, body.userId);
+
+    if (!activeOverseerInstanceId) {
+      context.warn(`[hookReceiver] No active overseer instance found for userId=${body.userId}; hook firing recorded only`);
+      return {
+        status: 202,
+        jsonBody: { accepted: true, hookId: body.hookId, deliveredToOverseer: false },
+      };
+    }
+
     try {
-      await client.raiseEvent(body.userId, `HookFired_${body.hookId}`, firedPayload);
+      await client.raiseEvent(activeOverseerInstanceId, `HookFired_${body.hookId}`, firedPayload);
     } catch (raiseErr) {
-      context.warn(`[hookReceiver] Failed to raise event for hookId=${body.hookId}, userId=${body.userId}`, raiseErr);
+      context.warn(`[hookReceiver] Failed to raise event for hookId=${body.hookId}, userId=${body.userId}, instanceId=${activeOverseerInstanceId}`, raiseErr);
       // Still return 202 — the hook was fired and recorded even if overseer is not running
     }
 
     context.log(`[hookReceiver] Hook fired: hookId=${body.hookId} userId=${body.userId} type=${hook.hookType}`);
     return {
       status: 202,
-      jsonBody: { accepted: true, hookId: body.hookId },
+      jsonBody: { accepted: true, hookId: body.hookId, deliveredToOverseer: true, instanceId: activeOverseerInstanceId },
     };
   },
 });

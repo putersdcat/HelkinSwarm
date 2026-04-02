@@ -15,6 +15,7 @@ import {
 import * as df from 'durable-functions';
 import { z } from 'zod';
 import { getHookById, recordHookFired } from '../orchestrator/hookCatalog.js';
+import { resolveActiveOverseerInstanceId } from '../orchestrator/activeOverseerInstance.js';
 import { trackEvent } from '../observability/telemetry.js';
 
 // ---------------------------------------------------------------------------
@@ -119,10 +120,16 @@ app.http('graphNotificationHandler', {
         firedAt: new Date().toISOString(),
       };
 
-      try {
-        await client.raiseEvent(userId, `HookFired_${hookId}`, firedPayload);
-      } catch (raiseErr) {
-        context.warn(`[graphNotify] Failed to raise event for hookId=${hookId}`, raiseErr);
+      const activeOverseerInstanceId = await resolveActiveOverseerInstanceId(client, userId);
+
+      if (!activeOverseerInstanceId) {
+        context.warn(`[graphNotify] No active overseer instance found for hookId=${hookId} userId=${userId}; notification recorded only`);
+      } else {
+        try {
+          await client.raiseEvent(activeOverseerInstanceId, `HookFired_${hookId}`, firedPayload);
+        } catch (raiseErr) {
+          context.warn(`[graphNotify] Failed to raise event for hookId=${hookId} instanceId=${activeOverseerInstanceId}`, raiseErr);
+        }
       }
 
       trackEvent({
@@ -134,6 +141,7 @@ app.http('graphNotificationHandler', {
           subscriptionId: notification.subscriptionId,
           changeType: notification.changeType,
           resource: notification.resource,
+          deliveredToOverseer: activeOverseerInstanceId !== undefined,
         },
       });
 
