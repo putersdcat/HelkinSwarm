@@ -79,6 +79,7 @@ import { buildOverseerDedupIdentity } from './overseerDedupIdentity.js';
 import { buildTeamsNativeEmojiEasterEggReply } from './teamsNativeEmojiEasterEggs.js';
 import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';
 import { saveChronoInterruptionBreadcrumb } from '../orchestrator/chronoBackplane.js';
+import { resolveActiveOverseerSummary } from '../orchestrator/activeOverseerInstance.js';
 import {
   MAX_INTERRUPTION_DEPTH,
   readMindSessionGuardState,
@@ -1070,8 +1071,14 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       if (existingInstanceId) return { outcome: 'duplicate' };
 
       const guardState = await readMindSessionGuardState(client, userId);
-      const hasActiveGuard = guardState?.activeInstanceId !== undefined && guardState.activeInstanceId !== identity.instanceId;
-      const interruptionDepth = guardState?.interruptionDepth ?? 0;
+      const activeSummary = await resolveActiveOverseerSummary(client, userId);
+      const observedActiveInstanceId = activeSummary.latestInstanceId;
+      const effectiveActiveInstanceId = observedActiveInstanceId ?? guardState?.activeInstanceId;
+      const hasActiveGuard = effectiveActiveInstanceId !== undefined && effectiveActiveInstanceId !== identity.instanceId;
+      const interruptionDepth = Math.max(
+        guardState?.interruptionDepth ?? 0,
+        Math.max(0, activeSummary.activeCount - 1),
+      );
 
       const ingressDecision = recordLimbicIngressDecision({
         source: 'teams-message',
@@ -1109,9 +1116,9 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       if (hasActiveGuard) {
         await saveChronoInterruptionBreadcrumb({
           userId,
-          interruptedInstanceId: guardState.activeInstanceId ?? 'unknown',
-          interruptedCorrelationId: guardState.activeCorrelationId,
-          interruptedSource: guardState.activeSource,
+          interruptedInstanceId: effectiveActiveInstanceId ?? 'unknown',
+          interruptedCorrelationId: guardState?.activeCorrelationId,
+          interruptedSource: guardState?.activeSource,
           interruptedByCorrelationId: eventCorrelationId,
           interruptedByMessage: userMessage,
         });
@@ -1123,8 +1130,9 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
           properties: {
             authority: 'mind-session-guard-compatibility-mode',
             source: 'teams-message',
-            activeInstanceId: guardState.activeInstanceId ?? 'unknown',
+            activeInstanceId: effectiveActiveInstanceId ?? 'unknown',
             requestedInstanceId: identity.instanceId,
+            interruptionDepth,
           },
         });
       }

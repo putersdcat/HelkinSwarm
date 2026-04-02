@@ -7,9 +7,13 @@ describe('bot interruption depth queue routing source guards', () => {
     const replaySource = readFileSync('src/orchestrator/pendingIntentReplay.ts', 'utf8');
 
     expect(botSource).toContain("type RaiseToOverseerResult =");
+    expect(botSource).toContain("resolveActiveOverseerSummary");
+    expect(botSource).toContain('Math.max(0, activeSummary.activeCount - 1)');
     expect(botSource).toContain("creationReason: 'interruption-depth-cap'");
     expect(botSource).toContain("outcome: 'queued'");
     expect(botSource).toContain('replaceAckWithQueuedNotice');
+    expect(replaySource).toContain("resolveActiveOverseerSummary");
+    expect(replaySource).toContain('Math.max(0, activeSummary.activeCount - 1)');
     expect(replaySource).toContain("if (ingressDecision.decision === 'queue') {");
     expect(replaySource).toContain("action: 'deferred'");
   });

@@ -6,6 +6,7 @@ import { saveConversationReference } from '../bot/conversationStore.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import { trackEvent } from '../observability/telemetry.js';
+import { resolveActiveOverseerSummary } from './activeOverseerInstance.js';
 import {
   hasIdempotencyKey,
   markIntentFailed,
@@ -105,8 +106,14 @@ export async function replayPendingIntent(
 
     try {
       const guardState = await readMindSessionGuardState(client, intent.userId);
-      const hasActiveGuard = guardState?.activeInstanceId !== undefined && guardState.activeInstanceId !== instanceId;
-      const interruptionDepth = guardState?.interruptionDepth ?? 0;
+      const activeSummary = await resolveActiveOverseerSummary(client, intent.userId);
+      const observedActiveInstanceId = activeSummary.latestInstanceId;
+      const effectiveActiveInstanceId = observedActiveInstanceId ?? guardState?.activeInstanceId;
+      const hasActiveGuard = effectiveActiveInstanceId !== undefined && effectiveActiveInstanceId !== instanceId;
+      const interruptionDepth = Math.max(
+        guardState?.interruptionDepth ?? 0,
+        Math.max(0, activeSummary.activeCount - 1),
+      );
 
       const ingressDecision = recordLimbicIngressDecision({
         source: 'pending-intent-replay',
@@ -138,9 +145,9 @@ export async function replayPendingIntent(
       if (hasActiveGuard) {
         await saveChronoInterruptionBreadcrumb({
           userId: intent.userId,
-          interruptedInstanceId: guardState.activeInstanceId ?? 'unknown',
-          interruptedCorrelationId: guardState.activeCorrelationId,
-          interruptedSource: guardState.activeSource,
+          interruptedInstanceId: effectiveActiveInstanceId ?? 'unknown',
+          interruptedCorrelationId: guardState?.activeCorrelationId,
+          interruptedSource: guardState?.activeSource,
           interruptedByCorrelationId: intent.correlationId ?? intent.id,
           interruptedByMessage: intent.messageText,
         });
@@ -152,8 +159,9 @@ export async function replayPendingIntent(
           properties: {
             authority: 'mind-session-guard-compatibility-mode',
             source: 'pending-intent-replay',
-            activeInstanceId: guardState.activeInstanceId ?? 'unknown',
+            activeInstanceId: effectiveActiveInstanceId ?? 'unknown',
             requestedInstanceId: instanceId,
+            interruptionDepth,
           },
         });
       }
