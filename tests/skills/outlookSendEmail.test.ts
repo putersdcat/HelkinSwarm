@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const INLINE_ASSET_ID = '11111111-1111-1111-1111-111111111111';
 const FILE_ASSET_ID = '22222222-2222-2222-2222-222222222222';
 const TEXT_ASSET_ID = '33333333-3333-3333-3333-333333333333';
+const WILDCARD_INLINE_ASSET_ID = '44444444-4444-4444-4444-444444444444';
 
 const runtimeAssetHarness = vi.hoisted(() => ({
   persistRuntimeAsset: vi.fn(),
@@ -69,6 +70,18 @@ async function loadHandlersModule() {
           fileName: 'notes.txt',
         },
         content: Buffer.from('hello world'),
+      };
+    }
+
+    if (assetId === WILDCARD_INLINE_ASSET_ID) {
+      return {
+        reference: {
+          id: WILDCARD_INLINE_ASSET_ID,
+          userId: 'user-1',
+          contentType: 'image/*',
+          fileName: 'teams-hosted-inline-1.bin',
+        },
+        content: Buffer.from('GIF89a', 'ascii'),
       };
     }
 
@@ -167,6 +180,52 @@ describe('outlook_send_email runtime-asset attachments', () => {
       }),
     ]);
     expect(result).toEqual({ success: true, message: 'Email sent to eric@example.com' });
+  });
+
+  it('repairs wildcard inline-image content types by sniffing GIF bytes before sending', async () => {
+    process.env['AZURE_CONTENT_SAFETY_ENDPOINT'] = 'https://example.test';
+    process.env['AZURE_CONTENT_SAFETY_KEY'] = 'test-key';
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 202,
+      text: async () => '',
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { handlers } = await loadHandlersModule();
+
+    await handlers['outlook_send_email']({
+      userId: 'user-1',
+      to: ['eric@example.com'],
+      subject: 'Inline gif email',
+      bodyType: 'html',
+      body: '<p>Hello</p><img src="cid:inline-image-1" />',
+      inlineAssets: [{ assetId: WILDCARD_INLINE_ASSET_ID, contentId: 'inline-image-1' }],
+      _scopedToken: 'scoped-test-token',
+      correlationId: 'corr-inline-gif-send',
+    });
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    const payload = JSON.parse(String(init?.body ?? '{}')) as {
+      message: {
+        attachments?: Array<{
+          name: string;
+          contentType: string;
+          isInline: boolean;
+          contentId?: string;
+        }>;
+      };
+    };
+
+    expect(payload.message.attachments).toEqual([
+      expect.objectContaining({
+        name: 'teams-hosted-inline-1.gif',
+        contentType: 'image/gif',
+        isInline: true,
+        contentId: 'inline-image-1',
+      }),
+    ]);
   });
 
   it('sends regular runtime asset attachments in the same sendMail call', async () => {

@@ -310,9 +310,110 @@ interface OutlookAttachmentMetadata {
 function buildAttachmentFileName(
   preferredFileName: string | undefined,
   fallbackFileName: string,
+  contentType?: string,
 ): string {
   const trimmed = preferredFileName?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : fallbackFileName;
+  const candidate = trimmed && trimmed.length > 0 ? trimmed : fallbackFileName;
+  const preferredExtension = inferAttachmentFileExtension(contentType);
+  if (!preferredExtension) {
+    return candidate;
+  }
+
+  const extensionMatch = candidate.match(/\.([a-z0-9]+)$/i);
+  if (!extensionMatch) {
+    return `${candidate}.${preferredExtension}`;
+  }
+
+  const existingExtension = extensionMatch[1]?.toLowerCase();
+  if (existingExtension === 'bin' && preferredExtension !== 'bin') {
+    return `${candidate.slice(0, -extensionMatch[0].length)}.${preferredExtension}`;
+  }
+
+  return candidate;
+}
+
+function inferAttachmentFileExtension(contentType: string | undefined): string | undefined {
+  switch ((contentType ?? '').toLowerCase()) {
+    case 'image/png':
+      return 'png';
+    case 'image/jpeg':
+      return 'jpg';
+    case 'image/gif':
+      return 'gif';
+    case 'image/webp':
+      return 'webp';
+    case 'image/bmp':
+      return 'bmp';
+    case 'image/svg+xml':
+      return 'svg';
+    case 'application/pdf':
+      return 'pdf';
+    case 'text/plain':
+      return 'txt';
+    default:
+      return undefined;
+  }
+}
+
+function sniffImageContentType(bytes: Uint8Array): string | undefined {
+  if (bytes.byteLength >= 6) {
+    const gifHeader = Buffer.from(bytes.slice(0, 6)).toString('ascii');
+    if (gifHeader === 'GIF87a' || gifHeader === 'GIF89a') {
+      return 'image/gif';
+    }
+  }
+
+  if (
+    bytes.byteLength >= 8
+    && bytes[0] === 0x89
+    && bytes[1] === 0x50
+    && bytes[2] === 0x4e
+    && bytes[3] === 0x47
+    && bytes[4] === 0x0d
+    && bytes[5] === 0x0a
+    && bytes[6] === 0x1a
+    && bytes[7] === 0x0a
+  ) {
+    return 'image/png';
+  }
+
+  if (bytes.byteLength >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return 'image/jpeg';
+  }
+
+  if (
+    bytes.byteLength >= 12
+    && Buffer.from(bytes.slice(0, 4)).toString('ascii') === 'RIFF'
+    && Buffer.from(bytes.slice(8, 12)).toString('ascii') === 'WEBP'
+  ) {
+    return 'image/webp';
+  }
+
+  if (bytes.byteLength >= 2 && bytes[0] === 0x42 && bytes[1] === 0x4d) {
+    return 'image/bmp';
+  }
+
+  const prefix = Buffer.from(bytes.slice(0, Math.min(bytes.byteLength, 256))).toString('utf8').trimStart();
+  if (prefix.startsWith('<svg') || prefix.startsWith('<?xml') && prefix.includes('<svg')) {
+    return 'image/svg+xml';
+  }
+
+  return undefined;
+}
+
+function normalizeAttachmentContentType(contentType: string, bytes: Uint8Array): string {
+  const trimmed = contentType.trim();
+  const lowered = trimmed.toLowerCase();
+  if (lowered.startsWith('image/') && lowered !== 'image/*') {
+    return trimmed;
+  }
+
+  const sniffed = sniffImageContentType(bytes);
+  if (sniffed) {
+    return sniffed;
+  }
+
+  return trimmed;
 }
 
 function normalizeContentId(contentId: string | null | undefined): string | undefined {
@@ -603,10 +704,15 @@ async function loadGraphRuntimeAttachment(
     );
   }
 
+  const normalizedContentType = normalizeAttachmentContentType(
+    loadedAsset.reference.contentType,
+    loadedAsset.content,
+  );
+
   const inlineContentId = options?.inlineContentId;
-  if (inlineContentId && !loadedAsset.reference.contentType.toLowerCase().startsWith('image/')) {
+  if (inlineContentId && !normalizedContentType.toLowerCase().startsWith('image/')) {
     throw new Error(
-      `Runtime asset '${asset.assetId}' has content type '${loadedAsset.reference.contentType}' and cannot be embedded inline. Only image runtime assets can be embedded inline right now.`,
+      `Runtime asset '${asset.assetId}' has content type '${normalizedContentType}' and cannot be embedded inline. Only image runtime assets can be embedded inline right now.`,
     );
   }
 
@@ -616,8 +722,12 @@ async function loadGraphRuntimeAttachment(
 
   return {
     '@odata.type': '#microsoft.graph.fileAttachment',
-    name: buildAttachmentFileName(asset.fileName ?? loadedAsset.reference.fileName, fallbackFileName),
-    contentType: loadedAsset.reference.contentType,
+    name: buildAttachmentFileName(
+      asset.fileName ?? loadedAsset.reference.fileName,
+      fallbackFileName,
+      normalizedContentType,
+    ),
+    contentType: normalizedContentType,
     contentBytes: Buffer.from(loadedAsset.content).toString('base64'),
     isInline: !!inlineContentId,
     ...(inlineContentId ? { contentId: inlineContentId } : {}),
