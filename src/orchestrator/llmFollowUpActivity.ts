@@ -15,7 +15,7 @@ import {
 import { getDirectChatModelIncompatibilityReason, getModelRouting } from '../llm/modelRouter.js';
 import type { ChatMessage, ChatCompletionResponse, ToolDefinition } from '../llm/foundryClient.js';
 import type { LlmResult } from './llmActivity.js';
-import { synthesizeDeterministicFollowUpToolCall } from './discoveryToolInjection.js';
+import { synthesizeDeterministicFollowUpToolCall, synthesizeExactToolCall } from './discoveryToolInjection.js';
 
 export interface LlmFollowUpInput {
   /** Original conversation messages (system + user). */
@@ -285,7 +285,8 @@ df.app.activity('llmFollowUpActivity', {
 
       const latestUserMessage = getLatestUserMessage(input.originalMessages);
       const synthesizedToolCall = retryToolCalls.length === 0 && retryTools
-        ? synthesizeDeterministicFollowUpToolCall(latestUserMessage, retryTools)
+        ? synthesizeExactToolCall(latestUserMessage, retryTools)
+          ?? synthesizeDeterministicFollowUpToolCall(latestUserMessage, retryTools)
         : null;
       const effectiveRetryToolCalls = synthesizedToolCall
         ? [{

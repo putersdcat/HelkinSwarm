@@ -10,8 +10,11 @@ describe('sessionOrchestrator clarification routing', () => {
     expect(source).toContain('const deterministicInitialToolCall = synthesizeExactToolCall(effectiveTaskMessage, initialToolSchemas);');
     expect(source).toContain('const deterministicExactToolResponse = buildDeterministicExactToolResponse(');
     expect(source).toContain('toolChoice: getForcedInitialToolChoice(effectiveTaskMessage, initialToolSchemas) ?? \'auto\'');
-    expect(source).toContain('const deterministicFollowUpToolCall = synthesizeDeterministicFollowUpToolCall(');
+    expect(source).toContain('const followUpToolSchemas = selectiveFollowUpSchemas ?? allToolSchemas;');
+    expect(source).toContain('const deterministicFollowUpToolCall = synthesizeExactToolCall(');
+    expect(source).toContain(') ?? synthesizeDeterministicFollowUpToolCall(');
     expect(source).toContain('effectiveTaskMessage,');
+    expect(source).toContain('followUpToolSchemas,');
     expect(source).toContain('getForcedDiscoveryFollowUpToolChoice(effectiveTaskMessage, selectiveFollowUpSchemas)');
     expect(source).toContain('buildDiscoveryDeadEndResponse(effectiveTaskMessage)');
     expect(source).toContain('userContext: effectiveTaskMessage,');

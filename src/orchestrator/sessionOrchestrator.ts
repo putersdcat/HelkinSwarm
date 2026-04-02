@@ -671,9 +671,13 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       const selectiveFollowUpSchemas = deriveSelectiveFollowUpToolSchemas(toolResults?.results ?? []);
       const discoveryFollowUpModelOverride = getDiscoveryFollowUpModelOverride(toolResults?.results ?? []);
       const effectiveFollowUpModelOverride = resolvedModelOverride ?? discoveryFollowUpModelOverride;
-      const deterministicFollowUpToolCall = synthesizeDeterministicFollowUpToolCall(
+      const followUpToolSchemas = selectiveFollowUpSchemas ?? allToolSchemas;
+      const deterministicFollowUpToolCall = synthesizeExactToolCall(
         effectiveTaskMessage,
-        selectiveFollowUpSchemas,
+        followUpToolSchemas,
+      ) ?? synthesizeDeterministicFollowUpToolCall(
+        effectiveTaskMessage,
+        followUpToolSchemas,
       );
       if (selectiveFollowUpSchemas) {
         trackEvent({

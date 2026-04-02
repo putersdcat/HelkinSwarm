@@ -588,6 +588,58 @@ describe('discoveryToolInjection', () => {
     });
   });
 
+  it('synthesizes a deterministic mailbox search follow-up call for attachment-search prompts', async () => {
+    const { synthesizeDeterministicFollowUpToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const call = synthesizeDeterministicFollowUpToolCall(
+      '/light Search my Outlook inbox for emails with attachments. Return only the top 5 message ids, subjects, and receivedAt values as compact JSON.',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_search_emails',
+            description: 'search emails',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(call).toEqual({
+      name: 'outlook_search_emails',
+      arguments: {
+        query: 'hasAttachment:true',
+        folder: 'inbox',
+        top: 5,
+      },
+    });
+  });
+
+  it('synthesizes a deterministic exact-tool call for non-core follow-up prompts once discovery surfaced the tool', async () => {
+    const { synthesizeExactToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const call = synthesizeExactToolCall(
+      'Use the exact tool outlook_list_attachments with messageId "msg-123". Return only compact JSON with messageId and attachments.',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_list_attachments',
+            description: 'list attachments',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(call).toEqual({
+      name: 'outlook_list_attachments',
+      arguments: {
+        messageId: 'msg-123',
+      },
+    });
+  });
+
   it('synthesizes a deterministic exact-tool call for structured core-tool validation prompts', async () => {
     const { synthesizeExactToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
 

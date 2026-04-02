@@ -374,6 +374,67 @@ function parseQuotedSendEmailIntent(userMessage: string): DeterministicFollowUpT
   };
 }
 
+function parseMailboxFolderMention(normalizedMessage: string): string | undefined {
+  const folderMatch = normalizedMessage.match(/\b(inbox|sentitems|drafts|archive)\b/i);
+  return folderMatch?.[1]?.toLowerCase();
+}
+
+function parseMailboxTopCount(normalizedMessage: string): number | undefined {
+  const topMatch = normalizedMessage.match(/\btop\s+(\d{1,2})\b/i);
+  if (topMatch?.[1]) {
+    return Number(topMatch[1]);
+  }
+
+  if (/\b(latest|most recent|newest)\b/i.test(normalizedMessage)) {
+    return 1;
+  }
+
+  return undefined;
+}
+
+function parseDeterministicOutlookSearchIntent(userMessage: string): DeterministicFollowUpToolCall | null {
+  const cleanedMessage = stripValidationNoise(userMessage);
+  const normalizedMessage = cleanedMessage.toLowerCase();
+
+  const looksLikeMailboxSearch = /(search|find|lookup|look up)/.test(normalizedMessage)
+    && /(outlook|mailbox|email|emails|message|messages|mail)/.test(normalizedMessage);
+
+  if (!looksLikeMailboxSearch) {
+    return null;
+  }
+
+  const queryTerms: string[] = [];
+  if (/\b(with|has)\s+attachments?\b/.test(normalizedMessage) || /\bhasattachment:true\b/.test(normalizedMessage)) {
+    queryTerms.push('hasAttachment:true');
+  }
+
+  const fromMatch = cleanedMessage.match(/\bfrom\s+([^\s,]+@[^\s,]+)/i);
+  if (fromMatch?.[1]) {
+    queryTerms.push(`from:${fromMatch[1]}`);
+  }
+
+  const subjectQuotedMatch = cleanedMessage.match(/\bsubject\s+["“'`](.+?)["”'`]/i);
+  if (subjectQuotedMatch?.[1]) {
+    queryTerms.push(`subject:${subjectQuotedMatch[1]}`);
+  }
+
+  if (queryTerms.length === 0) {
+    return null;
+  }
+
+  const folder = parseMailboxFolderMention(cleanedMessage);
+  const top = parseMailboxTopCount(cleanedMessage);
+
+  return {
+    name: 'outlook_search_emails',
+    arguments: {
+      query: queryTerms.join(' '),
+      ...(folder ? { folder } : {}),
+      ...(top ? { top } : {}),
+    },
+  };
+}
+
 export function getDiscoveryFirstToolSchemas(): ToolDefinition[] {
   return toolRegistry
     .toFunctionSchemas()
@@ -487,6 +548,13 @@ export function synthesizeDeterministicFollowUpToolCall(
   if (!tools || tools.length === 0) return null;
 
   const toolNames = new Set(tools.map((tool) => tool.function.name));
+
+  if (toolNames.has('outlook_search_emails')) {
+    const mailboxSearchIntent = parseDeterministicOutlookSearchIntent(userMessage);
+    if (mailboxSearchIntent) {
+      return mailboxSearchIntent;
+    }
+  }
 
   if (toolNames.has('outlook_create_calendar_event')) {
     const calendarIntent = parseDeterministicCalendarEventIntent(userMessage);
