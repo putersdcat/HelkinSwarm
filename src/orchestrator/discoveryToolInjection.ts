@@ -12,6 +12,7 @@ type ToolResult = {
   toolName: string;
   success: boolean;
   result?: unknown;
+  error?: string;
 };
 
 type DiscoverySearchResultShape = {
@@ -107,6 +108,53 @@ function parseExactToolArgumentSegment(argumentSegment: string): Record<string, 
   return parsedArgs;
 }
 
+function parseExactToolRequestedFields(userMessage: string): string[] {
+  const cleaned = stripValidationNoise(userMessage);
+  const fieldMatch = cleaned.match(/return only compact json with\s+(.+)$/i);
+  if (!fieldMatch?.[1]) {
+    return [];
+  }
+
+  return fieldMatch[1]
+    .replace(/[.]\s*$/g, '')
+    .split(/,|\band\b/i)
+    .map((field) => field.trim())
+    .filter((field) => field.length > 0);
+}
+
+function getValueAtPath(source: unknown, path: string): unknown {
+  const parts = path.split('.').filter((part) => part.length > 0);
+  let current: unknown = source;
+
+  for (const part of parts) {
+    if (!current || typeof current !== 'object' || !(part in current)) {
+      return undefined;
+    }
+
+    current = (current as Record<string, unknown>)[part];
+  }
+
+  return current;
+}
+
+function setValueAtPath(target: Record<string, unknown>, path: string, value: unknown): void {
+  const parts = path.split('.').filter((part) => part.length > 0);
+  if (parts.length === 0) {
+    return;
+  }
+
+  let cursor: Record<string, unknown> = target;
+  for (const part of parts.slice(0, -1)) {
+    const existing = cursor[part];
+    if (!existing || typeof existing !== 'object' || Array.isArray(existing)) {
+      cursor[part] = {};
+    }
+    cursor = cursor[part] as Record<string, unknown>;
+  }
+
+  cursor[parts[parts.length - 1]!] = value;
+}
+
 export function synthesizeExactToolCall(
   userMessage: string,
   tools: ToolDefinition[] | null | undefined,
@@ -139,6 +187,42 @@ export function synthesizeExactToolCall(
     name: toolName,
     arguments: argumentsObject,
   };
+}
+
+export function buildDeterministicExactToolResponse(
+  userMessage: string,
+  toolResults: ToolResult[] | null | undefined,
+): string | null {
+  if (!toolResults || toolResults.length === 0) {
+    return null;
+  }
+
+  const requestedFields = parseExactToolRequestedFields(userMessage);
+  const primaryResult = toolResults[0];
+  if (!primaryResult) {
+    return null;
+  }
+
+  const baseResult = primaryResult.success
+    ? primaryResult.result
+    : {
+        status: 'error',
+        error: primaryResult.error ?? `Tool ${primaryResult.toolName} failed.`,
+      };
+
+  if (requestedFields.length === 0) {
+    return JSON.stringify(baseResult ?? {});
+  }
+
+  const compact: Record<string, unknown> = {};
+  for (const field of requestedFields) {
+    const value = getValueAtPath(baseResult, field);
+    if (value !== undefined) {
+      setValueAtPath(compact, field, value);
+    }
+  }
+
+  return JSON.stringify(Object.keys(compact).length > 0 ? compact : (baseResult ?? {}));
 }
 
 export function isReadOnlyDiscoveryRequest(userMessage: string): boolean {

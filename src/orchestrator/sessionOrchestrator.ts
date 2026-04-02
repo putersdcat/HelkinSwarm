@@ -48,6 +48,7 @@ import {
 import {
   buildReadOnlyDiscoveryQuery,
   buildReadOnlyDiscoveryResponse,
+  buildDeterministicExactToolResponse,
   buildDiscoveryDeadEndResponse,
   deriveSelectiveFollowUpToolSchemas,
   getDiscoveryFollowUpModelOverride,
@@ -653,6 +654,13 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       if (isReadOnlyDiscoveryRequest(effectiveTaskMessage)) {
         responseContent = buildReadOnlyDiscoveryResponse(toolResults.results, effectiveTaskMessage);
       } else {
+      const deterministicExactToolResponse = buildDeterministicExactToolResponse(
+        effectiveTaskMessage,
+        toolResults.results,
+      );
+      if (deterministicExactToolResponse) {
+        responseContent = deterministicExactToolResponse;
+      } else {
 
       // 3b. Multi-round tool dispatch loop (#253)
       // The LLM can request additional tool calls after seeing results,
@@ -1072,6 +1080,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
       responseContent = followUp.content;
       spans.push({ label: 'followup', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
+      }
       }
     }
   }

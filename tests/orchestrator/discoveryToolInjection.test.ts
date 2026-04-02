@@ -621,4 +621,28 @@ describe('discoveryToolInjection', () => {
       },
     });
   });
+
+  it('builds a deterministic compact JSON response for explicit exact-tool prompts', async () => {
+    const { buildDeterministicExactToolResponse } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const response = buildDeterministicExactToolResponse(
+      'Use the exact tool helkin_mcp_forge with command "approve_bundle" and bundlePath "bundles/demo.json". Return only compact JSON with status, skillId, manifestPath, smokeTest.toolCount, and reloadSummary.errors.',
+      [
+        {
+          toolName: 'helkin_mcp_forge',
+          success: true,
+          result: {
+            status: 'approved-local',
+            skillId: 'mcp-demo',
+            manifestPath: 'skills/custom/mcp-demo/manifest.json',
+            smokeTest: { toolCount: 7, toolNames: ['a'] },
+            reloadSummary: { errors: [] },
+            ignored: true,
+          },
+        },
+      ],
+    );
+
+    expect(response).toBe('{"status":"approved-local","skillId":"mcp-demo","manifestPath":"skills/custom/mcp-demo/manifest.json","smokeTest":{"toolCount":7},"reloadSummary":{"errors":[]}}');
+  });
 });
