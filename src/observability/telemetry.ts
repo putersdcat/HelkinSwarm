@@ -230,6 +230,8 @@ function buildTraceDetail(event: TelemetryEvent): string {
   if (p['interruptedInstanceId']) parts.push(`interruptedInstanceId: ${p['interruptedInstanceId']}`);
   if (p['interruptedCorrelationId']) parts.push(`interruptedCorrelationId: ${p['interruptedCorrelationId']}`);
   if (p['interruptedSource']) parts.push(`interruptedSource: ${p['interruptedSource']}`);
+  if (p['interruptionDepth'] !== undefined) parts.push(`interruptionDepth: ${p['interruptionDepth']}`);
+  if (p['interruptionDepthCap'] !== undefined) parts.push(`interruptionDepthCap: ${p['interruptionDepthCap']}`);
   if (p['instanceId']) parts.push(`instanceId: ${p['instanceId']}`);
   if (p['found'] !== undefined) parts.push(`found: ${p['found']}`);
   if (p['injected'] !== undefined) parts.push(`injected: ${p['injected']}`);

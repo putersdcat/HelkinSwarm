@@ -1,6 +1,7 @@
 import * as df from 'durable-functions';
 import { z } from 'zod';
 import { trackEvent } from '../observability/telemetry.js';
+import { MAX_INTERRUPTION_DEPTH } from './mindSessionGuard.js';
 
 export const LimbicIngressSourceSchema = z.enum([
   'teams-message',
@@ -24,6 +25,8 @@ export const LimbicIngressInputSchema = z.object({
   correlationId: z.string().min(1),
   compatibilityMode: z.boolean().default(true),
   hasActiveSession: z.boolean().default(false),
+  interruptionDepth: z.number().int().nonnegative().default(0),
+  interruptionDepthCap: z.number().int().positive().default(MAX_INTERRUPTION_DEPTH),
 });
 
 export const LimbicIngressDecisionSchema = z.object({
@@ -41,6 +44,13 @@ export function evaluateLimbicIngress(rawInput: LimbicIngressInput): LimbicIngre
     return LimbicIngressDecisionSchema.parse({
       decision: 'self-awaken',
       reason: 'Self-scheduled wake events retain highest internal priority.',
+    });
+  }
+
+  if (input.hasActiveSession && input.interruptionDepth >= input.interruptionDepthCap) {
+    return LimbicIngressDecisionSchema.parse({
+      decision: 'queue',
+      reason: `Interruption depth cap (${input.interruptionDepthCap}) reached; queue the next same-identity turn instead of spawning another overlap.`,
     });
   }
 
@@ -78,6 +88,8 @@ export function recordLimbicIngressDecision(rawInput: LimbicIngressInput): Limbi
       reason: decision.reason,
       compatibilityMode: input.compatibilityMode,
       hasActiveSession: input.hasActiveSession,
+      interruptionDepth: input.interruptionDepth,
+      interruptionDepthCap: input.interruptionDepthCap,
     },
   });
 
@@ -90,6 +102,7 @@ export function recordLimbicIngressDecision(rawInput: LimbicIngressInput): Limbi
         authority: 'living-mind-compatibility-mode',
         source: input.source,
         decision: decision.decision,
+        interruptionDepth: input.interruptionDepth,
       },
     });
   }

@@ -17,6 +17,7 @@ import {
 import { saveChronoInterruptionBreadcrumb } from './chronoBackplane.js';
 import { recordLimbicIngressDecision } from './limbicIngressActivity.js';
 import {
+  MAX_INTERRUPTION_DEPTH,
   readMindSessionGuardState,
   signalMindSessionAcquire,
 } from './mindSessionGuard.js';
@@ -80,6 +81,8 @@ export async function replayPendingIntent(
   await markIntentProcessing(intent.id, intent.userId);
 
   try {
+    let replayReason = decision.reason;
+
     await saveConversationReference(intent.userId, conversationReference);
 
     const devLoopContext = intent.devLoopContextJson
@@ -103,14 +106,34 @@ export async function replayPendingIntent(
     try {
       const guardState = await readMindSessionGuardState(client, intent.userId);
       const hasActiveGuard = guardState?.activeInstanceId !== undefined && guardState.activeInstanceId !== instanceId;
+      const interruptionDepth = guardState?.interruptionDepth ?? 0;
 
-      recordLimbicIngressDecision({
+      const ingressDecision = recordLimbicIngressDecision({
         source: 'pending-intent-replay',
         userId: intent.userId,
         correlationId: intent.correlationId ?? intent.id,
         compatibilityMode: getEnvConfig().livingMindCompatibilityMode,
         hasActiveSession: hasActiveGuard,
+        interruptionDepth,
+        interruptionDepthCap: MAX_INTERRUPTION_DEPTH,
       });
+      replayReason = ingressDecision.reason;
+
+      if (ingressDecision.decision === 'queue') {
+        await markIntentReceived(intent.id, intent.userId, ingressDecision.reason);
+        trackEvent({
+          name: 'PendingIntentRecovered',
+          correlationId: intent.correlationId ?? intent.id,
+          userId: intent.userId,
+          properties: {
+            trackingId: intent.trackingId,
+            action: 'deferred',
+            reason: ingressDecision.reason,
+            source,
+          },
+        });
+        return { outcome: 'deferred', reason: ingressDecision.reason };
+      }
 
       if (hasActiveGuard) {
         await saveChronoInterruptionBreadcrumb({
@@ -155,13 +178,13 @@ export async function replayPendingIntent(
       properties: {
         trackingId: intent.trackingId,
         action: 'replayed',
-        reason: decision.reason,
+        reason: replayReason,
         source,
         instanceId,
       },
     });
 
-    return { outcome: 'replayed', reason: decision.reason, instanceId };
+    return { outcome: 'replayed', reason: replayReason, instanceId };
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     await markIntentReceived(intent.id, intent.userId, reason);

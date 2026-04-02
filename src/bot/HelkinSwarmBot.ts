@@ -80,11 +80,17 @@ import { buildTeamsNativeEmojiEasterEggReply } from './teamsNativeEmojiEasterEgg
 import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';
 import { saveChronoInterruptionBreadcrumb } from '../orchestrator/chronoBackplane.js';
 import {
+  MAX_INTERRUPTION_DEPTH,
   readMindSessionGuardState,
   signalMindSessionAcquire,
 } from '../orchestrator/mindSessionGuard.js';
 
 const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
+
+type RaiseToOverseerResult =
+  | { outcome: 'started' }
+  | { outcome: 'duplicate' }
+  | { outcome: 'queued'; trackingId: string; reason: string };
 
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
@@ -845,7 +851,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     } : undefined;
 
     try {
-      const started = await this.raiseToOverseer(
+      const result = await this.raiseToOverseer(
         context,
         userId,
         userAlias,
@@ -861,9 +867,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         undefined,
         context.activity.id,
       );
-      if (!started && ackResponse?.id) {
-        await this.suppressDuplicateAck(context, userId, correlationId, ackResponse.id);
-      }
+      await this.handleRaiseToOverseerResult(context, userId, correlationId, ackResponse?.id, result);
     } catch (err) {
       // Overseer unreachable — persist as pending intent for startup recovery (#116)
       const conversationReference = TurnContextClass.getConversationReference(context.activity);
@@ -946,6 +950,52 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
   }
 
+  private async replaceAckWithQueuedNotice(
+    context: TurnContext,
+    userId: string,
+    correlationId: string,
+    ackActivityId: string,
+    trackingId: string,
+  ): Promise<void> {
+    const conversationId = context.activity.conversation?.id ?? userId;
+    try {
+      await context.updateActivity({
+        type: ActivityTypes.Message,
+        id: ackActivityId,
+        text: `⏳ I already have several active interruptions stacked up, so I queued this turn (tracking: ${trackingId}). I'll process it when I'm back online.`,
+        textFormat: 'markdown',
+      });
+    } catch (err) {
+      console.warn('[HelkinSwarmBot] Failed to update queued ack placeholder:', err);
+      await context.sendActivity(
+        `⏳ I already have several active interruptions stacked up, so I queued this turn (tracking: ${trackingId}). I'll process it when I'm back online.`,
+      );
+    } finally {
+      await clearPendingAckId(conversationId, correlationId);
+    }
+  }
+
+  private async handleRaiseToOverseerResult(
+    context: TurnContext,
+    userId: string,
+    correlationId: string,
+    ackActivityId: string | undefined,
+    result: RaiseToOverseerResult,
+  ): Promise<void> {
+    if (!ackActivityId) {
+      return;
+    }
+
+    if (result.outcome === 'duplicate') {
+      await this.suppressDuplicateAck(context, userId, correlationId, ackActivityId);
+      return;
+    }
+
+    if (result.outcome === 'queued') {
+      await this.replaceAckWithQueuedNotice(context, userId, correlationId, ackActivityId, result.trackingId);
+    }
+  }
+
   private async raiseToOverseer(
     context: TurnContext,
     userId: string,
@@ -961,7 +1011,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     correlationId?: string,
     skillForgeRequest?: NewMessageEvent['skillForgeRequest'],
     messageId?: string,
-  ): Promise<boolean> {
+  ): Promise<RaiseToOverseerResult> {
     const client = this.durableClient!;
     const eventCorrelationId = correlationId ?? crypto.randomUUID();
 
@@ -1017,18 +1067,44 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         skillForgeRequest,
         messageId,
       );
-      if (existingInstanceId) return false;
+      if (existingInstanceId) return { outcome: 'duplicate' };
 
       const guardState = await readMindSessionGuardState(client, userId);
       const hasActiveGuard = guardState?.activeInstanceId !== undefined && guardState.activeInstanceId !== identity.instanceId;
+      const interruptionDepth = guardState?.interruptionDepth ?? 0;
 
-      recordLimbicIngressDecision({
+      const ingressDecision = recordLimbicIngressDecision({
         source: 'teams-message',
         userId,
         correlationId: eventCorrelationId,
         compatibilityMode: getEnvConfig().livingMindCompatibilityMode,
         hasActiveSession: hasActiveGuard,
+        interruptionDepth,
+        interruptionDepthCap: MAX_INTERRUPTION_DEPTH,
       });
+
+      if (ingressDecision.decision === 'queue') {
+        const { trackingId } = await createPendingIntent({
+          userId,
+          messageText: userMessage,
+          conversationReferenceJson: JSON.stringify(conversationReference),
+          modelOverride,
+          devLoopContextJson: devLoopContext ? JSON.stringify(devLoopContext) : undefined,
+          imageUrls,
+          runtimeAssets,
+          attachmentNotices,
+          correlationId: eventCorrelationId,
+          creationReason: 'interruption-depth-cap',
+          userNotified: true,
+          failureReason: ingressDecision.reason,
+        });
+
+        return {
+          outcome: 'queued',
+          trackingId,
+          reason: ingressDecision.reason,
+        };
+      }
 
       if (hasActiveGuard) {
         await saveChronoInterruptionBreadcrumb({
@@ -1060,13 +1136,13 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         correlationId: eventCorrelationId,
         source: 'teams-message',
       });
-      return true;
+      return { outcome: 'started' };
     } catch (err: unknown) {
       // 409 = instance already exists (race condition) — safe to ignore (#300)
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes('409') || msg.includes('already exists') || msg.includes('conflict')) {
         console.info(`[HelkinSwarmBot] Duplicate overseer ${identity.instanceId} — skipping (Teams retry dedup)`);
-        return false;
+        return { outcome: 'duplicate' };
       }
       throw err;
     }
@@ -1121,7 +1197,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
       }
 
-      const started = await this.raiseToOverseer(
+      const result = await this.raiseToOverseer(
         context,
         userId,
         userAlias,
@@ -1137,9 +1213,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         { idea },
         context.activity.id,
       );
-      if (!started && ackResponse?.id) {
-        await this.suppressDuplicateAck(context, userId, correlationId, ackResponse.id);
-      }
+      await this.handleRaiseToOverseerResult(context, userId, correlationId, ackResponse?.id, result);
     } catch (err) {
       console.error(`[HelkinSwarmBot] /forge failed before handoff: ${err instanceof Error ? err.message : err}`);
       await context.sendActivity({
@@ -1329,7 +1403,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       const conversationId = context.activity.conversation?.id ?? userId;
       await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
     }
-    const started = await this.raiseToOverseer(
+    const result = await this.raiseToOverseer(
       context,
       userId,
       userAlias,
@@ -1345,9 +1419,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       undefined,
       context.activity.id,
     );
-    if (!started && ackResponse?.id) {
-      await this.suppressDuplicateAck(context, userId, correlationId, ackResponse.id);
-    }
+    await this.handleRaiseToOverseerResult(context, userId, correlationId, ackResponse?.id, result);
   }
 
   /** /model <deployment-name> <prompt> — force a specific Azure AI Foundry deployment for one turn (owner-only, #217). */
@@ -1401,7 +1473,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       const conversationId = context.activity.conversation?.id ?? userId;
       await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
     }
-    const started = await this.raiseToOverseer(
+    const result = await this.raiseToOverseer(
       context,
       userId,
       userAlias,
@@ -1417,9 +1489,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       undefined,
       context.activity.id,
     );
-    if (!started && ackResponse?.id) {
-      await this.suppressDuplicateAck(context, userId, correlationId, ackResponse.id);
-    }
+    await this.handleRaiseToOverseerResult(context, userId, correlationId, ackResponse?.id, result);
   }
 
   private async handleEmergencyStop(
@@ -1833,7 +1903,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       // propagation. For inline-email mode, the lane under test must see the
       // runtime asset references (including asset IDs) so it can call
       // outlook_send_email with inlineAssets on the real deployed path.
-      const started = await this.raiseToOverseer(
+      const result = await this.raiseToOverseer(
         context,
         userId,
         userAlias,
@@ -1849,9 +1919,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         undefined,
         context.activity.id,
       );
-      if (!started && ackResponse?.id) {
-        await this.suppressDuplicateAck(context, userId, correlationId, ackResponse.id);
-      }
+      await this.handleRaiseToOverseerResult(context, userId, correlationId, ackResponse?.id, result);
     } catch (err) {
       const message = `⚠️ Inbound asset ingestion self-test failed: ${err instanceof Error ? err.message : String(err)}`;
       if (ackResponse?.id) {

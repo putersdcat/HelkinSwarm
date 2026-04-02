@@ -5,6 +5,7 @@ import {
   evaluateLimbicIngress,
   recordLimbicIngressDecision,
 } from '../../src/orchestrator/limbicIngressActivity.js';
+import { MAX_INTERRUPTION_DEPTH } from '../../src/orchestrator/mindSessionGuard.js';
 
 describe('telemetry trace detail enrichment', () => {
   it('records auth method/source/scope details in the runtime trace for proof workflows', () => {
@@ -87,6 +88,34 @@ describe('telemetry trace detail enrichment', () => {
     expect(limbicPhase?.detail).toContain('source: pending-intent-replay');
     expect(limbicPhase?.detail).toContain('decision: compat-start');
     expect(overridePhase?.detail).toContain('authority: living-mind-compatibility-mode');
+  });
+
+  it('records interruption-depth queue decisions in the runtime trace detail', () => {
+    const queuedDecision = evaluateLimbicIngress({
+      source: 'teams-message',
+      userId: 'u1',
+      correlationId: 'corr-511-queue',
+      compatibilityMode: true,
+      hasActiveSession: true,
+      interruptionDepth: MAX_INTERRUPTION_DEPTH,
+    });
+    expect(queuedDecision.decision).toBe('queue');
+    expect(queuedDecision.reason).toContain('depth cap');
+
+    const correlationId = 'corr-511-trace';
+    recordLimbicIngressDecision({
+      source: 'teams-message',
+      userId: 'u1',
+      correlationId,
+      compatibilityMode: true,
+      hasActiveSession: true,
+      interruptionDepth: MAX_INTERRUPTION_DEPTH,
+    });
+
+    const trace = getTraceTree(correlationId);
+    const limbicPhase = trace?.phases.find((phase) => phase.name === 'LimbicDecision');
+    expect(limbicPhase?.detail).toContain('decision: queue');
+    expect(limbicPhase?.detail).toContain(`interruptionDepth: ${MAX_INTERRUPTION_DEPTH}`);
   });
 
   it('records live external-event routing outcomes in the runtime trace detail', () => {
