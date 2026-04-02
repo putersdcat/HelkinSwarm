@@ -697,4 +697,24 @@ describe('discoveryToolInjection', () => {
 
     expect(response).toBe('{"status":"approved-local","skillId":"mcp-demo","manifestPath":"skills/custom/mcp-demo/manifest.json","smokeTest":{"toolCount":7},"reloadSummary":{"errors":[]}}');
   });
+
+  it('does not short-circuit natural compact-json prompts into a discovery payload when no exact tool was requested', async () => {
+    const { buildDeterministicExactToolResponse } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const response = buildDeterministicExactToolResponse(
+      'Search my Outlook inbox for emails with attachments. Return only compact JSON with message ids, subjects, and receivedAt values.',
+      [
+        {
+          toolName: 'helkin_skill_search',
+          success: true,
+          result: {
+            tools: [{ name: 'outlook_search_emails' }],
+            skills: [{ domain: 'outlook' }],
+          },
+        },
+      ],
+    );
+
+    expect(response).toBeNull();
+  });
 });

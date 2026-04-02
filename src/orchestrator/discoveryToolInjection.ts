@@ -122,6 +122,11 @@ function parseExactToolRequestedFields(userMessage: string): string[] {
     .filter((field) => field.length > 0);
 }
 
+function hasExplicitExactToolRequest(userMessage: string): boolean {
+  const cleaned = stripValidationNoise(userMessage);
+  return /use the exact tool\s+[a-z][a-z0-9_]*/i.test(cleaned);
+}
+
 function getValueAtPath(source: unknown, path: string): unknown {
   const parts = path.split('.').filter((part) => part.length > 0);
   let current: unknown = source;
@@ -193,6 +198,10 @@ export function buildDeterministicExactToolResponse(
   userMessage: string,
   toolResults: ToolResult[] | null | undefined,
 ): string | null {
+  if (!hasExplicitExactToolRequest(userMessage)) {
+    return null;
+  }
+
   if (!toolResults || toolResults.length === 0) {
     return null;
   }
