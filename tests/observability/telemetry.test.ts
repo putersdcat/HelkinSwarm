@@ -108,4 +108,36 @@ describe('telemetry trace detail enrichment', () => {
     expect(phase?.detail).toContain('deliveredToOverseer: true');
     expect(phase?.detail).toContain('instanceId: overseer-u1-abc123');
   });
+
+  it('records interruption breadcrumb proof details in the runtime trace', () => {
+    const correlationId = 'corr-509-proof';
+
+    trackEvent({
+      name: 'InterruptionBreadcrumbWritten',
+      correlationId,
+      userId: 'u1',
+      properties: {
+        interruptedInstanceId: 'overseer-u1-old',
+        interruptedCorrelationId: 'corr-old',
+        interruptedSource: 'teams-message',
+        type: 'interruption-breadcrumb',
+      },
+    });
+
+    trackEvent({
+      name: 'InterruptionBreadcrumbRead',
+      correlationId,
+      userId: 'u1',
+      properties: {
+        found: true,
+        interruptedInstanceId: 'overseer-u1-old',
+      },
+    });
+
+    const trace = getTraceTree(correlationId);
+    const writtenPhase = trace?.phases.find((p) => p.name === 'InterruptionBreadcrumbWritten');
+    const readPhase = trace?.phases.find((p) => p.name === 'InterruptionBreadcrumbRead');
+    expect(writtenPhase?.detail).toContain('interruptedInstanceId: overseer-u1-old');
+    expect(readPhase?.detail).toContain('found: true');
+  });
 });

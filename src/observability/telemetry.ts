@@ -47,6 +47,8 @@ export type TelemetryEventName =
   | 'LimbicDecision'
   | 'ChronoBackplaneRead'
   | 'ChronoBackplaneWritten'
+  | 'InterruptionBreadcrumbWritten'
+  | 'InterruptionBreadcrumbRead'
   | 'SteeringInjectionApplied'
   | 'StaleAckRecovered'
   | 'StateLoaded'
@@ -98,6 +100,8 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   StateSaved: 'memory',
   ChronoBackplaneRead: 'memory',
   ChronoBackplaneWritten: 'memory',
+  InterruptionBreadcrumbWritten: 'memory',
+  InterruptionBreadcrumbRead: 'memory',
   TurnStarted: 'orchestrator',
   TurnCompleted: 'orchestrator',
   ContinueAsNewTriggered: 'orchestrator',
@@ -218,10 +222,14 @@ function buildTraceDetail(event: TelemetryEvent): string {
   if (p['decision']) parts.push(`decision: ${p['decision']}`);
   if (p['reason']) parts.push(`reason: ${p['reason']}`);
   if (p['type']) parts.push(`type: ${p['type']}`);
+  if (p['interruptedInstanceId']) parts.push(`interruptedInstanceId: ${p['interruptedInstanceId']}`);
+  if (p['interruptedCorrelationId']) parts.push(`interruptedCorrelationId: ${p['interruptedCorrelationId']}`);
+  if (p['interruptedSource']) parts.push(`interruptedSource: ${p['interruptedSource']}`);
   if (p['instanceId']) parts.push(`instanceId: ${p['instanceId']}`);
   if (p['found'] !== undefined) parts.push(`found: ${p['found']}`);
   if (p['injected'] !== undefined) parts.push(`injected: ${p['injected']}`);
   if (p['deliveredToOverseer'] !== undefined) parts.push(`deliveredToOverseer: ${p['deliveredToOverseer']}`);
+  if (p['hasInterruptionBreadcrumb'] !== undefined) parts.push(`hasInterruptionBreadcrumb: ${p['hasInterruptionBreadcrumb']}`);
 
   return parts.length > 0 ? parts.join(', ') : event.name;
 }

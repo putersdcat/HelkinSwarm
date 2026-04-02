@@ -3,14 +3,16 @@ import { readFileSync } from 'node:fs';
 
 describe('chrono backplane routing source guards', () => {
   it('registers the chrono seam and wires turn-write plus steering-read integration', () => {
-    const indexSource = readFileSync('src/functions/index.ts', 'utf8');
-    const overseerSource = readFileSync('src/orchestrator/overseer.ts', 'utf8');
+    const botSource = readFileSync('src/bot/HelkinSwarmBot.ts', 'utf8');
+    const replaySource = readFileSync('src/orchestrator/pendingIntentReplay.ts', 'utf8');
     const steeringSource = readFileSync('src/orchestrator/steeringInjectionActivity.ts', 'utf8');
 
-    expect(indexSource).toContain("import '../orchestrator/chronoBackplane.js';");
-    expect(overseerSource).toContain("'saveChronoContinuityActivity'");
-    expect(steeringSource).toContain("import { loadChronoContinuity } from './chronoBackplane.js';");
+    expect(botSource).toContain('saveChronoInterruptionBreadcrumb({');
+    expect(replaySource).toContain('saveChronoInterruptionBreadcrumb({');
+    expect(steeringSource).toContain("loadChronoContinuity, loadChronoInterruptionBreadcrumb");
     expect(steeringSource).toContain('chronoContinuity = await loadChronoContinuity(input.state.userId);');
+    expect(steeringSource).toContain('interruptionBreadcrumb = await loadChronoInterruptionBreadcrumb(input.state.userId, input.correlationId);');
     expect(steeringSource).toContain("name: 'ChronoBackplaneRead'");
+    expect(steeringSource).toContain("name: 'InterruptionBreadcrumbRead'");
   });
 });

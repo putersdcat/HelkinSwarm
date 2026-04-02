@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { OverseerState } from './stateManager.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
-import { loadChronoContinuity } from './chronoBackplane.js';
+import { loadChronoContinuity, loadChronoInterruptionBreadcrumb } from './chronoBackplane.js';
 import { trackEvent } from '../observability/telemetry.js';
 
 export const SteeringInjectionInputSchema = z.object({
@@ -38,6 +38,10 @@ export const SteeringInjectionResultSchema = z.object({
 
 export const SteeringCueInputSchema = SteeringInjectionInputSchema.extend({
   chronoIntention: z.string().optional(),
+  interruptionBreadcrumb: z.object({
+    interruptedInstanceId: z.string(),
+    interruptedByMessage: z.string(),
+  }).optional(),
 });
 
 export type SteeringInjectionInput = {
@@ -51,13 +55,25 @@ export type SteeringInjectionInput = {
 export type SteeringInjectionResult = z.infer<typeof SteeringInjectionResultSchema>;
 
 export function buildSteeringInjection(
-  rawInput: SteeringInjectionInput & { chronoIntention?: string },
+  rawInput: SteeringInjectionInput & {
+    chronoIntention?: string;
+    interruptionBreadcrumb?: {
+      interruptedInstanceId: string;
+      interruptedByMessage: string;
+    };
+  },
 ): SteeringInjectionResult {
   const input = SteeringCueInputSchema.parse(rawInput);
   const cues: string[] = [];
 
   if (input.chronoIntention) {
     cues.push(`You previously planned to address: ${input.chronoIntention}`);
+  }
+
+  if (input.interruptionBreadcrumb) {
+    cues.push(
+      `This turn interrupted active work from instance ${input.interruptionBreadcrumb.interruptedInstanceId}. Reconcile the new request against that displaced task and leave a clear path back to it if possible.`,
+    );
   }
 
   if (input.state.pendingClarification) {
@@ -109,10 +125,26 @@ export async function recordSteeringInjection(rawInput: SteeringInjectionInput):
   } catch (err) {
     chronoReadError = err instanceof Error ? err.message : String(err);
   }
+  let interruptionBreadcrumb;
+  let interruptionReadError: string | undefined;
+  try {
+    interruptionBreadcrumb = await loadChronoInterruptionBreadcrumb(input.state.userId, input.correlationId);
+  } catch (err) {
+    interruptionReadError = err instanceof Error ? err.message : String(err);
+  }
   const chronoIntention = chronoContinuity && chronoContinuity.anchorCorrelationId !== input.correlationId
     ? chronoContinuity.intention
     : undefined;
-  const result = buildSteeringInjection({ ...rawInput, chronoIntention });
+  const result = buildSteeringInjection({
+    ...rawInput,
+    chronoIntention,
+    interruptionBreadcrumb: interruptionBreadcrumb
+      ? {
+        interruptedInstanceId: interruptionBreadcrumb.interruptedInstanceId,
+        interruptedByMessage: interruptionBreadcrumb.interruptedByMessage,
+      }
+      : undefined,
+  });
 
   trackEvent({
     name: 'ChronoBackplaneRead',
@@ -123,6 +155,17 @@ export async function recordSteeringInjection(rawInput: SteeringInjectionInput):
       injected: chronoIntention !== undefined,
       type: chronoContinuity?.type ?? 'none',
       ...(chronoReadError ? { error: chronoReadError } : {}),
+    },
+  });
+
+  trackEvent({
+    name: 'InterruptionBreadcrumbRead',
+    correlationId: input.correlationId,
+    userId: input.state.userId,
+    properties: {
+      found: interruptionBreadcrumb !== undefined,
+      interruptedInstanceId: interruptionBreadcrumb?.interruptedInstanceId ?? 'none',
+      ...(interruptionReadError ? { error: interruptionReadError } : {}),
     },
   });
 
@@ -138,6 +181,7 @@ export async function recordSteeringInjection(rawInput: SteeringInjectionInput):
       recentHistoryCount: input.state.recentHistory.length,
       hasPendingClarification: input.state.pendingClarification !== undefined,
       hasChronoIntention: chronoIntention !== undefined,
+      hasInterruptionBreadcrumb: interruptionBreadcrumb !== undefined,
       isDevLoop: input.devLoopContext?.isDevLoop ?? false,
     },
   });

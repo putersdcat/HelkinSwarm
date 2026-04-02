@@ -78,6 +78,7 @@ import { ingestTeamsAttachments } from './inboundAttachmentIngestion.js';
 import { buildOverseerDedupIdentity } from './overseerDedupIdentity.js';
 import { buildTeamsNativeEmojiEasterEggReply } from './teamsNativeEmojiEasterEggs.js';
 import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';
+import { saveChronoInterruptionBreadcrumb } from '../orchestrator/chronoBackplane.js';
 import {
   readMindSessionGuardState,
   signalMindSessionAcquire,
@@ -1027,6 +1028,15 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       });
 
       if (hasActiveGuard) {
+        await saveChronoInterruptionBreadcrumb({
+          userId,
+          interruptedInstanceId: guardState.activeInstanceId ?? 'unknown',
+          interruptedCorrelationId: guardState.activeCorrelationId,
+          interruptedSource: guardState.activeSource,
+          interruptedByCorrelationId: eventCorrelationId,
+          interruptedByMessage: userMessage,
+        });
+
         trackEvent({
           name: 'PolicyOverrideApplied',
           correlationId: eventCorrelationId,

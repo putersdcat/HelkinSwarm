@@ -14,6 +14,7 @@ import {
   markIntentReceived,
   type PendingIntent,
 } from './pendingIntentStore.js';
+import { saveChronoInterruptionBreadcrumb } from './chronoBackplane.js';
 import { recordLimbicIngressDecision } from './limbicIngressActivity.js';
 import {
   readMindSessionGuardState,
@@ -112,6 +113,15 @@ export async function replayPendingIntent(
       });
 
       if (hasActiveGuard) {
+        await saveChronoInterruptionBreadcrumb({
+          userId: intent.userId,
+          interruptedInstanceId: guardState.activeInstanceId ?? 'unknown',
+          interruptedCorrelationId: guardState.activeCorrelationId,
+          interruptedSource: guardState.activeSource,
+          interruptedByCorrelationId: intent.correlationId ?? intent.id,
+          interruptedByMessage: intent.messageText,
+        });
+
         trackEvent({
           name: 'PolicyOverrideApplied',
           correlationId: intent.correlationId ?? intent.id,
