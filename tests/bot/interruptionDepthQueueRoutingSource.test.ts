@@ -10,7 +10,8 @@ describe('bot interruption depth queue routing source guards', () => {
     expect(botSource).toContain("type RaiseToOverseerResult =");
     expect(botSource).toContain("getActiveTurnCountForUser");
     expect(botSource).toContain('Math.max(0, activeTurnCount - 1)');
-    expect(botSource).toContain("const creationReason = interruptionDepth >= MAX_INTERRUPTION_DEPTH");
+    expect(botSource).toContain("const creationReason = ingressDecision.decision === 'defer'");
+    expect(botSource).toContain("? 'interruption-depth-cap'");
     expect(botSource).toContain("'single-session-enforcement'");
     expect(botSource).toContain("outcome: 'queued'");
     expect(botSource).toContain('replaceAckWithQueuedNotice');

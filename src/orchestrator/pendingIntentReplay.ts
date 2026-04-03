@@ -9,6 +9,10 @@ import { getActiveTurnCountForUser } from '../observability/orchestratorStageHea
 import { trackEvent } from '../observability/telemetry.js';
 import { resolveActiveOverseerSummary } from './activeOverseerInstance.js';
 import {
+  classifyRequestedTaskComplexity,
+  getConsciousLaneAssessmentForTurn,
+} from '../llm/modelRouter.js';
+import {
   hasIdempotencyKey,
   markIntentFailed,
   markIntentProcessed,
@@ -24,6 +28,7 @@ import {
   signalMindSessionAcquire,
 } from './mindSessionGuard.js';
 import type { NewMessageEvent } from './overseer.js';
+import { sendReply } from './sendReplyActivity.js';
 
 export interface PendingIntentReplayDecision {
   replay: boolean;
@@ -116,6 +121,13 @@ export async function replayPendingIntent(
         guardState?.interruptionDepth ?? 0,
         Math.max(0, activeTurnCount - 1),
       );
+      const consciousLane = getConsciousLaneAssessmentForTurn(intent.modelOverride);
+      const requestedTaskComplexity = classifyRequestedTaskComplexity({
+        userMessage: intent.messageText,
+        modelOverride: intent.modelOverride,
+        runtimeAssetCount: intent.runtimeAssets.length,
+        hasDevLoopContext: devLoopContext !== undefined,
+      });
 
       const ingressDecision = recordLimbicIngressDecision({
         source: 'pending-intent-replay',
@@ -125,6 +137,8 @@ export async function replayPendingIntent(
         hasActiveSession: hasActiveGuard,
         interruptionDepth,
         interruptionDepthCap: MAX_INTERRUPTION_DEPTH,
+        consciousModelImpaired: consciousLane.isImpaired,
+        requestedTaskComplexity,
       });
       replayReason = ingressDecision.reason;
 
@@ -139,6 +153,29 @@ export async function replayPendingIntent(
             action: 'deferred',
             reason: ingressDecision.reason,
             source,
+          },
+        });
+        return { outcome: 'deferred', reason: ingressDecision.reason };
+      }
+
+      if (ingressDecision.decision === 'defer') {
+        await markIntentReceived(intent.id, intent.userId, ingressDecision.reason);
+        await sendReply({
+          userId: intent.userId,
+          correlationId: intent.correlationId ?? intent.id,
+          conversationReference,
+          message: '⚠️ I deferred replay of your queued heavier turn because the conscious lane is currently low-capacity. I will keep it queued for later recovery, or you can retry with /heavy for full reasoning.',
+        });
+        trackEvent({
+          name: 'PendingIntentRecovered',
+          correlationId: intent.correlationId ?? intent.id,
+          userId: intent.userId,
+          properties: {
+            trackingId: intent.trackingId,
+            action: 'deferred',
+            reason: ingressDecision.reason,
+            source,
+            requestedTaskComplexity,
           },
         });
         return { outcome: 'deferred', reason: ingressDecision.reason };
