@@ -57,6 +57,76 @@ export interface ModelRouting {
   usesObo: boolean;
 }
 
+export type ModelCapacityLevel = 'high' | 'medium' | 'low';
+export type ModelImpairmentProtocol = 'full-capability' | 'prefer-simple-work' | 'defer-heavy-work';
+
+export interface ModelCapacityProfile {
+  modelId: string;
+  capacityLevel: ModelCapacityLevel;
+  defaultReasoning: boolean;
+  suitableFor: string[];
+  unsuitableFor: string[];
+  impairmentProtocol: ModelImpairmentProtocol;
+}
+
+export interface ConsciousLaneAssessment {
+  deploymentName: string;
+  capacityProfile: ModelCapacityProfile;
+  isImpaired: boolean;
+  summary: string;
+}
+
+const MODEL_CAPACITY_PROFILES: readonly ModelCapacityProfile[] = [
+  {
+    modelId: 'grok-4-1-fast-reasoning',
+    capacityLevel: 'high',
+    defaultReasoning: true,
+    suitableFor: ['orchestration', 'heavy-planning', 'tool-selection'],
+    unsuitableFor: ['simple-sub-session'],
+    impairmentProtocol: 'full-capability',
+  },
+  {
+    modelId: 'o4-mini',
+    capacityLevel: 'high',
+    defaultReasoning: true,
+    suitableFor: ['orchestration', 'heavy-planning', 'tool-selection'],
+    unsuitableFor: ['fast-response'],
+    impairmentProtocol: 'full-capability',
+  },
+  {
+    modelId: 'grok-4-1-fast-non-reasoning',
+    capacityLevel: 'medium',
+    defaultReasoning: false,
+    suitableFor: ['orchestration', 'tool-selection', 'fast-response'],
+    unsuitableFor: ['heavy-planning'],
+    impairmentProtocol: 'prefer-simple-work',
+  },
+  {
+    modelId: 'DeepSeek-V3.2',
+    capacityLevel: 'medium',
+    defaultReasoning: false,
+    suitableFor: ['fast-response', 'simple-sub-session'],
+    unsuitableFor: ['heavy-planning'],
+    impairmentProtocol: 'prefer-simple-work',
+  },
+  {
+    modelId: 'FW-Kimi-K2.5',
+    capacityLevel: 'medium',
+    defaultReasoning: false,
+    suitableFor: ['fast-response', 'simple-sub-session'],
+    unsuitableFor: ['heavy-planning'],
+    impairmentProtocol: 'prefer-simple-work',
+  },
+  {
+    modelId: 'gpt-5.4-mini',
+    capacityLevel: 'low',
+    defaultReasoning: false,
+    suitableFor: ['simple-sub-session', 'fast-response', 'vision'],
+    unsuitableFor: ['orchestration', 'heavy-planning'],
+    impairmentProtocol: 'defer-heavy-work',
+  },
+];
+
 const DIRECT_CHAT_MODEL_OVERRIDES = [
   'grok-4-1-fast-non-reasoning',
   'grok-4-1-fast-reasoning',
@@ -107,6 +177,13 @@ function createRoutingEntry(base: ModelRouting, deploymentName: string): ModelRo
     deploymentName,
     isReasoning: isReasoningDeploymentName(deploymentName, base.lane),
   };
+}
+
+function findCapacityProfile(deploymentName: string): ModelCapacityProfile | undefined {
+  const normalized = deploymentName.toLowerCase();
+  return [...MODEL_CAPACITY_PROFILES]
+    .sort((a, b) => b.modelId.length - a.modelId.length)
+    .find((profile) => normalized === profile.modelId.toLowerCase() || normalized.startsWith(`${profile.modelId.toLowerCase()}-`));
 }
 
 function getAzureRouting(config: ReturnType<typeof getEnvConfig>): ModelRouting {
@@ -165,6 +242,32 @@ export function getModelForTask(task: 'reasoning' | 'fast' | 'embedding' | 'visi
     case 'vision':
       return routing.lane.vision ?? routing.lane.primary;
   }
+}
+
+export function getModelCapacityProfile(deploymentName: string): ModelCapacityProfile {
+  return findCapacityProfile(deploymentName) ?? {
+    modelId: deploymentName,
+    capacityLevel: 'medium',
+    defaultReasoning: false,
+    suitableFor: ['fast-response'],
+    unsuitableFor: [],
+    impairmentProtocol: 'prefer-simple-work',
+  };
+}
+
+export function getConsciousLaneAssessment(routing = getModelRouting()): ConsciousLaneAssessment {
+  const capacityProfile = getModelCapacityProfile(routing.deploymentName);
+  const isImpaired = capacityProfile.capacityLevel === 'low';
+  const summary = isImpaired
+    ? `${routing.deploymentName} is operating in a low-capacity impaired state (${capacityProfile.impairmentProtocol}).`
+    : `${routing.deploymentName} is operating at ${capacityProfile.capacityLevel} capacity (${capacityProfile.impairmentProtocol}).`;
+
+  return {
+    deploymentName: routing.deploymentName,
+    capacityProfile,
+    isImpaired,
+    summary,
+  };
 }
 
 /**

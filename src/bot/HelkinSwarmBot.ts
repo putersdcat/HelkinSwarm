@@ -29,6 +29,7 @@ import {
 import { promptShields } from '../llm/promptShields.js';
 import {
   getDirectChatModelIncompatibilityReason,
+  getConsciousLaneAssessment,
   getSupportedDirectChatModelOverrides,
 } from '../llm/modelRouter.js';
 import { getEnvConfig } from '../config/envConfig.js';
@@ -728,6 +729,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       const safe = process.env.SAFETY_MODE ?? 'confirmation-gated';
       const { APP_VERSION } = await import('../config/version.js');
       const version = APP_VERSION;
+      const consciousLane = getConsciousLaneAssessment();
       const modeLabel = health.enabled
         ? (health.source === 'emergency-stop' ? 'E-STOP' : 'MAINTENANCE')
         : 'OFF';
@@ -735,7 +737,8 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         `HelkinSwarm ${version} — ` +
           `maintenance: ${modeLabel}, ` +
           `safety: ${safe}, ` +
-          `tools: ${toolRegistry.size}`,
+          `tools: ${toolRegistry.size}, ` +
+          `conscious-lane: ${consciousLane.deploymentName} (${consciousLane.capacityProfile.capacityLevel}, ${consciousLane.isImpaired ? 'impaired' : 'stable'}, ${consciousLane.capacityProfile.impairmentProtocol})`,
       );
       return;
     }

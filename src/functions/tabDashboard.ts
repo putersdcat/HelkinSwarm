@@ -12,7 +12,7 @@ import {
 import * as df from 'durable-functions';
 import { OrchestrationRuntimeStatus } from 'durable-functions';
 import { isOwnerUserId, getMaintenanceMode } from '../bot/maintenanceMode.js';
-import { getModelRouting } from '../llm/modelRouter.js';
+import { getConsciousLaneAssessment, getModelRouting } from '../llm/modelRouter.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { getLoadedCapabilitiesCount, getActiveSkills } from '../capabilities/capabilityLoader.js';
 import { APP_VERSION } from '../config/version.js';
@@ -61,6 +61,7 @@ app.http('tab-dashboard', {
     const client = df.getClient(context);
     const env = getEnvConfig();
     const routing = getModelRouting();
+    const consciousLane = getConsciousLaneAssessment(routing);
     const maintenance = await getMaintenanceMode();
 
     // Get orchestration instances
@@ -88,11 +89,16 @@ app.http('tab-dashboard', {
         euResidencyMode: env.euResidencyMode,
         model: {
           laneName: routing.laneName,
+          activeDeployment: routing.deploymentName,
           primary: routing.lane.primary,
           secondary: routing.lane.secondary,
           reasoning: routing.lane.reasoning ?? null,
           embedding: routing.lane.embedding,
           vision: routing.lane.vision ?? null,
+          consciousCapacityLevel: consciousLane.capacityProfile.capacityLevel,
+          consciousImpairmentProtocol: consciousLane.capacityProfile.impairmentProtocol,
+          consciousLaneImpaired: consciousLane.isImpaired,
+          consciousLaneSummary: consciousLane.summary,
         },
         capabilities: {
           toolCount: getLoadedCapabilitiesCount(),
