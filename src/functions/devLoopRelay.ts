@@ -33,6 +33,8 @@ import {
 import { saveChronoScheduledWake } from '../orchestrator/chronoBackplane.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { getTraceTree, findTraceTreeByShortCorrelation } from '../observability/sessionTracer.js';
+import { clearModelDegraded, markModelDegraded } from '../llm/modelCircuitBreaker.js';
+import { registerModels, reportLlmFailure, reportLlmSuccess } from '../llm/llmHealthTracker.js';
 
 // ---------------------------------------------------------------------------
 // Zod schemas for request validation
@@ -80,6 +82,20 @@ const RegisterHookProofPayloadSchema = z.object({
   originalIntent: z.string().min(1).max(400).default('Say exactly "hook proof ok" and nothing else.'),
   ttlMinutes: z.number().int().min(1).max(30).default(10),
 });
+
+const ModelDegradationProofPayloadSchema = z.discriminatedUnion('action', [
+  z.object({
+    action: z.literal('seed'),
+    deployments: z.array(z.string().min(1)).min(1).max(10),
+    reason: z.string().min(1).max(120).default('proof-degraded'),
+    cooldownSeconds: z.number().int().min(1).max(900).default(180),
+    trackDown: z.boolean().default(true),
+  }),
+  z.object({
+    action: z.literal('clear'),
+    deployments: z.array(z.string().min(1)).min(1).max(10),
+  }),
+]);
 
 // ---------------------------------------------------------------------------
 // POST /api/devloop/push — DevLoop sends a message to the runtime
@@ -514,6 +530,93 @@ app.http('devloopRegisterHookProof', {
             proof: 'synthetic-hook-proof',
           },
         },
+      },
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/devloop/model-degradation — seed/clear in-memory model degradation
+// ---------------------------------------------------------------------------
+
+app.http('devloopModelDegradation', {
+  methods: ['POST'],
+  authLevel: 'function',
+  route: 'devloop/model-degradation',
+  handler: async (req: HttpRequest): Promise<HttpResponseInit> => {
+    const userId = req.headers.get('x-helkinswarm-user-id');
+    if (!userId || !(await isOwnerUserId(userId))) {
+      return { status: 403, jsonBody: { error: 'Owner-only endpoint.' } };
+    }
+
+    let body: z.infer<typeof ModelDegradationProofPayloadSchema>;
+    try {
+      body = ModelDegradationProofPayloadSchema.parse(await req.json());
+    } catch {
+      return {
+        status: 400,
+        jsonBody: {
+          error: 'Invalid payload. Required action=seed|clear and deployments[]. Optional: reason, cooldownSeconds, trackDown.',
+        },
+      };
+    }
+
+    registerModels(body.deployments);
+
+    if (body.action === 'seed') {
+      for (const deploymentName of body.deployments) {
+        markModelDegraded(deploymentName, body.reason, body.cooldownSeconds * 1000);
+        if (body.trackDown) {
+          reportLlmFailure(deploymentName);
+          reportLlmFailure(deploymentName);
+        }
+      }
+
+      trackEvent({
+        name: 'DevLoopRelayPush',
+        correlationId: `model-degradation-seed-${Date.now()}`,
+        userId,
+        properties: {
+          endpoint: 'model-degradation',
+          action: body.action,
+          deployments: body.deployments.join(','),
+          cooldownSeconds: body.cooldownSeconds,
+          reason: body.reason,
+        },
+      });
+
+      return {
+        status: 200,
+        jsonBody: {
+          action: body.action,
+          deployments: body.deployments,
+          cooldownSeconds: body.cooldownSeconds,
+          trackDown: body.trackDown,
+        },
+      };
+    }
+
+    for (const deploymentName of body.deployments) {
+      clearModelDegraded(deploymentName);
+      reportLlmSuccess(deploymentName);
+    }
+
+    trackEvent({
+      name: 'DevLoopRelayPush',
+      correlationId: `model-degradation-clear-${Date.now()}`,
+      userId,
+      properties: {
+        endpoint: 'model-degradation',
+        action: body.action,
+        deployments: body.deployments.join(','),
+      },
+    });
+
+    return {
+      status: 200,
+      jsonBody: {
+        action: body.action,
+        deployments: body.deployments,
       },
     };
   },
