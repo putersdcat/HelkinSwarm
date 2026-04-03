@@ -58,6 +58,7 @@ import {
   getDiscoveryFirstToolSchemas,
   isReadOnlyDiscoveryRequest,
   isDiscoveryOnlyDeadEnd,
+  parseExactReplyInstruction,
   synthesizeRuntimeAssetInlineEmailToolCall,
   synthesizeDeterministicReadOnlyInitialToolCall,
   synthesizeExactToolCall,
@@ -123,6 +124,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     : canonicalizedMessage;
 
   const isExplicitReadOnlyDiscoveryRequest = isReadOnlyDiscoveryRequest(userMessageForLlm);
+  const exactReplyInstruction = parseExactReplyInstruction(userMessageForLlm);
 
   if (isExplicitReadOnlyDiscoveryRequest) {
     userMessageForLlm = buildReadOnlyDiscoveryQuery(userMessageForLlm);
@@ -234,6 +236,39 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   }
 
   const spans: TelemetrySpan[] = [];
+  if (exactReplyInstruction) {
+    const replyInput: SendReplyInput = {
+      userId: input.state.userId,
+      message: exactReplyInstruction,
+      correlationId,
+      conversationReference: input.conversationReference,
+    };
+    const replyResult: SendReplyResult = yield context.df.callActivity(
+      'sendReplyActivity',
+      replyInput,
+    );
+
+    const memoryInput: StoreMemoryInput = {
+      userId: input.state.userId,
+      userMessage: input.userMessage,
+      assistantReply: exactReplyInstruction,
+    };
+    yield context.df.callActivity('storeMemoryActivity', memoryInput);
+
+    return {
+      response: exactReplyInstruction,
+      cleanResponse: exactReplyInstruction,
+      tokensUsed: 0,
+      promptTokens: 0,
+      model: 'exact-reply-short-circuit',
+      toolCalls: [],
+      toolResults: null,
+      replySent: replyResult.success,
+      safetyPassed: true,
+      pendingClarification: pendingClarificationUpdate,
+    } satisfies SessionResult;
+  }
+
   if (clarificationShortCircuitResponse) {
     let replyMessage = clarificationShortCircuitResponse;
     const telemetryMode = 'verbose' as const;

@@ -91,6 +91,17 @@ function collapseWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+export function parseExactReplyInstruction(userMessage: string): string | null {
+  const cleaned = stripValidationNoise(userMessage);
+  const match = cleaned.match(/^(?:reply|respond|say)\s+with\s+exactly:\s*(.+)$/is);
+  if (!match?.[1]) {
+    return null;
+  }
+
+  const exactText = match[1].trim();
+  return exactText.length > 0 ? exactText : null;
+}
+
 function isExecutionProofPrompt(userMessage: string): boolean {
   const normalized = stripValidationNoise(userMessage).toLowerCase();
   return /(functional test|simple test|smoke test|test (?:it|this|that|the skill|the tool)|verify (?:it|this|that|the skill|the tool)|prove (?:it|this|that)|demonstrate|output the results|show the results)/.test(normalized);
@@ -667,6 +678,10 @@ export function getDiscoveryFirstToolDefinitions(): Array<{ name: string; descri
 }
 
 export function shouldForceDiscoveryToolSearch(userMessage: string): boolean {
+  if (parseExactReplyInstruction(userMessage)) {
+    return false;
+  }
+
   if (isReadOnlyDiscoveryRequest(userMessage)) {
     return true;
   }
@@ -709,6 +724,10 @@ export function getForcedDiscoveryFollowUpToolChoice(
   tools: ToolDefinition[] | null | undefined,
 ): { type: 'function'; function: { name: string } } | null {
   if (!tools || tools.length === 0) return null;
+
+  if (parseExactReplyInstruction(userMessage)) {
+    return null;
+  }
 
   const normalized = userMessage.toLowerCase();
   const toolNames = new Set(tools.map((tool) => tool.function.name));
