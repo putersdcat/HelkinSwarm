@@ -59,13 +59,6 @@ export function summarizeRoutableOverseerInstances(
     return { activeCount: 0, latestInstanceId: undefined };
   }
 
-  if (guardState?.activeInstanceId) {
-    return {
-      activeCount: 1,
-      latestInstanceId: guardState.activeInstanceId,
-    };
-  }
-
   const stageBoundInstanceId = activeTurnEntries
     .filter((entry) => entry.instanceId !== undefined)
     .sort((left, right) => right.updatedAtMs - left.updatedAtMs)[0]?.instanceId;
@@ -74,6 +67,16 @@ export function summarizeRoutableOverseerInstances(
     return {
       activeCount: activeTurnCount,
       latestInstanceId: stageBoundInstanceId,
+    };
+  }
+
+  if (guardState?.activeInstanceId && isActiveOverseerStatus({
+    instanceId: guardState.activeInstanceId,
+    runtimeStatus: statuses.find((status) => status.instanceId === guardState.activeInstanceId)?.runtimeStatus ?? null,
+  }, userId)) {
+    return {
+      activeCount: 1,
+      latestInstanceId: guardState.activeInstanceId,
     };
   }
 

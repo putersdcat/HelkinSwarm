@@ -4,7 +4,10 @@ import {
   findActiveOverseerInstanceId,
   summarizeActiveOverseerInstances,
   summarizeRoutableOverseerInstances,
+  type MinimalOrchestrationStatus,
 } from '../../src/orchestrator/activeOverseerInstance.js';
+import type { ActiveTurnStage } from '../../src/observability/orchestratorStageHealth.js';
+import type { MindSessionGuardState } from '../../src/orchestrator/mindSessionGuard.js';
 
 describe('active overseer instance resolution', () => {
   it('prefers the newest active one-shot overseer instance for the user', () => {
@@ -124,30 +127,36 @@ describe('active overseer instance resolution', () => {
     expect(result.latestInstanceId).toBeUndefined();
   });
 
-  it('prefers guard-owned active instance when a real active turn exists', () => {
-    const result = summarizeRoutableOverseerInstances([
+  it('uses guard state when no stage-bound instance exists but the guard points at an active overseer', () => {
+    const userId = 'user-a';
+    const statuses: MinimalOrchestrationStatus[] = [
       {
-        instanceId: 'overseer-user-a-dedup-hold',
+        instanceId: 'overseer-user-a-guard',
         runtimeStatus: OrchestrationRuntimeStatus.Running,
-        createdTime: '2026-04-03T02:00:00.000Z',
       },
-    ], 'user-a', [{
-      correlationId: 'corr-live',
-      userId: 'user-a',
-      stage: 'build-prompt',
-      startedAtMs: 1,
-      updatedAtMs: 2,
-    }], {
-      activeInstanceId: 'overseer-user-a-live',
-      activeCorrelationId: 'corr-live',
-      activeSource: 'teams-message',
+    ];
+    const activeTurnEntries: ActiveTurnStage[] = [
+      {
+        correlationId: 'corr-1',
+        userId,
+        stage: 'awaiting-ingress',
+        startedAtMs: 100,
+        updatedAtMs: 200,
+      },
+    ];
+    const guardState: MindSessionGuardState = {
+      activeInstanceId: 'overseer-user-a-guard',
+      activeCorrelationId: 'corr-1',
+      activeSource: 'devloop-relay',
       acquisitionCount: 1,
       collisionCount: 0,
       interruptionDepth: 0,
-    });
+    };
 
-    expect(result.activeCount).toBe(1);
-    expect(result.latestInstanceId).toBe('overseer-user-a-live');
+    expect(summarizeRoutableOverseerInstances(statuses, userId, activeTurnEntries, guardState)).toEqual({
+      activeCount: 1,
+      latestInstanceId: 'overseer-user-a-guard',
+    });
   });
 
   it('prefers the stage-bound instance id during awaiting-ingress routing', () => {
@@ -173,5 +182,38 @@ describe('active overseer instance resolution', () => {
 
     expect(result.activeCount).toBe(1);
     expect(result.latestInstanceId).toBe('overseer-user-a-live-window');
+  });
+
+  it('prefers the freshest stage-bound instance over stale guard state', () => {
+    const userId = 'user-a';
+    const statuses: MinimalOrchestrationStatus[] = [
+      {
+        instanceId: 'overseer-user-a-stage',
+        runtimeStatus: OrchestrationRuntimeStatus.Running,
+      },
+    ];
+    const activeTurnEntries: ActiveTurnStage[] = [
+      {
+        correlationId: 'corr-stage',
+        userId,
+        stage: 'awaiting-ingress',
+        instanceId: 'overseer-user-a-stage',
+        startedAtMs: 100,
+        updatedAtMs: 300,
+      },
+    ];
+    const guardState: MindSessionGuardState = {
+      activeInstanceId: 'overseer-user-a-stale',
+      activeCorrelationId: 'old-corr',
+      activeSource: 'teams-message',
+      acquisitionCount: 1,
+      collisionCount: 0,
+      interruptionDepth: 0,
+    };
+
+    expect(summarizeRoutableOverseerInstances(statuses, userId, activeTurnEntries, guardState)).toEqual({
+      activeCount: 1,
+      latestInstanceId: 'overseer-user-a-stage',
+    });
   });
 });
