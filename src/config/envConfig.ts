@@ -40,7 +40,7 @@ const EnvConfigSchema = z.object({
   // Feature Flags
   skillforgeEnabled: z.boolean().default(false),
   devLoopEnabled: z.boolean().default(false),
-  livingMindCompatibilityMode: z.boolean().default(true),
+  livingMindCompatibilityMode: z.boolean().default(false),
 
   // Turn-by-turn debug telemetry (spec: 0n-Turn-by-Turn-Debug-Telemetry.md)
   devTelemetryMode: z.enum(['off', 'minimal', 'standard', 'verbose']).default('verbose'),

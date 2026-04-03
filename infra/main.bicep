@@ -630,6 +630,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'AZURE_SUBSCRIPTION_ID', value: subscription().subscriptionId }
         { name: 'AZURE_RESOURCE_GROUP', value: resourceGroup().name }
         { name: 'MAINTENANCE_MODE', value: 'false' }
+        { name: 'LIVING_MIND_COMPAT_MODE', value: 'false' }
         { name: 'STAMP_POLICY_ALLOW_OUTLOOK_SEND_WITHOUT_CONFIRMATION', value: string(stampPolicyAllowOutlookSendWithoutConfirmation) }
 
         // ── Dev telemetry (spec 0n, #174) ──
