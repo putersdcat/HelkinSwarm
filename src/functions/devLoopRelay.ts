@@ -21,6 +21,11 @@ import {
 import { ResurrectionCommandSchema } from '../devloop/radioProtocol.js';
 import type { NewMessageEvent } from '../orchestrator/overseer.js';
 import { resolveActiveOverseerInstanceId } from '../orchestrator/activeOverseerInstance.js';
+import {
+  clearOrchestratorStage,
+  getActiveTurnCountForUser,
+  recordOrchestratorStage,
+} from '../observability/orchestratorStageHealth.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { getTraceTree, findTraceTreeByShortCorrelation } from '../observability/sessionTracer.js';
 
@@ -40,6 +45,19 @@ const AckPayloadSchema = z.object({
     correlationTag: z.string(),
   })),
 });
+
+const ActiveTurnProofPayloadSchema = z.discriminatedUnion('action', [
+  z.object({
+    action: z.literal('seed'),
+    count: z.number().int().min(1).max(10),
+    correlationPrefix: z.string().min(3).max(80).optional(),
+    stage: z.string().min(1).max(80).default('synthetic-active-turn'),
+  }),
+  z.object({
+    action: z.literal('clear'),
+    correlationIds: z.array(z.string().min(1)).min(1).max(20),
+  }),
+]);
 
 // ---------------------------------------------------------------------------
 // POST /api/devloop/push — DevLoop sends a message to the runtime
@@ -254,6 +272,91 @@ app.http('devloopSessionBundle', {
         relayMessageCount: messages.length,
         traceLookupMode,
         traceTree,
+      },
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/devloop/active-turns — seed/clear synthetic active-turn docs for proof
+// ---------------------------------------------------------------------------
+
+app.http('devloopActiveTurns', {
+  methods: ['POST'],
+  authLevel: 'function',
+  route: 'devloop/active-turns',
+  handler: async (req: HttpRequest): Promise<HttpResponseInit> => {
+    const userId = req.headers.get('x-helkinswarm-user-id');
+    if (!userId || !(await isOwnerUserId(userId))) {
+      return { status: 403, jsonBody: { error: 'Owner-only endpoint.' } };
+    }
+
+    let body: z.infer<typeof ActiveTurnProofPayloadSchema>;
+    try {
+      body = ActiveTurnProofPayloadSchema.parse(await req.json());
+    } catch {
+      return {
+        status: 400,
+        jsonBody: {
+          error: 'Invalid payload. Required action=seed|clear. Seed requires count; clear requires correlationIds.',
+        },
+      };
+    }
+
+    if (body.action === 'seed') {
+      const prefix = body.correlationPrefix ?? `synthetic-${Date.now()}`;
+      const correlationIds = Array.from({ length: body.count }, (_, index) => `${prefix}-${index + 1}`);
+
+      for (const correlationId of correlationIds) {
+        await recordOrchestratorStage(correlationId, body.stage, userId);
+      }
+
+      const activeTurnCount = await getActiveTurnCountForUser(userId);
+      trackEvent({
+        name: 'DevLoopRelayPush',
+        correlationId: correlationIds[0] ?? prefix,
+        userId,
+        properties: {
+          endpoint: 'active-turns',
+          action: body.action,
+          count: body.count,
+          activeTurnCount,
+        },
+      });
+
+      return {
+        status: 200,
+        jsonBody: {
+          action: body.action,
+          correlationIds,
+          activeTurnCount,
+        },
+      };
+    }
+
+    for (const correlationId of body.correlationIds) {
+      await clearOrchestratorStage(correlationId, userId);
+    }
+
+    const activeTurnCount = await getActiveTurnCountForUser(userId);
+    trackEvent({
+      name: 'DevLoopRelayPush',
+      correlationId: body.correlationIds[0],
+      userId,
+      properties: {
+        endpoint: 'active-turns',
+        action: body.action,
+        count: body.correlationIds.length,
+        activeTurnCount,
+      },
+    });
+
+    return {
+      status: 200,
+      jsonBody: {
+        action: body.action,
+        cleared: body.correlationIds.length,
+        activeTurnCount,
       },
     };
   },
