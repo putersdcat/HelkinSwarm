@@ -475,6 +475,14 @@ app.http('devloopNewMessage', {
     }
 
     const correlationId = `${body.correlationPrefix}-${Date.now()}`;
+    recordLimbicIngressDecision({
+      source: 'devloop-relay',
+      userId,
+      correlationId,
+      compatibilityMode: getEnvConfig().livingMindCompatibilityMode,
+      hasActiveSession: false,
+    });
+
     const event: NewMessageEvent = {
       userMessage: body.message,
       userId,
@@ -506,6 +514,18 @@ app.http('devloopNewMessage', {
         },
       };
     }
+
+    trackEvent({
+      name: 'DevLoopRelayPush',
+      correlationId,
+      userId,
+      properties: {
+        endpoint: 'new-message',
+        deliveredToOverseer: true,
+        source: 'devloop-relay',
+        instanceId: resolvedInstanceId,
+      },
+    });
 
     return {
       status: 200,
