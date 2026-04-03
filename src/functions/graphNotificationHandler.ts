@@ -14,8 +14,10 @@ import {
 } from '@azure/functions';
 import * as df from 'durable-functions';
 import { z } from 'zod';
+import { getEnvConfig } from '../config/envConfig.js';
 import { getHookById, recordHookFired } from '../orchestrator/hookCatalog.js';
 import { resolveActiveOverseerInstanceId } from '../orchestrator/activeOverseerInstance.js';
+import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';
 import { trackEvent } from '../observability/telemetry.js';
 
 // ---------------------------------------------------------------------------
@@ -129,6 +131,14 @@ app.http('graphNotificationHandler', {
       if (!activeOverseerInstanceId) {
         context.warn(`[graphNotify] No active overseer instance found for hookId=${hookId} userId=${userId}; notification recorded only`);
       } else {
+        recordLimbicIngressDecision({
+          source: 'graph-notification',
+          userId,
+          correlationId: hook.correlationId,
+          compatibilityMode: getEnvConfig().livingMindCompatibilityMode,
+          hasActiveSession: false,
+        });
+
         try {
           await client.raiseEvent(activeOverseerInstanceId, 'HookFired', firedPayload);
         } catch (raiseErr) {

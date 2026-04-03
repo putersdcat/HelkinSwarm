@@ -17,7 +17,12 @@ describe('external event overseer routing source guards', () => {
     expect(hookReceiver).toContain('instanceId: activeOverseerInstanceId,');
 
     expect(graphNotificationHandler).toContain("import { resolveActiveOverseerInstanceId } from '../orchestrator/activeOverseerInstance.js';");
+    expect(graphNotificationHandler).toContain("import { getEnvConfig } from '../config/envConfig.js';");
+    expect(graphNotificationHandler).toContain("import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';");
     expect(graphNotificationHandler).toContain('const activeOverseerInstanceId = await resolveActiveOverseerInstanceId(client, userId);');
+    expect(graphNotificationHandler).toContain('recordLimbicIngressDecision({');
+    expect(graphNotificationHandler).toContain("source: 'graph-notification'");
+    expect(graphNotificationHandler).toContain('compatibilityMode: getEnvConfig().livingMindCompatibilityMode');
     expect(graphNotificationHandler).toContain("await client.raiseEvent(activeOverseerInstanceId, 'HookFired', firedPayload);");
 
     expect(devLoopRelay).toContain("import { resolveActiveOverseerInstanceId } from '../orchestrator/activeOverseerInstance.js';");
