@@ -12,6 +12,7 @@ import { OrchestrationRuntimeStatus } from 'durable-functions';
 import { z } from 'zod';
 import { isOwnerUserId } from '../bot/maintenanceMode.js';
 import { getConversationReference } from '../bot/conversationStore.js';
+import { getEnvConfig } from '../config/envConfig.js';
 import {
   writeRelayMessage,
   pollOutboundMessages,
@@ -21,6 +22,8 @@ import {
 import { ResurrectionCommandSchema } from '../devloop/radioProtocol.js';
 import type { NewMessageEvent } from '../orchestrator/overseer.js';
 import { resolveActiveOverseerInstanceId } from '../orchestrator/activeOverseerInstance.js';
+import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';
+import { signalMindSessionAcquire } from '../orchestrator/mindSessionGuard.js';
 import {
   clearOrchestratorStage,
   getActiveTurnCountForUser,
@@ -564,6 +567,7 @@ app.http('devloopResurrect', {
     }
     // Resurrect is technically obsolete #280 as overseer is a one-shot orchestrator now
     wasTerminal = true;
+    const resurrectCorrelationId = `resurrect-${targetUserId}-${Date.now()}`;
 
     const turnId = crypto.randomUUID().slice(0, 8);
     let startInstanceId = `overseer-${targetUserId}-${turnId}`;
@@ -572,11 +576,20 @@ app.http('devloopResurrect', {
     if (body.initialMessage) {
       const convRef = await getConversationReference(targetUserId);
       if (convRef) {
+        recordLimbicIngressDecision({
+          source: 'devloop-relay',
+          userId: targetUserId,
+          correlationId: resurrectCorrelationId,
+          compatibilityMode: getEnvConfig().livingMindCompatibilityMode,
+          hasActiveSession: false,
+        });
+
         const event: NewMessageEvent = {
           userMessage: body.initialMessage,
           conversationReference: convRef,
           userId: targetUserId,
           userAlias: targetUserId.slice(0, 4),
+          correlationId: resurrectCorrelationId,
           devLoopContext: {
             isDevLoop: true,
             prefix: 'DEVLOOP',
@@ -586,6 +599,11 @@ app.http('devloopResurrect', {
           },
         };
         await client.startNew('overseer', { instanceId: startInstanceId, input: event });
+        await signalMindSessionAcquire(client, targetUserId, {
+          instanceId: startInstanceId,
+          correlationId: resurrectCorrelationId,
+          source: 'devloop-relay',
+        });
       }
     } else {
       // Not actually starting anything if there is no message, because overseer 
@@ -596,7 +614,7 @@ app.http('devloopResurrect', {
     context.log(`[devloopRelay] Resurrect: user=${targetUserId} wasTerminal=${wasTerminal} reason=${body.reason ?? 'none'}`);
     trackEvent({
       name: 'DevLoopRelayPush',
-      correlationId: `resurrect-${targetUserId}-${Date.now()}`,
+      correlationId: resurrectCorrelationId,
       userId: callerId,
       properties: { action: 'resurrect', targetUserId, wasTerminal, reason: body.reason ?? 'none' },
     });
@@ -607,6 +625,7 @@ app.http('devloopResurrect', {
         resurrected: true,
         instanceId: startInstanceId,
         wasTerminal,
+        correlationId: body.initialMessage ? resurrectCorrelationId : null,
         initialMessageInjected: !!body.initialMessage,
       },
     };
