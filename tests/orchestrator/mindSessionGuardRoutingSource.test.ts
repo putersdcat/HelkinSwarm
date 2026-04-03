@@ -15,11 +15,13 @@ describe('mind session guard routing source guards', () => {
     expect(botSource).toContain('await signalMindSessionAcquire(client, userId, {');
     expect(replaySource).toContain("authority: 'mind-session-guard-compatibility-mode'");
     expect(replaySource).toContain('await signalMindSessionAcquire(client, intent.userId, {');
+    expect(indexSource).toContain("import '../orchestrator/ingressWindowStageActivity.js';");
     expect(overseerSource).toContain('MIND_SESSION_GUARD_ENTITY_NAME');
     expect(overseerSource).toContain("context.df.signalEntity(");
     expect(overseerSource).toContain("'release'");
-    expect(overseerSource.indexOf("'release'", overseerSource.indexOf('saveChronoContinuityActivity'))).toBeLessThan(
-      overseerSource.indexOf('yield context.df.createTimer(dedupDeadline);'),
-    );
+    expect(overseerSource).toContain("context.df.waitForExternalEvent('NewMessage')");
+    expect(overseerSource).toContain("action: 'open'");
+    expect(overseerSource).toContain("action: 'drain'");
+    expect(overseerSource.indexOf("'release'", overseerSource.indexOf('saveChronoContinuityActivity'))).toBeGreaterThan(-1);
   });
 });

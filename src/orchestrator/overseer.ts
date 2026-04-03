@@ -25,6 +25,7 @@ import type { QuotedContext } from '../bot/quotedContext.js';
 import type { RuntimeAssetReference } from '../integrations/runtimeAssetStore.js';
 import { MIND_SESSION_GUARD_ENTITY_NAME, MindSessionGuardReleaseInputSchema } from './mindSessionGuard.js';
 import type { SaveChronoContinuityInput } from './chronoBackplane.js';
+import type { IngressWindowStageInput } from './ingressWindowStageActivity.js';
 
 /** Spinner starts after this many ms. Only long turns get spinner updates. */
 const SPINNER_INITIAL_DELAY_MS = 8_000;
@@ -83,8 +84,54 @@ df.app.orchestration('overseer', function* (context) {
     conversationId: msg.conversationReference.conversation?.id ?? 'unknown',
   });
 
-  // Process this message — overseer completes naturally after processTurn returns
-  yield* processTurn(context, state, msg);
+  let nextMessage: NewMessageEvent = msg;
+
+  while (true) {
+    const completedCorrelationId = yield* processTurn(context, state, nextMessage);
+    if (!completedCorrelationId) {
+      return;
+    }
+
+    yield context.df.callActivity('ingressWindowStageActivity', {
+      action: 'open',
+      correlationId: completedCorrelationId,
+      userId: state.userId,
+      instanceId: context.df.instanceId,
+    } satisfies IngressWindowStageInput);
+
+    const ingressDeadline = new Date(context.df.currentUtcDateTime.getTime() + DEDUP_HOLD_MS);
+    const ingressTimer = context.df.createTimer(ingressDeadline);
+    const newMessageEvent = context.df.waitForExternalEvent('NewMessage');
+    const winner = yield context.df.Task.any([newMessageEvent, ingressTimer]) as df.Task;
+
+    if (winner === newMessageEvent) {
+      ingressTimer.cancel();
+      const drainedMessage = newMessageEvent.result as NewMessageEvent;
+      const drainedCorrelationId = drainedMessage.correlationId ?? crypto.randomUUID();
+
+      yield context.df.callActivity('ingressWindowStageActivity', {
+        action: 'drain',
+        correlationId: completedCorrelationId,
+        nextCorrelationId: drainedCorrelationId,
+        userId: state.userId,
+        instanceId: context.df.instanceId,
+      } satisfies IngressWindowStageInput);
+
+      nextMessage = {
+        ...drainedMessage,
+        correlationId: drainedCorrelationId,
+      };
+      continue;
+    }
+
+    yield context.df.callActivity('ingressWindowStageActivity', {
+      action: 'clear',
+      correlationId: completedCorrelationId,
+      userId: state.userId,
+    } satisfies IngressWindowStageInput);
+
+    return;
+  }
 });
 
 // Helper generator to process a turn
@@ -93,7 +140,7 @@ function* processTurn(
   state: OverseerState,
   event: NewMessageEvent,
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions runtime drives the generator with mixed types
-): Generator<df.Task, void, any> {
+): Generator<df.Task, string | undefined, any> {
   const correlationId = event.correlationId ?? crypto.randomUUID();
 
   const sessionInput: SessionInput = {
@@ -174,7 +221,7 @@ function* processTurn(
           console.error(`[overseer] Failed to send timeout reply for user=${state.userId}`, replyErr);
         }
         yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
-        return;
+        return undefined;
       } else if (winner === spinnerTimer) {
         spinnerTicks++;
         yield context.df.callActivity('spinnerHeartbeatActivity', {
@@ -220,7 +267,7 @@ function* processTurn(
     // Dedup hold on error path — keep Running to block retries (#300)
     const errDedupDeadline = new Date(context.df.currentUtcDateTime.getTime() + DEDUP_HOLD_MS);
     yield context.df.createTimer(errDedupDeadline);
-    return;
+    return undefined;
   }
 
   state.latestPromptTokens = sessionResult.promptTokens;
@@ -257,12 +304,5 @@ function* processTurn(
     }),
   );
 
-  // Dedup hold:  keep this instance alive (Running) for 60s after processing so
-  // that retried Bot Connector POSTs see a Running instance and get 409 from
-  // startNew, preventing duplicate responses.  Azure Storage backend silently
-  // overwrites Completed instances on startNew, so this timer is the critical
-  // dedup layer for cross-container retries (#300).
-  const dedupDeadline = new Date(context.df.currentUtcDateTime.getTime() + DEDUP_HOLD_MS);
-  yield context.df.createTimer(dedupDeadline);
-  // Overseer completes naturally after the dedup hold — no ContinueAsNew (#280)
+  return correlationId;
 }

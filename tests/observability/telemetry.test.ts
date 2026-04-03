@@ -295,4 +295,33 @@ describe('telemetry trace detail enrichment', () => {
     expect(resumedPhase?.detail).toContain('found: true');
     expect(steeringPhase?.detail).toContain('hasPausedTask: true');
   });
+
+  it('records living-session ingress-window and drained-message details in the runtime trace', () => {
+    const correlationId = 'corr-521-proof';
+
+    trackEvent({
+      name: 'LivingSessionIngressWindowOpened',
+      correlationId,
+      userId: 'u1',
+      properties: {
+        instanceId: 'overseer-u1-live',
+      },
+    });
+
+    trackEvent({
+      name: 'LivingSessionNewMessageDrained',
+      correlationId,
+      userId: 'u1',
+      properties: {
+        instanceId: 'overseer-u1-live',
+        previousCorrelationId: 'corr-old',
+      },
+    });
+
+    const trace = getTraceTree(correlationId);
+    const openedPhase = trace?.phases.find((p) => p.name === 'LivingSessionIngressWindowOpened');
+    const drainedPhase = trace?.phases.find((p) => p.name === 'LivingSessionNewMessageDrained');
+    expect(openedPhase?.detail).toContain('instanceId: overseer-u1-live');
+    expect(drainedPhase?.detail).toContain('previousCorrelationId: corr-old');
+  });
 });

@@ -65,6 +65,11 @@ const SelfAwakenPayloadSchema = z.object({
   delaySeconds: z.number().int().min(1).max(600).default(70),
 });
 
+const InjectNewMessagePayloadSchema = z.object({
+  message: z.string().min(1).max(400),
+  correlationPrefix: z.string().min(3).max(80).default('devloop-injected'),
+});
+
 // ---------------------------------------------------------------------------
 // POST /api/devloop/push — DevLoop sends a message to the runtime
 // ---------------------------------------------------------------------------
@@ -425,6 +430,69 @@ app.http('devloopSelfAwaken', {
       jsonBody: {
         wakeId: wake.id,
         wakeAt,
+      },
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/devloop/new-message — inject a NewMessage event into living session
+// ---------------------------------------------------------------------------
+
+app.http('devloopNewMessage', {
+  methods: ['POST'],
+  authLevel: 'function',
+  route: 'devloop/new-message',
+  extraInputs: [df.input.durableClient()],
+  handler: async (req: HttpRequest, context: InvocationContext): Promise<HttpResponseInit> => {
+    const userId = req.headers.get('x-helkinswarm-user-id');
+    if (!userId || !(await isOwnerUserId(userId))) {
+      return { status: 403, jsonBody: { error: 'Owner-only endpoint.' } };
+    }
+
+    let body: z.infer<typeof InjectNewMessagePayloadSchema>;
+    try {
+      body = InjectNewMessagePayloadSchema.parse(await req.json());
+    } catch {
+      return {
+        status: 400,
+        jsonBody: { error: 'Invalid payload. Required: message, optional correlationPrefix.' },
+      };
+    }
+
+    const conversationReference = await getConversationReference(userId);
+    if (!conversationReference) {
+      return {
+        status: 409,
+        jsonBody: { error: 'No conversation reference available for owner user yet.' },
+      };
+    }
+
+    const client = df.getClient(context);
+    const activeOverseerInstanceId = await resolveActiveOverseerInstanceId(client, userId);
+    if (!activeOverseerInstanceId) {
+      return {
+        status: 409,
+        jsonBody: { error: 'No routable active overseer instance is available.' },
+      };
+    }
+
+    const correlationId = `${body.correlationPrefix}-${Date.now()}`;
+    const event: NewMessageEvent = {
+      userMessage: body.message,
+      conversationReference,
+      userId,
+      userAlias: userId.slice(0, 4),
+      correlationId,
+    };
+
+    await client.raiseEvent(activeOverseerInstanceId, 'NewMessage', event);
+
+    return {
+      status: 200,
+      jsonBody: {
+        correlationId,
+        instanceId: activeOverseerInstanceId,
       },
     };
   },

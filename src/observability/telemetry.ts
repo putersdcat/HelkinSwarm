@@ -48,6 +48,8 @@ export type TelemetryEventName =
   | 'ChronoScheduledWakeTriggered'
   | 'PausedTaskPaged'
   | 'PausedTaskResumeInjected'
+  | 'LivingSessionIngressWindowOpened'
+  | 'LivingSessionNewMessageDrained'
   | 'LimbicDecision'
   | 'ChronoBackplaneRead'
   | 'ChronoBackplaneWritten'
@@ -108,6 +110,8 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   ChronoScheduledWakeTriggered: 'orchestrator',
   PausedTaskPaged: 'memory',
   PausedTaskResumeInjected: 'memory',
+  LivingSessionIngressWindowOpened: 'orchestrator',
+  LivingSessionNewMessageDrained: 'orchestrator',
   ChronoBackplaneRead: 'memory',
   ChronoBackplaneWritten: 'memory',
   InterruptionBreadcrumbWritten: 'memory',
@@ -232,6 +236,7 @@ function buildTraceDetail(event: TelemetryEvent): string {
   if (p['wakeId']) parts.push(`wakeId: ${p['wakeId']}`);
   if (p['wakeAt']) parts.push(`wakeAt: ${p['wakeAt']}`);
   if (p['pausedTaskId']) parts.push(`pausedTaskId: ${p['pausedTaskId']}`);
+  if (p['previousCorrelationId']) parts.push(`previousCorrelationId: ${p['previousCorrelationId']}`);
   if (p['failureReason']) parts.push(`failureReason: ${p['failureReason']}`);
   if (p['authority']) parts.push(`authority: ${p['authority']}`);
   if (p['source']) parts.push(`source: ${p['source']}`);
