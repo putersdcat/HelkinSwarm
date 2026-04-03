@@ -1112,7 +1112,10 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       const observedActiveInstanceId = activeSummary.latestInstanceId;
       const effectiveActiveInstanceId = observedActiveInstanceId ?? (activeTurnCount > 0 ? guardState?.activeInstanceId : undefined);
       const hasActiveGuard = activeTurnCount > 0 && effectiveActiveInstanceId !== identity.instanceId;
-      const activeSessionRoutable = hasActiveGuard && effectiveActiveInstanceId !== undefined;
+      // Direct Teams-message redirection into an active living session remains
+      // blocked by a live stale-ack / missing-final-reply bug. Keep the safe
+      // queue path here until that narrower issue is resolved.
+      const activeSessionRoutable = false;
       const interruptionDepth = Math.max(
         guardState?.interruptionDepth ?? 0,
         Math.max(0, activeTurnCount - 1),
@@ -1165,24 +1168,6 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
           trackingId,
           reason: ingressDecision.reason,
         };
-      }
-
-      if (activeSessionRoutable && effectiveActiveInstanceId) {
-        trackEvent({
-          name: 'PolicyOverrideApplied',
-          correlationId: eventCorrelationId,
-          userId,
-          properties: {
-            authority: 'living-session-active-redirection',
-            source: 'teams-message',
-            activeInstanceId: effectiveActiveInstanceId,
-            requestedInstanceId: identity.instanceId,
-            interruptionDepth,
-          },
-        });
-
-        await client.raiseEvent(effectiveActiveInstanceId, 'NewMessage', event);
-        return { outcome: 'started' };
       }
 
       console.info(`[HelkinSwarmBot] DEDUP-PASS durable — starting ${identity.instanceId} bucket=${identity.timeBucket}`);

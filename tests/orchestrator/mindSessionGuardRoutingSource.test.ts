@@ -11,7 +11,7 @@ describe('mind session guard routing source guards', () => {
     expect(indexSource).toContain("import '../orchestrator/mindSessionGuard.js';");
     expect(botSource).toContain("readMindSessionGuardState,");
     expect(botSource).toContain("signalMindSessionAcquire,");
-    expect(botSource).toContain("authority: 'living-session-active-redirection'");
+    expect(botSource).toContain('const activeSessionRoutable = false;');
     expect(botSource).toContain('await signalMindSessionAcquire(client, userId, {');
     expect(replaySource).toContain("authority: 'living-session-active-redirection'");
     expect(replaySource).toContain('await signalMindSessionAcquire(client, intent.userId, {');
