@@ -42,6 +42,9 @@ export const ChronoScheduledWakeSchema = z.object({
   status: z.enum(['scheduled', 'dispatched', 'cancelled']).default('scheduled'),
   dispatchedAt: z.string().optional(),
   dispatchedCorrelationId: z.string().optional(),
+  deferredAt: z.string().optional(),
+  deferredReason: z.string().optional(),
+  deferCount: z.number().int().nonnegative().optional(),
   updatedAt: z.string(),
   ttl: z.number().int().positive(),
 });
@@ -300,6 +303,31 @@ export async function markChronoScheduledWakeDispatched(
     { op: 'add', path: '/dispatchedAt', value: new Date().toISOString() },
     { op: 'add', path: '/dispatchedCorrelationId', value: dispatchedCorrelationId },
   ]);
+}
+
+export async function deferChronoScheduledWake(
+  wakeId: string,
+  userId: string,
+  nextWakeAt: string,
+  reason: string,
+): Promise<void> {
+  const container = getContainer(CHRONO_CONTAINER);
+  const { resource } = await container.item(wakeId, userId).read<ChronoScheduledWake>();
+  if (!resource) {
+    return;
+  }
+
+  const existingDeferCount = resource.deferCount ?? 0;
+  const nextDoc = ChronoScheduledWakeSchema.parse({
+    ...resource,
+    wakeAt: nextWakeAt,
+    deferredAt: new Date().toISOString(),
+    deferredReason: reason,
+    deferCount: existingDeferCount + 1,
+    updatedAt: new Date().toISOString(),
+  });
+
+  await container.item(wakeId, userId).replace(nextDoc);
 }
 
 export async function loadChronoPausedTask(

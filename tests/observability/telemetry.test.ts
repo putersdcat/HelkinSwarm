@@ -321,6 +321,29 @@ describe('telemetry trace detail enrichment', () => {
     expect(triggeredPhase?.detail).toContain('instanceId: overseer-u1-wake-test');
   });
 
+  it('records chrono self-awaken defer details in the runtime trace', () => {
+    const correlationId = 'corr-532-proof';
+
+    trackEvent({
+      name: 'ChronoScheduledWakeDeferred',
+      correlationId,
+      userId: 'u1',
+      properties: {
+        wakeId: 'u1:wake:test',
+        wakeAt: '2026-04-03T12:00:00.000Z',
+        nextWakeAt: '2026-04-03T12:10:00.000Z',
+        reason: 'Conscious lane is currently impaired; defer complex work until a higher-capacity lane is restored.',
+      },
+    });
+
+    const trace = getTraceTree(correlationId);
+    const deferredPhase = trace?.phases.find((p) => p.name === 'ChronoScheduledWakeDeferred');
+
+    expect(deferredPhase?.detail).toContain('wakeId: u1:wake:test');
+    expect(deferredPhase?.detail).toContain('nextWakeAt: 2026-04-03T12:10:00.000Z');
+    expect(deferredPhase?.detail).toContain('defer complex work');
+  });
+
   it('records paused-task paging and resume details in the runtime trace', () => {
     const correlationId = 'corr-515-proof';
 

@@ -10,6 +10,13 @@ describe('self awaken timer source guards', () => {
     expect(timerSource).toContain("app.timer('selfAwakenTimer'");
     expect(timerSource).toContain('listDueChronoScheduledWakes()');
     expect(timerSource).toContain("source: 'self-awaken'");
+    expect(timerSource).toContain('getConsciousLaneAssessmentForTurn()');
+    expect(timerSource).toContain('classifyRequestedTaskComplexity({');
+    expect(timerSource).toContain('consciousModelImpaired: consciousLane.isImpaired');
+    expect(timerSource).toContain("if (ingressDecision.decision === 'defer') {");
+    expect(timerSource).toContain('await deferChronoScheduledWake(wake.id, wake.userId, nextWakeAt, ingressDecision.reason);');
+    expect(timerSource).toContain('await sendReply({');
+    expect(timerSource).toContain("name: 'ChronoScheduledWakeDeferred'");
     expect(timerSource).toContain('await markChronoScheduledWakeDispatched(wake.id, wake.userId, correlationId);');
     expect(timerSource).toContain("name: 'ChronoScheduledWakeTriggered'");
   });

@@ -7,12 +7,18 @@ import * as df from 'durable-functions';
 import { getConversationReference, saveConversationReference } from '../bot/conversationStore.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import {
+  deferChronoScheduledWake,
   listDueChronoScheduledWakes,
   markChronoScheduledWakeDispatched,
   saveChronoInterruptionBreadcrumb,
 } from '../orchestrator/chronoBackplane.js';
+import { sendReply } from '../orchestrator/sendReplyActivity.js';
 import { resolveActiveOverseerSummary } from '../orchestrator/activeOverseerInstance.js';
 import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';
+import {
+  classifyRequestedTaskComplexity,
+  getConsciousLaneAssessmentForTurn,
+} from '../llm/modelRouter.js';
 import {
   MAX_INTERRUPTION_DEPTH,
   readMindSessionGuardState,
@@ -26,6 +32,8 @@ function isStartConflict(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes('409') || message.includes('already exists') || message.includes('conflict');
 }
+
+const SELF_AWAKEN_DEFER_DELAY_MS = 10 * 60 * 1000;
 
 app.timer('selfAwakenTimer', {
   schedule: '0 * * * * *',
@@ -63,6 +71,10 @@ app.timer('selfAwakenTimer', {
           guardState?.interruptionDepth ?? 0,
           Math.max(0, activeTurnCount - 1),
         );
+        const consciousLane = getConsciousLaneAssessmentForTurn();
+        const requestedTaskComplexity = classifyRequestedTaskComplexity({
+          userMessage: wake.wakeMessage,
+        });
 
         const ingressDecision = recordLimbicIngressDecision({
           source: 'self-awaken',
@@ -72,7 +84,33 @@ app.timer('selfAwakenTimer', {
           hasActiveSession: hasActiveGuard,
           interruptionDepth,
           interruptionDepthCap: MAX_INTERRUPTION_DEPTH,
+          consciousModelImpaired: consciousLane.isImpaired,
+          requestedTaskComplexity,
         });
+
+        if (ingressDecision.decision === 'defer') {
+          const nextWakeAt = new Date(Date.now() + SELF_AWAKEN_DEFER_DELAY_MS).toISOString();
+          await deferChronoScheduledWake(wake.id, wake.userId, nextWakeAt, ingressDecision.reason);
+          await sendReply({
+            userId: wake.userId,
+            correlationId,
+            conversationReference,
+            message: `⚠️ I deferred a scheduled wake because the conscious lane is currently low-capacity for heavier work. I will retry this wake at ${nextWakeAt}.`,
+          });
+          trackEvent({
+            name: 'ChronoScheduledWakeDeferred',
+            correlationId,
+            userId: wake.userId,
+            properties: {
+              wakeId: wake.id,
+              wakeAt: wake.wakeAt,
+              nextWakeAt,
+              reason: ingressDecision.reason,
+              requestedTaskComplexity,
+            },
+          });
+          continue;
+        }
 
         if (hasActiveGuard && effectiveActiveInstanceId) {
           await saveChronoInterruptionBreadcrumb({
