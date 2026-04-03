@@ -75,7 +75,7 @@ export interface SessionInput {
   skillForgeRequest?: {
     idea: string;
   };
-  conversationReference: Partial<ConversationReference>;
+  conversationReference?: Partial<ConversationReference>;
   correlationId: string;
   /** Optional model override: 'primary', 'secondary', or a direct deployment name (#217). */
   modelOverride?: string;

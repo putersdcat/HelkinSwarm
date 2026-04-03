@@ -43,7 +43,7 @@ const DEDUP_HOLD_MS = 60_000;
 
 export interface NewMessageEvent {
   userMessage: string;
-  conversationReference: Partial<ConversationReference>;
+  conversationReference?: Partial<ConversationReference>;
   userId: string;
   userAlias: string;
   skillForgeRequest?: {
@@ -81,7 +81,7 @@ df.app.orchestration('overseer', function* (context) {
   const state: OverseerState = restoredState ?? createInitialState({
     userId: msg.userId,
     userAlias: msg.userAlias,
-    conversationId: msg.conversationReference.conversation?.id ?? 'unknown',
+    conversationId: msg.conversationReference?.conversation?.id ?? 'unknown',
   });
 
   let nextMessage: NewMessageEvent = msg;

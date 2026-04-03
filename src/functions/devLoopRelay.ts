@@ -460,14 +460,6 @@ app.http('devloopNewMessage', {
       };
     }
 
-    const conversationReference = await getConversationReference(userId);
-    if (!conversationReference) {
-      return {
-        status: 409,
-        jsonBody: { error: 'No conversation reference available for owner user yet.' },
-      };
-    }
-
     const client = df.getClient(context);
     const activeOverseerInstanceId = await resolveActiveOverseerInstanceId(client, userId);
     if (!activeOverseerInstanceId) {
@@ -480,13 +472,35 @@ app.http('devloopNewMessage', {
     const correlationId = `${body.correlationPrefix}-${Date.now()}`;
     const event: NewMessageEvent = {
       userMessage: body.message,
-      conversationReference,
       userId,
       userAlias: userId.slice(0, 4),
       correlationId,
     };
 
-    await client.raiseEvent(activeOverseerInstanceId, 'NewMessage', event);
+    try {
+      await client.raiseEvent(activeOverseerInstanceId, 'NewMessage', event);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      trackEvent({
+        name: 'DevLoopRelayPush',
+        correlationId,
+        userId,
+        properties: {
+          endpoint: 'new-message',
+          deliveredToOverseer: false,
+          instanceId: activeOverseerInstanceId,
+          error: message,
+        },
+      });
+      return {
+        status: 500,
+        jsonBody: {
+          error: message,
+          instanceId: activeOverseerInstanceId,
+          correlationId,
+        },
+      };
+    }
 
     return {
       status: 200,

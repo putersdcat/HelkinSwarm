@@ -9,5 +9,8 @@ describe('devloop new-message injection proof surface', () => {
     expect(source).toContain('const activeOverseerInstanceId = await resolveActiveOverseerInstanceId(client, userId);');
     expect(source).toContain("await client.raiseEvent(activeOverseerInstanceId, 'NewMessage', event);");
     expect(source).toContain('correlationPrefix: z.string().min(3).max(80).default(\'devloop-injected\')');
+    expect(source).toContain('status: 500,');
+    expect(source).toContain('jsonBody: {');
+    expect(source).toContain('error: message,');
   });
 });
