@@ -170,6 +170,41 @@ describe('FoundryClient failover', () => {
     ]);
   });
 
+  it('prefers medium-capacity fallbacks before the low-capacity lane for heavy reasoning requests', async () => {
+    const { FoundryClient } = await loadFoundryClientModule();
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(make503Response())
+      .mockResolvedValueOnce(makeOkResponse('grok-4-1-fast-non-reasoning'));
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new FoundryClient({
+      ...makeRoutingConfig(),
+      deploymentName: 'o4-mini',
+      isReasoning: true,
+    });
+
+    const response = await client.chatCompletion({
+      messages: [{ role: 'user', content: 'heavy reasoning request' }],
+      correlationId: 'corr-heavy-order',
+      requestedTaskComplexity: 'complex',
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('/deployments/o4-mini/chat/completions');
+    expect(fetchMock.mock.calls[1]?.[0]).not.toContain('/deployments/gpt-5.4-mini/chat/completions');
+    expect(response.model).toBe('grok-4-1-fast-non-reasoning');
+    expect(response.failoverSteps).toEqual([
+      {
+        fromModel: 'o4-mini',
+        toModel: 'grok-4-1-fast-non-reasoning',
+        reason: 'HTTP 503',
+        statusCode: 503,
+      },
+    ]);
+  });
+
   it('429 with Retry-After header uses that value for circuit breaker cooldown (#313)', async () => {
     const { FoundryClient } = await loadFoundryClientModule();
     const circuitBreaker = await import('../../src/llm/modelCircuitBreaker.js');

@@ -8,6 +8,7 @@ import {
   FoundryClient,
 } from '../llm/foundryClient.js';
 import {
+  classifyRequestedTaskComplexity,
   getDirectChatModelIncompatibilityReason,
   getModelRouting,
   getModelForTask,
@@ -126,6 +127,13 @@ df.app.activity('llmActivity', {
 
     // Get OpenAI-compatible function schemas from tool registry
     const tools = input.tools ?? toolRegistry.toFunctionSchemas();
+    const requestedTaskComplexity = classifyRequestedTaskComplexity({
+      userMessage: input.userMessage,
+      modelOverride: input.modelOverride,
+      runtimeAssetCount: input.imageUrls?.length,
+      hasQuotedContext: false,
+      hasDevLoopContext: false,
+    });
 
     trackEvent({ name: 'LlmCallStarted', correlationId, properties: { deployment: deploymentName, toolCount: tools.length } });
     console.log(`[llmActivity] correlationId=${correlationId} deployment=${deploymentName} toolCount=${tools.length} toolNames=${tools.map(t => t.function.name).join(',')}`);
@@ -138,6 +146,7 @@ df.app.activity('llmActivity', {
         maxTokens: 4096,
         temperature: 0.7,
         correlationId,
+        requestedTaskComplexity,
       });
 
       const choice = response.choices[0];

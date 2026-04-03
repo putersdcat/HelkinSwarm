@@ -78,6 +78,10 @@ export interface ConsciousLaneAssessment {
 
 export type RequestedTaskComplexity = 'simple' | 'compound' | 'complex';
 
+export interface FallbackChainOptions {
+  requestedTaskComplexity?: RequestedTaskComplexity;
+}
+
 export interface RequestedTaskComplexityInput {
   userMessage: string;
   modelOverride?: string;
@@ -340,11 +344,13 @@ export function classifyRequestedTaskComplexity(input: RequestedTaskComplexityIn
  * Ordering is slot-aware: requested deployment → slot fallback(s) → sibling slot(s).
  * Deduplicated by deployment name. Used by FoundryClient to cascade on throttle/failure (#152).
  */
-export function getFallbackChain(requestedDeploymentName?: string): ModelRouting[] {
+export function getFallbackChain(requestedDeploymentName?: string, options: FallbackChainOptions = {}): ModelRouting[] {
   const routing = getModelRouting();
   const config = getEnvConfig();
   const requested = requestedDeploymentName ?? routing.deploymentName;
   const candidates: Array<string | undefined> = [requested];
+  const requestedComplexity = options.requestedTaskComplexity ?? 'simple';
+  const isHeavyReasoningRequest = requestedComplexity === 'complex';
 
   if (requested === routing.lane.primary) {
     // When the primary Grok slot is saturated or unhealthy, prefer the explicitly
@@ -379,6 +385,25 @@ export function getFallbackChain(requestedDeploymentName?: string): ModelRouting
   }
 
   // OpenRouter / BYOK fallback intentionally disabled (#286).
+
+  if (isHeavyReasoningRequest) {
+    chain.sort((left, right) => {
+      if (left.deploymentName === requested) return -1;
+      if (right.deploymentName === requested) return 1;
+
+      const leftCapacity = getModelCapacityProfile(left.deploymentName).capacityLevel;
+      const rightCapacity = getModelCapacityProfile(right.deploymentName).capacityLevel;
+      const rank = (capacity: ModelCapacityLevel): number => {
+        switch (capacity) {
+          case 'high': return 0;
+          case 'medium': return 1;
+          case 'low': return 2;
+        }
+      };
+
+      return rank(leftCapacity) - rank(rightCapacity);
+    });
+  }
 
   return chain;
 }

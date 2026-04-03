@@ -80,6 +80,7 @@ export interface FoundryClientOptions {
   maxTokens?: number;
   temperature?: number;
   correlationId?: string;
+  requestedTaskComplexity?: 'simple' | 'compound' | 'complex';
 }
 
 export interface ToolDefinition {
@@ -229,7 +230,9 @@ export class FoundryClient {
     const correlationId = options.correlationId ?? crypto.randomUUID();
 
     // Get the full fallback chain for the requested deployment.
-    const chain = getFallbackChain(this.routing.deploymentName);
+    const chain = getFallbackChain(this.routing.deploymentName, {
+      requestedTaskComplexity: options.requestedTaskComplexity,
+    });
 
     // Register models with the health tracker so it knows the full set (#325).
     registerModels(chain.map(r => r.deploymentName));
