@@ -209,9 +209,6 @@ function* processTurn(
       console.error(`[overseer] Failed to send error reply for user=${state.userId}`, replyErr);
     }
     yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
-    // Dedup hold on error path — keep Running to block retries (#300)
-    const errDedupDeadline = new Date(context.df.currentUtcDateTime.getTime() + DEDUP_HOLD_MS);
-    yield context.df.createTimer(errDedupDeadline);
     context.df.signalEntity(
       new df.EntityId(MIND_SESSION_GUARD_ENTITY_NAME, state.userId),
       'release',
@@ -220,6 +217,9 @@ function* processTurn(
         correlationId: sessionInput.correlationId,
       }),
     );
+    // Dedup hold on error path — keep Running to block retries (#300)
+    const errDedupDeadline = new Date(context.df.currentUtcDateTime.getTime() + DEDUP_HOLD_MS);
+    yield context.df.createTimer(errDedupDeadline);
     return;
   }
 
@@ -248,13 +248,6 @@ function* processTurn(
     assistantReply: sessionResult.cleanResponse || sessionResult.response || '(no response)',
   } satisfies SaveChronoContinuityInput);
 
-  // Dedup hold:  keep this instance alive (Running) for 60s after processing so
-  // that retried Bot Connector POSTs see a Running instance and get 409 from
-  // startNew, preventing duplicate responses.  Azure Storage backend silently
-  // overwrites Completed instances on startNew, so this timer is the critical
-  // dedup layer for cross-container retries (#300).
-  const dedupDeadline = new Date(context.df.currentUtcDateTime.getTime() + DEDUP_HOLD_MS);
-  yield context.df.createTimer(dedupDeadline);
   context.df.signalEntity(
     new df.EntityId(MIND_SESSION_GUARD_ENTITY_NAME, state.userId),
     'release',
@@ -263,5 +256,13 @@ function* processTurn(
       correlationId: sessionInput.correlationId,
     }),
   );
+
+  // Dedup hold:  keep this instance alive (Running) for 60s after processing so
+  // that retried Bot Connector POSTs see a Running instance and get 409 from
+  // startNew, preventing duplicate responses.  Azure Storage backend silently
+  // overwrites Completed instances on startNew, so this timer is the critical
+  // dedup layer for cross-container retries (#300).
+  const dedupDeadline = new Date(context.df.currentUtcDateTime.getTime() + DEDUP_HOLD_MS);
+  yield context.df.createTimer(dedupDeadline);
   // Overseer completes naturally after the dedup hold — no ContinueAsNew (#280)
 }

@@ -3,6 +3,7 @@ import { OrchestrationRuntimeStatus } from 'durable-functions';
 import {
   findActiveOverseerInstanceId,
   summarizeActiveOverseerInstances,
+  summarizeRoutableOverseerInstances,
 } from '../../src/orchestrator/activeOverseerInstance.js';
 
 describe('active overseer instance resolution', () => {
@@ -88,5 +89,38 @@ describe('active overseer instance resolution', () => {
 
     expect(result.activeCount).toBe(3);
     expect(result.latestInstanceId).toBe('overseer-user-a-interrupt-2');
+  });
+
+  it('ignores quiescent running overseers when there is no active turn and no guard ownership', () => {
+    const result = summarizeRoutableOverseerInstances([
+      {
+        instanceId: 'overseer-user-a-dedup-hold',
+        runtimeStatus: OrchestrationRuntimeStatus.Running,
+        createdTime: '2026-04-03T02:00:00.000Z',
+      },
+    ], 'user-a', 0, undefined);
+
+    expect(result.activeCount).toBe(0);
+    expect(result.latestInstanceId).toBeUndefined();
+  });
+
+  it('prefers guard-owned active instance for routable delivery', () => {
+    const result = summarizeRoutableOverseerInstances([
+      {
+        instanceId: 'overseer-user-a-dedup-hold',
+        runtimeStatus: OrchestrationRuntimeStatus.Running,
+        createdTime: '2026-04-03T02:00:00.000Z',
+      },
+    ], 'user-a', 0, {
+      activeInstanceId: 'overseer-user-a-live',
+      activeCorrelationId: 'corr-live',
+      activeSource: 'teams-message',
+      acquisitionCount: 1,
+      collisionCount: 0,
+      interruptionDepth: 0,
+    });
+
+    expect(result.activeCount).toBe(1);
+    expect(result.latestInstanceId).toBe('overseer-user-a-live');
   });
 });

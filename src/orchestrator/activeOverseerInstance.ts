@@ -1,4 +1,7 @@
 import { OrchestrationRuntimeStatus, type DurableClient } from 'durable-functions';
+import { getActiveTurnCountForUser } from '../observability/orchestratorStageHealth.js';
+import type { MindSessionGuardState } from './mindSessionGuard.js';
+import { readMindSessionGuardState } from './mindSessionGuard.js';
 
 export interface MinimalOrchestrationStatus {
   instanceId?: string;
@@ -45,6 +48,26 @@ export interface ActiveOverseerSummary {
   latestInstanceId?: string;
 }
 
+export function summarizeRoutableOverseerInstances(
+  statuses: ReadonlyArray<MinimalOrchestrationStatus>,
+  userId: string,
+  activeTurnCount: number,
+  guardState?: MindSessionGuardState,
+): ActiveOverseerSummary {
+  if (guardState?.activeInstanceId) {
+    return {
+      activeCount: 1,
+      latestInstanceId: guardState.activeInstanceId,
+    };
+  }
+
+  if (activeTurnCount <= 0) {
+    return { activeCount: 0, latestInstanceId: undefined };
+  }
+
+  return summarizeActiveOverseerInstances(statuses, userId);
+}
+
 export function summarizeActiveOverseerInstances(
   statuses: ReadonlyArray<MinimalOrchestrationStatus>,
   userId: string,
@@ -70,14 +93,24 @@ export async function resolveActiveOverseerInstanceId(
   client: DurableClient,
   userId: string,
 ): Promise<string | undefined> {
-  const statuses = await client.getStatusAll();
-  return findActiveOverseerInstanceId(statuses, userId);
+  const [statuses, guardState, activeTurnCount] = await Promise.all([
+    client.getStatusAll(),
+    readMindSessionGuardState(client, userId),
+    getActiveTurnCountForUser(userId),
+  ]);
+
+  return summarizeRoutableOverseerInstances(statuses, userId, activeTurnCount, guardState).latestInstanceId;
 }
 
 export async function resolveActiveOverseerSummary(
   client: DurableClient,
   userId: string,
 ): Promise<ActiveOverseerSummary> {
-  const statuses = await client.getStatusAll();
-  return summarizeActiveOverseerInstances(statuses, userId);
+  const [statuses, guardState, activeTurnCount] = await Promise.all([
+    client.getStatusAll(),
+    readMindSessionGuardState(client, userId),
+    getActiveTurnCountForUser(userId),
+  ]);
+
+  return summarizeRoutableOverseerInstances(statuses, userId, activeTurnCount, guardState);
 }

@@ -18,5 +18,8 @@ describe('mind session guard routing source guards', () => {
     expect(overseerSource).toContain('MIND_SESSION_GUARD_ENTITY_NAME');
     expect(overseerSource).toContain("context.df.signalEntity(");
     expect(overseerSource).toContain("'release'");
+    expect(overseerSource.indexOf("'release'", overseerSource.indexOf('saveChronoContinuityActivity'))).toBeLessThan(
+      overseerSource.indexOf('yield context.df.createTimer(dedupDeadline);'),
+    );
   });
 });
