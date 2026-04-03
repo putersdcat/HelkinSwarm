@@ -78,7 +78,7 @@ import { ingestTeamsAttachments } from './inboundAttachmentIngestion.js';
 import { buildOverseerDedupIdentity } from './overseerDedupIdentity.js';
 import { buildTeamsNativeEmojiEasterEggReply } from './teamsNativeEmojiEasterEggs.js';
 import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';
-import { saveChronoInterruptionBreadcrumb } from '../orchestrator/chronoBackplane.js';
+import { saveChronoInterruptionBreadcrumb, saveChronoPausedTask } from '../orchestrator/chronoBackplane.js';
 import { resolveActiveOverseerSummary } from '../orchestrator/activeOverseerInstance.js';
 import { getActiveTurnCountForUser } from '../observability/orchestratorStageHealth.js';
 import {
@@ -1116,6 +1116,15 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       }
 
       if (hasActiveGuard) {
+        await saveChronoPausedTask({
+          userId,
+          interruptedInstanceId: effectiveActiveInstanceId ?? 'unknown',
+          interruptedCorrelationId: guardState?.activeCorrelationId,
+          interruptedSource: guardState?.activeSource,
+          pausedByCorrelationId: eventCorrelationId,
+          pausedByMessage: userMessage,
+        });
+
         await saveChronoInterruptionBreadcrumb({
           userId,
           interruptedInstanceId: effectiveActiveInstanceId ?? 'unknown',

@@ -220,4 +220,49 @@ describe('telemetry trace detail enrichment', () => {
     expect(registeredPhase?.detail).toContain('wakeId: u1:wake:test');
     expect(triggeredPhase?.detail).toContain('instanceId: overseer-u1-wake-test');
   });
+
+  it('records paused-task paging and resume details in the runtime trace', () => {
+    const correlationId = 'corr-515-proof';
+
+    trackEvent({
+      name: 'PausedTaskPaged',
+      correlationId,
+      userId: 'u1',
+      properties: {
+        pausedTaskId: 'u1:paused-task',
+        interruptedInstanceId: 'overseer-u1-old',
+        interruptedCorrelationId: 'corr-old',
+      },
+    });
+
+    trackEvent({
+      name: 'PausedTaskResumeInjected',
+      correlationId,
+      userId: 'u1',
+      properties: {
+        pausedTaskId: 'u1:paused-task',
+        interruptedInstanceId: 'overseer-u1-old',
+        found: true,
+      },
+    });
+
+    trackEvent({
+      name: 'SteeringInjectionApplied',
+      correlationId,
+      userId: 'u1',
+      properties: {
+        applied: true,
+        reason: 'resume marker injected',
+        hasPausedTask: true,
+      },
+    });
+
+    const trace = getTraceTree(correlationId);
+    const pagedPhase = trace?.phases.find((p) => p.name === 'PausedTaskPaged');
+    const resumedPhase = trace?.phases.find((p) => p.name === 'PausedTaskResumeInjected');
+    const steeringPhase = trace?.phases.find((p) => p.name === 'SteeringInjectionApplied');
+    expect(pagedPhase?.detail).toContain('pausedTaskId: u1:paused-task');
+    expect(resumedPhase?.detail).toContain('found: true');
+    expect(steeringPhase?.detail).toContain('hasPausedTask: true');
+  });
 });

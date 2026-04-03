@@ -46,6 +46,23 @@ export const ChronoScheduledWakeSchema = z.object({
   ttl: z.number().int().positive(),
 });
 
+export const ChronoPausedTaskSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  type: z.literal('paused-task'),
+  interruptedInstanceId: z.string(),
+  interruptedCorrelationId: z.string().optional(),
+  interruptedSource: z.string().optional(),
+  pausedByCorrelationId: z.string(),
+  pausedByMessage: z.string(),
+  resumePrompt: z.string(),
+  status: z.enum(['paused', 'resumed']).default('paused'),
+  resumedByCorrelationId: z.string().optional(),
+  resumedAt: z.string().optional(),
+  updatedAt: z.string(),
+  ttl: z.number().int().positive(),
+});
+
 export const SaveChronoContinuityInputSchema = z.object({
   userId: z.string(),
   correlationId: z.string(),
@@ -70,12 +87,23 @@ export const SaveChronoScheduledWakeInputSchema = z.object({
   conversationReferenceJson: z.string().optional(),
 });
 
+export const SaveChronoPausedTaskInputSchema = z.object({
+  userId: z.string(),
+  interruptedInstanceId: z.string(),
+  interruptedCorrelationId: z.string().optional(),
+  interruptedSource: z.string().optional(),
+  pausedByCorrelationId: z.string(),
+  pausedByMessage: z.string(),
+});
+
 export type ChronoContinuityDocument = z.infer<typeof ChronoContinuityDocumentSchema>;
 export type ChronoInterruptionBreadcrumb = z.infer<typeof ChronoInterruptionBreadcrumbSchema>;
 export type ChronoScheduledWake = z.infer<typeof ChronoScheduledWakeSchema>;
+export type ChronoPausedTask = z.infer<typeof ChronoPausedTaskSchema>;
 export type SaveChronoContinuityInput = z.infer<typeof SaveChronoContinuityInputSchema>;
 export type SaveChronoInterruptionBreadcrumbInput = z.infer<typeof SaveChronoInterruptionBreadcrumbInputSchema>;
 export type SaveChronoScheduledWakeInput = z.infer<typeof SaveChronoScheduledWakeInputSchema>;
+export type SaveChronoPausedTaskInput = z.infer<typeof SaveChronoPausedTaskInputSchema>;
 
 function getContinuityDocumentId(userId: string): string {
   return `${userId}:continuity`;
@@ -87,6 +115,10 @@ function getInterruptionBreadcrumbId(userId: string): string {
 
 function getScheduledWakeDocumentId(userId: string, wakeId: string): string {
   return `${userId}:wake:${wakeId}`;
+}
+
+function getPausedTaskDocumentId(userId: string): string {
+  return `${userId}:paused-task`;
 }
 
 function summarizeForChrono(text: string, maxLength = 180): string {
@@ -148,6 +180,29 @@ export function buildChronoScheduledWake(input: SaveChronoScheduledWakeInput): C
   });
 }
 
+export function buildChronoPausedTask(input: SaveChronoPausedTaskInput): ChronoPausedTask {
+  const parsed = SaveChronoPausedTaskInputSchema.parse(input);
+  const interruptedReference = parsed.interruptedCorrelationId ?? `instance ${parsed.interruptedInstanceId}`;
+
+  return ChronoPausedTaskSchema.parse({
+    id: getPausedTaskDocumentId(parsed.userId),
+    userId: parsed.userId,
+    type: 'paused-task',
+    interruptedInstanceId: parsed.interruptedInstanceId,
+    interruptedCorrelationId: parsed.interruptedCorrelationId,
+    interruptedSource: parsed.interruptedSource,
+    pausedByCorrelationId: parsed.pausedByCorrelationId,
+    pausedByMessage: summarizeForChrono(parsed.pausedByMessage, 400),
+    resumePrompt: summarizeForChrono(
+      `Resume the displaced task from ${interruptedReference}. It was interrupted by: ${parsed.pausedByMessage}`,
+      400,
+    ),
+    status: 'paused',
+    updatedAt: new Date().toISOString(),
+    ttl: CHRONO_TTL_SECONDS,
+  });
+}
+
 export async function saveChronoContinuity(input: SaveChronoContinuityInput): Promise<ChronoContinuityDocument> {
   const doc = buildChronoContinuityDocument(input);
   await getContainer(CHRONO_CONTAINER).items.upsert(doc);
@@ -199,6 +254,25 @@ export async function saveChronoScheduledWake(
   return doc;
 }
 
+export async function saveChronoPausedTask(
+  input: SaveChronoPausedTaskInput,
+): Promise<ChronoPausedTask> {
+  const doc = buildChronoPausedTask(input);
+  await getContainer(CHRONO_CONTAINER).items.upsert(doc);
+  trackEvent({
+    name: 'PausedTaskPaged',
+    correlationId: input.pausedByCorrelationId,
+    userId: input.userId,
+    properties: {
+      pausedTaskId: doc.id,
+      interruptedInstanceId: doc.interruptedInstanceId,
+      interruptedCorrelationId: doc.interruptedCorrelationId ?? 'none',
+      interruptedSource: doc.interruptedSource ?? 'unknown',
+    },
+  });
+  return doc;
+}
+
 export async function listDueChronoScheduledWakes(
   nowIso = new Date().toISOString(),
   limit = 20,
@@ -225,6 +299,44 @@ export async function markChronoScheduledWakeDispatched(
     { op: 'replace', path: '/updatedAt', value: new Date().toISOString() },
     { op: 'add', path: '/dispatchedAt', value: new Date().toISOString() },
     { op: 'add', path: '/dispatchedCorrelationId', value: dispatchedCorrelationId },
+  ]);
+}
+
+export async function loadChronoPausedTask(
+  userId: string,
+  correlationId: string,
+): Promise<ChronoPausedTask | undefined> {
+  try {
+    const { resource } = await getContainer(CHRONO_CONTAINER)
+      .item(getPausedTaskDocumentId(userId), userId)
+      .read<ChronoPausedTask>();
+    if (!resource) {
+      return undefined;
+    }
+
+    const parsed = ChronoPausedTaskSchema.parse(resource);
+    if (parsed.status !== 'paused' || parsed.pausedByCorrelationId === correlationId) {
+      return undefined;
+    }
+
+    return parsed;
+  } catch (err: unknown) {
+    if (err && typeof err === 'object' && 'code' in err && (err as { code: number }).code === 404) {
+      return undefined;
+    }
+    throw err;
+  }
+}
+
+export async function markChronoPausedTaskResumed(
+  userId: string,
+  resumedByCorrelationId: string,
+): Promise<void> {
+  await getContainer(CHRONO_CONTAINER).item(getPausedTaskDocumentId(userId), userId).patch([
+    { op: 'replace', path: '/status', value: 'resumed' },
+    { op: 'replace', path: '/updatedAt', value: new Date().toISOString() },
+    { op: 'add', path: '/resumedAt', value: new Date().toISOString() },
+    { op: 'add', path: '/resumedByCorrelationId', value: resumedByCorrelationId },
   ]);
 }
 

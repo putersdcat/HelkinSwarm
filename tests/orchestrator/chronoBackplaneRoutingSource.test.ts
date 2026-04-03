@@ -8,11 +8,17 @@ describe('chrono backplane routing source guards', () => {
     const steeringSource = readFileSync('src/orchestrator/steeringInjectionActivity.ts', 'utf8');
 
     expect(botSource).toContain('saveChronoInterruptionBreadcrumb({');
+    expect(botSource).toContain('saveChronoPausedTask({');
     expect(replaySource).toContain('saveChronoInterruptionBreadcrumb({');
-    expect(steeringSource).toContain("loadChronoContinuity, loadChronoInterruptionBreadcrumb");
+    expect(replaySource).toContain('saveChronoPausedTask({');
+    expect(steeringSource).toContain('loadChronoPausedTask,');
+    expect(steeringSource).toContain('markChronoPausedTaskResumed,');
     expect(steeringSource).toContain('chronoContinuity = await loadChronoContinuity(input.state.userId);');
     expect(steeringSource).toContain('interruptionBreadcrumb = await loadChronoInterruptionBreadcrumb(input.state.userId, input.correlationId);');
+    expect(steeringSource).toContain('pausedTask = await loadChronoPausedTask(input.state.userId, input.correlationId);');
+    expect(steeringSource).toContain('await markChronoPausedTaskResumed(input.state.userId, input.correlationId);');
     expect(steeringSource).toContain("name: 'ChronoBackplaneRead'");
     expect(steeringSource).toContain("name: 'InterruptionBreadcrumbRead'");
+    expect(steeringSource).toContain("name: 'PausedTaskResumeInjected'");
   });
 });

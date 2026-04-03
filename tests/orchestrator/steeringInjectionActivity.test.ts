@@ -34,6 +34,39 @@ describe('steering injection activity', () => {
     expect(result.injectionBlock).toContain('carried session summary');
   });
 
+  it('injects an explicit resume marker when a paused task is present', () => {
+    const result = buildSteeringInjection({
+      state: {
+        userId: 'u1',
+        userAlias: 'User',
+        conversationId: 'conv',
+        summary: '',
+        turnCount: 1,
+        latestPromptTokens: 0,
+        accumulatedTokens: 0,
+        model: 'gpt-5.4-mini',
+        totalTokens: 0,
+        maxTokens: 128000,
+        pendingHooks: [],
+        safetyMode: 'confirmation-gated',
+        euResidencyMode: false,
+        recentHistory: [],
+      },
+      userMessage: 'Continue from where you left off.',
+      correlationId: 'corr-steering-paused',
+      pausedTask: {
+        pausedTaskId: 'u1:paused-task',
+        resumePrompt: 'Resume the displaced task from corr-old.',
+        interruptedInstanceId: 'overseer-u1-old',
+      },
+    });
+
+    expect(result.applied).toBe(true);
+    expect(result.injectionBlock).toContain('Resume marker');
+    expect(result.injectionBlock).toContain('u1:paused-task');
+    expect(result.injectionBlock).toContain('Resume the displaced task from corr-old.');
+  });
+
   it('records telemetry when steering injection is evaluated', async () => {
     const correlationId = 'corr-steering-2';
     const result = await recordSteeringInjection({

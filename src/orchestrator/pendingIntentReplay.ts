@@ -16,7 +16,7 @@ import {
   markIntentReceived,
   type PendingIntent,
 } from './pendingIntentStore.js';
-import { saveChronoInterruptionBreadcrumb } from './chronoBackplane.js';
+import { saveChronoInterruptionBreadcrumb, saveChronoPausedTask } from './chronoBackplane.js';
 import { recordLimbicIngressDecision } from './limbicIngressActivity.js';
 import {
   MAX_INTERRUPTION_DEPTH,
@@ -145,6 +145,15 @@ export async function replayPendingIntent(
       }
 
       if (hasActiveGuard) {
+        await saveChronoPausedTask({
+          userId: intent.userId,
+          interruptedInstanceId: effectiveActiveInstanceId ?? 'unknown',
+          interruptedCorrelationId: guardState?.activeCorrelationId,
+          interruptedSource: guardState?.activeSource,
+          pausedByCorrelationId: intent.correlationId ?? intent.id,
+          pausedByMessage: intent.messageText,
+        });
+
         await saveChronoInterruptionBreadcrumb({
           userId: intent.userId,
           interruptedInstanceId: effectiveActiveInstanceId ?? 'unknown',

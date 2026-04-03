@@ -3,7 +3,12 @@ import { z } from 'zod';
 import type { OverseerState } from './stateManager.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
-import { loadChronoContinuity, loadChronoInterruptionBreadcrumb } from './chronoBackplane.js';
+import {
+  loadChronoContinuity,
+  loadChronoInterruptionBreadcrumb,
+  loadChronoPausedTask,
+  markChronoPausedTaskResumed,
+} from './chronoBackplane.js';
 import { trackEvent } from '../observability/telemetry.js';
 
 export const SteeringInjectionInputSchema = z.object({
@@ -42,6 +47,11 @@ export const SteeringCueInputSchema = SteeringInjectionInputSchema.extend({
     interruptedInstanceId: z.string(),
     interruptedByMessage: z.string(),
   }).optional(),
+  pausedTask: z.object({
+    pausedTaskId: z.string(),
+    resumePrompt: z.string(),
+    interruptedInstanceId: z.string(),
+  }).optional(),
 });
 
 export type SteeringInjectionInput = {
@@ -61,6 +71,11 @@ export function buildSteeringInjection(
       interruptedInstanceId: string;
       interruptedByMessage: string;
     };
+    pausedTask?: {
+      pausedTaskId: string;
+      resumePrompt: string;
+      interruptedInstanceId: string;
+    };
   },
 ): SteeringInjectionResult {
   const input = SteeringCueInputSchema.parse(rawInput);
@@ -73,6 +88,12 @@ export function buildSteeringInjection(
   if (input.interruptionBreadcrumb) {
     cues.push(
       `This turn interrupted active work from instance ${input.interruptionBreadcrumb.interruptedInstanceId}. Reconcile the new request against that displaced task and leave a clear path back to it if possible.`,
+    );
+  }
+
+  if (input.pausedTask) {
+    cues.push(
+      `Resume marker — paused task ${input.pausedTask.pausedTaskId} is waiting for continuity from instance ${input.pausedTask.interruptedInstanceId}. ${input.pausedTask.resumePrompt}`,
     );
   }
 
@@ -132,6 +153,16 @@ export async function recordSteeringInjection(rawInput: SteeringInjectionInput):
   } catch (err) {
     interruptionReadError = err instanceof Error ? err.message : String(err);
   }
+  let pausedTask;
+  let pausedTaskReadError: string | undefined;
+  try {
+    pausedTask = await loadChronoPausedTask(input.state.userId, input.correlationId);
+    if (pausedTask) {
+      await markChronoPausedTaskResumed(input.state.userId, input.correlationId);
+    }
+  } catch (err) {
+    pausedTaskReadError = err instanceof Error ? err.message : String(err);
+  }
   const chronoIntention = chronoContinuity && chronoContinuity.anchorCorrelationId !== input.correlationId
     ? chronoContinuity.intention
     : undefined;
@@ -142,6 +173,13 @@ export async function recordSteeringInjection(rawInput: SteeringInjectionInput):
       ? {
         interruptedInstanceId: interruptionBreadcrumb.interruptedInstanceId,
         interruptedByMessage: interruptionBreadcrumb.interruptedByMessage,
+      }
+      : undefined,
+    pausedTask: pausedTask
+      ? {
+        pausedTaskId: pausedTask.id,
+        resumePrompt: pausedTask.resumePrompt,
+        interruptedInstanceId: pausedTask.interruptedInstanceId,
       }
       : undefined,
   });
@@ -170,6 +208,18 @@ export async function recordSteeringInjection(rawInput: SteeringInjectionInput):
   });
 
   trackEvent({
+    name: 'PausedTaskResumeInjected',
+    correlationId: input.correlationId,
+    userId: input.state.userId,
+    properties: {
+      found: pausedTask !== undefined,
+      pausedTaskId: pausedTask?.id ?? 'none',
+      interruptedInstanceId: pausedTask?.interruptedInstanceId ?? 'none',
+      ...(pausedTaskReadError ? { error: pausedTaskReadError } : {}),
+    },
+  });
+
+  trackEvent({
     name: 'SteeringInjectionApplied',
     correlationId: input.correlationId,
     userId: input.state.userId,
@@ -182,6 +232,7 @@ export async function recordSteeringInjection(rawInput: SteeringInjectionInput):
       hasPendingClarification: input.state.pendingClarification !== undefined,
       hasChronoIntention: chronoIntention !== undefined,
       hasInterruptionBreadcrumb: interruptionBreadcrumb !== undefined,
+      hasPausedTask: pausedTask !== undefined,
       isDevLoop: input.devLoopContext?.isDevLoop ?? false,
     },
   });

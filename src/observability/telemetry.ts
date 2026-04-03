@@ -46,6 +46,8 @@ export type TelemetryEventName =
   | 'PendingIntentRecovered'
   | 'ChronoScheduledWakeRegistered'
   | 'ChronoScheduledWakeTriggered'
+  | 'PausedTaskPaged'
+  | 'PausedTaskResumeInjected'
   | 'LimbicDecision'
   | 'ChronoBackplaneRead'
   | 'ChronoBackplaneWritten'
@@ -104,6 +106,8 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   PendingIntentRecovered: 'orchestrator',
   ChronoScheduledWakeRegistered: 'orchestrator',
   ChronoScheduledWakeTriggered: 'orchestrator',
+  PausedTaskPaged: 'memory',
+  PausedTaskResumeInjected: 'memory',
   ChronoBackplaneRead: 'memory',
   ChronoBackplaneWritten: 'memory',
   InterruptionBreadcrumbWritten: 'memory',
@@ -227,6 +231,7 @@ function buildTraceDetail(event: TelemetryEvent): string {
   if (p['creationReason']) parts.push(`creationReason: ${p['creationReason']}`);
   if (p['wakeId']) parts.push(`wakeId: ${p['wakeId']}`);
   if (p['wakeAt']) parts.push(`wakeAt: ${p['wakeAt']}`);
+  if (p['pausedTaskId']) parts.push(`pausedTaskId: ${p['pausedTaskId']}`);
   if (p['failureReason']) parts.push(`failureReason: ${p['failureReason']}`);
   if (p['authority']) parts.push(`authority: ${p['authority']}`);
   if (p['source']) parts.push(`source: ${p['source']}`);
@@ -243,6 +248,7 @@ function buildTraceDetail(event: TelemetryEvent): string {
   if (p['injected'] !== undefined) parts.push(`injected: ${p['injected']}`);
   if (p['deliveredToOverseer'] !== undefined) parts.push(`deliveredToOverseer: ${p['deliveredToOverseer']}`);
   if (p['hasInterruptionBreadcrumb'] !== undefined) parts.push(`hasInterruptionBreadcrumb: ${p['hasInterruptionBreadcrumb']}`);
+  if (p['hasPausedTask'] !== undefined) parts.push(`hasPausedTask: ${p['hasPausedTask']}`);
 
   return parts.length > 0 ? parts.join(', ') : event.name;
 }
