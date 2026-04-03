@@ -112,6 +112,10 @@ app.http('graphNotificationHandler', {
 
       const firedPayload = {
         hookId,
+        userId,
+        correlationId: hook.correlationId,
+        hookType: hook.hookType,
+        originalIntent: hook.originalIntent,
         subscriptionId: notification.subscriptionId,
         changeType: notification.changeType,
         resource: notification.resource,
@@ -126,7 +130,7 @@ app.http('graphNotificationHandler', {
         context.warn(`[graphNotify] No active overseer instance found for hookId=${hookId} userId=${userId}; notification recorded only`);
       } else {
         try {
-          await client.raiseEvent(activeOverseerInstanceId, `HookFired_${hookId}`, firedPayload);
+          await client.raiseEvent(activeOverseerInstanceId, 'HookFired', firedPayload);
         } catch (raiseErr) {
           context.warn(`[graphNotify] Failed to raise event for hookId=${hookId} instanceId=${activeOverseerInstanceId}`, raiseErr);
         }

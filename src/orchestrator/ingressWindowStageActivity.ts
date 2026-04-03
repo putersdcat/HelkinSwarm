@@ -22,6 +22,16 @@ const IngressWindowStageInputSchema = z.discriminatedUnion('action', [
     userId: z.string().min(1),
     instanceId: z.string().min(1),
   }),
+  z.object({
+    action: z.literal('hook-drain'),
+    correlationId: z.string().min(1),
+    nextCorrelationId: z.string().min(1),
+    userId: z.string().min(1),
+    instanceId: z.string().min(1),
+    hookId: z.string().min(1),
+    hookType: z.string().min(1),
+    triggerType: z.string().min(1).optional(),
+  }),
 ]);
 
 type IngressWindowStageInput = z.infer<typeof IngressWindowStageInputSchema>;
@@ -45,6 +55,23 @@ export async function handleIngressWindowStage(rawInput: IngressWindowStageInput
 
   if (input.action === 'clear') {
     await clearOrchestratorStage(input.correlationId, input.userId);
+    return;
+  }
+
+  if (input.action === 'hook-drain') {
+    await clearOrchestratorStage(input.correlationId, input.userId);
+    trackEvent({
+      name: 'LivingSessionHookDrained',
+      correlationId: input.nextCorrelationId,
+      userId: input.userId,
+      properties: {
+        instanceId: input.instanceId,
+        previousCorrelationId: input.correlationId,
+        hookId: input.hookId,
+        hookType: input.hookType,
+        triggerType: input.triggerType ?? 'unknown',
+      },
+    });
     return;
   }
 

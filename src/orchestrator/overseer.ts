@@ -67,6 +67,17 @@ export interface NewMessageEvent {
   quotedContext?: QuotedContext;
 }
 
+interface HookFiredEvent {
+  hookId: string;
+  userId: string;
+  hookType: string;
+  triggerType: string;
+  originalIntent: string;
+  correlationId?: string;
+  payload: Record<string, unknown>;
+  firedAt: string;
+}
+
 df.app.orchestration('overseer', function* (context) {
   // Each instance handles exactly one message, then completes.
   // raiseToOverseer provides the NewMessageEvent as input.
@@ -102,7 +113,8 @@ df.app.orchestration('overseer', function* (context) {
     const ingressDeadline = new Date(context.df.currentUtcDateTime.getTime() + DEDUP_HOLD_MS);
     const ingressTimer = context.df.createTimer(ingressDeadline);
     const newMessageEvent = context.df.waitForExternalEvent('NewMessage');
-    const winner = yield context.df.Task.any([newMessageEvent, ingressTimer]) as df.Task;
+    const hookFiredEvent = context.df.waitForExternalEvent('HookFired');
+    const winner = yield context.df.Task.any([newMessageEvent, hookFiredEvent, ingressTimer]) as df.Task;
 
     if (winner === newMessageEvent) {
       ingressTimer.cancel();
@@ -119,6 +131,31 @@ df.app.orchestration('overseer', function* (context) {
 
       nextMessage = {
         ...drainedMessage,
+        correlationId: drainedCorrelationId,
+      };
+      continue;
+    }
+
+    if (winner === hookFiredEvent) {
+      ingressTimer.cancel();
+      const drainedHook = hookFiredEvent.result as HookFiredEvent;
+      const drainedCorrelationId = drainedHook.correlationId ?? crypto.randomUUID();
+
+      yield context.df.callActivity('ingressWindowStageActivity', {
+        action: 'hook-drain',
+        correlationId: completedCorrelationId,
+        nextCorrelationId: drainedCorrelationId,
+        userId: state.userId,
+        instanceId: context.df.instanceId,
+        hookId: drainedHook.hookId,
+        hookType: drainedHook.hookType,
+        triggerType: drainedHook.triggerType,
+      } satisfies IngressWindowStageInput);
+
+      nextMessage = {
+        userMessage: drainedHook.originalIntent,
+        userId: state.userId,
+        userAlias: state.userAlias,
         correlationId: drainedCorrelationId,
       };
       continue;

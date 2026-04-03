@@ -23,6 +23,7 @@ import { ResurrectionCommandSchema } from '../devloop/radioProtocol.js';
 import type { NewMessageEvent } from '../orchestrator/overseer.js';
 import { resolveActiveOverseerInstanceId } from '../orchestrator/activeOverseerInstance.js';
 import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';
+import { registerHook } from '../orchestrator/hookCatalog.js';
 import { signalMindSessionAcquire } from '../orchestrator/mindSessionGuard.js';
 import {
   clearOrchestratorStage,
@@ -72,6 +73,12 @@ const InjectNewMessagePayloadSchema = z.object({
   message: z.string().min(1).max(400),
   correlationPrefix: z.string().min(3).max(80).default('devloop-injected'),
   instanceIdOverride: z.string().min(1).optional(),
+});
+
+const RegisterHookProofPayloadSchema = z.object({
+  targetUserId: z.string().min(1).optional(),
+  originalIntent: z.string().min(1).max(400).default('Say exactly "hook proof ok" and nothing else.'),
+  ttlMinutes: z.number().int().min(1).max(30).default(10),
 });
 
 // ---------------------------------------------------------------------------
@@ -434,6 +441,79 @@ app.http('devloopSelfAwaken', {
       jsonBody: {
         wakeId: wake.id,
         wakeAt,
+      },
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/devloop/register-hook-proof — register a synthetic webhook hook
+// ---------------------------------------------------------------------------
+
+app.http('devloopRegisterHookProof', {
+  methods: ['POST'],
+  authLevel: 'function',
+  route: 'devloop/register-hook-proof',
+  handler: async (req: HttpRequest): Promise<HttpResponseInit> => {
+    const userId = req.headers.get('x-helkinswarm-user-id');
+    if (!userId || !(await isOwnerUserId(userId))) {
+      return { status: 403, jsonBody: { error: 'Owner-only endpoint.' } };
+    }
+
+    let body: z.infer<typeof RegisterHookProofPayloadSchema>;
+    try {
+      body = RegisterHookProofPayloadSchema.parse(await req.json());
+    } catch {
+      return {
+        status: 400,
+        jsonBody: { error: 'Invalid payload. Optional: targetUserId, originalIntent, ttlMinutes.' },
+      };
+    }
+
+    const targetUserId = body.targetUserId ?? userId;
+    const correlationId = `register-hook-proof-${Date.now()}`;
+    const registered = await registerHook({
+      userId: targetUserId,
+      skillDomain: 'devloop-proof',
+      hookType: 'synthetic-webhook-proof',
+      originalIntent: body.originalIntent,
+      triggerConfig: {
+        type: 'webhook',
+        endpoint: 'hooks/fire',
+      },
+      ttlMinutes: body.ttlMinutes,
+      riskLevel: 'low',
+      autoConfirm: true,
+      correlationId,
+    });
+
+    trackEvent({
+      name: 'DurableHookRegistered',
+      correlationId,
+      userId: targetUserId,
+      properties: {
+        source: 'devloop-relay',
+        endpoint: 'register-hook-proof',
+        hookId: registered.hookId,
+        hookType: 'synthetic-webhook-proof',
+      },
+    });
+
+    return {
+      status: 200,
+      jsonBody: {
+        registered: true,
+        hookId: registered.hookId,
+        correlationId,
+        userId: targetUserId,
+        message: registered.message,
+        firePayloadTemplate: {
+          hookId: registered.hookId,
+          userId: targetUserId,
+          payload: {
+            proof: 'synthetic-hook-proof',
+          },
+        },
       },
     };
   },

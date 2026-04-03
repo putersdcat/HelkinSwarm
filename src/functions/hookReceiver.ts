@@ -57,6 +57,10 @@ app.http('hookReceiver', {
     const client = df.getClient(context);
     const firedPayload = {
       hookId: body.hookId,
+      userId: body.userId,
+      correlationId: hook.correlationId,
+      hookType: hook.hookType,
+      originalIntent: hook.originalIntent,
       payload: body.payload,
       triggerType: body.triggerType ?? hook.triggerConfig.type,
       firedAt: new Date().toISOString(),
@@ -81,7 +85,7 @@ app.http('hookReceiver', {
     });
 
     try {
-      await client.raiseEvent(activeOverseerInstanceId, `HookFired_${body.hookId}`, firedPayload);
+      await client.raiseEvent(activeOverseerInstanceId, 'HookFired', firedPayload);
     } catch (raiseErr) {
       context.warn(`[hookReceiver] Failed to raise event for hookId=${body.hookId}, userId=${body.userId}, instanceId=${activeOverseerInstanceId}`, raiseErr);
       // Still return 202 — the hook was fired and recorded even if overseer is not running
