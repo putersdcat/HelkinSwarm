@@ -68,6 +68,7 @@ const SelfAwakenPayloadSchema = z.object({
 const InjectNewMessagePayloadSchema = z.object({
   message: z.string().min(1).max(400),
   correlationPrefix: z.string().min(3).max(80).default('devloop-injected'),
+  instanceIdOverride: z.string().min(1).optional(),
 });
 
 // ---------------------------------------------------------------------------
@@ -461,8 +462,9 @@ app.http('devloopNewMessage', {
     }
 
     const client = df.getClient(context);
-    const activeOverseerInstanceId = await resolveActiveOverseerInstanceId(client, userId);
-    if (!activeOverseerInstanceId) {
+    const resolvedInstanceId = body.instanceIdOverride
+      ?? await resolveActiveOverseerInstanceId(client, userId);
+    if (!resolvedInstanceId) {
       return {
         status: 409,
         jsonBody: { error: 'No routable active overseer instance is available.' },
@@ -478,7 +480,7 @@ app.http('devloopNewMessage', {
     };
 
     try {
-      await client.raiseEvent(activeOverseerInstanceId, 'NewMessage', event);
+      await client.raiseEvent(resolvedInstanceId, 'NewMessage', event);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       trackEvent({
@@ -488,7 +490,7 @@ app.http('devloopNewMessage', {
         properties: {
           endpoint: 'new-message',
           deliveredToOverseer: false,
-          instanceId: activeOverseerInstanceId,
+          instanceId: resolvedInstanceId,
           error: message,
         },
       });
@@ -496,7 +498,7 @@ app.http('devloopNewMessage', {
         status: 500,
         jsonBody: {
           error: message,
-          instanceId: activeOverseerInstanceId,
+          instanceId: resolvedInstanceId,
           correlationId,
         },
       };
@@ -506,7 +508,7 @@ app.http('devloopNewMessage', {
       status: 200,
       jsonBody: {
         correlationId,
-        instanceId: activeOverseerInstanceId,
+        instanceId: resolvedInstanceId,
       },
     };
   },
