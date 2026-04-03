@@ -97,7 +97,7 @@ describe('telemetry trace detail enrichment', () => {
       compatibilityMode: true,
       hasActiveSession: false,
     });
-    expect(compatDecision.decision).toBe('compat-start');
+    expect(compatDecision.decision).toBe('steer');
     expect(compatDecision.reason).toContain('Compatibility mode');
 
     const queuedDecision = evaluateLimbicIngress({
@@ -124,8 +124,40 @@ describe('telemetry trace detail enrichment', () => {
     const overridePhase = trace?.phases.find((phase) => phase.name === 'PolicyOverrideApplied');
 
     expect(limbicPhase?.detail).toContain('source: pending-intent-replay');
-    expect(limbicPhase?.detail).toContain('decision: compat-start');
+    expect(limbicPhase?.detail).toContain('decision: steer');
     expect(overridePhase?.detail).toContain('authority: living-mind-compatibility-mode');
+  });
+
+  it('records defer decisions when conscious-lane impairment blocks heavier work', () => {
+    const deferDecision = evaluateLimbicIngress({
+      source: 'teams-message',
+      userId: 'u1',
+      correlationId: 'corr-529-defer',
+      compatibilityMode: false,
+      hasActiveSession: false,
+      consciousModelImpaired: true,
+      requestedTaskComplexity: 'compound',
+    });
+    expect(deferDecision.decision).toBe('defer');
+    expect(deferDecision.reason).toContain('defer compound work');
+
+    const correlationId = 'corr-529-defer-trace';
+    recordLimbicIngressDecision({
+      source: 'teams-message',
+      userId: 'u1',
+      correlationId,
+      compatibilityMode: false,
+      hasActiveSession: false,
+      consciousModelImpaired: true,
+      requestedTaskComplexity: 'complex',
+    });
+
+    const trace = getTraceTree(correlationId);
+    const limbicPhase = trace?.phases.find((phase) => phase.name === 'LimbicDecision');
+    const overridePhase = trace?.phases.find((phase) => phase.name === 'PolicyOverrideApplied');
+
+    expect(limbicPhase?.detail).toContain('decision: defer');
+    expect(overridePhase?.detail).toContain('authority: living-mind-impairment-protocol');
   });
 
   it('records interruption-depth queue decisions in the runtime trace detail', () => {
@@ -156,7 +188,7 @@ describe('telemetry trace detail enrichment', () => {
     expect(limbicPhase?.detail).toContain(`interruptionDepth: ${MAX_INTERRUPTION_DEPTH}`);
   });
 
-  it('queues active-session overlap before compatibility mode can take compat-start', () => {
+  it('queues active-session overlap before compatibility-mode steer can take effect', () => {
     const queuedDecision = evaluateLimbicIngress({
       source: 'teams-message',
       userId: 'u1',

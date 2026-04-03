@@ -13,10 +13,16 @@ export const LimbicIngressSourceSchema = z.enum([
 ]);
 
 export const LimbicIngressDecisionNameSchema = z.enum([
-  'start',
-  'compat-start',
+  'steer',
   'queue',
   'self-awaken',
+  'defer',
+]);
+
+export const LimbicIngressTaskComplexitySchema = z.enum([
+  'simple',
+  'compound',
+  'complex',
 ]);
 
 export const LimbicIngressInputSchema = z.object({
@@ -27,6 +33,8 @@ export const LimbicIngressInputSchema = z.object({
   hasActiveSession: z.boolean().default(false),
   interruptionDepth: z.number().int().nonnegative().default(0),
   interruptionDepthCap: z.number().int().positive().default(MAX_INTERRUPTION_DEPTH),
+  consciousModelImpaired: z.boolean().default(false),
+  requestedTaskComplexity: LimbicIngressTaskComplexitySchema.default('simple'),
 });
 
 export const LimbicIngressDecisionSchema = z.object({
@@ -34,8 +42,8 @@ export const LimbicIngressDecisionSchema = z.object({
   reason: z.string().min(1),
 });
 
-export type LimbicIngressInput = z.infer<typeof LimbicIngressInputSchema>;
-export type LimbicIngressDecision = z.infer<typeof LimbicIngressDecisionSchema>;
+export type LimbicIngressInput = z.input<typeof LimbicIngressInputSchema>;
+export type LimbicIngressDecision = z.output<typeof LimbicIngressDecisionSchema>;
 
 export function evaluateLimbicIngress(rawInput: LimbicIngressInput): LimbicIngressDecision {
   const input = LimbicIngressInputSchema.parse(rawInput);
@@ -61,16 +69,23 @@ export function evaluateLimbicIngress(rawInput: LimbicIngressInput): LimbicIngre
     });
   }
 
+  if (input.consciousModelImpaired && input.requestedTaskComplexity !== 'simple') {
+    return LimbicIngressDecisionSchema.parse({
+      decision: 'defer',
+      reason: `Conscious lane is currently impaired; defer ${input.requestedTaskComplexity} work until a higher-capacity lane is restored.`,
+    });
+  }
+
   if (input.compatibilityMode) {
     return LimbicIngressDecisionSchema.parse({
-      decision: 'compat-start',
-      reason: 'Compatibility mode preserves one-shot overseer startup while Limbic enforcement is incomplete.',
+      decision: 'steer',
+      reason: 'Compatibility mode preserves one-shot overseer startup, but the ingress outcome is explicitly steer into the Conscious Thread.',
     });
   }
 
   return LimbicIngressDecisionSchema.parse({
-    decision: 'start',
-    reason: 'No active session detected and compatibility mode is disabled.',
+    decision: 'steer',
+    reason: 'No active session detected; steer this stimulus into the Conscious Thread.',
   });
 }
 
@@ -93,7 +108,7 @@ export function recordLimbicIngressDecision(rawInput: LimbicIngressInput): Limbi
     },
   });
 
-  if (decision.decision === 'compat-start') {
+  if (decision.decision === 'steer' && input.compatibilityMode && !input.hasActiveSession) {
     trackEvent({
       name: 'PolicyOverrideApplied',
       correlationId: input.correlationId,
@@ -103,6 +118,20 @@ export function recordLimbicIngressDecision(rawInput: LimbicIngressInput): Limbi
         source: input.source,
         decision: decision.decision,
         interruptionDepth: input.interruptionDepth,
+      },
+    });
+  }
+
+  if (decision.decision === 'defer') {
+    trackEvent({
+      name: 'PolicyOverrideApplied',
+      correlationId: input.correlationId,
+      userId: input.userId,
+      properties: {
+        authority: 'living-mind-impairment-protocol',
+        source: input.source,
+        decision: decision.decision,
+        requestedTaskComplexity: input.requestedTaskComplexity,
       },
     });
   }
