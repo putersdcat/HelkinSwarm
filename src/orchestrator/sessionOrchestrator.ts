@@ -20,6 +20,7 @@ import type { ExecutorInput, ExecutorResult } from './executorActivity.js';
 import { signExecutorPayload, hashPayload } from './executorActivity.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { buildSuccessfulFailoverNotices } from '../llm/foundryClient.js';
+import { recoverOperationalNoticesFromTrace } from './failoverNoticeRecovery.js';
 import type { PlanInput, PlanResult } from './planActivity.js';
 import { canonicalizeInput } from './inputCanonicalizer.js';
 import { computeToolBudget } from './toolBudgetScaler.js';
@@ -1192,6 +1193,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // 5. Send reply to Teams (proactive)
   // For DevLoop sessions, wrap the response in protocol format (#147, #92)
   const cleanResponse = responseContent; // Preserve pre-decoration LLM output for recentHistory
+  for (const notice of recoverOperationalNoticesFromTrace(correlationId)) {
+    operationalNotices.add(notice);
+  }
   const displayResponse = operationalNotices.size > 0
     ? `${Array.from(operationalNotices).join('\n')}\n\n${responseContent}`
     : responseContent;

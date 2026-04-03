@@ -220,6 +220,8 @@ function buildTraceDetail(event: TelemetryEvent): string {
 
   if (p['deployment']) parts.push(`model: ${p['deployment']}`);
   if (p['model']) parts.push(`model: ${p['model']}`);
+  if (p['originalModel']) parts.push(`originalModel: ${p['originalModel']}`);
+  if (p['fallbackModel']) parts.push(`fallbackModel: ${p['fallbackModel']}`);
   if (p['toolName']) parts.push(`tool: ${p['toolName']}`);
   if (p['executionKind']) parts.push(`executionKind: ${p['executionKind']}`);
   if (p['returnsControlTo']) parts.push(`returnsControlTo: ${p['returnsControlTo']}`);
@@ -253,6 +255,7 @@ function buildTraceDetail(event: TelemetryEvent): string {
   if (p['source']) parts.push(`source: ${p['source']}`);
   if (p['decision']) parts.push(`decision: ${p['decision']}`);
   if (p['reason']) parts.push(`reason: ${p['reason']}`);
+  if (p['failoverSteps']) parts.push(`failoverSteps: ${p['failoverSteps']}`);
   if (p['type']) parts.push(`type: ${p['type']}`);
   if (p['interruptedInstanceId']) parts.push(`interruptedInstanceId: ${p['interruptedInstanceId']}`);
   if (p['interruptedCorrelationId']) parts.push(`interruptedCorrelationId: ${p['interruptedCorrelationId']}`);

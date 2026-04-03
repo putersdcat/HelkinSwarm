@@ -6,16 +6,21 @@ describe('session orchestrator failover notice propagation', () => {
     const source = readFileSync('src/orchestrator/sessionOrchestrator.ts', 'utf8');
     const llmSource = readFileSync('src/orchestrator/llmActivity.ts', 'utf8');
     const followUpSource = readFileSync('src/orchestrator/llmFollowUpActivity.ts', 'utf8');
+    const telemetrySource = readFileSync('src/observability/telemetry.ts', 'utf8');
 
     expect(source).toContain("import { buildSuccessfulFailoverNotices } from '../llm/foundryClient.js';");
+    expect(source).toContain("import { recoverOperationalNoticesFromTrace } from './failoverNoticeRecovery.js';");
     expect(source).toContain("function rememberOperationalEvidence(");
     expect(source).toContain('for (const notice of buildSuccessfulFailoverNotices(result.failoverSteps)) {');
     expect(source).toContain('rememberOperationalEvidence(operationalNotices, llmResult);');
     expect(source).toContain('rememberOperationalEvidence(operationalNotices, followUp);');
+    expect(source).toContain('for (const notice of recoverOperationalNoticesFromTrace(correlationId)) {');
     expect(llmSource).toContain('failoverSteps: response.failoverSteps ?? [],');
     expect(followUpSource).toContain('export function mergeFollowUpResponseEvidence(');
     expect(followUpSource).toContain('const followUpResponses: ChatCompletionResponse[] = [response];');
     expect(followUpSource).toContain('followUpResponses.push(retryResponse);');
     expect(followUpSource).toContain('const evidence = mergeFollowUpResponseEvidence(followUpResponses);');
+    expect(telemetrySource).toContain("if (p['originalModel']) parts.push(`originalModel: ${p['originalModel']}`);");
+    expect(telemetrySource).toContain("if (p['fallbackModel']) parts.push(`fallbackModel: ${p['fallbackModel']}`);");
   });
 });
