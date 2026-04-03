@@ -11,8 +11,11 @@ import {
 } from '@azure/functions';
 import * as df from 'durable-functions';
 import { z } from 'zod';
+import { getEnvConfig } from '../config/envConfig.js';
 import { getHookById, recordHookFired } from '../orchestrator/hookCatalog.js';
 import { resolveActiveOverseerInstanceId } from '../orchestrator/activeOverseerInstance.js';
+import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';
+import { trackEvent } from '../observability/telemetry.js';
 
 const HookReceiverPayloadSchema = z.object({
   hookId: z.string().uuid(),
@@ -69,12 +72,33 @@ app.http('hookReceiver', {
       };
     }
 
+    recordLimbicIngressDecision({
+      source: 'hook-fired',
+      userId: body.userId,
+      correlationId: hook.correlationId,
+      compatibilityMode: getEnvConfig().livingMindCompatibilityMode,
+      hasActiveSession: false,
+    });
+
     try {
       await client.raiseEvent(activeOverseerInstanceId, `HookFired_${body.hookId}`, firedPayload);
     } catch (raiseErr) {
       context.warn(`[hookReceiver] Failed to raise event for hookId=${body.hookId}, userId=${body.userId}, instanceId=${activeOverseerInstanceId}`, raiseErr);
       // Still return 202 — the hook was fired and recorded even if overseer is not running
     }
+
+    trackEvent({
+      name: 'DurableHookTriggered',
+      correlationId: hook.correlationId,
+      userId: body.userId,
+      properties: {
+        source: 'hook-fired',
+        hookId: body.hookId,
+        hookType: hook.hookType,
+        deliveredToOverseer: true,
+        instanceId: activeOverseerInstanceId,
+      },
+    });
 
     context.log(`[hookReceiver] Hook fired: hookId=${body.hookId} userId=${body.userId} type=${hook.hookType}`);
     return {
