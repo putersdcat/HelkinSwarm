@@ -174,6 +174,7 @@ df.app.activity('llmFollowUpActivity', {
           toolCalls: [],
           finishReason: 'error',
           operationalNotices: [],
+          failoverSteps: [],
         };
       }
       deploymentName = input.modelOverride;
@@ -306,6 +307,7 @@ df.app.activity('llmFollowUpActivity', {
             toolCalls: [],
             finishReason: 'stop',
             operationalNotices: buildSuccessfulFailoverNotices(response.failoverSteps),
+            failoverSteps: response.failoverSteps ?? [],
           };
         }
 
@@ -318,6 +320,7 @@ df.app.activity('llmFollowUpActivity', {
           toolCalls: effectiveRetryToolCalls,
           finishReason: choice.finishReason,
           operationalNotices: buildSuccessfulFailoverNotices(response.failoverSteps),
+          failoverSteps: response.failoverSteps ?? [],
         };
       }
 
@@ -351,6 +354,7 @@ df.app.activity('llmFollowUpActivity', {
         toolCalls: [],
         finishReason: choice.finishReason,
         operationalNotices: buildSuccessfulFailoverNotices(response.failoverSteps),
+        failoverSteps: response.failoverSteps ?? [],
       };
     } catch (err) {
       return {
@@ -361,6 +365,7 @@ df.app.activity('llmFollowUpActivity', {
         toolCalls: [],
         finishReason: 'error',
         operationalNotices: [],
+        failoverSteps: [],
       };
     }
   },

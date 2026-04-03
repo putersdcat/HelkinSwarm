@@ -6,6 +6,7 @@ import {
   buildLlmFailureNotice,
   buildSuccessfulFailoverNotices,
   FoundryClient,
+  type LlmFailoverStep,
 } from '../llm/foundryClient.js';
 import {
   classifyRequestedTaskComplexity,
@@ -29,6 +30,7 @@ export interface LlmResult {
   toolCalls: Array<{ id: string; name: string; arguments: string }>;
   finishReason: string;
   operationalNotices: string[];
+  failoverSteps: LlmFailoverStep[];
 }
 
 // DIAGNOSTIC (#327): Skip LLM entirely when fast-path is active
@@ -51,6 +53,7 @@ df.app.activity('llmActivity', {
         toolCalls: [],
         finishReason: 'stop',
         operationalNotices: ['[diag] LLM_FAST_PATH=1 — no actual LLM call was made'],
+        failoverSteps: [],
       };
     }
     const hasImages = input.imageUrls && input.imageUrls.length > 0;
@@ -87,6 +90,7 @@ df.app.activity('llmActivity', {
           toolCalls: [],
           finishReason: 'error',
           operationalNotices: [],
+          failoverSteps: [],
         };
       }
       deploymentName = input.modelOverride;
@@ -178,6 +182,7 @@ df.app.activity('llmActivity', {
         toolCalls,
         finishReason: choice.finishReason,
         operationalNotices: buildSuccessfulFailoverNotices(response.failoverSteps),
+        failoverSteps: response.failoverSteps ?? [],
       };
     } catch (err) {
       const notice = buildLlmFailureNotice(err);
@@ -195,6 +200,7 @@ df.app.activity('llmActivity', {
         toolCalls: [],
         finishReason: 'error',
         operationalNotices: [],
+        failoverSteps: [],
       };
     }
   },

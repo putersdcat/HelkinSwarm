@@ -19,6 +19,7 @@ import type { SubAgentInput, SubAgentResult } from './subAgentActivity.js';
 import type { ExecutorInput, ExecutorResult } from './executorActivity.js';
 import { signExecutorPayload, hashPayload } from './executorActivity.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
+import { buildSuccessfulFailoverNotices } from '../llm/foundryClient.js';
 import type { PlanInput, PlanResult } from './planActivity.js';
 import { canonicalizeInput } from './inputCanonicalizer.js';
 import { computeToolBudget } from './toolBudgetScaler.js';
@@ -107,6 +108,19 @@ export interface SessionResult {
   replySent: boolean;
   safetyPassed: boolean;
   pendingClarification?: PendingClarification | null;
+}
+
+function rememberOperationalEvidence(
+  notices: Set<string>,
+  result: Pick<LlmResult, 'operationalNotices' | 'failoverSteps'>,
+): void {
+  for (const notice of result.operationalNotices ?? []) {
+    notices.add(notice);
+  }
+
+  for (const notice of buildSuccessfulFailoverNotices(result.failoverSteps)) {
+    notices.add(notice);
+  }
 }
 
 df.app.orchestration('sessionOrchestrator', function* (context) {
@@ -424,6 +438,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         }],
         finishReason: 'tool_calls',
         operationalNotices: [],
+        failoverSteps: [],
       }
     : yield context.df.callActivity(
       'llmActivity',
@@ -450,7 +465,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       telemetryModelSequence.push(model);
     }
   };
-  const operationalNotices = new Set(llmResult.operationalNotices ?? []);
+  const operationalNotices = new Set<string>();
+  rememberOperationalEvidence(operationalNotices, llmResult);
 
   // Counters for telemetry footer (#321)
   let subAgentSpawnCount = 0;
@@ -810,14 +826,13 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             }],
             finishReason: 'tool_calls',
             operationalNotices: [],
+            failoverSteps: [],
           }
         : yield context.df.callActivity('llmFollowUpActivity', followUpInput);
       rememberTelemetryModel(followUp.model);
       cumulativeTokensUsed += followUp.tokensUsed;
       cumulativePromptTokens += followUp.promptTokens;
-      for (const notice of followUp.operationalNotices ?? []) {
-        operationalNotices.add(notice);
-      }
+      rememberOperationalEvidence(operationalNotices, followUp);
 
       // Multi-round loop: if the follow-up LLM requests more tool calls,
       // dispatch them and call the LLM again. This replaces the old 2-iteration
@@ -869,9 +884,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           rememberTelemetryModel(followUp.model);
           cumulativeTokensUsed += followUp.tokensUsed;
           cumulativePromptTokens += followUp.promptTokens;
-          for (const notice of followUp.operationalNotices ?? []) {
-            operationalNotices.add(notice);
-          }
+          rememberOperationalEvidence(operationalNotices, followUp);
           break; // Truncation retry is terminal — don't loop further
         }
 
@@ -1159,9 +1172,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         rememberTelemetryModel(followUp.model);
         cumulativeTokensUsed += followUp.tokensUsed;
         cumulativePromptTokens += followUp.promptTokens;
-        for (const notice of followUp.operationalNotices ?? []) {
-          operationalNotices.add(notice);
-        }
+        rememberOperationalEvidence(operationalNotices, followUp);
       }
 
       responseContent = followUp.content;
