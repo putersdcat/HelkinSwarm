@@ -964,13 +964,13 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       await context.updateActivity({
         type: ActivityTypes.Message,
         id: ackActivityId,
-        text: `⏳ I already have several active interruptions stacked up, so I queued this turn (tracking: ${trackingId}). I'll process it when I'm back online.`,
+        text: `⏳ I already have active work in flight, so I queued this turn (tracking: ${trackingId}). I'll process it when I'm back online.`,
         textFormat: 'markdown',
       });
     } catch (err) {
       console.warn('[HelkinSwarmBot] Failed to update queued ack placeholder:', err);
       await context.sendActivity(
-        `⏳ I already have several active interruptions stacked up, so I queued this turn (tracking: ${trackingId}). I'll process it when I'm back online.`,
+        `⏳ I already have active work in flight, so I queued this turn (tracking: ${trackingId}). I'll process it when I'm back online.`,
       );
     } finally {
       await clearPendingAckId(conversationId, correlationId);
@@ -1093,6 +1093,9 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       });
 
       if (ingressDecision.decision === 'queue') {
+        const creationReason = interruptionDepth >= MAX_INTERRUPTION_DEPTH
+          ? 'interruption-depth-cap'
+          : 'single-session-enforcement';
         const { trackingId } = await createPendingIntent({
           userId,
           messageText: userMessage,
@@ -1103,7 +1106,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
           runtimeAssets,
           attachmentNotices,
           correlationId: eventCorrelationId,
-          creationReason: 'interruption-depth-cap',
+          creationReason,
           userNotified: true,
           failureReason: ingressDecision.reason,
         });

@@ -54,17 +54,17 @@ export function evaluateLimbicIngress(rawInput: LimbicIngressInput): LimbicIngre
     });
   }
 
+  if (input.hasActiveSession) {
+    return LimbicIngressDecisionSchema.parse({
+      decision: 'queue',
+      reason: 'Single-session enforcement is active: queue this same-identity overlap until the in-flight turn finishes.',
+    });
+  }
+
   if (input.compatibilityMode) {
     return LimbicIngressDecisionSchema.parse({
       decision: 'compat-start',
       reason: 'Compatibility mode preserves one-shot overseer startup while Limbic enforcement is incomplete.',
-    });
-  }
-
-  if (input.hasActiveSession) {
-    return LimbicIngressDecisionSchema.parse({
-      decision: 'queue',
-      reason: 'An active session already exists; future enforcement should queue or steer instead of spawning parallel work.',
     });
   }
 

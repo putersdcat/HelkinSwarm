@@ -70,7 +70,7 @@ describe('telemetry trace detail enrichment', () => {
       hasActiveSession: true,
     });
     expect(queuedDecision.decision).toBe('queue');
-    expect(queuedDecision.reason).toContain('active session');
+    expect(queuedDecision.reason).toContain('Single-session enforcement');
 
     const correlationId = 'corr-499-trace';
     recordLimbicIngressDecision({
@@ -116,6 +116,36 @@ describe('telemetry trace detail enrichment', () => {
     const limbicPhase = trace?.phases.find((phase) => phase.name === 'LimbicDecision');
     expect(limbicPhase?.detail).toContain('decision: queue');
     expect(limbicPhase?.detail).toContain(`interruptionDepth: ${MAX_INTERRUPTION_DEPTH}`);
+  });
+
+  it('queues active-session overlap before compatibility mode can take compat-start', () => {
+    const queuedDecision = evaluateLimbicIngress({
+      source: 'teams-message',
+      userId: 'u1',
+      correlationId: 'corr-517-queue',
+      compatibilityMode: true,
+      hasActiveSession: true,
+      interruptionDepth: 0,
+    });
+    expect(queuedDecision.decision).toBe('queue');
+    expect(queuedDecision.reason).toContain('Single-session enforcement');
+
+    const correlationId = 'corr-517-trace';
+    recordLimbicIngressDecision({
+      source: 'teams-message',
+      userId: 'u1',
+      correlationId,
+      compatibilityMode: true,
+      hasActiveSession: true,
+      interruptionDepth: 0,
+    });
+
+    const trace = getTraceTree(correlationId);
+    const limbicPhase = trace?.phases.find((phase) => phase.name === 'LimbicDecision');
+    const overridePhase = trace?.phases.find((phase) => phase.name === 'PolicyOverrideApplied');
+    expect(limbicPhase?.detail).toContain('decision: queue');
+    expect(limbicPhase?.detail).toContain('Single-session enforcement');
+    expect(overridePhase).toBeUndefined();
   });
 
   it('records live external-event routing outcomes in the runtime trace detail', () => {
