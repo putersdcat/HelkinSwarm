@@ -127,13 +127,16 @@ df.app.activity('llmActivity', {
 
     // Get OpenAI-compatible function schemas from tool registry
     const tools = input.tools ?? toolRegistry.toFunctionSchemas();
-    const requestedTaskComplexity = classifyRequestedTaskComplexity({
-      userMessage: input.userMessage,
-      modelOverride: input.modelOverride,
-      runtimeAssetCount: input.imageUrls?.length,
-      hasQuotedContext: false,
-      hasDevLoopContext: false,
-    });
+  const requestedTaskComplexity = classifyRequestedTaskComplexity({
+    userMessage: validMessages
+    .slice()
+    .reverse()
+    .find((message) => message.role === 'user')?.content ?? '',
+    modelOverride: input.modelOverride,
+    runtimeAssetCount: input.imageUrls?.length,
+    hasQuotedContext: false,
+    hasDevLoopContext: false,
+  });
 
     trackEvent({ name: 'LlmCallStarted', correlationId, properties: { deployment: deploymentName, toolCount: tools.length } });
     console.log(`[llmActivity] correlationId=${correlationId} deployment=${deploymentName} toolCount=${tools.length} toolNames=${tools.map(t => t.function.name).join(',')}`);
