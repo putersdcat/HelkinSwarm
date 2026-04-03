@@ -1007,6 +1007,29 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
   }
 
+  private async replaceAckWithCommandFailureNotice(
+    context: TurnContext,
+    userId: string,
+    correlationId: string,
+    ackActivityId: string,
+    text: string,
+  ): Promise<void> {
+    const conversationId = context.activity.conversation?.id ?? userId;
+    try {
+      await context.updateActivity({
+        type: ActivityTypes.Message,
+        id: ackActivityId,
+        text,
+        textFormat: 'markdown',
+      });
+    } catch (err) {
+      console.warn('[HelkinSwarmBot] Failed to update command-failure ack placeholder:', err);
+      await context.sendActivity(text);
+    } finally {
+      await clearPendingAckId(conversationId, correlationId);
+    }
+  }
+
   private async handleRaiseToOverseerResult(
     context: TurnContext,
     userId: string,
@@ -1458,27 +1481,42 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
 
     const ackResponse = await context.sendActivity(`⌛ Working on it... (${label})`);
-    if (ackResponse?.id) {
-      const conversationId = context.activity.conversation?.id ?? userId;
-      await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
+    try {
+      if (ackResponse?.id) {
+        const conversationId = context.activity.conversation?.id ?? userId;
+        await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
+      }
+      const result = await this.raiseToOverseer(
+        context,
+        userId,
+        userAlias,
+        prompt,
+        modelOverride,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        correlationId,
+        undefined,
+        context.activity.id,
+      );
+      await this.handleRaiseToOverseerResult(context, userId, correlationId, ackResponse?.id, result);
+    } catch (err) {
+      console.error(`[HelkinSwarmBot] ${modelOverride} override handoff failed for correlationId=${correlationId}:`, err);
+      if (ackResponse?.id) {
+        await this.replaceAckWithCommandFailureNotice(
+          context,
+          userId,
+          correlationId,
+          ackResponse.id,
+          '⚠️ This forced-model turn failed before it reached the living session. Please retry.',
+        );
+      } else {
+        await context.sendActivity('⚠️ This forced-model turn failed before it reached the living session. Please retry.');
+      }
     }
-    const result = await this.raiseToOverseer(
-      context,
-      userId,
-      userAlias,
-      prompt,
-      modelOverride,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      correlationId,
-      undefined,
-      context.activity.id,
-    );
-    await this.handleRaiseToOverseerResult(context, userId, correlationId, ackResponse?.id, result);
   }
 
   /** /model <deployment-name> <prompt> — force a specific Azure AI Foundry deployment for one turn (owner-only, #217). */
@@ -1528,27 +1566,42 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
 
     const ackResponse = await context.sendActivity(`⌛ Working on it... (🎯 ${deploymentName})`);
-    if (ackResponse?.id) {
-      const conversationId = context.activity.conversation?.id ?? userId;
-      await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
+    try {
+      if (ackResponse?.id) {
+        const conversationId = context.activity.conversation?.id ?? userId;
+        await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
+      }
+      const result = await this.raiseToOverseer(
+        context,
+        userId,
+        userAlias,
+        prompt,
+        deploymentName,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        correlationId,
+        undefined,
+        context.activity.id,
+      );
+      await this.handleRaiseToOverseerResult(context, userId, correlationId, ackResponse?.id, result);
+    } catch (err) {
+      console.error(`[HelkinSwarmBot] direct model override handoff failed for correlationId=${correlationId} deployment=${deploymentName}:`, err);
+      if (ackResponse?.id) {
+        await this.replaceAckWithCommandFailureNotice(
+          context,
+          userId,
+          correlationId,
+          ackResponse.id,
+          '⚠️ This direct-model turn failed before it reached the living session. Please retry.',
+        );
+      } else {
+        await context.sendActivity('⚠️ This direct-model turn failed before it reached the living session. Please retry.');
+      }
     }
-    const result = await this.raiseToOverseer(
-      context,
-      userId,
-      userAlias,
-      prompt,
-      deploymentName,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      correlationId,
-      undefined,
-      context.activity.id,
-    );
-    await this.handleRaiseToOverseerResult(context, userId, correlationId, ackResponse?.id, result);
   }
 
   private async handleEmergencyStop(
