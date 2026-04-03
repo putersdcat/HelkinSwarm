@@ -616,7 +616,15 @@ app.http('devloopResurrect', {
       name: 'DevLoopRelayPush',
       correlationId: resurrectCorrelationId,
       userId: callerId,
-      properties: { action: 'resurrect', targetUserId, wasTerminal, reason: body.reason ?? 'none' },
+      properties: {
+        action: 'resurrect',
+        targetUserId,
+        wasTerminal,
+        reason: body.reason ?? 'none',
+        source: 'devloop-relay',
+        authority: body.initialMessage ? 'mind-session-guard-acquire' : 'none',
+        instanceId: startInstanceId,
+      },
     });
 
     return {

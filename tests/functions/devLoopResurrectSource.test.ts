@@ -13,6 +13,9 @@ describe('devloop resurrect ingress proof surface', () => {
     expect(source).toContain('correlationId: resurrectCorrelationId,');
     expect(source).toContain('await client.startNew(\'overseer\', { instanceId: startInstanceId, input: event });');
     expect(source).toContain('await signalMindSessionAcquire(client, targetUserId, {');
+    expect(source).toContain("authority: body.initialMessage ? 'mind-session-guard-acquire' : 'none'");
+    expect(source).toContain("source: 'devloop-relay'");
+    expect(source).toContain('instanceId: startInstanceId,');
     expect(source).toContain('correlationId: body.initialMessage ? resurrectCorrelationId : null,');
   });
 });
