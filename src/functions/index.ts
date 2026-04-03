@@ -24,6 +24,7 @@ import './maintenanceSweepTimer.js';
 import './staleSessionCleanupTimer.js';
 import './staleAckRecoveryTimer.js';
 import './pendingIntentReplayTimer.js';
+import './selfAwakenTimer.js';
 import './tabGetStarted.js';
 import './tabDashboard.js';
 import './tabCosts.js';

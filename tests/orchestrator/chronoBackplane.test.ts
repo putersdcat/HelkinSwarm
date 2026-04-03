@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildChronoContinuityDocument,
   buildChronoInterruptionBreadcrumb,
+  buildChronoScheduledWake,
 } from '../../src/orchestrator/chronoBackplane.js';
 
 describe('chrono backplane compatibility seam', () => {
@@ -33,5 +34,21 @@ describe('chrono backplane compatibility seam', () => {
     expect(doc.type).toBe('interruption-breadcrumb');
     expect(doc.interruptedInstanceId).toBe('overseer-u1-old');
     expect(doc.interruptedByCorrelationId).toBe('corr-new');
+  });
+
+  it('builds a scheduled wake document for chrono-backed self-awaken registration', () => {
+    const doc = buildChronoScheduledWake({
+      userId: 'u1',
+      wakeAt: '2026-04-03T12:00:00.000Z',
+      wakeMessage: 'Reply with exactly: self awaken proof.',
+      registrationCorrelationId: 'corr-wake-register',
+      conversationReferenceJson: '{"conversation":{"id":"conv-1"}}',
+    });
+
+    expect(doc.id).toContain('u1:wake:');
+    expect(doc.type).toBe('scheduled-wake');
+    expect(doc.status).toBe('scheduled');
+    expect(doc.wakeAt).toBe('2026-04-03T12:00:00.000Z');
+    expect(doc.wakeMessage).toContain('self awaken proof');
   });
 });

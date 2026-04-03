@@ -26,6 +26,7 @@ import {
   getActiveTurnCountForUser,
   recordOrchestratorStage,
 } from '../observability/orchestratorStageHealth.js';
+import { saveChronoScheduledWake } from '../orchestrator/chronoBackplane.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { getTraceTree, findTraceTreeByShortCorrelation } from '../observability/sessionTracer.js';
 
@@ -58,6 +59,11 @@ const ActiveTurnProofPayloadSchema = z.discriminatedUnion('action', [
     correlationIds: z.array(z.string().min(1)).min(1).max(20),
   }),
 ]);
+
+const SelfAwakenPayloadSchema = z.object({
+  message: z.string().min(1).max(400),
+  delaySeconds: z.number().int().min(1).max(600).default(70),
+});
 
 // ---------------------------------------------------------------------------
 // POST /api/devloop/push — DevLoop sends a message to the runtime
@@ -357,6 +363,68 @@ app.http('devloopActiveTurns', {
         action: body.action,
         cleared: body.correlationIds.length,
         activeTurnCount,
+      },
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/devloop/self-awaken — register a chrono-backed wake for proof
+// ---------------------------------------------------------------------------
+
+app.http('devloopSelfAwaken', {
+  methods: ['POST'],
+  authLevel: 'function',
+  route: 'devloop/self-awaken',
+  handler: async (req: HttpRequest): Promise<HttpResponseInit> => {
+    const userId = req.headers.get('x-helkinswarm-user-id');
+    if (!userId || !(await isOwnerUserId(userId))) {
+      return { status: 403, jsonBody: { error: 'Owner-only endpoint.' } };
+    }
+
+    let body: z.infer<typeof SelfAwakenPayloadSchema>;
+    try {
+      body = SelfAwakenPayloadSchema.parse(await req.json());
+    } catch {
+      return {
+        status: 400,
+        jsonBody: { error: 'Invalid payload. Required: message, optional delaySeconds.' },
+      };
+    }
+
+    const conversationReference = await getConversationReference(userId);
+    if (!conversationReference) {
+      return {
+        status: 409,
+        jsonBody: { error: 'No conversation reference available for owner user yet.' },
+      };
+    }
+
+    const wakeAt = new Date(Date.now() + body.delaySeconds * 1000).toISOString();
+    const registrationCorrelationId = `register-self-awaken-${Date.now()}`;
+    const wake = await saveChronoScheduledWake({
+      userId,
+      wakeAt,
+      wakeMessage: body.message,
+      registrationCorrelationId,
+      conversationReferenceJson: JSON.stringify(conversationReference),
+    });
+
+    trackEvent({
+      name: 'ChronoScheduledWakeRegistered',
+      correlationId: registrationCorrelationId,
+      userId,
+      properties: {
+        wakeId: wake.id,
+        wakeAt,
+      },
+    });
+
+    return {
+      status: 200,
+      jsonBody: {
+        wakeId: wake.id,
+        wakeAt,
       },
     };
   },

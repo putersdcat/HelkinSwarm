@@ -189,4 +189,35 @@ describe('telemetry trace detail enrichment', () => {
     expect(phase?.detail).toContain('trackingId: PI-TEST123');
     expect(phase?.detail).toContain('failureReason: durable start failed');
   });
+
+  it('records chrono self-awaken registration and trigger details in the runtime trace', () => {
+    const correlationId = 'corr-514-proof';
+
+    trackEvent({
+      name: 'ChronoScheduledWakeRegistered',
+      correlationId,
+      userId: 'u1',
+      properties: {
+        wakeId: 'u1:wake:test',
+        wakeAt: '2026-04-03T12:00:00.000Z',
+      },
+    });
+
+    trackEvent({
+      name: 'ChronoScheduledWakeTriggered',
+      correlationId,
+      userId: 'u1',
+      properties: {
+        wakeId: 'u1:wake:test',
+        wakeAt: '2026-04-03T12:00:00.000Z',
+        instanceId: 'overseer-u1-wake-test',
+      },
+    });
+
+    const trace = getTraceTree(correlationId);
+    const registeredPhase = trace?.phases.find((p) => p.name === 'ChronoScheduledWakeRegistered');
+    const triggeredPhase = trace?.phases.find((p) => p.name === 'ChronoScheduledWakeTriggered');
+    expect(registeredPhase?.detail).toContain('wakeId: u1:wake:test');
+    expect(triggeredPhase?.detail).toContain('instanceId: overseer-u1-wake-test');
+  });
 });

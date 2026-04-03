@@ -44,6 +44,8 @@ export type TelemetryEventName =
   | 'GraphSubscriptionRenewed'
   | 'PendingIntentCreated'
   | 'PendingIntentRecovered'
+  | 'ChronoScheduledWakeRegistered'
+  | 'ChronoScheduledWakeTriggered'
   | 'LimbicDecision'
   | 'ChronoBackplaneRead'
   | 'ChronoBackplaneWritten'
@@ -100,6 +102,8 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   StateSaved: 'memory',
   PendingIntentCreated: 'orchestrator',
   PendingIntentRecovered: 'orchestrator',
+  ChronoScheduledWakeRegistered: 'orchestrator',
+  ChronoScheduledWakeTriggered: 'orchestrator',
   ChronoBackplaneRead: 'memory',
   ChronoBackplaneWritten: 'memory',
   InterruptionBreadcrumbWritten: 'memory',
@@ -221,6 +225,8 @@ function buildTraceDetail(event: TelemetryEvent): string {
   if (p['selectedTools']) parts.push(`selected: ${p['selectedTools']}`);
   if (p['trackingId']) parts.push(`trackingId: ${p['trackingId']}`);
   if (p['creationReason']) parts.push(`creationReason: ${p['creationReason']}`);
+  if (p['wakeId']) parts.push(`wakeId: ${p['wakeId']}`);
+  if (p['wakeAt']) parts.push(`wakeAt: ${p['wakeAt']}`);
   if (p['failureReason']) parts.push(`failureReason: ${p['failureReason']}`);
   if (p['authority']) parts.push(`authority: ${p['authority']}`);
   if (p['source']) parts.push(`source: ${p['source']}`);

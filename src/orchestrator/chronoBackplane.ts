@@ -31,6 +31,21 @@ export const ChronoInterruptionBreadcrumbSchema = z.object({
   ttl: z.number().int().positive(),
 });
 
+export const ChronoScheduledWakeSchema = z.object({
+  id: z.string(),
+  userId: z.string(),
+  type: z.literal('scheduled-wake'),
+  wakeAt: z.string(),
+  wakeMessage: z.string(),
+  registrationCorrelationId: z.string(),
+  conversationReferenceJson: z.string().optional(),
+  status: z.enum(['scheduled', 'dispatched', 'cancelled']).default('scheduled'),
+  dispatchedAt: z.string().optional(),
+  dispatchedCorrelationId: z.string().optional(),
+  updatedAt: z.string(),
+  ttl: z.number().int().positive(),
+});
+
 export const SaveChronoContinuityInputSchema = z.object({
   userId: z.string(),
   correlationId: z.string(),
@@ -47,10 +62,20 @@ export const SaveChronoInterruptionBreadcrumbInputSchema = z.object({
   interruptedByMessage: z.string(),
 });
 
+export const SaveChronoScheduledWakeInputSchema = z.object({
+  userId: z.string(),
+  wakeAt: z.string(),
+  wakeMessage: z.string(),
+  registrationCorrelationId: z.string(),
+  conversationReferenceJson: z.string().optional(),
+});
+
 export type ChronoContinuityDocument = z.infer<typeof ChronoContinuityDocumentSchema>;
 export type ChronoInterruptionBreadcrumb = z.infer<typeof ChronoInterruptionBreadcrumbSchema>;
+export type ChronoScheduledWake = z.infer<typeof ChronoScheduledWakeSchema>;
 export type SaveChronoContinuityInput = z.infer<typeof SaveChronoContinuityInputSchema>;
 export type SaveChronoInterruptionBreadcrumbInput = z.infer<typeof SaveChronoInterruptionBreadcrumbInputSchema>;
+export type SaveChronoScheduledWakeInput = z.infer<typeof SaveChronoScheduledWakeInputSchema>;
 
 function getContinuityDocumentId(userId: string): string {
   return `${userId}:continuity`;
@@ -58,6 +83,10 @@ function getContinuityDocumentId(userId: string): string {
 
 function getInterruptionBreadcrumbId(userId: string): string {
   return `${userId}:interruption`;
+}
+
+function getScheduledWakeDocumentId(userId: string, wakeId: string): string {
+  return `${userId}:wake:${wakeId}`;
 }
 
 function summarizeForChrono(text: string, maxLength = 180): string {
@@ -97,6 +126,23 @@ export function buildChronoInterruptionBreadcrumb(
     interruptedSource: parsed.interruptedSource,
     interruptedByCorrelationId: parsed.interruptedByCorrelationId,
     interruptedByMessage: summarizeForChrono(parsed.interruptedByMessage, 400),
+    updatedAt: new Date().toISOString(),
+    ttl: CHRONO_TTL_SECONDS,
+  });
+}
+
+export function buildChronoScheduledWake(input: SaveChronoScheduledWakeInput): ChronoScheduledWake {
+  const parsed = SaveChronoScheduledWakeInputSchema.parse(input);
+  const wakeId = crypto.randomUUID();
+  return ChronoScheduledWakeSchema.parse({
+    id: getScheduledWakeDocumentId(parsed.userId, wakeId),
+    userId: parsed.userId,
+    type: 'scheduled-wake',
+    wakeAt: parsed.wakeAt,
+    wakeMessage: summarizeForChrono(parsed.wakeMessage, 400),
+    registrationCorrelationId: parsed.registrationCorrelationId,
+    conversationReferenceJson: parsed.conversationReferenceJson,
+    status: 'scheduled',
     updatedAt: new Date().toISOString(),
     ttl: CHRONO_TTL_SECONDS,
   });
@@ -143,6 +189,43 @@ export async function saveChronoInterruptionBreadcrumb(
     },
   });
   return doc;
+}
+
+export async function saveChronoScheduledWake(
+  input: SaveChronoScheduledWakeInput,
+): Promise<ChronoScheduledWake> {
+  const doc = buildChronoScheduledWake(input);
+  await getContainer(CHRONO_CONTAINER).items.upsert(doc);
+  return doc;
+}
+
+export async function listDueChronoScheduledWakes(
+  nowIso = new Date().toISOString(),
+  limit = 20,
+): Promise<ChronoScheduledWake[]> {
+  const query = {
+    query: `SELECT TOP @limit * FROM c WHERE c.type = 'scheduled-wake' AND c.status = 'scheduled' AND c.wakeAt <= @now ORDER BY c.wakeAt ASC`,
+    parameters: [
+      { name: '@now', value: nowIso },
+      { name: '@limit', value: limit },
+    ],
+  };
+
+  const { resources } = await getContainer(CHRONO_CONTAINER).items.query<ChronoScheduledWake>(query).fetchAll();
+  return resources.map((resource) => ChronoScheduledWakeSchema.parse(resource));
+}
+
+export async function markChronoScheduledWakeDispatched(
+  wakeId: string,
+  userId: string,
+  dispatchedCorrelationId: string,
+): Promise<void> {
+  await getContainer(CHRONO_CONTAINER).item(wakeId, userId).patch([
+    { op: 'replace', path: '/status', value: 'dispatched' },
+    { op: 'replace', path: '/updatedAt', value: new Date().toISOString() },
+    { op: 'add', path: '/dispatchedAt', value: new Date().toISOString() },
+    { op: 'add', path: '/dispatchedCorrelationId', value: dispatchedCorrelationId },
+  ]);
 }
 
 export async function loadChronoInterruptionBreadcrumb(
