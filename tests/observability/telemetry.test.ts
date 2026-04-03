@@ -160,6 +160,21 @@ describe('telemetry trace detail enrichment', () => {
     expect(overridePhase?.detail).toContain('authority: living-mind-impairment-protocol');
   });
 
+  it('defers heavy self-awaken turns before the self-awaken fast path when the conscious lane is impaired', () => {
+    const deferDecision = evaluateLimbicIngress({
+      source: 'self-awaken',
+      userId: 'u1',
+      correlationId: 'corr-532-self-awaken',
+      compatibilityMode: true,
+      hasActiveSession: false,
+      consciousModelImpaired: true,
+      requestedTaskComplexity: 'complex',
+    });
+
+    expect(deferDecision.decision).toBe('defer');
+    expect(deferDecision.reason).toContain('defer complex work');
+  });
+
   it('records interruption-depth queue decisions in the runtime trace detail', () => {
     const queuedDecision = evaluateLimbicIngress({
       source: 'teams-message',

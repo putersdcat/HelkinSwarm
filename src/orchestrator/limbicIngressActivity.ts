@@ -48,13 +48,6 @@ export type LimbicIngressDecision = z.output<typeof LimbicIngressDecisionSchema>
 export function evaluateLimbicIngress(rawInput: LimbicIngressInput): LimbicIngressDecision {
   const input = LimbicIngressInputSchema.parse(rawInput);
 
-  if (input.source === 'self-awaken') {
-    return LimbicIngressDecisionSchema.parse({
-      decision: 'self-awaken',
-      reason: 'Self-scheduled wake events retain highest internal priority.',
-    });
-  }
-
   if (input.hasActiveSession && input.interruptionDepth >= input.interruptionDepthCap) {
     return LimbicIngressDecisionSchema.parse({
       decision: 'queue',
@@ -73,6 +66,13 @@ export function evaluateLimbicIngress(rawInput: LimbicIngressInput): LimbicIngre
     return LimbicIngressDecisionSchema.parse({
       decision: 'defer',
       reason: `Conscious lane is currently impaired; defer ${input.requestedTaskComplexity} work until a higher-capacity lane is restored.`,
+    });
+  }
+
+  if (input.source === 'self-awaken') {
+    return LimbicIngressDecisionSchema.parse({
+      decision: 'self-awaken',
+      reason: 'Self-scheduled wake events retain highest internal priority when the conscious lane is capable of handling them.',
     });
   }
 
