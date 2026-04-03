@@ -178,7 +178,7 @@ export async function cancelHook(hookId: string, userId: string): Promise<void> 
 export async function recordHookFired(hookId: string, userId: string): Promise<void> {
   const container = getContainer(HOOKS_CONTAINER);
   await container.item(hookId, userId).patch({
-    operations: [{ op: 'replace', path: '/lastFiredAt', value: new Date().toISOString() }],
+    operations: [{ op: 'add', path: '/lastFiredAt', value: new Date().toISOString() }],
   });
 }
 
