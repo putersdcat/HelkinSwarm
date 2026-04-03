@@ -104,7 +104,7 @@ describe('active overseer instance resolution', () => {
     expect(result.latestInstanceId).toBeUndefined();
   });
 
-  it('prefers guard-owned active instance for routable delivery', () => {
+  it('does not route to guard residue alone when there are no active turns', () => {
     const result = summarizeRoutableOverseerInstances([
       {
         instanceId: 'overseer-user-a-dedup-hold',
@@ -112,6 +112,26 @@ describe('active overseer instance resolution', () => {
         createdTime: '2026-04-03T02:00:00.000Z',
       },
     ], 'user-a', 0, {
+      activeInstanceId: 'overseer-user-a-live',
+      activeCorrelationId: 'corr-live',
+      activeSource: 'teams-message',
+      acquisitionCount: 1,
+      collisionCount: 0,
+      interruptionDepth: 0,
+    });
+
+    expect(result.activeCount).toBe(0);
+    expect(result.latestInstanceId).toBeUndefined();
+  });
+
+  it('prefers guard-owned active instance when a real active turn exists', () => {
+    const result = summarizeRoutableOverseerInstances([
+      {
+        instanceId: 'overseer-user-a-dedup-hold',
+        runtimeStatus: OrchestrationRuntimeStatus.Running,
+        createdTime: '2026-04-03T02:00:00.000Z',
+      },
+    ], 'user-a', 1, {
       activeInstanceId: 'overseer-user-a-live',
       activeCorrelationId: 'corr-live',
       activeSource: 'teams-message',

@@ -54,15 +54,15 @@ export function summarizeRoutableOverseerInstances(
   activeTurnCount: number,
   guardState?: MindSessionGuardState,
 ): ActiveOverseerSummary {
+  if (activeTurnCount <= 0) {
+    return { activeCount: 0, latestInstanceId: undefined };
+  }
+
   if (guardState?.activeInstanceId) {
     return {
       activeCount: 1,
       latestInstanceId: guardState.activeInstanceId,
     };
-  }
-
-  if (activeTurnCount <= 0) {
-    return { activeCount: 0, latestInstanceId: undefined };
   }
 
   return summarizeActiveOverseerInstances(statuses, userId);
