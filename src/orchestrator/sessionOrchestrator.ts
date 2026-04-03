@@ -123,8 +123,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     ? input.devLoopContext.body
     : canonicalizedMessage;
 
+  const rawUserMessageForRouting = input.devLoopContext?.isDevLoop
+    ? input.devLoopContext.body
+    : input.userMessage;
+
   const isExplicitReadOnlyDiscoveryRequest = isReadOnlyDiscoveryRequest(userMessageForLlm);
-  const exactReplyInstruction = parseExactReplyInstruction(userMessageForLlm);
+  const exactReplyInstruction = parseExactReplyInstruction(rawUserMessageForRouting);
 
   if (isExplicitReadOnlyDiscoveryRequest) {
     userMessageForLlm = buildReadOnlyDiscoveryQuery(userMessageForLlm);

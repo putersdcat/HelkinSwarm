@@ -8,7 +8,8 @@ describe('exact reply routing source guards', () => {
 
     expect(discoverySource).toContain('export function parseExactReplyInstruction(userMessage: string): string | null');
     expect(discoverySource).toContain('if (parseExactReplyInstruction(userMessage)) {');
-    expect(sessionSource).toContain('const exactReplyInstruction = parseExactReplyInstruction(userMessageForLlm);');
+    expect(sessionSource).toContain('const rawUserMessageForRouting = input.devLoopContext?.isDevLoop');
+    expect(sessionSource).toContain('const exactReplyInstruction = parseExactReplyInstruction(rawUserMessageForRouting);');
     expect(sessionSource).toContain("model: 'exact-reply-short-circuit'");
     expect(sessionSource).toContain('message: exactReplyInstruction,');
   });
