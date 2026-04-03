@@ -241,4 +241,74 @@ describe('orchestratorStageHealth', () => {
     await expect(getActiveTurnCountForUser('user-a', 5_000)).resolves.toBe(2);
     await expect(getActiveTurnCountForUser('user-b', 5_000)).resolves.toBe(1);
   });
+
+  it('resets stage age when a turn enters the awaiting-ingress window', async () => {
+    const {
+      getOrchestratorStageSnapshot,
+      recordOrchestratorStage,
+      resetOrchestratorStageHealth,
+    } = await loadModule();
+    resetOrchestratorStageHealth();
+
+    await recordOrchestratorStage('corr-ingress', 'build-prompt', 'user-1', 1_000);
+    await recordOrchestratorStage('corr-ingress', 'awaiting-ingress', 'user-1', 5_000, 'overseer-user-1-proof');
+
+    const snapshot = await getOrchestratorStageSnapshot(6_000);
+    expect(snapshot.activeTurns).toBe(1);
+    expect(snapshot.turns[0]).toMatchObject({
+      correlationId: 'corr-ingress',
+      stage: 'awaiting-ingress',
+      ageMs: 1_000,
+      instanceId: 'overseer-user-1-proof',
+    });
+  });
+
+  it('expires awaiting-ingress stages on a short dedicated freshness window', async () => {
+    const {
+      getOrchestratorStageSnapshot,
+      resetOrchestratorStageHealth,
+    } = await loadModuleWithCosmosDouble({
+      queryResources: [
+        {
+          id: 'stage-corr-awaiting-ingress',
+          type: 'orchestrator-stage',
+          correlationId: 'corr-awaiting-ingress',
+          userId: 'user-1',
+          stage: 'awaiting-ingress',
+          instanceId: 'overseer-user-1-proof',
+          startedAtMs: 1_000,
+          updatedAtMs: 1_000,
+          ttl: 900,
+        } as never,
+      ],
+    });
+    resetOrchestratorStageHealth();
+
+    const snapshot = await getOrchestratorStageSnapshot(77_000);
+    expect(snapshot.activeTurns).toBe(0);
+    expect(snapshot.turns).toEqual([]);
+  });
+
+  it('clears active stages by terminated instance id', async () => {
+    const {
+      clearOrchestratorStagesForInstanceIds,
+      getOrchestratorStageSnapshot,
+      recordOrchestratorStage,
+      resetOrchestratorStageHealth,
+    } = await loadModule();
+    resetOrchestratorStageHealth();
+
+    const nowMs = Date.now();
+
+    await recordOrchestratorStage('corr-clear-a', 'awaiting-ingress', 'user-1', nowMs - 1_000, 'overseer-user-1-a');
+    await recordOrchestratorStage('corr-clear-b', 'awaiting-confirmation', 'user-1', nowMs - 500, 'overseer-user-1-b');
+
+    await expect(clearOrchestratorStagesForInstanceIds(['overseer-user-1-a'])).resolves.toBe(1);
+
+    const snapshot = await getOrchestratorStageSnapshot(nowMs);
+    expect(snapshot.activeTurns).toBe(1);
+    expect(snapshot.turns).toEqual([
+      expect.objectContaining({ correlationId: 'corr-clear-b', stage: 'awaiting-confirmation' }),
+    ]);
+  });
 });

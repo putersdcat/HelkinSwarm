@@ -17,18 +17,32 @@ interface OrchestratorStageDocument extends ActiveTurnStage {
 
 const CLEARED_STAGE = 'cleared';
 const CLEARED_STAGE_TTL_SECONDS = 60;
+const AWAITING_INGRESS_STAGE = 'awaiting-ingress';
 
 const SESSIONS_CONTAINER = 'sessions';
 const STAGE_TTL_SECONDS = 15 * 60;
 const STAGE_IO_TIMEOUT_MS = 1_000;
 const STAGE_TTL_MS = STAGE_TTL_SECONDS * 1_000;
+const AWAITING_INGRESS_MAX_AGE_MS = 75 * 1_000;
 const activeTurns = new Map<string, ActiveTurnStage>();
 
 function isStageEntryFresh(
-  entry: Pick<ActiveTurnStage, 'startedAtMs' | 'updatedAtMs'>,
+  entry: Pick<ActiveTurnStage, 'stage' | 'startedAtMs' | 'updatedAtMs'>,
   nowMs: number,
 ): boolean {
-  return nowMs - Math.max(entry.startedAtMs, entry.updatedAtMs) < STAGE_TTL_MS;
+  const entryAgeMs = nowMs - Math.max(entry.startedAtMs, entry.updatedAtMs);
+  if (entry.stage === AWAITING_INGRESS_STAGE) {
+    return entryAgeMs < AWAITING_INGRESS_MAX_AGE_MS;
+  }
+
+  return entryAgeMs < STAGE_TTL_MS;
+}
+
+function shouldResetStageStart(
+  existing: ActiveTurnStage | undefined,
+  nextStage: string,
+): boolean {
+  return nextStage === AWAITING_INGRESS_STAGE && existing?.stage !== AWAITING_INGRESS_STAGE;
 }
 
 function makeStageDocId(correlationId: string): string {
@@ -133,7 +147,9 @@ export async function recordOrchestratorStage(
     userId,
     stage,
     instanceId: instanceId ?? existing?.instanceId,
-    startedAtMs: existing?.startedAtMs ?? nowMs,
+    startedAtMs: shouldResetStageStart(existing, stage)
+      ? nowMs
+      : (existing?.startedAtMs ?? nowMs),
     updatedAtMs: nowMs,
   };
 
@@ -208,6 +224,22 @@ export async function clearOrchestratorStage(correlationId: string, userId: stri
       `[orchestratorStageHealth] Failed to delete stage doc for correlationId=${correlationId}; wrote cleared tombstone fallback if possible: ${err instanceof Error ? err.message : err}`,
     );
   }
+}
+
+export async function clearOrchestratorStagesForInstanceIds(instanceIds: ReadonlyArray<string>): Promise<number> {
+  const wantedInstanceIds = new Set(instanceIds.filter((instanceId) => instanceId.length > 0));
+  if (wantedInstanceIds.size === 0) {
+    return 0;
+  }
+
+  const matchedEntries = (await getFreshStageEntries(Date.now()))
+    .filter((entry) => entry.instanceId !== undefined && wantedInstanceIds.has(entry.instanceId));
+
+  await Promise.all(
+    matchedEntries.map((entry) => clearOrchestratorStage(entry.correlationId, entry.userId)),
+  );
+
+  return matchedEntries.length;
 }
 
 export async function getOrchestratorStageSnapshot(nowMs = Date.now()): Promise<{

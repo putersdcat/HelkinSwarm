@@ -11,6 +11,7 @@ import {
 import * as df from 'durable-functions';
 import { OrchestrationRuntimeStatus } from 'durable-functions';
 import { isOwnerUserId, setMaintenanceMode } from '../bot/maintenanceMode.js';
+import { clearOrchestratorStagesForInstanceIds } from '../observability/orchestratorStageHealth.js';
 import { pauseAllHooksForUser } from '../orchestrator/hookCatalog.js';
 
 async function readUserId(req: HttpRequest): Promise<string | null> {
@@ -44,6 +45,10 @@ async function terminateAllOrchestrations(client: df.DurableClient): Promise<num
     targets.map((status) =>
       client.terminate(status.instanceId, 'Emergency stop invoked via HTTP endpoint'),
     ),
+  );
+
+  await clearOrchestratorStagesForInstanceIds(
+    targets.map((status) => status.instanceId),
   );
 
   return targets.length;

@@ -10,6 +10,7 @@ import {
 } from '@azure/functions';
 import * as df from 'durable-functions';
 import { OrchestrationRuntimeStatus } from 'durable-functions';
+import { clearOrchestratorStagesForInstanceIds } from '../observability/orchestratorStageHealth.js';
 import { trackEvent } from '../observability/telemetry.js';
 
 /** Sessions idle longer than this are considered stale. Default: 1 hour. */
@@ -57,15 +58,21 @@ app.timer('staleSessionCleanupTimer', {
     context.log(`[staleSessionCleanup] Found ${candidates.length} stale session(s) — terminating`);
 
     let terminated = 0;
+    const terminatedInstanceIds: string[] = [];
     for (const candidate of candidates) {
       const ageMs = now - (candidate.lastUpdatedTime ? new Date(candidate.lastUpdatedTime).getTime() : 0);
       context.log(`[staleSessionCleanup] Terminating ${candidate.instanceId} (name=${candidate.name}, status=${candidate.runtimeStatus}, staleMs=${ageMs})`);
       try {
         await client.terminate(candidate.instanceId, `Stale session cleanup — idle for ${Math.round(ageMs / 1000)}s (threshold: ${Math.round(STALE_THRESHOLD_MS / 1000)}s)`);
         terminated++;
+        terminatedInstanceIds.push(candidate.instanceId);
       } catch (err) {
         context.log(`[staleSessionCleanup] Failed to terminate ${candidate.instanceId}: ${err instanceof Error ? err.message : err}`);
       }
+    }
+
+    if (terminatedInstanceIds.length > 0) {
+      await clearOrchestratorStagesForInstanceIds(terminatedInstanceIds);
     }
 
     trackEvent({

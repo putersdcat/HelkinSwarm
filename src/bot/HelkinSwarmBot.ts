@@ -60,6 +60,7 @@ import { buildSkillLinkSigninCard, buildSkillRelinkSigninCard } from './linkCard
 import { extractMessageReferenceId, extractMessageReferencePreview } from './messageReference.js';
 import type { QuotedContext } from './quotedContext.js';
 import { trackEvent } from '../observability/telemetry.js';
+import { clearOrchestratorStagesForInstanceIds } from '../observability/orchestratorStageHealth.js';
 import { clearOboSession } from '../auth/oboSessionStore.js';
 import { recoverStaleAck } from './staleAckRecovery.js';
 import { promoteSkillForgeBundle } from '../orchestrator/skillForgePromotion.js';
@@ -1553,6 +1554,10 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         terminationTargets.map((status) =>
           client.terminate(status.instanceId, 'Emergency stop invoked by owner'),
         ),
+      );
+
+      await clearOrchestratorStagesForInstanceIds(
+        terminationTargets.map((status) => status.instanceId),
       );
 
       console.error(
