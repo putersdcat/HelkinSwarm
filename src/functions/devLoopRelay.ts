@@ -34,6 +34,7 @@ import { saveChronoScheduledWake } from '../orchestrator/chronoBackplane.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { getTraceTree, findTraceTreeByShortCorrelation } from '../observability/sessionTracer.js';
 import { clearModelDegraded, markModelDegraded } from '../llm/modelCircuitBreaker.js';
+import { clearForcedRetryableFailure, seedForcedRetryableFailure } from '../llm/modelFailoverProof.js';
 import { registerModels, reportLlmFailure, reportLlmSuccess } from '../llm/llmHealthTracker.js';
 
 // ---------------------------------------------------------------------------
@@ -90,6 +91,9 @@ const ModelDegradationProofPayloadSchema = z.discriminatedUnion('action', [
     reason: z.string().min(1).max(120).default('proof-degraded'),
     cooldownSeconds: z.number().int().min(1).max(900).default(180),
     trackDown: z.boolean().default(true),
+    injectionMode: z.enum(['degraded', 'fail-once']).default('degraded'),
+    failureStatusCode: z.number().int().min(429).max(504).default(503),
+    attemptCount: z.number().int().min(1).max(5).default(1),
   }),
   z.object({
     action: z.literal('clear'),
@@ -565,10 +569,21 @@ app.http('devloopModelDegradation', {
 
     if (body.action === 'seed') {
       for (const deploymentName of body.deployments) {
-        markModelDegraded(deploymentName, body.reason, body.cooldownSeconds * 1000);
-        if (body.trackDown) {
-          reportLlmFailure(deploymentName);
-          reportLlmFailure(deploymentName);
+        if (body.injectionMode === 'fail-once') {
+          seedForcedRetryableFailure(
+            deploymentName,
+            body.reason,
+            body.failureStatusCode,
+            body.attemptCount,
+          );
+          clearModelDegraded(deploymentName);
+          reportLlmSuccess(deploymentName);
+        } else {
+          markModelDegraded(deploymentName, body.reason, body.cooldownSeconds * 1000);
+          if (body.trackDown) {
+            reportLlmFailure(deploymentName);
+            reportLlmFailure(deploymentName);
+          }
         }
       }
 
@@ -580,6 +595,7 @@ app.http('devloopModelDegradation', {
           endpoint: 'model-degradation',
           action: body.action,
           deployments: body.deployments.join(','),
+          injectionMode: body.injectionMode,
           cooldownSeconds: body.cooldownSeconds,
           reason: body.reason,
         },
@@ -590,7 +606,10 @@ app.http('devloopModelDegradation', {
         jsonBody: {
           action: body.action,
           deployments: body.deployments,
+          injectionMode: body.injectionMode,
           cooldownSeconds: body.cooldownSeconds,
+          failureStatusCode: body.failureStatusCode,
+          attemptCount: body.attemptCount,
           trackDown: body.trackDown,
         },
       };
@@ -598,6 +617,7 @@ app.http('devloopModelDegradation', {
 
     for (const deploymentName of body.deployments) {
       clearModelDegraded(deploymentName);
+      clearForcedRetryableFailure(deploymentName);
       reportLlmSuccess(deploymentName);
     }
 

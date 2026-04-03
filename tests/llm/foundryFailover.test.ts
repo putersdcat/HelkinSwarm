@@ -90,6 +90,8 @@ describe('FoundryClient failover', () => {
 
     const circuitBreaker = await import('../../src/llm/modelCircuitBreaker.js');
     circuitBreaker.resetAllDegraded();
+    const proof = await import('../../src/llm/modelFailoverProof.js');
+    proof.resetForcedRetryableFailures();
     const tracker = await import('../../src/llm/llmHealthTracker.js');
     tracker.resetLlmHealthTracker();
   });
@@ -322,6 +324,61 @@ describe('FoundryClient failover', () => {
     })).rejects.toBeInstanceOf(FoundryAllModelsDownError);
 
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('supports proof-only forced retryable failures that traverse the real failover notice path to a low-capacity lane', async () => {
+    const { FoundryClient, buildSuccessfulFailoverNotices } = await loadFoundryClientModule();
+    const proof = await import('../../src/llm/modelFailoverProof.js');
+
+    proof.seedForcedRetryableFailure('o4-mini', 'proof-failover', 503);
+    proof.seedForcedRetryableFailure('grok-4-1-fast-non-reasoning', 'proof-failover', 503);
+    proof.seedForcedRetryableFailure('DeepSeek-V3.2', 'proof-failover', 503);
+    proof.seedForcedRetryableFailure('FW-Kimi-K2.5', 'proof-failover', 503);
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(makeOkResponse('gpt-5.4-mini'));
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const client = new FoundryClient({
+      ...makeRoutingConfig(),
+      deploymentName: 'o4-mini',
+      isReasoning: true,
+    });
+
+    const response = await client.chatCompletion({
+      messages: [{ role: 'user', content: 'heavy reasoning request' }],
+      correlationId: 'corr-proof-failover',
+      requestedTaskComplexity: 'complex',
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('/deployments/gpt-5.4-mini/chat/completions');
+    expect(response.model).toBe('gpt-5.4-mini');
+    expect(response.failoverSteps).toEqual([
+      {
+        fromModel: 'o4-mini',
+        toModel: 'grok-4-1-fast-non-reasoning',
+        reason: 'HTTP 503',
+        statusCode: 503,
+      },
+      {
+        fromModel: 'grok-4-1-fast-non-reasoning',
+        toModel: 'FW-Kimi-K2.5',
+        reason: 'HTTP 503',
+        statusCode: 503,
+      },
+      {
+        fromModel: 'FW-Kimi-K2.5',
+        toModel: 'gpt-5.4-mini',
+        reason: 'HTTP 503',
+        statusCode: 503,
+      },
+    ]);
+    expect(buildSuccessfulFailoverNotices(response.failoverSteps)).toEqual([
+      '⚠️ Operational note: o4-mini was temporarily unavailable (HTTP 503); auto-failed over to gpt-5.4-mini and continued your request.',
+      '⚠️ Cognitive state note: this reply completed on gpt-5.4-mini, which is a low-capacity impaired lane for heavy reasoning. Treat it as degraded continuity and retry /heavy later if you need full-capacity reasoning.',
+    ]);
   });
 });
 

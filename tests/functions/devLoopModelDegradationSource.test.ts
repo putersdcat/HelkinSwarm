@@ -9,8 +9,11 @@ describe('devloop model degradation proof surface', () => {
     expect(source).toContain('const ModelDegradationProofPayloadSchema = z.discriminatedUnion');
     expect(source).toContain("action: z.literal('seed')");
     expect(source).toContain("action: z.literal('clear')");
+    expect(source).toContain("injectionMode: z.enum(['degraded', 'fail-once']).default('degraded')");
+    expect(source).toContain('seedForcedRetryableFailure(');
     expect(source).toContain('markModelDegraded(deploymentName, body.reason, body.cooldownSeconds * 1000);');
     expect(source).toContain('reportLlmFailure(deploymentName);');
+    expect(source).toContain('clearForcedRetryableFailure(deploymentName);');
     expect(source).toContain('clearModelDegraded(deploymentName);');
     expect(source).toContain('reportLlmSuccess(deploymentName);');
     expect(source).toContain("endpoint: 'model-degradation'");

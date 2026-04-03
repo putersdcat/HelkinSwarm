@@ -6,6 +6,7 @@ import { getFallbackChain, getModelCapacityProfile, getModelRouting, type ModelR
 import { getBearerToken } from '../auth/identity.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { isModelDegraded, markModelDegraded, clearModelDegraded } from './modelCircuitBreaker.js';
+import { consumeForcedRetryableFailure } from './modelFailoverProof.js';
 import { reportLlmSuccess, reportLlmFailure, registerModels, isAllModelsDown, isModelTrackedDown } from './llmHealthTracker.js';
 import { trackEvent } from '../observability/telemetry.js';
 
@@ -272,6 +273,27 @@ export class FoundryClient {
 
       attemptedModels.push(routing.deploymentName);
       try {
+        const forcedFailure = consumeForcedRetryableFailure(routing.deploymentName);
+        if (forcedFailure) {
+          trackEvent({
+            name: 'PolicyOverrideApplied',
+            correlationId,
+            properties: {
+              authority: 'devloop-model-failover-proof',
+              deploymentName: routing.deploymentName,
+              statusCode: forcedFailure.statusCode,
+              reason: forcedFailure.reason,
+              remainingAttempts: forcedFailure.remainingAttempts,
+            },
+          });
+
+          throw new FoundryError(
+            `Synthetic proof failure injected: ${forcedFailure.reason}`,
+            forcedFailure.statusCode,
+            routing.deploymentName,
+          );
+        }
+
         const result = await this.callSingleModel(routing, options, correlationId, perModelTimeout);
         // Successful response — clear any degradation for this model.
         clearModelDegraded(routing.deploymentName);
