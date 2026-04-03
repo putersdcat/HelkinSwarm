@@ -2,7 +2,7 @@
 // Handles the currently supported Azure global + EU paths.
 // Spec ref: 06-Tool-Dispatch-LLM-Layer.md, 0c-BYOK-External-LLM-Support.md
 
-import { getModelRouting, getFallbackChain, type ModelRouting } from './modelRouter.js';
+import { getFallbackChain, getModelCapacityProfile, getModelRouting, type ModelRouting } from './modelRouter.js';
 import { getBearerToken } from '../auth/identity.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { isModelDegraded, markModelDegraded, clearModelDegraded } from './modelCircuitBreaker.js';
@@ -525,16 +525,28 @@ export function buildSuccessfulFailoverNotices(failoverSteps: readonly LlmFailov
   const first = failoverSteps[0];
   const final = failoverSteps[failoverSteps.length - 1];
   const quotaIssue = failoverSteps.some((step) => step.statusCode === 429);
+  const firstCapacity = getModelCapacityProfile(first.fromModel);
+  const finalCapacity = getModelCapacityProfile(final.toModel);
+  const lowCapacityDowngrade = firstCapacity.capacityLevel !== 'low' && finalCapacity.capacityLevel === 'low';
+  const notices: string[] = [];
 
   if (quotaIssue) {
-    return [
+    notices.push(
       `⚠️ Operational note: ${first.fromModel} hit a 429 quota/rate limit; auto-failed over to ${final.toModel} and continued your request.`,
-    ];
+    );
+  } else {
+    notices.push(
+      `⚠️ Operational note: ${first.fromModel} was temporarily unavailable (${first.reason}); auto-failed over to ${final.toModel} and continued your request.`,
+    );
   }
 
-  return [
-    `⚠️ Operational note: ${first.fromModel} was temporarily unavailable (${first.reason}); auto-failed over to ${final.toModel} and continued your request.`,
-  ];
+  if (lowCapacityDowngrade) {
+    notices.push(
+      `⚠️ Cognitive state note: this reply completed on ${final.toModel}, which is a low-capacity impaired lane for heavy reasoning. Treat it as degraded continuity and retry /heavy later if you need full-capacity reasoning.`,
+    );
+  }
+
+  return notices;
 }
 
 export function buildLlmFailureNotice(err: unknown): string {

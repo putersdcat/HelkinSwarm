@@ -127,6 +127,7 @@ describe('FoundryClient failover', () => {
     ]);
     expect(buildSuccessfulFailoverNotices(response.failoverSteps)).toEqual([
       '⚠️ Operational note: grok-4-1-fast-non-reasoning hit a 429 quota/rate limit; auto-failed over to gpt-5.4-mini and continued your request.',
+      '⚠️ Cognitive state note: this reply completed on gpt-5.4-mini, which is a low-capacity impaired lane for heavy reasoning. Treat it as degraded continuity and retry /heavy later if you need full-capacity reasoning.',
     ]);
   });
 
@@ -152,6 +153,21 @@ describe('FoundryClient failover', () => {
     expect(response.failoverSteps).toHaveLength(2);
     expect(response.failoverSteps![0].reason).toBe('HTTP 429');
     expect(response.failoverSteps![1].reason).toBe('HTTP 503');
+  });
+
+  it('adds an impairment disclosure only when failover lands on a low-capacity model', async () => {
+    const { buildSuccessfulFailoverNotices } = await loadFoundryClientModule();
+
+    expect(buildSuccessfulFailoverNotices([
+      {
+        fromModel: 'o4-mini',
+        toModel: 'FW-Kimi-K2.5',
+        reason: 'HTTP 503',
+        statusCode: 503,
+      },
+    ])).toEqual([
+      '⚠️ Operational note: o4-mini was temporarily unavailable (HTTP 503); auto-failed over to FW-Kimi-K2.5 and continued your request.',
+    ]);
   });
 
   it('429 with Retry-After header uses that value for circuit breaker cooldown (#313)', async () => {
