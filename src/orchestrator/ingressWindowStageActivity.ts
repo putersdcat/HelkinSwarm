@@ -31,7 +31,7 @@ export async function handleIngressWindowStage(rawInput: IngressWindowStageInput
   const input = IngressWindowStageInputSchema.parse(rawInput);
 
   if (input.action === 'open') {
-    await recordOrchestratorStage(input.correlationId, 'awaiting-ingress', input.userId);
+    await recordOrchestratorStage(input.correlationId, 'awaiting-ingress', input.userId, Date.now(), input.instanceId);
     trackEvent({
       name: 'LivingSessionIngressWindowOpened',
       correlationId: input.correlationId,

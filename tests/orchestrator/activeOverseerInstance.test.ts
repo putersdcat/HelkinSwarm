@@ -98,7 +98,7 @@ describe('active overseer instance resolution', () => {
         runtimeStatus: OrchestrationRuntimeStatus.Running,
         createdTime: '2026-04-03T02:00:00.000Z',
       },
-    ], 'user-a', 0, undefined);
+    ], 'user-a', [], undefined);
 
     expect(result.activeCount).toBe(0);
     expect(result.latestInstanceId).toBeUndefined();
@@ -111,7 +111,7 @@ describe('active overseer instance resolution', () => {
         runtimeStatus: OrchestrationRuntimeStatus.Running,
         createdTime: '2026-04-03T02:00:00.000Z',
       },
-    ], 'user-a', 0, {
+    ], 'user-a', [], {
       activeInstanceId: 'overseer-user-a-live',
       activeCorrelationId: 'corr-live',
       activeSource: 'teams-message',
@@ -131,7 +131,13 @@ describe('active overseer instance resolution', () => {
         runtimeStatus: OrchestrationRuntimeStatus.Running,
         createdTime: '2026-04-03T02:00:00.000Z',
       },
-    ], 'user-a', 1, {
+    ], 'user-a', [{
+      correlationId: 'corr-live',
+      userId: 'user-a',
+      stage: 'build-prompt',
+      startedAtMs: 1,
+      updatedAtMs: 2,
+    }], {
       activeInstanceId: 'overseer-user-a-live',
       activeCorrelationId: 'corr-live',
       activeSource: 'teams-message',
@@ -142,5 +148,30 @@ describe('active overseer instance resolution', () => {
 
     expect(result.activeCount).toBe(1);
     expect(result.latestInstanceId).toBe('overseer-user-a-live');
+  });
+
+  it('prefers the stage-bound instance id during awaiting-ingress routing', () => {
+    const result = summarizeRoutableOverseerInstances([
+      {
+        instanceId: 'overseer-user-a-stale-running',
+        runtimeStatus: OrchestrationRuntimeStatus.Running,
+        createdTime: '2026-04-03T02:00:00.000Z',
+      },
+      {
+        instanceId: 'overseer-user-a-other-running',
+        runtimeStatus: OrchestrationRuntimeStatus.Running,
+        createdTime: '2026-04-03T02:05:00.000Z',
+      },
+    ], 'user-a', [{
+      correlationId: 'corr-awaiting',
+      userId: 'user-a',
+      stage: 'awaiting-ingress',
+      instanceId: 'overseer-user-a-live-window',
+      startedAtMs: 10,
+      updatedAtMs: 20,
+    }], undefined);
+
+    expect(result.activeCount).toBe(1);
+    expect(result.latestInstanceId).toBe('overseer-user-a-live-window');
   });
 });

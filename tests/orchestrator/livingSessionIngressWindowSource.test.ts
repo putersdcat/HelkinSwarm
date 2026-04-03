@@ -9,7 +9,7 @@ describe('living session ingress window source guards', () => {
     expect(overseerSource).toContain("context.df.waitForExternalEvent('NewMessage')");
     expect(overseerSource).toContain("action: 'open'");
     expect(overseerSource).toContain("action: 'drain'");
-    expect(activitySource).toContain("recordOrchestratorStage(input.correlationId, 'awaiting-ingress', input.userId);");
+    expect(activitySource).toContain("recordOrchestratorStage(input.correlationId, 'awaiting-ingress', input.userId, Date.now(), input.instanceId);");
     expect(activitySource).toContain("name: 'LivingSessionIngressWindowOpened'");
     expect(activitySource).toContain("name: 'LivingSessionNewMessageDrained'");
   });

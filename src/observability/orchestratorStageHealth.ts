@@ -4,6 +4,7 @@ export interface ActiveTurnStage {
   correlationId: string;
   userId: string;
   stage: string;
+  instanceId?: string;
   startedAtMs: number;
   updatedAtMs: number;
 }
@@ -124,12 +125,14 @@ export async function recordOrchestratorStage(
   stage: string,
   userId: string,
   nowMs = Date.now(),
+  instanceId?: string,
 ): Promise<void> {
   const existing = activeTurns.get(correlationId);
   const entry: ActiveTurnStage = {
     correlationId,
     userId,
     stage,
+    instanceId: instanceId ?? existing?.instanceId,
     startedAtMs: existing?.startedAtMs ?? nowMs,
     updatedAtMs: nowMs,
   };
@@ -142,6 +145,7 @@ export async function recordOrchestratorStage(
     correlationId,
     userId,
     stage,
+    ...(entry.instanceId ? { instanceId: entry.instanceId } : {}),
     startedAtMs: entry.startedAtMs,
     updatedAtMs: nowMs,
     ttl: STAGE_TTL_SECONDS,
@@ -171,6 +175,7 @@ export function recordSubstage(
     correlationId,
     userId,
     stage,
+    instanceId: existing?.instanceId,
     startedAtMs: existing?.startedAtMs ?? nowMs,
     updatedAtMs: nowMs,
   });
@@ -212,6 +217,7 @@ export async function getOrchestratorStageSnapshot(nowMs = Date.now()): Promise<
     correlationId: string;
     userId: string;
     stage: string;
+    instanceId?: string;
     ageMs: number;
     updatedAt: string;
   }>;
@@ -221,6 +227,7 @@ export async function getOrchestratorStageSnapshot(nowMs = Date.now()): Promise<
       correlationId: entry.correlationId,
       userId: entry.userId,
       stage: entry.stage,
+      instanceId: entry.instanceId,
       ageMs: nowMs - entry.startedAtMs,
       updatedAt: new Date(entry.updatedAtMs).toISOString(),
     }))
@@ -236,6 +243,11 @@ export async function getOrchestratorStageSnapshot(nowMs = Date.now()): Promise<
 export async function getActiveTurnCountForUser(userId: string, nowMs = Date.now()): Promise<number> {
   const entries = await getFreshStageEntries(nowMs);
   return entries.filter((entry) => entry.userId === userId).length;
+}
+
+export async function getActiveTurnStagesForUser(userId: string, nowMs = Date.now()): Promise<ActiveTurnStage[]> {
+  const entries = await getFreshStageEntries(nowMs);
+  return entries.filter((entry) => entry.userId === userId);
 }
 
 export function resetOrchestratorStageHealth(): void {

@@ -1,5 +1,5 @@
 import { OrchestrationRuntimeStatus, type DurableClient } from 'durable-functions';
-import { getActiveTurnCountForUser } from '../observability/orchestratorStageHealth.js';
+import { getActiveTurnStagesForUser, type ActiveTurnStage } from '../observability/orchestratorStageHealth.js';
 import type { MindSessionGuardState } from './mindSessionGuard.js';
 import { readMindSessionGuardState } from './mindSessionGuard.js';
 
@@ -51,9 +51,10 @@ export interface ActiveOverseerSummary {
 export function summarizeRoutableOverseerInstances(
   statuses: ReadonlyArray<MinimalOrchestrationStatus>,
   userId: string,
-  activeTurnCount: number,
+  activeTurnEntries: ReadonlyArray<ActiveTurnStage>,
   guardState?: MindSessionGuardState,
 ): ActiveOverseerSummary {
+  const activeTurnCount = activeTurnEntries.length;
   if (activeTurnCount <= 0) {
     return { activeCount: 0, latestInstanceId: undefined };
   }
@@ -62,6 +63,17 @@ export function summarizeRoutableOverseerInstances(
     return {
       activeCount: 1,
       latestInstanceId: guardState.activeInstanceId,
+    };
+  }
+
+  const stageBoundInstanceId = activeTurnEntries
+    .filter((entry) => entry.instanceId !== undefined)
+    .sort((left, right) => right.updatedAtMs - left.updatedAtMs)[0]?.instanceId;
+
+  if (stageBoundInstanceId) {
+    return {
+      activeCount: activeTurnCount,
+      latestInstanceId: stageBoundInstanceId,
     };
   }
 
@@ -93,24 +105,24 @@ export async function resolveActiveOverseerInstanceId(
   client: DurableClient,
   userId: string,
 ): Promise<string | undefined> {
-  const [statuses, guardState, activeTurnCount] = await Promise.all([
+  const [statuses, guardState, activeTurnEntries] = await Promise.all([
     client.getStatusAll(),
     readMindSessionGuardState(client, userId),
-    getActiveTurnCountForUser(userId),
+    getActiveTurnStagesForUser(userId),
   ]);
 
-  return summarizeRoutableOverseerInstances(statuses, userId, activeTurnCount, guardState).latestInstanceId;
+  return summarizeRoutableOverseerInstances(statuses, userId, activeTurnEntries, guardState).latestInstanceId;
 }
 
 export async function resolveActiveOverseerSummary(
   client: DurableClient,
   userId: string,
 ): Promise<ActiveOverseerSummary> {
-  const [statuses, guardState, activeTurnCount] = await Promise.all([
+  const [statuses, guardState, activeTurnEntries] = await Promise.all([
     client.getStatusAll(),
     readMindSessionGuardState(client, userId),
-    getActiveTurnCountForUser(userId),
+    getActiveTurnStagesForUser(userId),
   ]);
 
-  return summarizeRoutableOverseerInstances(statuses, userId, activeTurnCount, guardState);
+  return summarizeRoutableOverseerInstances(statuses, userId, activeTurnEntries, guardState);
 }
