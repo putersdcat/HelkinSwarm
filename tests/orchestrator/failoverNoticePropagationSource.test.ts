@@ -13,6 +13,9 @@ describe('session orchestrator failover notice propagation', () => {
     expect(source).toContain('rememberOperationalEvidence(operationalNotices, llmResult);');
     expect(source).toContain('rememberOperationalEvidence(operationalNotices, followUp);');
     expect(llmSource).toContain('failoverSteps: response.failoverSteps ?? [],');
-    expect(followUpSource).toContain('failoverSteps: response.failoverSteps ?? [],');
+    expect(followUpSource).toContain('export function mergeFollowUpResponseEvidence(');
+    expect(followUpSource).toContain('const followUpResponses: ChatCompletionResponse[] = [response];');
+    expect(followUpSource).toContain('followUpResponses.push(retryResponse);');
+    expect(followUpSource).toContain('const evidence = mergeFollowUpResponseEvidence(followUpResponses);');
   });
 });

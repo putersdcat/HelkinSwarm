@@ -13,7 +13,7 @@ import {
   textContent,
 } from '../llm/foundryClient.js';
 import { getDirectChatModelIncompatibilityReason, getModelRouting } from '../llm/modelRouter.js';
-import type { ChatMessage, ChatCompletionResponse, ToolDefinition } from '../llm/foundryClient.js';
+import type { ChatMessage, ChatCompletionResponse, LlmFailoverStep, ToolDefinition } from '../llm/foundryClient.js';
 import type { LlmResult } from './llmActivity.js';
 import { synthesizeDeterministicFollowUpToolCall, synthesizeExactToolCall } from './discoveryToolInjection.js';
 
@@ -52,6 +52,14 @@ export interface LlmFollowUpInput {
       error?: string;
     }>;
   }>;
+}
+
+export interface FollowUpResponseEvidence {
+  model: string;
+  tokensUsed: number;
+  promptTokens: number;
+  operationalNotices: string[];
+  failoverSteps: LlmFailoverStep[];
 }
 
 const FOLLOW_UP_EXECUTION_PROMPT =
@@ -146,6 +154,41 @@ export function shouldStopOnRepeatedToolFailure(
   );
 
   return candidateToolCalls.every((call) => deterministicallyBlockedToolNames.has(call.name));
+}
+
+export function mergeFollowUpResponseEvidence(
+  responses: ReadonlyArray<Pick<ChatCompletionResponse, 'model' | 'usage' | 'failoverSteps'>>,
+): FollowUpResponseEvidence {
+  const lastResponse = responses[responses.length - 1];
+  if (!lastResponse) {
+    return {
+      model: 'unknown',
+      tokensUsed: 0,
+      promptTokens: 0,
+      operationalNotices: [],
+      failoverSteps: [],
+    };
+  }
+
+  const operationalNotices = new Set<string>();
+  let tokensUsed = 0;
+  let promptTokens = 0;
+
+  for (const response of responses) {
+    tokensUsed += response.usage.totalTokens;
+    promptTokens += response.usage.promptTokens;
+    for (const notice of buildSuccessfulFailoverNotices(response.failoverSteps)) {
+      operationalNotices.add(notice);
+    }
+  }
+
+  return {
+    model: lastResponse.model,
+    tokensUsed,
+    promptTokens,
+    operationalNotices: [...operationalNotices],
+    failoverSteps: lastResponse.failoverSteps ?? [],
+  };
 }
 
 df.app.activity('llmFollowUpActivity', {
@@ -279,6 +322,7 @@ df.app.activity('llmFollowUpActivity', {
         name: tc.function.name,
         arguments: tc.function.arguments,
       })) ?? [];
+      const followUpResponses: ChatCompletionResponse[] = [response];
       const aggregatedToolResults = [
         ...input.toolResults,
         ...(input.additionalTurns ?? []).flatMap((turn) => turn.toolResults),
@@ -298,29 +342,30 @@ df.app.activity('llmFollowUpActivity', {
         : retryToolCalls;
 
       if (effectiveRetryToolCalls.length > 0 && retryTools) {
+        const evidence = mergeFollowUpResponseEvidence(followUpResponses);
         if (shouldStopOnRepeatedToolFailure(effectiveRetryToolCalls, input.additionalTurns)) {
           return {
             content: buildFallbackToolResultContent(input.originalMessages, aggregatedToolResults),
-            model: response.model,
-            tokensUsed: response.usage.totalTokens,
-            promptTokens: response.usage.promptTokens,
+            model: evidence.model,
+            tokensUsed: evidence.tokensUsed,
+            promptTokens: evidence.promptTokens,
             toolCalls: [],
             finishReason: 'stop',
-            operationalNotices: buildSuccessfulFailoverNotices(response.failoverSteps),
-            failoverSteps: response.failoverSteps ?? [],
+            operationalNotices: evidence.operationalNotices,
+            failoverSteps: evidence.failoverSteps,
           };
         }
 
         console.log(`[llmFollowUpActivity] LLM requested ${effectiveRetryToolCalls.length} retry tool call(s) (#182).`);
         return {
           content: llmContent ?? '',
-          model: response.model,
-          tokensUsed: response.usage.totalTokens,
-          promptTokens: response.usage.promptTokens,
+          model: evidence.model,
+          tokensUsed: evidence.tokensUsed,
+          promptTokens: evidence.promptTokens,
           toolCalls: effectiveRetryToolCalls,
           finishReason: choice.finishReason,
-          operationalNotices: buildSuccessfulFailoverNotices(response.failoverSteps),
-          failoverSteps: response.failoverSteps ?? [],
+          operationalNotices: evidence.operationalNotices,
+          failoverSteps: evidence.failoverSteps,
         };
       }
 
@@ -337,8 +382,11 @@ df.app.activity('llmFollowUpActivity', {
           temperature: 0.7,
           correlationId,
         });
+        followUpResponses.push(retryResponse);
         llmContent = textContent(retryResponse.choices[0].message.content);
       }
+
+      const evidence = mergeFollowUpResponseEvidence(followUpResponses);
 
       // If the LLM still returned empty content, build a concise summary from tool results
       // rather than dumping raw JSON that may exceed Teams message limits (#184).
@@ -348,13 +396,13 @@ df.app.activity('llmFollowUpActivity', {
 
       return {
         content,
-        model: response.model,
-        tokensUsed: response.usage.totalTokens,
-        promptTokens: response.usage.promptTokens,
+        model: evidence.model,
+        tokensUsed: evidence.tokensUsed,
+        promptTokens: evidence.promptTokens,
         toolCalls: [],
         finishReason: choice.finishReason,
-        operationalNotices: buildSuccessfulFailoverNotices(response.failoverSteps),
-        failoverSteps: response.failoverSteps ?? [],
+        operationalNotices: evidence.operationalNotices,
+        failoverSteps: evidence.failoverSteps,
       };
     } catch (err) {
       return {
