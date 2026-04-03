@@ -204,16 +204,17 @@ describe('telemetry trace detail enrichment', () => {
   });
 
   it('queues active-session overlap before compatibility-mode steer can take effect', () => {
-    const queuedDecision = evaluateLimbicIngress({
+    const redirectedDecision = evaluateLimbicIngress({
       source: 'teams-message',
       userId: 'u1',
       correlationId: 'corr-517-queue',
       compatibilityMode: true,
       hasActiveSession: true,
+      activeSessionRoutable: true,
       interruptionDepth: 0,
     });
-    expect(queuedDecision.decision).toBe('queue');
-    expect(queuedDecision.reason).toContain('Single-session enforcement');
+    expect(redirectedDecision.decision).toBe('steer');
+    expect(redirectedDecision.reason).toContain('redirect this work into the existing Conscious Thread');
 
     const correlationId = 'corr-517-trace';
     recordLimbicIngressDecision({
@@ -222,14 +223,15 @@ describe('telemetry trace detail enrichment', () => {
       correlationId,
       compatibilityMode: true,
       hasActiveSession: true,
+      activeSessionRoutable: true,
       interruptionDepth: 0,
     });
 
     const trace = getTraceTree(correlationId);
     const limbicPhase = trace?.phases.find((phase) => phase.name === 'LimbicDecision');
     const overridePhase = trace?.phases.find((phase) => phase.name === 'PolicyOverrideApplied');
-    expect(limbicPhase?.detail).toContain('decision: queue');
-    expect(limbicPhase?.detail).toContain('Single-session enforcement');
+    expect(limbicPhase?.detail).toContain('decision: steer');
+    expect(limbicPhase?.detail).toContain('redirect this work into the existing Conscious Thread');
     expect(overridePhase).toBeUndefined();
   });
 

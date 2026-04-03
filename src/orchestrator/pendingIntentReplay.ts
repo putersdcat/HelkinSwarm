@@ -20,7 +20,6 @@ import {
   markIntentReceived,
   type PendingIntent,
 } from './pendingIntentStore.js';
-import { saveChronoInterruptionBreadcrumb, saveChronoPausedTask } from './chronoBackplane.js';
 import { recordLimbicIngressDecision } from './limbicIngressActivity.js';
 import {
   MAX_INTERRUPTION_DEPTH,
@@ -117,6 +116,7 @@ export async function replayPendingIntent(
       const observedActiveInstanceId = activeSummary.latestInstanceId;
       const effectiveActiveInstanceId = observedActiveInstanceId ?? (activeTurnCount > 0 ? guardState?.activeInstanceId : undefined);
       const hasActiveGuard = activeTurnCount > 0 && effectiveActiveInstanceId !== instanceId;
+      const activeSessionRoutable = hasActiveGuard && effectiveActiveInstanceId !== undefined;
       const interruptionDepth = Math.max(
         guardState?.interruptionDepth ?? 0,
         Math.max(0, activeTurnCount - 1),
@@ -135,6 +135,7 @@ export async function replayPendingIntent(
         correlationId: intent.correlationId ?? intent.id,
         compatibilityMode: getEnvConfig().livingMindCompatibilityMode,
         hasActiveSession: hasActiveGuard,
+        activeSessionRoutable,
         interruptionDepth,
         interruptionDepthCap: MAX_INTERRUPTION_DEPTH,
         consciousModelImpaired: consciousLane.isImpaired,
@@ -181,37 +182,35 @@ export async function replayPendingIntent(
         return { outcome: 'deferred', reason: ingressDecision.reason };
       }
 
-      if (hasActiveGuard) {
-        await saveChronoPausedTask({
-          userId: intent.userId,
-          interruptedInstanceId: effectiveActiveInstanceId ?? 'unknown',
-          interruptedCorrelationId: guardState?.activeCorrelationId,
-          interruptedSource: guardState?.activeSource,
-          pausedByCorrelationId: intent.correlationId ?? intent.id,
-          pausedByMessage: intent.messageText,
-        });
-
-        await saveChronoInterruptionBreadcrumb({
-          userId: intent.userId,
-          interruptedInstanceId: effectiveActiveInstanceId ?? 'unknown',
-          interruptedCorrelationId: guardState?.activeCorrelationId,
-          interruptedSource: guardState?.activeSource,
-          interruptedByCorrelationId: intent.correlationId ?? intent.id,
-          interruptedByMessage: intent.messageText,
-        });
-
+      if (activeSessionRoutable && effectiveActiveInstanceId) {
         trackEvent({
           name: 'PolicyOverrideApplied',
           correlationId: intent.correlationId ?? intent.id,
           userId: intent.userId,
           properties: {
-            authority: 'mind-session-guard-compatibility-mode',
+            authority: 'living-session-active-redirection',
             source: 'pending-intent-replay',
-            activeInstanceId: effectiveActiveInstanceId ?? 'unknown',
+            activeInstanceId: effectiveActiveInstanceId,
             requestedInstanceId: instanceId,
             interruptionDepth,
           },
         });
+
+        await client.raiseEvent(effectiveActiveInstanceId, 'NewMessage', event);
+        await markIntentProcessed(intent.id, intent.userId);
+        trackEvent({
+          name: 'PendingIntentRecovered',
+          correlationId: intent.correlationId ?? intent.id,
+          userId: intent.userId,
+          properties: {
+            trackingId: intent.trackingId,
+            action: 'redirected',
+            reason: ingressDecision.reason,
+            source,
+            instanceId: effectiveActiveInstanceId,
+          },
+        });
+        return { outcome: 'replayed', reason: ingressDecision.reason, instanceId: effectiveActiveInstanceId };
       }
 
       await client.startNew('overseer', { instanceId, input: event });

@@ -31,6 +31,7 @@ export const LimbicIngressInputSchema = z.object({
   correlationId: z.string().min(1),
   compatibilityMode: z.boolean().default(true),
   hasActiveSession: z.boolean().default(false),
+  activeSessionRoutable: z.boolean().default(false),
   interruptionDepth: z.number().int().nonnegative().default(0),
   interruptionDepthCap: z.number().int().positive().default(MAX_INTERRUPTION_DEPTH),
   consciousModelImpaired: z.boolean().default(false),
@@ -55,10 +56,17 @@ export function evaluateLimbicIngress(rawInput: LimbicIngressInput): LimbicIngre
     });
   }
 
+  if (input.hasActiveSession && input.activeSessionRoutable) {
+    return LimbicIngressDecisionSchema.parse({
+      decision: 'steer',
+      reason: 'A living same-identity session is already active and routable; redirect this work into the existing Conscious Thread instead of queueing or parallel-starting.',
+    });
+  }
+
   if (input.hasActiveSession) {
     return LimbicIngressDecisionSchema.parse({
       decision: 'queue',
-      reason: 'Single-session enforcement is active: queue this same-identity overlap until the in-flight turn finishes.',
+      reason: 'Single-session enforcement is active, but no routable living session was found; queue this same-identity overlap until direct redirection is safe.',
     });
   }
 
@@ -103,6 +111,7 @@ export function recordLimbicIngressDecision(rawInput: LimbicIngressInput): Limbi
       reason: decision.reason,
       compatibilityMode: input.compatibilityMode,
       hasActiveSession: input.hasActiveSession,
+      activeSessionRoutable: input.activeSessionRoutable,
       interruptionDepth: input.interruptionDepth,
       interruptionDepthCap: input.interruptionDepthCap,
     },

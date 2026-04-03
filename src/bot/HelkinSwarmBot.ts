@@ -82,7 +82,6 @@ import { ingestTeamsAttachments } from './inboundAttachmentIngestion.js';
 import { buildOverseerDedupIdentity } from './overseerDedupIdentity.js';
 import { buildTeamsNativeEmojiEasterEggReply } from './teamsNativeEmojiEasterEggs.js';
 import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';
-import { saveChronoInterruptionBreadcrumb, saveChronoPausedTask } from '../orchestrator/chronoBackplane.js';
 import { resolveActiveOverseerSummary } from '../orchestrator/activeOverseerInstance.js';
 import { getActiveTurnCountForUser } from '../observability/orchestratorStageHealth.js';
 import {
@@ -1113,6 +1112,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       const observedActiveInstanceId = activeSummary.latestInstanceId;
       const effectiveActiveInstanceId = observedActiveInstanceId ?? (activeTurnCount > 0 ? guardState?.activeInstanceId : undefined);
       const hasActiveGuard = activeTurnCount > 0 && effectiveActiveInstanceId !== identity.instanceId;
+      const activeSessionRoutable = hasActiveGuard && effectiveActiveInstanceId !== undefined;
       const interruptionDepth = Math.max(
         guardState?.interruptionDepth ?? 0,
         Math.max(0, activeTurnCount - 1),
@@ -1132,6 +1132,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         correlationId: eventCorrelationId,
         compatibilityMode: getEnvConfig().livingMindCompatibilityMode,
         hasActiveSession: hasActiveGuard,
+        activeSessionRoutable,
         interruptionDepth,
         interruptionDepthCap: MAX_INTERRUPTION_DEPTH,
         consciousModelImpaired: consciousLane.isImpaired,
@@ -1166,37 +1167,22 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         };
       }
 
-      if (hasActiveGuard) {
-        await saveChronoPausedTask({
-          userId,
-          interruptedInstanceId: effectiveActiveInstanceId ?? 'unknown',
-          interruptedCorrelationId: guardState?.activeCorrelationId,
-          interruptedSource: guardState?.activeSource,
-          pausedByCorrelationId: eventCorrelationId,
-          pausedByMessage: userMessage,
-        });
-
-        await saveChronoInterruptionBreadcrumb({
-          userId,
-          interruptedInstanceId: effectiveActiveInstanceId ?? 'unknown',
-          interruptedCorrelationId: guardState?.activeCorrelationId,
-          interruptedSource: guardState?.activeSource,
-          interruptedByCorrelationId: eventCorrelationId,
-          interruptedByMessage: userMessage,
-        });
-
+      if (activeSessionRoutable && effectiveActiveInstanceId) {
         trackEvent({
           name: 'PolicyOverrideApplied',
           correlationId: eventCorrelationId,
           userId,
           properties: {
-            authority: 'mind-session-guard-compatibility-mode',
+            authority: 'living-session-active-redirection',
             source: 'teams-message',
-            activeInstanceId: effectiveActiveInstanceId ?? 'unknown',
+            activeInstanceId: effectiveActiveInstanceId,
             requestedInstanceId: identity.instanceId,
             interruptionDepth,
           },
         });
+
+        await client.raiseEvent(effectiveActiveInstanceId, 'NewMessage', event);
+        return { outcome: 'started' };
       }
 
       console.info(`[HelkinSwarmBot] DEDUP-PASS durable — starting ${identity.instanceId} bucket=${identity.timeBucket}`);
