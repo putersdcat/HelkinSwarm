@@ -28,8 +28,10 @@ import {
 } from './maintenanceMode.js';
 import { promptShields } from '../llm/promptShields.js';
 import {
+  classifyRequestedTaskComplexity,
   getDirectChatModelIncompatibilityReason,
   getConsciousLaneAssessment,
+  getConsciousLaneAssessmentForTurn,
   getSupportedDirectChatModelOverrides,
 } from '../llm/modelRouter.js';
 import { getEnvConfig } from '../config/envConfig.js';
@@ -94,7 +96,8 @@ const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
 type RaiseToOverseerResult =
   | { outcome: 'started' }
   | { outcome: 'duplicate' }
-  | { outcome: 'queued'; trackingId: string; reason: string };
+  | { outcome: 'queued'; trackingId: string; reason: string }
+  | { outcome: 'deferred'; trackingId: string; reason: string };
 
 export class HelkinSwarmBot extends TeamsActivityHandler {
   private durableClient: DurableClient | undefined;
@@ -981,6 +984,30 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
   }
 
+  private async replaceAckWithDeferredNotice(
+    context: TurnContext,
+    userId: string,
+    correlationId: string,
+    ackActivityId: string,
+    trackingId: string,
+  ): Promise<void> {
+    const conversationId = context.activity.conversation?.id ?? userId;
+    const text = `⚠️ I’m currently on a low-capacity conscious lane, so I deferred this heavier turn (tracking: ${trackingId}). I’ll keep it queued for later recovery, or you can retry with /heavy for full reasoning.`;
+    try {
+      await context.updateActivity({
+        type: ActivityTypes.Message,
+        id: ackActivityId,
+        text,
+        textFormat: 'markdown',
+      });
+    } catch (err) {
+      console.warn('[HelkinSwarmBot] Failed to update deferred ack placeholder:', err);
+      await context.sendActivity(text);
+    } finally {
+      await clearPendingAckId(conversationId, correlationId);
+    }
+  }
+
   private async handleRaiseToOverseerResult(
     context: TurnContext,
     userId: string,
@@ -999,6 +1026,11 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
 
     if (result.outcome === 'queued') {
       await this.replaceAckWithQueuedNotice(context, userId, correlationId, ackActivityId, result.trackingId);
+      return;
+    }
+
+    if (result.outcome === 'deferred') {
+      await this.replaceAckWithDeferredNotice(context, userId, correlationId, ackActivityId, result.trackingId);
     }
   }
 
@@ -1085,6 +1117,14 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         guardState?.interruptionDepth ?? 0,
         Math.max(0, activeTurnCount - 1),
       );
+      const consciousLane = getConsciousLaneAssessmentForTurn(modelOverride);
+      const requestedTaskComplexity = classifyRequestedTaskComplexity({
+        userMessage,
+        modelOverride,
+        runtimeAssetCount: runtimeAssets?.length ?? 0,
+        hasQuotedContext: quotedContext !== undefined,
+        hasDevLoopContext: devLoopContext !== undefined,
+      });
 
       const ingressDecision = recordLimbicIngressDecision({
         source: 'teams-message',
@@ -1094,12 +1134,16 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         hasActiveSession: hasActiveGuard,
         interruptionDepth,
         interruptionDepthCap: MAX_INTERRUPTION_DEPTH,
+        consciousModelImpaired: consciousLane.isImpaired,
+        requestedTaskComplexity,
       });
 
-      if (ingressDecision.decision === 'queue') {
-        const creationReason = interruptionDepth >= MAX_INTERRUPTION_DEPTH
-          ? 'interruption-depth-cap'
-          : 'single-session-enforcement';
+      if (ingressDecision.decision === 'queue' || ingressDecision.decision === 'defer') {
+        const creationReason = ingressDecision.decision === 'defer'
+          ? 'conscious-lane-impaired'
+          : interruptionDepth >= MAX_INTERRUPTION_DEPTH
+            ? 'interruption-depth-cap'
+            : 'single-session-enforcement';
         const { trackingId } = await createPendingIntent({
           userId,
           messageText: userMessage,
@@ -1116,7 +1160,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         });
 
         return {
-          outcome: 'queued',
+          outcome: ingressDecision.decision === 'defer' ? 'deferred' : 'queued',
           trackingId,
           reason: ingressDecision.reason,
         };

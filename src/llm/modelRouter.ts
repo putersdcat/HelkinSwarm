@@ -76,6 +76,16 @@ export interface ConsciousLaneAssessment {
   summary: string;
 }
 
+export type RequestedTaskComplexity = 'simple' | 'compound' | 'complex';
+
+export interface RequestedTaskComplexityInput {
+  userMessage: string;
+  modelOverride?: string;
+  runtimeAssetCount?: number;
+  hasQuotedContext?: boolean;
+  hasDevLoopContext?: boolean;
+}
+
 const MODEL_CAPACITY_PROFILES: readonly ModelCapacityProfile[] = [
   {
     modelId: 'grok-4-1-fast-reasoning',
@@ -268,6 +278,61 @@ export function getConsciousLaneAssessment(routing = getModelRouting()): Conscio
     isImpaired,
     summary,
   };
+}
+
+export function getConsciousLaneAssessmentForTurn(modelOverride?: string): ConsciousLaneAssessment {
+  const routing = getModelRouting();
+
+  let deploymentName = routing.deploymentName;
+  if (modelOverride === 'primary') {
+    deploymentName = routing.lane.reasoning ?? routing.lane.primary;
+  } else if (modelOverride === 'secondary') {
+    deploymentName = routing.lane.secondary;
+  } else if (modelOverride) {
+    deploymentName = modelOverride;
+  }
+
+  const capacityProfile = getModelCapacityProfile(deploymentName);
+  const isImpaired = capacityProfile.capacityLevel === 'low';
+  const summary = isImpaired
+    ? `${deploymentName} is operating in a low-capacity impaired state (${capacityProfile.impairmentProtocol}).`
+    : `${deploymentName} is operating at ${capacityProfile.capacityLevel} capacity (${capacityProfile.impairmentProtocol}).`;
+
+  return {
+    deploymentName,
+    capacityProfile,
+    isImpaired,
+    summary,
+  };
+}
+
+export function classifyRequestedTaskComplexity(input: RequestedTaskComplexityInput): RequestedTaskComplexity {
+  if (input.modelOverride === 'secondary') {
+    return 'simple';
+  }
+
+  if (input.modelOverride === 'primary') {
+    return 'complex';
+  }
+
+  if ((input.runtimeAssetCount ?? 0) > 0 || input.hasQuotedContext) {
+    return 'compound';
+  }
+
+  if (input.hasDevLoopContext) {
+    return 'complex';
+  }
+
+  const normalized = input.userMessage.trim().toLowerCase();
+  if (normalized.length > 280) {
+    return 'compound';
+  }
+
+  if (/\b(architecture|migration|refactor|step-by-step|research|compare|design|roadmap|deep analysis|detailed plan|implementation plan)\b/.test(normalized)) {
+    return 'complex';
+  }
+
+  return 'simple';
 }
 
 /**
