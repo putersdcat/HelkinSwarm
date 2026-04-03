@@ -51,6 +51,44 @@ describe('telemetry trace detail enrichment', () => {
     expect(handlerPhase?.detail).toContain('handler: outlook');
   });
 
+  it('records autonomic execution-kind details for sub-agent and direct-dispatch proof workflows', () => {
+    const correlationId = 'corr-526-proof';
+
+    trackEvent({
+      name: 'SubAgentSpawned',
+      correlationId,
+      userId: 'u1',
+      properties: {
+        toolName: 'outlook_list_emails',
+        executionKind: 'instrumental-sub-session',
+        returnsControlTo: 'conscious-thread',
+        contextBoundary: 'minimal-scoped-context',
+      },
+    });
+
+    trackEvent({
+      name: 'ToolExecuted',
+      correlationId,
+      userId: 'u1',
+      properties: {
+        toolName: 'github_list_issues',
+        success: true,
+        executionKind: 'instrumental-direct-dispatch',
+        returnsControlTo: 'conscious-thread',
+      },
+    });
+
+    const trace = getTraceTree(correlationId);
+    const spawnPhase = trace?.phases.find((phase) => phase.name === 'SubAgentSpawned');
+    const toolPhase = trace?.phases.find((phase) => phase.name === 'ToolExecuted');
+
+    expect(spawnPhase?.detail).toContain('executionKind: instrumental-sub-session');
+    expect(spawnPhase?.detail).toContain('returnsControlTo: conscious-thread');
+    expect(spawnPhase?.detail).toContain('contextBoundary: minimal-scoped-context');
+    expect(toolPhase?.detail).toContain('executionKind: instrumental-direct-dispatch');
+    expect(toolPhase?.detail).toContain('returnsControlTo: conscious-thread');
+  });
+
   it('records limbic ingress source and decision details for compatibility-mode proof', () => {
     const compatDecision = evaluateLimbicIngress({
       source: 'teams-message',

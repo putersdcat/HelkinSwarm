@@ -601,6 +601,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     }
 
     if (safetyPassed) {
+      // The conscious thread may delegate narrow instrumental/autonomic work here,
+      // but those helpers must always return control/results to this single thread.
       // Split tool calls: sub-agent isolated vs direct dispatch (#47)
       const toolDispatchStart = context.df.currentUtcDateTime.getTime();
       const subAgentCalls: typeof toolCallsForDispatch = [];
@@ -1020,6 +1022,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           }
         }
 
+        // The conscious thread still owns the turn here; follow-up helpers remain
+        // instrumental/autonomic and may never become independent conscious threads.
         // Split into sub-agent vs direct dispatch (same as initial dispatch) (#319)
         const roundSubAgentCalls: typeof roundCallsForDispatch = [];
         const roundDirectCalls: typeof roundCallsForDispatch = [];

@@ -217,6 +217,9 @@ function buildTraceDetail(event: TelemetryEvent): string {
   if (p['deployment']) parts.push(`model: ${p['deployment']}`);
   if (p['model']) parts.push(`model: ${p['model']}`);
   if (p['toolName']) parts.push(`tool: ${p['toolName']}`);
+  if (p['executionKind']) parts.push(`executionKind: ${p['executionKind']}`);
+  if (p['returnsControlTo']) parts.push(`returnsControlTo: ${p['returnsControlTo']}`);
+  if (p['contextBoundary']) parts.push(`contextBoundary: ${p['contextBoundary']}`);
   if (p['totalTokens']) parts.push(`tokens: ${p['totalTokens']}`);
   if (p['promptTokens']) parts.push(`prompt: ${p['promptTokens']}`);
   if (p['completionTokens']) parts.push(`completion: ${p['completionTokens']}`);

@@ -15,6 +15,10 @@ import {
   buildToolCallFingerprint,
   isMutatingTool,
 } from './toolCallGuards.js';
+import {
+  CONSCIOUS_THREAD_EXECUTION_KIND,
+  INSTRUMENTAL_DIRECT_DISPATCH_EXECUTION_KIND,
+} from './autonomicSubSessionContract.js';
 
 export interface ToolDispatchInput {
   toolCalls: Array<{ id: string; name: string; arguments: string }>;
@@ -154,6 +158,8 @@ df.app.activity('toolDispatchActivity', {
         trackEvent({ name: 'ToolExecuted', correlationId: input.correlationId, userId: input.userId, properties: {
           toolName: call.name,
           success: true,
+          executionKind: INSTRUMENTAL_DIRECT_DISPATCH_EXECUTION_KIND,
+          returnsControlTo: CONSCIOUS_THREAD_EXECUTION_KIND,
         } });
 
         // Store tool result as skill memory for JIT injection (#66)
@@ -181,6 +187,8 @@ df.app.activity('toolDispatchActivity', {
           toolName: call.name,
           success: false,
           error: err instanceof Error ? err.message : String(err),
+          executionKind: INSTRUMENTAL_DIRECT_DISPATCH_EXECUTION_KIND,
+          returnsControlTo: CONSCIOUS_THREAD_EXECUTION_KIND,
         } });
         results.push({
           toolCallId: call.id,

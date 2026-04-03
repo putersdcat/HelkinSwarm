@@ -15,6 +15,11 @@ import { isPlaceholderScopedToken, scopedTokenMinter } from '../auth/scopedToken
 import type { ScopedTokenScope } from '../auth/scopedTokenMinter.js';
 import type { StepModel } from './planActivity.js';
 import { mapPrivilegeClassToScopedTokenScope } from '../auth/tokenScopeMapping.js';
+import {
+  buildInstrumentalSubSessionSystemPrompt,
+  CONSCIOUS_THREAD_EXECUTION_KIND,
+  INSTRUMENTAL_SUB_SESSION_EXECUTION_KIND,
+} from './autonomicSubSessionContract.js';
 
 export interface SubAgentInput {
   toolName: string;
@@ -88,6 +93,9 @@ df.app.activity('subAgentActivity', {
       properties: {
         toolName: input.toolName,
         model: secondaryModel,
+        executionKind: INSTRUMENTAL_SUB_SESSION_EXECUTION_KIND,
+        returnsControlTo: CONSCIOUS_THREAD_EXECUTION_KIND,
+        contextBoundary: 'minimal-scoped-context',
         privilegeClass: tool?.privilegeClass ?? 'unknown',
         round: input.round ?? 'initial',
         planStepOrder: input.planStepOrder ?? -1,
@@ -95,12 +103,10 @@ df.app.activity('subAgentActivity', {
     });
 
     // Build minimal context — ONLY what the sub-agent needs for this one tool
-    const systemPrompt = `You are a tool-use sub-agent. You have exactly one task: call the provided tool.
-Do NOT call any other tools. Do NOT attempt recursive tool calling.
-Return only the tool result.
-
-Tool: ${input.toolName}
-Description: ${input.toolDescription}`;
+    const systemPrompt = buildInstrumentalSubSessionSystemPrompt({
+      toolName: input.toolName,
+      toolDescription: input.toolDescription,
+    });
 
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
@@ -197,6 +203,8 @@ Description: ${input.toolDescription}`;
             toolName: tc.function.name,
             success: true,
             model: secondaryModel,
+            executionKind: INSTRUMENTAL_SUB_SESSION_EXECUTION_KIND,
+            returnsControlTo: CONSCIOUS_THREAD_EXECUTION_KIND,
             privilegeClass: tool?.privilegeClass ?? 'unknown',
             scopedTokenScope: String(parsedArgs['_scopedTokenScope'] ?? 'none'),
             scopedTokenMethod: String(parsedArgs['_scopedTokenMethod'] ?? 'none'),
@@ -245,7 +253,13 @@ Description: ${input.toolDescription}`;
         name: 'SubAgentToolExecuted',
         correlationId: input.correlationId,
         userId: input.userId,
-        properties: { toolName: input.toolName, success: false, error: err instanceof Error ? err.message : String(err) },
+        properties: {
+          toolName: input.toolName,
+          success: false,
+          error: err instanceof Error ? err.message : String(err),
+          executionKind: INSTRUMENTAL_SUB_SESSION_EXECUTION_KIND,
+          returnsControlTo: CONSCIOUS_THREAD_EXECUTION_KIND,
+        },
       });
 
       return {
