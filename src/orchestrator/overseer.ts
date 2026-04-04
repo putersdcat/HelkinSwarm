@@ -82,6 +82,10 @@ interface HookFiredEvent {
   firedAt: string;
 }
 
+interface BufferedIngressQueuedEvent {
+  correlationId?: string;
+}
+
 interface OverseerCustomStatus {
   stage: 'active-processing' | 'awaiting-ingress';
   correlationId: string;
@@ -151,6 +155,7 @@ df.app.orchestration('overseer', function* (context) {
     const ingressTimer = context.df.createTimer(ingressDeadline);
     const newMessageEvent = context.df.waitForExternalEvent('NewMessage');
     const hookFiredEvent = context.df.waitForExternalEvent('HookFired');
+    let bufferedIngressQueuedEvent = context.df.waitForExternalEvent('BufferedIngressQueued');
     let bufferedPollDeadline = new Date(
       Math.min(context.df.currentUtcDateTime.getTime() + INGRESS_BUFFER_POLL_MS, ingressDeadline.getTime()),
     );
@@ -160,6 +165,7 @@ df.app.orchestration('overseer', function* (context) {
       const winner = yield context.df.Task.any([
         newMessageEvent,
         hookFiredEvent,
+        bufferedIngressQueuedEvent,
         ingressTimer,
         bufferedPollTimer,
       ]) as df.Task;
@@ -220,6 +226,11 @@ df.app.orchestration('overseer', function* (context) {
         } satisfies IngressWindowStageInput);
 
         return;
+      }
+
+      if (winner === bufferedIngressQueuedEvent) {
+        void (bufferedIngressQueuedEvent.result as BufferedIngressQueuedEvent);
+        bufferedIngressQueuedEvent = context.df.waitForExternalEvent('BufferedIngressQueued');
       }
 
       const bufferedDuringIngressWindow = (yield context.df.callActivity('bufferedIngressActivity', {
