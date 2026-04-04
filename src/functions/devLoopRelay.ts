@@ -101,6 +101,26 @@ const ModelDegradationProofPayloadSchema = z.discriminatedUnion('action', [
   }),
 ]);
 
+function buildDevLoopPushMessageBody(payload: Record<string, unknown>): string {
+  const directText = payload['message']
+    ?? payload['body']
+    ?? payload['query']
+    ?? payload['text']
+    ?? payload['prompt'];
+
+  if (typeof directText === 'string' && directText.trim().length > 0) {
+    return directText.trim();
+  }
+
+  return JSON.stringify(payload);
+}
+
+function isRuntimeIngressMessageType(
+  messageType: z.infer<typeof PushPayloadSchema>['messageType'] | 'HELKIN-REPLY' | 'ASYNC-NOTIFICATION',
+): boolean {
+  return messageType === 'DEVQUERY' || messageType === 'DEVLOOP';
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/devloop/push — DevLoop sends a message to the runtime
 // ---------------------------------------------------------------------------
@@ -131,18 +151,48 @@ app.http('devloopPush', {
       payload: body.payload,
     });
 
-    // Raise durable event to wake the overseer if it's listening for DevLoop messages
+    // Route real DEVQUERY/DEVLOOP pushes through the living-session NewMessage ingress path.
     const client = df.getClient(context);
     const activeOverseerInstanceId = await resolveActiveOverseerInstanceId(client, userId);
-    if (activeOverseerInstanceId) {
-      try {
-        await client.raiseEvent(activeOverseerInstanceId, 'DevLoopMessage', {
-          messageId: doc.id,
+    const canIngressToRuntime = activeOverseerInstanceId && isRuntimeIngressMessageType(doc.messageType);
+    const conversationReference = canIngressToRuntime
+      ? await getConversationReference(userId)
+      : null;
+
+    let deliveredToOverseer = false;
+    if (activeOverseerInstanceId && canIngressToRuntime) {
+      const correlationId = doc.correlationTag;
+      const ingressDecision = recordLimbicIngressDecision({
+        source: 'devloop-relay',
+        userId,
+        correlationId,
+        compatibilityMode: getEnvConfig().livingMindCompatibilityMode,
+        hasActiveSession: true,
+        activeSessionRoutable: true,
+      });
+
+      const event: NewMessageEvent = {
+        userMessage: buildDevLoopPushMessageBody(doc.payload),
+        conversationReference: conversationReference ?? undefined,
+        userId,
+        userAlias: userId.slice(0, 4),
+        correlationId,
+        devLoopContext: {
+          isDevLoop: true,
+          prefix: doc.messageType,
           correlationTag: doc.correlationTag,
-          messageType: doc.messageType,
-        });
+          body: buildDevLoopPushMessageBody(doc.payload),
+          hasOver: true,
+        },
+      };
+
+      try {
+        if (ingressDecision.decision === 'steer') {
+          await client.raiseEvent(activeOverseerInstanceId, 'NewMessage', event);
+          deliveredToOverseer = true;
+        }
       } catch {
-        // Overseer may no longer be running — message is persisted in Cosmos regardless
+        // Overseer may no longer be running — relay message is persisted in Cosmos regardless.
       }
     }
 
@@ -154,7 +204,7 @@ app.http('devloopPush', {
       properties: {
         messageType: doc.messageType,
         messageId: doc.id,
-        deliveredToOverseer: activeOverseerInstanceId !== undefined,
+        deliveredToOverseer,
         instanceId: activeOverseerInstanceId ?? 'none',
       },
     });
@@ -163,7 +213,7 @@ app.http('devloopPush', {
       jsonBody: {
         messageId: doc.id,
         correlationTag: doc.correlationTag,
-        deliveredToOverseer: activeOverseerInstanceId !== undefined,
+        deliveredToOverseer,
         instanceId: activeOverseerInstanceId ?? null,
       },
     };
