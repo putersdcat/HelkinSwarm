@@ -13,7 +13,11 @@ describe('devloop buffered ingress proof seam source guards', () => {
     expect(source).toContain("app.http('devloopBufferedIngressReplay'");
     expect(source).toContain("route: 'devloop/buffered-ingress/replay'");
     expect(source).toContain("No queued buffered follower found for that correlationId.");
-    expect(source).toContain("A living session is still active; manual replay is blocked until the runtime is idle.");
+    expect(source).toContain("A living session is still actively processing; manual replay is blocked until active turns drain.");
+    expect(source).toContain("await client.raiseEvent(deliverableOverseerInstanceId, 'NewMessage', queuedFollower.event);");
+    expect(source).toContain("replayMode: 'raise-event'");
+    expect(source).toContain("let replayMode: 'raise-event' | 'start-new';");
+    expect(source).toContain("replayMode = 'start-new';");
     expect(source).toContain("source: 'buffered-ingress-manual-replay'");
     expect(source).toContain("name: 'BufferedIngressFallbackReplayed'");
     expect(bufferedIngressSource).toContain('export async function listBufferedIngressDocumentsForUser(');

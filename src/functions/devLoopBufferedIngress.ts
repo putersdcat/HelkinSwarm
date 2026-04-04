@@ -88,24 +88,35 @@ app.http('devloopBufferedIngressReplay', {
       getActiveTurnCountForUser(userId),
     ]);
 
-    if (deliverableOverseerInstanceId || activeTurnCount > 0) {
+    if (activeTurnCount > 0) {
       return {
         status: 409,
         jsonBody: {
-          error: 'A living session is still active; manual replay is blocked until the runtime is idle.',
+          error: 'A living session is still actively processing; manual replay is blocked until active turns drain.',
           deliverableOverseerInstanceId,
           activeTurnCount,
         },
       };
     }
 
-    const replayInstanceId = `overseer-${userId}-manual-buffered-${crypto.randomUUID().slice(0, 8)}`;
-    await client.startNew('overseer', { instanceId: replayInstanceId, input: queuedFollower.event });
-    await signalMindSessionAcquire(client, userId, {
-      instanceId: replayInstanceId,
-      correlationId: queuedFollower.correlationId,
-      source: 'buffered-ingress-manual-replay',
-    });
+    let replayInstanceId: string;
+    let replayMode: 'raise-event' | 'start-new';
+
+    if (deliverableOverseerInstanceId) {
+      await client.raiseEvent(deliverableOverseerInstanceId, 'NewMessage', queuedFollower.event);
+      replayInstanceId = deliverableOverseerInstanceId;
+      replayMode = 'raise-event';
+    } else {
+      replayInstanceId = `overseer-${userId}-manual-buffered-${crypto.randomUUID().slice(0, 8)}`;
+      await client.startNew('overseer', { instanceId: replayInstanceId, input: queuedFollower.event });
+      await signalMindSessionAcquire(client, userId, {
+        instanceId: replayInstanceId,
+        correlationId: queuedFollower.correlationId,
+        source: 'buffered-ingress-manual-replay',
+      });
+      replayMode = 'start-new';
+    }
+
     await markBufferedNewMessageReplayed(queuedFollower.docId, userId, replayInstanceId);
 
     trackEvent({
@@ -124,6 +135,7 @@ app.http('devloopBufferedIngressReplay', {
         correlationId: queuedFollower.correlationId,
         replayed: true,
         replayInstanceId,
+        replayMode,
       },
     };
   },
