@@ -55,4 +55,26 @@ describe('ingress task complexity + turn assessment (#531)', () => {
 
     expect(complexity).toBe('simple');
   });
+
+  it('keeps quoted skill-proof follow-ups on the simple path instead of classifying them as heavier quote-context work', async () => {
+    const modelRouter = await loadModelRouterWithDefaults();
+
+    const complexity = modelRouter.classifyRequestedTaskComplexity({
+      userMessage: 'Please do a simple functional test of the skill and output the results.',
+      hasQuotedContext: true,
+    });
+
+    expect(complexity).toBe('simple');
+  });
+
+  it('still treats generic quoted follow-ups as compound when they are not explicit proof prompts', async () => {
+    const modelRouter = await loadModelRouterWithDefaults();
+
+    const complexity = modelRouter.classifyRequestedTaskComplexity({
+      userMessage: 'Can you continue from that quoted reply?',
+      hasQuotedContext: true,
+    });
+
+    expect(complexity).toBe('compound');
+  });
 });

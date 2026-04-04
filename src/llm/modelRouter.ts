@@ -92,6 +92,14 @@ export interface RequestedTaskComplexityInput {
   hasDevLoopContext?: boolean;
 }
 
+function isQuotedSkillProofPrompt(normalizedUserMessage: string): boolean {
+  const hasProofIntent = /(simple|quick|safe)?\s*(functional test|smoke test|test|verify|prove|demonstrate)/.test(normalizedUserMessage);
+  const hasSkillReference = /\b(skill|tool|this|that|it)\b/.test(normalizedUserMessage);
+  const asksForResults = /\b(output|show|return)\b.*\bresults?\b/.test(normalizedUserMessage);
+
+  return hasProofIntent && (hasSkillReference || asksForResults);
+}
+
 const MODEL_CAPACITY_PROFILES: readonly ModelCapacityProfile[] = [
   {
     modelId: 'grok-4-1-fast-reasoning',
@@ -352,12 +360,18 @@ export function getConsciousLaneAssessmentForTurn(modelOverride?: string): Consc
 }
 
 export function classifyRequestedTaskComplexity(input: RequestedTaskComplexityInput): RequestedTaskComplexity {
+  const normalized = input.userMessage.trim().toLowerCase();
+
   if (input.modelOverride === 'secondary') {
     return 'simple';
   }
 
   if (input.modelOverride === 'primary') {
     return 'complex';
+  }
+
+  if (input.hasQuotedContext && isQuotedSkillProofPrompt(normalized)) {
+    return 'simple';
   }
 
   if ((input.runtimeAssetCount ?? 0) > 0 || input.hasQuotedContext) {
@@ -368,7 +382,6 @@ export function classifyRequestedTaskComplexity(input: RequestedTaskComplexityIn
     return 'complex';
   }
 
-  const normalized = input.userMessage.trim().toLowerCase();
   if (normalized.length > 280) {
     return 'compound';
   }
