@@ -199,8 +199,11 @@ function* processTurn(
   const sessionDeadline = new Date(context.df.currentUtcDateTime.getTime() + SESSION_TIMEOUT_MS);
   const sessionTimer = context.df.createTimer(sessionDeadline);
 
-  // Assign a deterministic instanceId so we can terminate on timeout (#325).
-  const sessionInstanceId = `session-${context.df.instanceId}`;
+  // Assign a deterministic per-turn instanceId so each drained NewMessage turn gets
+  // a fresh sub-orchestrator identity inside the same living overseer session.
+  // Reusing one static session instanceId across multiple drained turns risks Durable
+  // attaching later work to stale prior sub-orchestrator state instead of a fresh turn.
+  const sessionInstanceId = `session-${context.df.instanceId}-${sessionInput.correlationId}`;
 
   // Pre-purge stale sub-orchestrator instances (#327).
   // If a previous overseer run left a session instance in Running/Terminated state,
