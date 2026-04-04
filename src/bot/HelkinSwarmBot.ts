@@ -19,7 +19,7 @@ import {
 import type { DurableClient } from 'durable-functions';
 import { OrchestrationRuntimeStatus } from 'durable-functions';
 import type { NewMessageEvent } from '../orchestrator/overseer.js';
-import { clearPendingAckId, saveConversationReference, savePendingAckId } from './conversationStore.js';
+import { clearPendingAckId, getPendingAckId, saveConversationReference, savePendingAckId } from './conversationStore.js';
 import { getSentMessage } from './sentMessageCache.js';
 import {
   getMaintenanceMode,
@@ -91,6 +91,7 @@ import {
 } from '../orchestrator/mindSessionGuard.js';
 
 const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
+const MODEL_OVERRIDE_ACK_RECOVERY_DELAY_MS = 45_000;
 
 type RaiseToOverseerResult =
   | { outcome: 'started' }
@@ -1030,6 +1031,36 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
   }
 
+  private scheduleModelOverrideAckRecovery(
+    context: TurnContext,
+    userId: string,
+    correlationId: string,
+    ackActivityId: string,
+  ): void {
+    const conversationId = context.activity.conversation?.id ?? userId;
+    const conversationReference = TurnContextClass.getConversationReference(context.activity);
+
+    void (async () => {
+      await new Promise((resolve) => setTimeout(resolve, MODEL_OVERRIDE_ACK_RECOVERY_DELAY_MS));
+      try {
+        const pendingAckId = await getPendingAckId(correlationId);
+        if (pendingAckId !== ackActivityId) {
+          return;
+        }
+
+        await recoverStaleAck(
+          conversationId,
+          ackActivityId,
+          userId,
+          correlationId,
+          conversationReference,
+        );
+      } catch (err) {
+        console.warn('[HelkinSwarmBot] model-override ack recovery failed:', err);
+      }
+    })();
+  }
+
   private async handleRaiseToOverseerResult(
     context: TurnContext,
     userId: string,
@@ -1485,6 +1516,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       if (ackResponse?.id) {
         const conversationId = context.activity.conversation?.id ?? userId;
         await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
+        this.scheduleModelOverrideAckRecovery(context, userId, correlationId, ackResponse.id);
       }
       const result = await this.raiseToOverseer(
         context,
@@ -1570,6 +1602,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       if (ackResponse?.id) {
         const conversationId = context.activity.conversation?.id ?? userId;
         await savePendingAckId(userId, conversationId, ackResponse.id, correlationId);
+        this.scheduleModelOverrideAckRecovery(context, userId, correlationId, ackResponse.id);
       }
       const result = await this.raiseToOverseer(
         context,
