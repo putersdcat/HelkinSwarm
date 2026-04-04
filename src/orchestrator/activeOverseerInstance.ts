@@ -59,8 +59,15 @@ export function summarizeRoutableOverseerInstances(
     return { activeCount: 0, latestInstanceId: undefined };
   }
 
+  const activeDurableInstanceIds = new Set(
+    statuses
+      .filter((status) => isActiveOverseerStatus(status, userId))
+      .map((status) => status.instanceId)
+      .filter((instanceId): instanceId is string => instanceId !== undefined),
+  );
+
   const stageBoundInstanceId = activeTurnEntries
-    .filter((entry) => entry.instanceId !== undefined)
+    .filter((entry) => entry.instanceId !== undefined && activeDurableInstanceIds.has(entry.instanceId))
     .sort((left, right) => right.updatedAtMs - left.updatedAtMs)[0]?.instanceId;
 
   if (stageBoundInstanceId) {

@@ -162,7 +162,7 @@ describe('active overseer instance resolution', () => {
   it('prefers the stage-bound instance id during awaiting-ingress routing', () => {
     const result = summarizeRoutableOverseerInstances([
       {
-        instanceId: 'overseer-user-a-stale-running',
+        instanceId: 'overseer-user-a-live-window',
         runtimeStatus: OrchestrationRuntimeStatus.Running,
         createdTime: '2026-04-03T02:00:00.000Z',
       },
@@ -214,6 +214,26 @@ describe('active overseer instance resolution', () => {
     expect(summarizeRoutableOverseerInstances(statuses, userId, activeTurnEntries, guardState)).toEqual({
       activeCount: 1,
       latestInstanceId: 'overseer-user-a-stage',
+    });
+  });
+
+  it('does not route to a stale stage-bound instance when durable status no longer shows it active', () => {
+    const userId = 'user-a';
+    const statuses: MinimalOrchestrationStatus[] = [];
+    const activeTurnEntries: ActiveTurnStage[] = [
+      {
+        correlationId: 'corr-stale-stage',
+        userId,
+        stage: 'awaiting-ingress',
+        instanceId: 'overseer-user-a-stale-stage',
+        startedAtMs: 100,
+        updatedAtMs: 200,
+      },
+    ];
+
+    expect(summarizeRoutableOverseerInstances(statuses, userId, activeTurnEntries, undefined)).toEqual({
+      activeCount: 0,
+      latestInstanceId: undefined,
     });
   });
 });
