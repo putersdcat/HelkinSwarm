@@ -12,6 +12,9 @@ describe('living session ingress window source guards', () => {
     expect(overseerSource).toContain("action: 'dequeue-new-message'");
     expect(overseerSource).toContain("action: 'open'");
     expect(overseerSource).toContain("action: 'drain'");
+    expect(overseerSource).toContain('const INGRESS_BUFFER_POLL_MS = 2_000;');
+    expect(overseerSource).toContain('bufferedPollTimer');
+    expect(overseerSource).toContain('bufferedDuringIngressWindow');
     expect(overseerSource).toContain("context.df.setCustomStatus({");
     expect(overseerSource).toContain("stage: 'active-processing'");
     expect(overseerSource).toContain("stage: 'awaiting-ingress'");

@@ -35,6 +35,8 @@ const SPINNER_INITIAL_DELAY_MS = 8_000;
 const SPINNER_INTERVAL_MS = 8_000;
 /** Hard cap on spinner ticks to prevent quadratic replay overhead in Durable Functions. */
 const MAX_SPINNER_TICKS = 6;
+/** Poll buffered ingress during the waiting window to absorb short Cosmos visibility lag. */
+const INGRESS_BUFFER_POLL_MS = 2_000;
 /**
  * How long to keep the overseer instance in Running state after processing.
  * Azure Storage startNew silently overwrites Completed instances, so this timer
@@ -149,60 +151,118 @@ df.app.orchestration('overseer', function* (context) {
     const ingressTimer = context.df.createTimer(ingressDeadline);
     const newMessageEvent = context.df.waitForExternalEvent('NewMessage');
     const hookFiredEvent = context.df.waitForExternalEvent('HookFired');
-    const winner = yield context.df.Task.any([newMessageEvent, hookFiredEvent, ingressTimer]) as df.Task;
+    let bufferedPollDeadline = new Date(
+      Math.min(context.df.currentUtcDateTime.getTime() + INGRESS_BUFFER_POLL_MS, ingressDeadline.getTime()),
+    );
+    let bufferedPollTimer = context.df.createTimer(bufferedPollDeadline);
 
-    if (winner === newMessageEvent) {
-      ingressTimer.cancel();
-      const drainedMessage = newMessageEvent.result as NewMessageEvent;
-      const drainedCorrelationId = drainedMessage.correlationId ?? crypto.randomUUID();
+    while (true) {
+      const winner = yield context.df.Task.any([
+        newMessageEvent,
+        hookFiredEvent,
+        ingressTimer,
+        bufferedPollTimer,
+      ]) as df.Task;
 
-      yield context.df.callActivity('ingressWindowStageActivity', {
-        action: 'drain',
-        correlationId: completedCorrelationId,
-        nextCorrelationId: drainedCorrelationId,
+      if (winner === newMessageEvent) {
+        ingressTimer.cancel();
+        bufferedPollTimer.cancel();
+        const drainedMessage = newMessageEvent.result as NewMessageEvent;
+        const drainedCorrelationId = drainedMessage.correlationId ?? crypto.randomUUID();
+
+        yield context.df.callActivity('ingressWindowStageActivity', {
+          action: 'drain',
+          correlationId: completedCorrelationId,
+          nextCorrelationId: drainedCorrelationId,
+          userId: state.userId,
+          instanceId: context.df.instanceId,
+        } satisfies IngressWindowStageInput);
+
+        nextMessage = {
+          ...drainedMessage,
+          correlationId: drainedCorrelationId,
+        };
+        break;
+      }
+
+      if (winner === hookFiredEvent) {
+        ingressTimer.cancel();
+        bufferedPollTimer.cancel();
+        const drainedHook = hookFiredEvent.result as HookFiredEvent;
+        const drainedCorrelationId = drainedHook.correlationId ?? crypto.randomUUID();
+
+        yield context.df.callActivity('ingressWindowStageActivity', {
+          action: 'hook-drain',
+          correlationId: completedCorrelationId,
+          nextCorrelationId: drainedCorrelationId,
+          userId: state.userId,
+          instanceId: context.df.instanceId,
+          hookId: drainedHook.hookId,
+          hookType: drainedHook.hookType,
+          triggerType: drainedHook.triggerType,
+        } satisfies IngressWindowStageInput);
+
+        nextMessage = {
+          userMessage: drainedHook.originalIntent,
+          userId: state.userId,
+          userAlias: state.userAlias,
+          correlationId: drainedCorrelationId,
+        };
+        break;
+      }
+
+      if (winner === ingressTimer) {
+        bufferedPollTimer.cancel();
+        yield context.df.callActivity('ingressWindowStageActivity', {
+          action: 'clear',
+          correlationId: completedCorrelationId,
+          userId: state.userId,
+        } satisfies IngressWindowStageInput);
+
+        return;
+      }
+
+      const bufferedDuringIngressWindow = (yield context.df.callActivity('bufferedIngressActivity', {
+        action: 'dequeue-new-message',
         userId: state.userId,
-        instanceId: context.df.instanceId,
-      } satisfies IngressWindowStageInput);
+      } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
 
-      nextMessage = {
-        ...drainedMessage,
-        correlationId: drainedCorrelationId,
-      };
-      continue;
+      if (bufferedDuringIngressWindow) {
+        ingressTimer.cancel();
+        const drainedCorrelationId = bufferedDuringIngressWindow.correlationId ?? crypto.randomUUID();
+
+        yield context.df.callActivity('ingressWindowStageActivity', {
+          action: 'drain',
+          correlationId: completedCorrelationId,
+          nextCorrelationId: drainedCorrelationId,
+          userId: state.userId,
+          instanceId: context.df.instanceId,
+        } satisfies IngressWindowStageInput);
+
+        nextMessage = {
+          ...bufferedDuringIngressWindow,
+          correlationId: drainedCorrelationId,
+        };
+        break;
+      }
+
+      if (context.df.currentUtcDateTime.getTime() >= ingressDeadline.getTime()) {
+        ingressTimer.cancel();
+        yield context.df.callActivity('ingressWindowStageActivity', {
+          action: 'clear',
+          correlationId: completedCorrelationId,
+          userId: state.userId,
+        } satisfies IngressWindowStageInput);
+
+        return;
+      }
+
+      bufferedPollDeadline = new Date(
+        Math.min(context.df.currentUtcDateTime.getTime() + INGRESS_BUFFER_POLL_MS, ingressDeadline.getTime()),
+      );
+      bufferedPollTimer = context.df.createTimer(bufferedPollDeadline);
     }
-
-    if (winner === hookFiredEvent) {
-      ingressTimer.cancel();
-      const drainedHook = hookFiredEvent.result as HookFiredEvent;
-      const drainedCorrelationId = drainedHook.correlationId ?? crypto.randomUUID();
-
-      yield context.df.callActivity('ingressWindowStageActivity', {
-        action: 'hook-drain',
-        correlationId: completedCorrelationId,
-        nextCorrelationId: drainedCorrelationId,
-        userId: state.userId,
-        instanceId: context.df.instanceId,
-        hookId: drainedHook.hookId,
-        hookType: drainedHook.hookType,
-        triggerType: drainedHook.triggerType,
-      } satisfies IngressWindowStageInput);
-
-      nextMessage = {
-        userMessage: drainedHook.originalIntent,
-        userId: state.userId,
-        userAlias: state.userAlias,
-        correlationId: drainedCorrelationId,
-      };
-      continue;
-    }
-
-    yield context.df.callActivity('ingressWindowStageActivity', {
-      action: 'clear',
-      correlationId: completedCorrelationId,
-      userId: state.userId,
-    } satisfies IngressWindowStageInput);
-
-    return;
+    continue;
   }
 });
 
