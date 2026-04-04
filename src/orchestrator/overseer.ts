@@ -382,13 +382,28 @@ function* processTurn(
   );
   state.recentHistory = history.slice(-10);
 
-  yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
-  yield context.df.callActivity('saveChronoContinuityActivity', {
-    userId: state.userId,
-    correlationId: sessionInput.correlationId,
-    userMessage: event.userMessage,
-    assistantReply: sessionResult.cleanResponse || sessionResult.response || '(no response)',
-  } satisfies SaveChronoContinuityInput);
+  try {
+    yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
+  } catch (saveStateError) {
+    console.warn(
+      `[overseer] saveStateActivity failed after reply for user=${state.userId} correlationId=${sessionInput.correlationId}`,
+      saveStateError,
+    );
+  }
+
+  try {
+    yield context.df.callActivity('saveChronoContinuityActivity', {
+      userId: state.userId,
+      correlationId: sessionInput.correlationId,
+      userMessage: event.userMessage,
+      assistantReply: sessionResult.cleanResponse || sessionResult.response || '(no response)',
+    } satisfies SaveChronoContinuityInput);
+  } catch (saveChronoError) {
+    console.warn(
+      `[overseer] saveChronoContinuityActivity failed after reply for user=${state.userId} correlationId=${sessionInput.correlationId}`,
+      saveChronoError,
+    );
+  }
 
   context.df.signalEntity(
     new df.EntityId(MIND_SESSION_GUARD_ENTITY_NAME, state.userId),
