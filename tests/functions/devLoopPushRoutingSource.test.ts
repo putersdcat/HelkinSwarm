@@ -12,6 +12,7 @@ describe('devloop push routing proof surface', () => {
   it('routes real DEVQUERY/DEVLOOP pushes through NewMessage instead of the dead DevLoopMessage event', () => {
     const source = readFileSync('src/functions/devLoopRelay.ts', 'utf8');
 
+    expect(source).toContain('resolveDeliverableOverseerInstanceId');
     expect(source).toContain("await client.raiseEvent(activeOverseerInstanceId, 'NewMessage', event);");
     expect(source).toContain('devLoopContext: {');
     expect(source).not.toContain("'DevLoopMessage'");

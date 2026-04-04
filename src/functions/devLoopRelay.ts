@@ -21,7 +21,7 @@ import {
 } from '../devloop/relayStore.js';
 import { ResurrectionCommandSchema } from '../devloop/radioProtocol.js';
 import type { NewMessageEvent } from '../orchestrator/overseer.js';
-import { resolveActiveOverseerInstanceId } from '../orchestrator/activeOverseerInstance.js';
+import { resolveDeliverableOverseerInstanceId } from '../orchestrator/activeOverseerInstance.js';
 import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';
 import { registerHook } from '../orchestrator/hookCatalog.js';
 import { signalMindSessionAcquire } from '../orchestrator/mindSessionGuard.js';
@@ -153,7 +153,7 @@ app.http('devloopPush', {
 
     // Route real DEVQUERY/DEVLOOP pushes through the living-session NewMessage ingress path.
     const client = df.getClient(context);
-    const activeOverseerInstanceId = await resolveActiveOverseerInstanceId(client, userId);
+    const activeOverseerInstanceId = await resolveDeliverableOverseerInstanceId(client, userId);
     const canIngressToRuntime = activeOverseerInstanceId && isRuntimeIngressMessageType(doc.messageType);
     const conversationReference = canIngressToRuntime
       ? await getConversationReference(userId)
@@ -719,7 +719,7 @@ app.http('devloopNewMessage', {
 
     const client = df.getClient(context);
     const resolvedInstanceId = body.instanceIdOverride
-      ?? await resolveActiveOverseerInstanceId(client, userId);
+      ?? await resolveDeliverableOverseerInstanceId(client, userId);
     if (!resolvedInstanceId) {
       return {
         status: 409,
@@ -820,7 +820,7 @@ app.http('devloopResurrect', {
 
     const targetUserId = body.userId;
     const client = df.getClient(context);
-    const activeOverseerInstanceId = await resolveActiveOverseerInstanceId(client, targetUserId);
+    const activeOverseerInstanceId = await resolveDeliverableOverseerInstanceId(client, targetUserId);
 
     // 1. Check current orchestrator status
     let wasTerminal = false;

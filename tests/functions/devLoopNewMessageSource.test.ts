@@ -10,7 +10,7 @@ describe('devloop new-message injection proof surface', () => {
     expect(source).toContain("source: 'devloop-relay'");
     expect(source).toContain('compatibilityMode: getEnvConfig().livingMindCompatibilityMode');
     expect(source).toContain('const resolvedInstanceId = body.instanceIdOverride');
-    expect(source).toContain('?? await resolveActiveOverseerInstanceId(client, userId);');
+    expect(source).toContain('?? await resolveDeliverableOverseerInstanceId(client, userId);');
     expect(source).toContain("await client.raiseEvent(resolvedInstanceId, 'NewMessage', event);");
     expect(source).toContain("endpoint: 'new-message'");
     expect(source).toContain('deliveredToOverseer: true,');

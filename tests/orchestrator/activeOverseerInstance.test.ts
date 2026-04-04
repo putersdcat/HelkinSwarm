@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { OrchestrationRuntimeStatus } from 'durable-functions';
 import {
   findActiveOverseerInstanceId,
+  summarizeDeliverableOverseerInstances,
   summarizeActiveOverseerInstances,
   summarizeRoutableOverseerInstances,
   type MinimalOrchestrationStatus,
@@ -234,6 +235,50 @@ describe('active overseer instance resolution', () => {
     expect(summarizeRoutableOverseerInstances(statuses, userId, activeTurnEntries, undefined)).toEqual({
       activeCount: 0,
       latestInstanceId: undefined,
+    });
+  });
+
+  it('allows owner-only/manual delivery to use guard-owned active instances even without active-turn docs', () => {
+    const userId = 'user-a';
+    const statuses: MinimalOrchestrationStatus[] = [
+      {
+        instanceId: 'overseer-user-a-guard-live',
+        runtimeStatus: OrchestrationRuntimeStatus.Running,
+      },
+    ];
+    const guardState: MindSessionGuardState = {
+      activeInstanceId: 'overseer-user-a-guard-live',
+      activeCorrelationId: 'corr-live',
+      activeSource: 'devloop-relay',
+      acquisitionCount: 1,
+      collisionCount: 0,
+      interruptionDepth: 0,
+    };
+
+    expect(summarizeDeliverableOverseerInstances(statuses, userId, [], guardState)).toEqual({
+      activeCount: 1,
+      latestInstanceId: 'overseer-user-a-guard-live',
+    });
+  });
+
+  it('allows owner-only/manual delivery to fall back to the newest active overseer when no routable stage exists', () => {
+    const userId = 'user-a';
+    const statuses: MinimalOrchestrationStatus[] = [
+      {
+        instanceId: 'overseer-user-a-dedup-hold',
+        runtimeStatus: OrchestrationRuntimeStatus.Running,
+        createdTime: '2026-04-03T02:00:00.000Z',
+      },
+      {
+        instanceId: 'overseer-user-a-older',
+        runtimeStatus: OrchestrationRuntimeStatus.Running,
+        createdTime: '2026-04-03T01:59:00.000Z',
+      },
+    ];
+
+    expect(summarizeDeliverableOverseerInstances(statuses, userId, [], undefined)).toEqual({
+      activeCount: 2,
+      latestInstanceId: 'overseer-user-a-dedup-hold',
     });
   });
 });
