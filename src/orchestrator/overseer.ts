@@ -25,6 +25,7 @@ import type { QuotedContext } from '../bot/quotedContext.js';
 import type { RuntimeAssetReference } from '../integrations/runtimeAssetStore.js';
 import { MIND_SESSION_GUARD_ENTITY_NAME, MindSessionGuardReleaseInputSchema } from './mindSessionGuard.js';
 import type { SaveChronoContinuityInput } from './chronoBackplane.js';
+import type { BufferedIngressActivityInput } from './bufferedIngressActivity.js';
 import type { IngressWindowStageInput } from './ingressWindowStageActivity.js';
 
 /** Spinner starts after this many ms. Only long turns get spinner updates. */
@@ -101,6 +102,29 @@ df.app.orchestration('overseer', function* (context) {
     const completedCorrelationId = yield* processTurn(context, state, nextMessage);
     if (!completedCorrelationId) {
       return;
+    }
+
+    const bufferedNewMessage = (yield context.df.callActivity('bufferedIngressActivity', {
+      action: 'dequeue-new-message',
+      userId: state.userId,
+    } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
+
+    if (bufferedNewMessage) {
+      const drainedCorrelationId = bufferedNewMessage.correlationId ?? crypto.randomUUID();
+
+      yield context.df.callActivity('ingressWindowStageActivity', {
+        action: 'drain',
+        correlationId: completedCorrelationId,
+        nextCorrelationId: drainedCorrelationId,
+        userId: state.userId,
+        instanceId: context.df.instanceId,
+      } satisfies IngressWindowStageInput);
+
+      nextMessage = {
+        ...bufferedNewMessage,
+        correlationId: drainedCorrelationId,
+      };
+      continue;
     }
 
     yield context.df.callActivity('ingressWindowStageActivity', {

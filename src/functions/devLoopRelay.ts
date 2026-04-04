@@ -25,9 +25,11 @@ import { resolveDeliverableOverseerInstanceId } from '../orchestrator/activeOver
 import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';
 import { registerHook } from '../orchestrator/hookCatalog.js';
 import { signalMindSessionAcquire } from '../orchestrator/mindSessionGuard.js';
+import { queueBufferedNewMessage } from '../orchestrator/bufferedIngressActivity.js';
 import {
   clearOrchestratorStage,
   getActiveTurnCountForUser,
+  getActiveTurnStagesForUser,
   recordOrchestratorStage,
 } from '../observability/orchestratorStageHealth.js';
 import { saveChronoScheduledWake } from '../orchestrator/chronoBackplane.js';
@@ -121,6 +123,19 @@ function isRuntimeIngressMessageType(
   return messageType === 'DEVQUERY' || messageType === 'DEVLOOP';
 }
 
+function shouldBufferNewMessageForActiveProcessing(
+  instanceId: string,
+  activeTurnEntries: ReadonlyArray<{ stage: string; instanceId?: string }>,
+): boolean {
+  if (activeTurnEntries.length === 0) {
+    return false;
+  }
+
+  return !activeTurnEntries.some(
+    (entry) => entry.stage === 'awaiting-ingress' && entry.instanceId === instanceId,
+  );
+}
+
 // ---------------------------------------------------------------------------
 // POST /api/devloop/push — DevLoop sends a message to the runtime
 // ---------------------------------------------------------------------------
@@ -155,11 +170,15 @@ app.http('devloopPush', {
     const client = df.getClient(context);
     const activeOverseerInstanceId = await resolveDeliverableOverseerInstanceId(client, userId);
     const canIngressToRuntime = activeOverseerInstanceId && isRuntimeIngressMessageType(doc.messageType);
+    const activeTurnEntries = canIngressToRuntime
+      ? await getActiveTurnStagesForUser(userId)
+      : [];
     const conversationReference = canIngressToRuntime
       ? await getConversationReference(userId)
       : null;
 
     let deliveredToOverseer = false;
+    let deliveryMode: 'external-event' | 'buffered-active-processing' | 'not-delivered' = 'not-delivered';
     if (activeOverseerInstanceId && canIngressToRuntime) {
       const correlationId = doc.correlationTag;
       const ingressDecision = recordLimbicIngressDecision({
@@ -188,7 +207,13 @@ app.http('devloopPush', {
 
       try {
         if (ingressDecision.decision === 'steer') {
-          await client.raiseEvent(activeOverseerInstanceId, 'NewMessage', event);
+          if (shouldBufferNewMessageForActiveProcessing(activeOverseerInstanceId, activeTurnEntries)) {
+            await queueBufferedNewMessage(event, userId, activeOverseerInstanceId);
+            deliveryMode = 'buffered-active-processing';
+          } else {
+            await client.raiseEvent(activeOverseerInstanceId, 'NewMessage', event);
+            deliveryMode = 'external-event';
+          }
           deliveredToOverseer = true;
         }
       } catch {
@@ -205,6 +230,7 @@ app.http('devloopPush', {
         messageType: doc.messageType,
         messageId: doc.id,
         deliveredToOverseer,
+        deliveryMode,
         instanceId: activeOverseerInstanceId ?? 'none',
       },
     });
@@ -214,6 +240,7 @@ app.http('devloopPush', {
         messageId: doc.id,
         correlationTag: doc.correlationTag,
         deliveredToOverseer,
+        deliveryMode,
         instanceId: activeOverseerInstanceId ?? null,
       },
     };
@@ -728,6 +755,7 @@ app.http('devloopNewMessage', {
     }
 
     const correlationId = `${body.correlationPrefix}-${Date.now()}`;
+    const activeTurnEntries = await getActiveTurnStagesForUser(userId);
     recordLimbicIngressDecision({
       source: 'devloop-relay',
       userId,
@@ -743,8 +771,17 @@ app.http('devloopNewMessage', {
       correlationId,
     };
 
+    const shouldBuffer = shouldBufferNewMessageForActiveProcessing(
+      resolvedInstanceId,
+      activeTurnEntries,
+    );
+
     try {
-      await client.raiseEvent(resolvedInstanceId, 'NewMessage', event);
+      if (shouldBuffer) {
+        await queueBufferedNewMessage(event, userId, resolvedInstanceId);
+      } else {
+        await client.raiseEvent(resolvedInstanceId, 'NewMessage', event);
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       trackEvent({
@@ -775,6 +812,7 @@ app.http('devloopNewMessage', {
       properties: {
         endpoint: 'new-message',
         deliveredToOverseer: true,
+          deliveryMode: shouldBuffer ? 'buffered-active-processing' : 'external-event',
         source: 'devloop-relay',
         instanceId: resolvedInstanceId,
       },
@@ -784,6 +822,7 @@ app.http('devloopNewMessage', {
       status: 200,
       jsonBody: {
         correlationId,
+        deliveryMode: shouldBuffer ? 'buffered-active-processing' : 'external-event',
         instanceId: resolvedInstanceId,
       },
     };
