@@ -12,6 +12,9 @@ describe('buffered ingress replay timer wiring', () => {
     expect(timerSource).toContain('listStaleQueuedBufferedMessages(cutoffIso)');
     expect(timerSource).toContain('resolveDeliverableOverseerInstanceId(client, queuedFollower.userId)');
     expect(timerSource).toContain('getActiveTurnCountForUser(queuedFollower.userId)');
+    expect(timerSource).toContain('if (activeTurnCount > 0) {');
+    expect(timerSource).toContain('await client.terminate(');
+    expect(timerSource).toContain("source: 'buffered-ingress-auto-force-new'");
     expect(timerSource).toContain("await client.startNew('overseer', { instanceId: replayInstanceId, input: queuedFollower.event });");
     expect(timerSource).toContain("source: 'buffered-ingress-replay'");
     expect(timerSource).toContain("name: 'BufferedIngressFallbackReplayed'");

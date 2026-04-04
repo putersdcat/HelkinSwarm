@@ -35,18 +35,39 @@ app.timer('bufferedIngressReplayTimer', {
         getActiveTurnCountForUser(queuedFollower.userId),
       ]);
 
-      if (deliverableOverseerInstanceId || activeTurnCount > 0) {
+      if (activeTurnCount > 0) {
         continue;
       }
 
-      const replayInstanceId = `overseer-${queuedFollower.userId}-buffered-${crypto.randomUUID().slice(0, 8)}`;
+      let replayInstanceId: string;
+      let replaySource: 'buffered-ingress-replay' | 'buffered-ingress-auto-force-new';
 
-      await client.startNew('overseer', { instanceId: replayInstanceId, input: queuedFollower.event });
-      await signalMindSessionAcquire(client, queuedFollower.userId, {
-        instanceId: replayInstanceId,
-        correlationId: queuedFollower.correlationId,
-        source: 'buffered-ingress-replay',
-      });
+      if (deliverableOverseerInstanceId) {
+        await client.terminate(
+          deliverableOverseerInstanceId,
+          `Automatic buffered follower rescue for ${queuedFollower.correlationId}`,
+        );
+
+        replayInstanceId = `overseer-${queuedFollower.userId}-buffered-${crypto.randomUUID().slice(0, 8)}`;
+        await client.startNew('overseer', { instanceId: replayInstanceId, input: queuedFollower.event });
+        await signalMindSessionAcquire(client, queuedFollower.userId, {
+          instanceId: replayInstanceId,
+          correlationId: queuedFollower.correlationId,
+          source: 'buffered-ingress-auto-force-new',
+        });
+        replaySource = 'buffered-ingress-auto-force-new';
+      } else {
+        replayInstanceId = `overseer-${queuedFollower.userId}-buffered-${crypto.randomUUID().slice(0, 8)}`;
+
+        await client.startNew('overseer', { instanceId: replayInstanceId, input: queuedFollower.event });
+        await signalMindSessionAcquire(client, queuedFollower.userId, {
+          instanceId: replayInstanceId,
+          correlationId: queuedFollower.correlationId,
+          source: 'buffered-ingress-replay',
+        });
+        replaySource = 'buffered-ingress-replay';
+      }
+
       await markBufferedNewMessageReplayed(queuedFollower.docId, queuedFollower.userId, replayInstanceId);
 
       trackEvent({
@@ -55,7 +76,7 @@ app.timer('bufferedIngressReplayTimer', {
         userId: queuedFollower.userId,
         properties: {
           instanceId: replayInstanceId,
-          source: 'buffered-ingress-replay',
+          source: replaySource,
         },
       });
     }
