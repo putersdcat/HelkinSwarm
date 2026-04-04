@@ -21,11 +21,13 @@ export type BufferedIngressActivityInput = z.infer<typeof BufferedIngressActivit
 const BufferedNewMessageDocumentSchema = z.object({
   id: z.string().min(1),
   type: z.literal(BUFFERED_NEW_MESSAGE_TYPE),
+  status: z.enum(['queued', 'dequeued']).default('queued'),
   userId: z.string().min(1),
   userAlias: z.string().min(1),
   correlationId: z.string().min(1),
   userMessage: z.string().min(1),
   queuedAt: z.string().min(1),
+  dequeuedAt: z.string().min(1).optional(),
   targetInstanceId: z.string().min(1).optional(),
   conversationReferenceJson: z.string().min(1).optional(),
   modelOverride: z.string().min(1).optional(),
@@ -49,6 +51,7 @@ export async function queueBufferedNewMessage(
   const doc = BufferedNewMessageDocumentSchema.parse({
     id: `buffered-new-message-${correlationId}`,
     type: BUFFERED_NEW_MESSAGE_TYPE,
+    status: 'queued',
     userId,
     userAlias: event.userAlias,
     correlationId,
@@ -91,10 +94,11 @@ export async function dequeueBufferedNewMessageForUser(
   const container = getContainer(SESSIONS_CONTAINER);
   const { resources } = await container.items
     .query<BufferedNewMessageDocument>({
-      query: `SELECT TOP 1 * FROM c WHERE c.type = @type AND c.userId = @userId ORDER BY c.queuedAt ASC`,
+      query: `SELECT TOP 1 * FROM c WHERE c.type = @type AND c.userId = @userId AND (NOT IS_DEFINED(c.status) OR c.status = @status) ORDER BY c.queuedAt ASC`,
       parameters: [
         { name: '@type', value: BUFFERED_NEW_MESSAGE_TYPE },
         { name: '@userId', value: userId },
+        { name: '@status', value: 'queued' },
       ],
     })
     .fetchAll();
@@ -104,7 +108,12 @@ export async function dequeueBufferedNewMessageForUser(
     return null;
   }
 
-  await container.item(doc.id, userId).delete();
+  const dequeuedAt = new Date().toISOString();
+  await container.item(doc.id, userId).replace({
+    ...doc,
+    status: 'dequeued',
+    dequeuedAt,
+  });
 
   trackEvent({
     name: 'BufferedIngressDequeued',

@@ -27,6 +27,10 @@ describe('living session ingress window source guards', () => {
     expect(bufferedIngressSource).toContain('await container.items.upsert(doc);');
     expect(bufferedIngressSource).toContain("name: 'BufferedIngressQueued'");
     expect(bufferedIngressSource).toContain("name: 'BufferedIngressDequeued'");
+    expect(bufferedIngressSource).toContain("status: z.enum(['queued', 'dequeued']).default('queued')");
+    expect(bufferedIngressSource).toContain("status: 'queued'");
+    expect(bufferedIngressSource).toContain("c.status = @status");
+    expect(bufferedIngressSource).toContain("status: 'dequeued'");
     expect(bufferedIngressSource).toContain('return dequeueBufferedNewMessageForUser(input.userId);');
   });
 });
