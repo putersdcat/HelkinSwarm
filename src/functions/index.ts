@@ -18,6 +18,7 @@ import './messages.js';
 import './emergencyStop.js';
 import './hookReceiver.js';
 import './devLoopRelay.js';
+import './devLoopBufferedIngress.js';
 import './graphNotificationHandler.js';
 import './subscriptionRenewalTimer.js';
 import './maintenanceSweepTimer.js';

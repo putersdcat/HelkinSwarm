@@ -44,6 +44,20 @@ const BufferedNewMessageDocumentSchema = z.object({
 
 type BufferedNewMessageDocument = z.infer<typeof BufferedNewMessageDocumentSchema>;
 
+export type BufferedIngressStatus = BufferedNewMessageDocument['status'];
+
+export interface BufferedIngressDocumentSummary {
+  docId: string;
+  userId: string;
+  correlationId: string;
+  status: BufferedIngressStatus;
+  queuedAt: string;
+  dequeuedAt?: string;
+  replayedAt?: string;
+  replayedInstanceId?: string;
+  targetInstanceId?: string;
+}
+
 export interface BufferedQueuedReplayCandidate {
   docId: string;
   userId: string;
@@ -72,6 +86,20 @@ function toNewMessageEvent(doc: BufferedNewMessageDocument): NewMessageEvent {
       ? { quotedContext: JSON.parse(doc.quotedContextJson) as NewMessageEvent['quotedContext'] }
       : {}),
   } satisfies NewMessageEvent;
+}
+
+function toBufferedIngressDocumentSummary(doc: BufferedNewMessageDocument): BufferedIngressDocumentSummary {
+  return {
+    docId: doc.id,
+    userId: doc.userId,
+    correlationId: doc.correlationId,
+    status: doc.status,
+    queuedAt: doc.queuedAt,
+    ...(doc.dequeuedAt ? { dequeuedAt: doc.dequeuedAt } : {}),
+    ...(doc.replayedAt ? { replayedAt: doc.replayedAt } : {}),
+    ...(doc.replayedInstanceId ? { replayedInstanceId: doc.replayedInstanceId } : {}),
+    ...(doc.targetInstanceId ? { targetInstanceId: doc.targetInstanceId } : {}),
+  } satisfies BufferedIngressDocumentSummary;
 }
 
 export async function queueBufferedNewMessage(
@@ -183,6 +211,65 @@ export async function listStaleQueuedBufferedMessages(
     correlationId: doc.correlationId,
     event: toNewMessageEvent(doc),
   } satisfies BufferedQueuedReplayCandidate));
+}
+
+export async function listBufferedIngressDocumentsForUser(
+  userId: string,
+  status?: BufferedIngressStatus,
+  limit = 20,
+): Promise<BufferedIngressDocumentSummary[]> {
+  const container = getContainer(SESSIONS_CONTAINER);
+  const query = status
+    ? {
+        query: `SELECT TOP @limit * FROM c WHERE c.type = @type AND c.userId = @userId AND c.status = @status ORDER BY c.queuedAt DESC`,
+        parameters: [
+          { name: '@limit', value: limit },
+          { name: '@type', value: BUFFERED_NEW_MESSAGE_TYPE },
+          { name: '@userId', value: userId },
+          { name: '@status', value: status },
+        ],
+      }
+    : {
+        query: `SELECT TOP @limit * FROM c WHERE c.type = @type AND c.userId = @userId ORDER BY c.queuedAt DESC`,
+        parameters: [
+          { name: '@limit', value: limit },
+          { name: '@type', value: BUFFERED_NEW_MESSAGE_TYPE },
+          { name: '@userId', value: userId },
+        ],
+      };
+
+  const { resources } = await container.items.query<BufferedNewMessageDocument>(query).fetchAll();
+  return resources.map((doc) => toBufferedIngressDocumentSummary(doc));
+}
+
+export async function getQueuedBufferedReplayCandidateByCorrelation(
+  userId: string,
+  correlationId: string,
+): Promise<BufferedQueuedReplayCandidate | undefined> {
+  const container = getContainer(SESSIONS_CONTAINER);
+  const { resources } = await container.items
+    .query<BufferedNewMessageDocument>({
+      query: `SELECT TOP 1 * FROM c WHERE c.type = @type AND c.userId = @userId AND c.correlationId = @correlationId AND c.status = @status`,
+      parameters: [
+        { name: '@type', value: BUFFERED_NEW_MESSAGE_TYPE },
+        { name: '@userId', value: userId },
+        { name: '@correlationId', value: correlationId },
+        { name: '@status', value: 'queued' },
+      ],
+    })
+    .fetchAll();
+
+  const doc = resources[0];
+  if (!doc) {
+    return undefined;
+  }
+
+  return {
+    docId: doc.id,
+    userId: doc.userId,
+    correlationId: doc.correlationId,
+    event: toNewMessageEvent(doc),
+  } satisfies BufferedQueuedReplayCandidate;
 }
 
 export async function markBufferedNewMessageReplayed(
