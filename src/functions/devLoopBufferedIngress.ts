@@ -20,6 +20,7 @@ import { trackEvent } from '../observability/telemetry.js';
 
 const ManualReplayPayloadSchema = z.object({
   correlationId: z.string().min(1),
+  mode: z.enum(['auto', 'force-start-new']).default('auto'),
 });
 
 function parseStatus(value: string | null): BufferedIngressStatus | undefined {
@@ -100,12 +101,33 @@ app.http('devloopBufferedIngressReplay', {
     }
 
     let replayInstanceId: string;
-    let replayMode: 'raise-event' | 'start-new';
+    let replayMode: 'raise-event' | 'start-new' | 'force-start-new';
+    let replaySource: 'buffered-ingress-manual-replay' | 'buffered-ingress-manual-force-new';
+    let terminatedInstanceId: string | undefined;
 
-    if (deliverableOverseerInstanceId) {
+    if (body.mode === 'force-start-new') {
+      if (deliverableOverseerInstanceId) {
+        await client.terminate(
+          deliverableOverseerInstanceId,
+          `Owner forced buffered follower replay for ${queuedFollower.correlationId}`,
+        );
+        terminatedInstanceId = deliverableOverseerInstanceId;
+      }
+
+      replayInstanceId = `overseer-${userId}-manual-buffered-${crypto.randomUUID().slice(0, 8)}`;
+      await client.startNew('overseer', { instanceId: replayInstanceId, input: queuedFollower.event });
+      await signalMindSessionAcquire(client, userId, {
+        instanceId: replayInstanceId,
+        correlationId: queuedFollower.correlationId,
+        source: 'buffered-ingress-manual-force-new',
+      });
+      replayMode = 'force-start-new';
+      replaySource = 'buffered-ingress-manual-force-new';
+    } else if (deliverableOverseerInstanceId) {
       await client.raiseEvent(deliverableOverseerInstanceId, 'NewMessage', queuedFollower.event);
       replayInstanceId = deliverableOverseerInstanceId;
       replayMode = 'raise-event';
+      replaySource = 'buffered-ingress-manual-replay';
     } else {
       replayInstanceId = `overseer-${userId}-manual-buffered-${crypto.randomUUID().slice(0, 8)}`;
       await client.startNew('overseer', { instanceId: replayInstanceId, input: queuedFollower.event });
@@ -115,6 +137,7 @@ app.http('devloopBufferedIngressReplay', {
         source: 'buffered-ingress-manual-replay',
       });
       replayMode = 'start-new';
+      replaySource = 'buffered-ingress-manual-replay';
     }
 
     await markBufferedNewMessageReplayed(queuedFollower.docId, userId, replayInstanceId);
@@ -125,7 +148,7 @@ app.http('devloopBufferedIngressReplay', {
       userId,
       properties: {
         instanceId: replayInstanceId,
-        source: 'buffered-ingress-manual-replay',
+        source: replaySource,
       },
     });
 
@@ -136,6 +159,7 @@ app.http('devloopBufferedIngressReplay', {
         replayed: true,
         replayInstanceId,
         replayMode,
+        ...(terminatedInstanceId ? { terminatedInstanceId } : {}),
       },
     };
   },
