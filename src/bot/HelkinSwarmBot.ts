@@ -1167,9 +1167,9 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       const observedActiveInstanceId = activeSummary.latestInstanceId;
       const effectiveActiveInstanceId = observedActiveInstanceId ?? (activeTurnCount > 0 ? guardState?.activeInstanceId : undefined);
       const hasActiveGuard = activeTurnCount > 0 && effectiveActiveInstanceId !== identity.instanceId;
-      const hasAwaitingIngressWindow = effectiveActiveInstanceId !== undefined
+      const activeSessionRoutable = hasActiveGuard
+        && effectiveActiveInstanceId !== undefined
         && activeTurnEntries.some((entry) => entry.stage === 'awaiting-ingress' && entry.instanceId === effectiveActiveInstanceId);
-      const activeSessionRoutable = hasActiveGuard && effectiveActiveInstanceId !== undefined;
       const interruptionDepth = Math.max(
         guardState?.interruptionDepth ?? 0,
         Math.max(0, activeTurnCount - 1),
@@ -1225,15 +1225,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       }
 
       if (activeSessionRoutable && effectiveActiveInstanceId) {
-        const redirectionAuthority = hasAwaitingIngressWindow
-          ? 'living-session-awaiting-ingress-redirection'
-          : 'living-session-active-redirection';
         trackEvent({
           name: 'PolicyOverrideApplied',
           correlationId: eventCorrelationId,
           userId,
           properties: {
-            authority: redirectionAuthority,
+            authority: 'living-session-awaiting-ingress-redirection',
             source: 'teams-message',
             activeInstanceId: effectiveActiveInstanceId,
             requestedInstanceId: identity.instanceId,
