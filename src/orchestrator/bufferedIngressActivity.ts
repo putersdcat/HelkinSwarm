@@ -21,13 +21,15 @@ export type BufferedIngressActivityInput = z.infer<typeof BufferedIngressActivit
 const BufferedNewMessageDocumentSchema = z.object({
   id: z.string().min(1),
   type: z.literal(BUFFERED_NEW_MESSAGE_TYPE),
-  status: z.enum(['queued', 'dequeued']).default('queued'),
+  status: z.enum(['queued', 'dequeued', 'replayed']).default('queued'),
   userId: z.string().min(1),
   userAlias: z.string().min(1),
   correlationId: z.string().min(1),
   userMessage: z.string().min(1),
   queuedAt: z.string().min(1),
   dequeuedAt: z.string().min(1).optional(),
+  replayedAt: z.string().min(1).optional(),
+  replayedInstanceId: z.string().min(1).optional(),
   targetInstanceId: z.string().min(1).optional(),
   conversationReferenceJson: z.string().min(1).optional(),
   modelOverride: z.string().min(1).optional(),
@@ -41,6 +43,36 @@ const BufferedNewMessageDocumentSchema = z.object({
 });
 
 type BufferedNewMessageDocument = z.infer<typeof BufferedNewMessageDocumentSchema>;
+
+export interface BufferedQueuedReplayCandidate {
+  docId: string;
+  userId: string;
+  correlationId: string;
+  event: NewMessageEvent;
+}
+
+function toNewMessageEvent(doc: BufferedNewMessageDocument): NewMessageEvent {
+  return {
+    userMessage: doc.userMessage,
+    conversationReference: doc.conversationReferenceJson
+      ? JSON.parse(doc.conversationReferenceJson) as NewMessageEvent['conversationReference']
+      : undefined,
+    userId: doc.userId,
+    userAlias: doc.userAlias,
+    correlationId: doc.correlationId,
+    ...(doc.modelOverride ? { modelOverride: doc.modelOverride } : {}),
+    ...(doc.imageUrls.length > 0 ? { imageUrls: doc.imageUrls } : {}),
+    ...(doc.runtimeAssets.length > 0 ? { runtimeAssets: doc.runtimeAssets } : {}),
+    ...(doc.attachmentNotices.length > 0 ? { attachmentNotices: doc.attachmentNotices } : {}),
+    ...(doc.devLoopContextJson
+      ? { devLoopContext: JSON.parse(doc.devLoopContextJson) as NewMessageEvent['devLoopContext'] }
+      : {}),
+    ...(doc.correlationTag ? { correlationTag: doc.correlationTag } : {}),
+    ...(doc.quotedContextJson
+      ? { quotedContext: JSON.parse(doc.quotedContextJson) as NewMessageEvent['quotedContext'] }
+      : {}),
+  } satisfies NewMessageEvent;
+}
 
 export async function queueBufferedNewMessage(
   event: NewMessageEvent,
@@ -125,26 +157,51 @@ export async function dequeueBufferedNewMessageForUser(
     },
   });
 
-  return {
-    userMessage: doc.userMessage,
-    conversationReference: doc.conversationReferenceJson
-      ? JSON.parse(doc.conversationReferenceJson) as NewMessageEvent['conversationReference']
-      : undefined,
+  return toNewMessageEvent(doc);
+}
+
+export async function listStaleQueuedBufferedMessages(
+  olderThanIso: string,
+  limit = 20,
+): Promise<BufferedQueuedReplayCandidate[]> {
+  const container = getContainer(SESSIONS_CONTAINER);
+  const { resources } = await container.items
+    .query<BufferedNewMessageDocument>({
+      query: `SELECT TOP @limit * FROM c WHERE c.type = @type AND (NOT IS_DEFINED(c.status) OR c.status = @status) AND c.queuedAt <= @olderThan ORDER BY c.queuedAt ASC`,
+      parameters: [
+        { name: '@limit', value: limit },
+        { name: '@type', value: BUFFERED_NEW_MESSAGE_TYPE },
+        { name: '@status', value: 'queued' },
+        { name: '@olderThan', value: olderThanIso },
+      ],
+    })
+    .fetchAll();
+
+  return resources.map((doc) => ({
+    docId: doc.id,
     userId: doc.userId,
-    userAlias: doc.userAlias,
     correlationId: doc.correlationId,
-    ...(doc.modelOverride ? { modelOverride: doc.modelOverride } : {}),
-    ...(doc.imageUrls.length > 0 ? { imageUrls: doc.imageUrls } : {}),
-    ...(doc.runtimeAssets.length > 0 ? { runtimeAssets: doc.runtimeAssets } : {}),
-    ...(doc.attachmentNotices.length > 0 ? { attachmentNotices: doc.attachmentNotices } : {}),
-    ...(doc.devLoopContextJson
-      ? { devLoopContext: JSON.parse(doc.devLoopContextJson) as NewMessageEvent['devLoopContext'] }
-      : {}),
-    ...(doc.correlationTag ? { correlationTag: doc.correlationTag } : {}),
-    ...(doc.quotedContextJson
-      ? { quotedContext: JSON.parse(doc.quotedContextJson) as NewMessageEvent['quotedContext'] }
-      : {}),
-  } satisfies NewMessageEvent;
+    event: toNewMessageEvent(doc),
+  } satisfies BufferedQueuedReplayCandidate));
+}
+
+export async function markBufferedNewMessageReplayed(
+  docId: string,
+  userId: string,
+  replayedInstanceId: string,
+): Promise<void> {
+  const container = getContainer(SESSIONS_CONTAINER);
+  const { resource } = await container.item(docId, userId).read<BufferedNewMessageDocument>();
+  if (!resource) {
+    return;
+  }
+
+  await container.item(docId, userId).replace({
+    ...resource,
+    status: 'replayed',
+    replayedAt: new Date().toISOString(),
+    replayedInstanceId,
+  });
 }
 
 export async function handleBufferedIngressActivity(

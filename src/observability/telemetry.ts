@@ -55,6 +55,7 @@ export type TelemetryEventName =
   | 'LimbicDecision'
   | 'BufferedIngressQueued'
   | 'BufferedIngressDequeued'
+  | 'BufferedIngressFallbackReplayed'
   | 'ChronoBackplaneRead'
   | 'ChronoBackplaneWritten'
   | 'InterruptionBreadcrumbWritten'
@@ -120,6 +121,7 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   LivingSessionHookDrained: 'orchestrator',
   BufferedIngressQueued: 'orchestrator',
   BufferedIngressDequeued: 'orchestrator',
+  BufferedIngressFallbackReplayed: 'orchestrator',
   ChronoBackplaneRead: 'memory',
   ChronoBackplaneWritten: 'memory',
   InterruptionBreadcrumbWritten: 'memory',
