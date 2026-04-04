@@ -154,7 +154,7 @@ export async function dequeueBufferedNewMessageForUser(
   const container = getContainer(SESSIONS_CONTAINER);
   const { resources } = await container.items
     .query<BufferedNewMessageDocument>({
-      query: `SELECT TOP 1 * FROM c WHERE c.type = @type AND c.userId = @userId AND (NOT IS_DEFINED(c.status) OR c.status = @status) ORDER BY c.queuedAt ASC`,
+      query: `SELECT * FROM c WHERE c.type = @type AND c.userId = @userId AND (NOT IS_DEFINED(c.status) OR c.status = @status)`,
       parameters: [
         { name: '@type', value: BUFFERED_NEW_MESSAGE_TYPE },
         { name: '@userId', value: userId },
@@ -163,7 +163,9 @@ export async function dequeueBufferedNewMessageForUser(
     })
     .fetchAll();
 
-  const doc = resources[0];
+  const doc = resources
+    .slice()
+    .sort((left, right) => left.queuedAt.localeCompare(right.queuedAt))[0];
   if (!doc) {
     return null;
   }
