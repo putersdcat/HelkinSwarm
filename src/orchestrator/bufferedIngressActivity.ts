@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { getContainer } from '../memory/cosmosClient.js';
 import type { NewMessageEvent } from './overseer.js';
 import { RuntimeAssetReferenceSchema } from '../integrations/runtimeAssetStore.js';
+import { trackEvent } from '../observability/telemetry.js';
 
 const SESSIONS_CONTAINER = 'sessions';
 const BUFFERED_NEW_MESSAGE_TYPE = 'buffered-new-message';
@@ -73,6 +74,15 @@ export async function queueBufferedNewMessage(
 
   const container = getContainer(SESSIONS_CONTAINER);
   await container.items.upsert(doc);
+  trackEvent({
+    name: 'BufferedIngressQueued',
+    correlationId,
+    userId,
+    properties: {
+      instanceId: targetInstanceId ?? 'unknown',
+      source: event.devLoopContext?.isDevLoop ? 'devloop-relay' : 'unknown',
+    },
+  });
 }
 
 export async function dequeueBufferedNewMessageForUser(
@@ -95,6 +105,16 @@ export async function dequeueBufferedNewMessageForUser(
   }
 
   await container.item(doc.id, userId).delete();
+
+  trackEvent({
+    name: 'BufferedIngressDequeued',
+    correlationId: doc.correlationId,
+    userId: doc.userId,
+    properties: {
+      instanceId: doc.targetInstanceId ?? 'unknown',
+      source: doc.devLoopContextJson ? 'devloop-relay' : 'unknown',
+    },
+  });
 
   return {
     userMessage: doc.userMessage,

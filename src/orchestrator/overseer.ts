@@ -27,6 +27,7 @@ import { MIND_SESSION_GUARD_ENTITY_NAME, MindSessionGuardReleaseInputSchema } fr
 import type { SaveChronoContinuityInput } from './chronoBackplane.js';
 import type { BufferedIngressActivityInput } from './bufferedIngressActivity.js';
 import type { IngressWindowStageInput } from './ingressWindowStageActivity.js';
+import { trackEvent } from '../observability/telemetry.js';
 
 /** Spinner starts after this many ms. Only long turns get spinner updates. */
 const SPINNER_INITIAL_DELAY_MS = 8_000;
@@ -213,6 +214,15 @@ function* processTurn(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions runtime drives the generator with mixed types
 ): Generator<df.Task, string | undefined, any> {
   const correlationId = event.correlationId ?? crypto.randomUUID();
+  trackEvent({
+    name: 'TurnStarted',
+    correlationId,
+    userId: state.userId,
+    properties: {
+      instanceId: context.df.instanceId,
+      source: event.devLoopContext?.isDevLoop ? 'devloop-relay' : 'teams-message',
+    },
+  });
 
   const sessionInput: SessionInput = {
     state,
@@ -388,6 +398,18 @@ function* processTurn(
       correlationId: sessionInput.correlationId,
     }),
   );
+
+  trackEvent({
+    name: 'TurnCompleted',
+    correlationId,
+    userId: state.userId,
+    properties: {
+      instanceId: context.df.instanceId,
+      replySent: sessionResult.replySent,
+      safetyPassed: sessionResult.safetyPassed,
+      model: sessionResult.model,
+    },
+  });
 
   return correlationId;
 }
