@@ -25,9 +25,10 @@ describe('external event overseer routing source guards', () => {
     expect(graphNotificationHandler).toContain('compatibilityMode: getEnvConfig().livingMindCompatibilityMode');
     expect(graphNotificationHandler).toContain("await client.raiseEvent(activeOverseerInstanceId, 'HookFired', firedPayload);");
 
-    expect(devLoopRelay).toContain("import { resolveActiveOverseerInstanceId } from '../orchestrator/activeOverseerInstance.js';");
-    expect(devLoopRelay).toContain("const activeOverseerInstanceId = await resolveActiveOverseerInstanceId(client, userId);");
-    expect(devLoopRelay).toContain("await client.raiseEvent(activeOverseerInstanceId, 'DevLoopMessage', {");
-    expect(devLoopRelay).toContain('const activeOverseerInstanceId = await resolveActiveOverseerInstanceId(client, targetUserId);');
+    expect(devLoopRelay).toContain('resolveDeliverableOverseerInstanceId');
+    expect(devLoopRelay).toContain("const activeOverseerInstanceId = await resolveDeliverableOverseerInstanceId(client, userId);");
+    expect(devLoopRelay).toContain("source: 'devloop-relay'");
+    expect(devLoopRelay).toContain("await client.raiseEvent(activeOverseerInstanceId, 'NewMessage', event);");
+    expect(devLoopRelay).toContain('const resolvedInstanceId = body.instanceIdOverride');
   });
 });
