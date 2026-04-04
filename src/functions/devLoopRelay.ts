@@ -242,9 +242,10 @@ app.http('devloopPush', {
       try {
         if (ingressDecision.decision === 'steer') {
           if (shouldBufferNewMessageForActiveProcessing(activeOverseerCustomStatus, activeTurnEntries)) {
-            await queueBufferedNewMessage(event, userId, bufferedTargetInstanceId);
+            const queuedBufferedMessage = await queueBufferedNewMessage(event, userId, bufferedTargetInstanceId);
             await client.raiseEvent(bufferedTargetInstanceId, 'BufferedIngressQueued', {
-              correlationId,
+              docId: queuedBufferedMessage.docId,
+              correlationId: queuedBufferedMessage.correlationId,
             });
             deliveryMode = 'buffered-active-processing';
             deliveredInstanceId = bufferedTargetInstanceId;
@@ -831,9 +832,10 @@ app.http('devloopNewMessage', {
 
     try {
       if (shouldBuffer) {
-        await queueBufferedNewMessage(event, userId, bufferedTargetInstanceId);
+        const queuedBufferedMessage = await queueBufferedNewMessage(event, userId, bufferedTargetInstanceId);
         await client.raiseEvent(bufferedTargetInstanceId, 'BufferedIngressQueued', {
-          correlationId,
+          docId: queuedBufferedMessage.docId,
+          correlationId: queuedBufferedMessage.correlationId,
         });
       } else {
         await client.raiseEvent(resolvedInstanceId, 'NewMessage', event);

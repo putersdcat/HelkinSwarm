@@ -1216,9 +1216,10 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
           },
         });
 
-        await queueBufferedNewMessage(event, userId, effectiveActiveInstanceId);
+        const queuedBufferedMessage = await queueBufferedNewMessage(event, userId, effectiveActiveInstanceId);
         await client.raiseEvent(effectiveActiveInstanceId, 'BufferedIngressQueued', {
-          correlationId: eventCorrelationId,
+          docId: queuedBufferedMessage.docId,
+          correlationId: queuedBufferedMessage.correlationId,
         });
         return { outcome: 'started' };
       }

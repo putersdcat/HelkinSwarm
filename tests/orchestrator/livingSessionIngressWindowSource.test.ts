@@ -9,6 +9,7 @@ describe('living session ingress window source guards', () => {
 
     expect(overseerSource).toContain("context.df.waitForExternalEvent('NewMessage')");
     expect(overseerSource).toContain("context.df.waitForExternalEvent('BufferedIngressQueued')");
+    expect(overseerSource).toContain("action: 'claim-buffered-message'");
     expect(overseerSource).toContain("action: 'mark-active-processing'");
     expect(overseerSource).toContain("action: 'dequeue-new-message'");
     expect(overseerSource).toContain("action: 'open'");
@@ -16,6 +17,7 @@ describe('living session ingress window source guards', () => {
     expect(overseerSource).toContain('const INGRESS_BUFFER_POLL_MS = 2_000;');
     expect(overseerSource).toContain('bufferedPollTimer');
     expect(overseerSource).toContain('bufferedIngressQueuedEvent');
+    expect(overseerSource).toContain('bufferedIngressSignal.docId');
     expect(overseerSource).toContain('bufferedDuringIngressWindow');
     expect(overseerSource).toContain("context.df.setCustomStatus({");
     expect(overseerSource).toContain("stage: 'active-processing'");
@@ -29,7 +31,9 @@ describe('living session ingress window source guards', () => {
     expect(activitySource).toContain("name: 'LivingSessionIngressWindowOpened'");
     expect(activitySource).toContain("name: 'LivingSessionNewMessageDrained'");
     expect(bufferedIngressSource).toContain("action: z.literal('dequeue-new-message')");
+    expect(bufferedIngressSource).toContain("action: z.literal('claim-buffered-message')");
     expect(bufferedIngressSource).toContain('await container.items.upsert(doc);');
+    expect(bufferedIngressSource).toContain('export async function claimBufferedNewMessageForUser(');
     expect(bufferedIngressSource).toContain("name: 'BufferedIngressQueued'");
     expect(bufferedIngressSource).toContain("name: 'BufferedIngressDequeued'");
     expect(bufferedIngressSource).toContain("status: z.enum(['queued', 'dequeued', 'replayed']).default('queued')");

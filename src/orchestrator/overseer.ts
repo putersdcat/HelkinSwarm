@@ -83,6 +83,7 @@ interface HookFiredEvent {
 }
 
 interface BufferedIngressQueuedEvent {
+  docId?: string;
   correlationId?: string;
 }
 
@@ -229,8 +230,38 @@ df.app.orchestration('overseer', function* (context) {
       }
 
       if (winner === bufferedIngressQueuedEvent) {
-        void (bufferedIngressQueuedEvent.result as BufferedIngressQueuedEvent);
+        const bufferedIngressSignal = bufferedIngressQueuedEvent.result as BufferedIngressQueuedEvent;
         bufferedIngressQueuedEvent = context.df.waitForExternalEvent('BufferedIngressQueued');
+
+        if (bufferedIngressSignal.docId) {
+          const claimedBufferedMessage = (yield context.df.callActivity('bufferedIngressActivity', {
+            action: 'claim-buffered-message',
+            userId: state.userId,
+            docId: bufferedIngressSignal.docId,
+          } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
+
+          if (claimedBufferedMessage) {
+            ingressTimer.cancel();
+            bufferedPollTimer.cancel();
+            const drainedCorrelationId = claimedBufferedMessage.correlationId
+              ?? bufferedIngressSignal.correlationId
+              ?? crypto.randomUUID();
+
+            yield context.df.callActivity('ingressWindowStageActivity', {
+              action: 'drain',
+              correlationId: completedCorrelationId,
+              nextCorrelationId: drainedCorrelationId,
+              userId: state.userId,
+              instanceId: context.df.instanceId,
+            } satisfies IngressWindowStageInput);
+
+            nextMessage = {
+              ...claimedBufferedMessage,
+              correlationId: drainedCorrelationId,
+            };
+            break;
+          }
+        }
       }
 
       const bufferedDuringIngressWindow = (yield context.df.callActivity('bufferedIngressActivity', {

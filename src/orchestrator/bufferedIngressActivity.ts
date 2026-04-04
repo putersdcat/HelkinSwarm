@@ -14,6 +14,11 @@ const BufferedIngressActivityInputSchema = z.discriminatedUnion('action', [
     action: z.literal('dequeue-new-message'),
     userId: z.string().min(1),
   }),
+  z.object({
+    action: z.literal('claim-buffered-message'),
+    userId: z.string().min(1),
+    docId: z.string().min(1),
+  }),
 ]);
 
 export type BufferedIngressActivityInput = z.infer<typeof BufferedIngressActivityInputSchema>;
@@ -65,6 +70,11 @@ export interface BufferedQueuedReplayCandidate {
   event: NewMessageEvent;
 }
 
+export interface BufferedIngressQueuedDocumentRef {
+  docId: string;
+  correlationId: string;
+}
+
 function toNewMessageEvent(doc: BufferedNewMessageDocument): NewMessageEvent {
   return {
     userMessage: doc.userMessage,
@@ -106,7 +116,7 @@ export async function queueBufferedNewMessage(
   event: NewMessageEvent,
   userId: string,
   targetInstanceId?: string,
-): Promise<void> {
+): Promise<BufferedIngressQueuedDocumentRef> {
   const correlationId = event.correlationId ?? crypto.randomUUID();
   const doc = BufferedNewMessageDocumentSchema.parse({
     id: `buffered-new-message-${correlationId}`,
@@ -146,6 +156,49 @@ export async function queueBufferedNewMessage(
       source: event.devLoopContext?.isDevLoop ? 'devloop-relay' : 'unknown',
     },
   });
+
+  return {
+    docId: doc.id,
+    correlationId,
+  } satisfies BufferedIngressQueuedDocumentRef;
+}
+
+export async function claimBufferedNewMessageForUser(
+  docId: string,
+  userId: string,
+): Promise<NewMessageEvent | null> {
+  const container = getContainer(SESSIONS_CONTAINER);
+  let doc: BufferedNewMessageDocument | undefined;
+
+  try {
+    const { resource } = await container.item(docId, userId).read<BufferedNewMessageDocument>();
+    doc = resource ?? undefined;
+  } catch {
+    return null;
+  }
+
+  if (!doc || doc.status !== 'queued') {
+    return null;
+  }
+
+  const dequeuedAt = new Date().toISOString();
+  await container.item(docId, userId).replace({
+    ...doc,
+    status: 'dequeued',
+    dequeuedAt,
+  });
+
+  trackEvent({
+    name: 'BufferedIngressDequeued',
+    correlationId: doc.correlationId,
+    userId: doc.userId,
+    properties: {
+      instanceId: doc.targetInstanceId ?? 'unknown',
+      source: doc.devLoopContextJson ? 'devloop-relay' : 'unknown',
+    },
+  });
+
+  return toNewMessageEvent(doc);
 }
 
 export async function dequeueBufferedNewMessageForUser(
@@ -301,6 +354,8 @@ export async function handleBufferedIngressActivity(
   switch (input.action) {
     case 'dequeue-new-message':
       return dequeueBufferedNewMessageForUser(input.userId);
+    case 'claim-buffered-message':
+      return claimBufferedNewMessageForUser(input.docId, input.userId);
   }
 }
 
