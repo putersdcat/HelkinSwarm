@@ -12,6 +12,9 @@ describe('living session ingress window source guards', () => {
     expect(overseerSource).toContain("action: 'dequeue-new-message'");
     expect(overseerSource).toContain("action: 'open'");
     expect(overseerSource).toContain("action: 'drain'");
+    expect(overseerSource).toContain("context.df.setCustomStatus({");
+    expect(overseerSource).toContain("stage: 'active-processing'");
+    expect(overseerSource).toContain("stage: 'awaiting-ingress'");
     expect(overseerSource).toContain('const sessionInstanceId = `session-${context.df.instanceId}-${sessionInput.correlationId}`;');
     expect(activitySource).toContain("action: z.literal('mark-active-processing')");
     expect(activitySource).toContain("recordOrchestratorStage(input.correlationId, 'active-processing', input.userId, Date.now(), input.instanceId);");

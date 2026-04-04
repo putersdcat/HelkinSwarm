@@ -79,6 +79,11 @@ interface HookFiredEvent {
   firedAt: string;
 }
 
+interface OverseerCustomStatus {
+  stage: 'active-processing' | 'awaiting-ingress';
+  correlationId: string;
+}
+
 df.app.orchestration('overseer', function* (context) {
   // Each instance handles exactly one message, then completes.
   // raiseToOverseer provides the NewMessageEvent as input.
@@ -126,6 +131,11 @@ df.app.orchestration('overseer', function* (context) {
       };
       continue;
     }
+
+    context.df.setCustomStatus({
+      stage: 'awaiting-ingress',
+      correlationId: completedCorrelationId,
+    } satisfies OverseerCustomStatus);
 
     yield context.df.callActivity('ingressWindowStageActivity', {
       action: 'open',
@@ -224,6 +234,10 @@ function* processTurn(
     userId: state.userId,
     instanceId: context.df.instanceId,
   } satisfies IngressWindowStageInput);
+  context.df.setCustomStatus({
+    stage: 'active-processing',
+    correlationId,
+  } satisfies OverseerCustomStatus);
 
   // Guard: race sub-orchestrator against a 5-minute timeout (#211)
   const SESSION_TIMEOUT_MS = 5 * 60 * 1000;

@@ -27,7 +27,9 @@ describe('external event overseer routing source guards', () => {
 
     expect(devLoopRelay).toContain('resolveDeliverableOverseerInstanceId');
     expect(devLoopRelay).toContain("const activeOverseerInstanceId = await resolveDeliverableOverseerInstanceId(client, userId);");
-    expect(devLoopRelay).toContain('await getActiveTurnStagesForUser(userId)');
+    expect(devLoopRelay).toContain('client.getStatus(activeOverseerInstanceId)');
+    expect(devLoopRelay).toContain('parseOverseerCustomStatus(activeOverseerStatus?.customStatus)');
+    expect(devLoopRelay).toContain('getActiveTurnStagesForUser(userId),');
     expect(devLoopRelay).toContain('shouldBufferNewMessageForActiveProcessing');
     expect(devLoopRelay).toContain('await queueBufferedNewMessage(event, userId, activeOverseerInstanceId);');
     expect(devLoopRelay).toContain("source: 'devloop-relay'");

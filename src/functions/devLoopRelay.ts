@@ -103,6 +103,11 @@ const ModelDegradationProofPayloadSchema = z.discriminatedUnion('action', [
   }),
 ]);
 
+const OverseerCustomStatusSchema = z.object({
+  stage: z.enum(['active-processing', 'awaiting-ingress']),
+  correlationId: z.string().min(1),
+});
+
 function buildDevLoopPushMessageBody(payload: Record<string, unknown>): string {
   const directText = payload['message']
     ?? payload['body']
@@ -124,16 +129,29 @@ function isRuntimeIngressMessageType(
 }
 
 function shouldBufferNewMessageForActiveProcessing(
-  instanceId: string,
+  customStatus: z.infer<typeof OverseerCustomStatusSchema> | undefined,
   activeTurnEntries: ReadonlyArray<{ stage: string; instanceId?: string }>,
 ): boolean {
+  if (customStatus?.stage === 'active-processing') {
+    return true;
+  }
+
+  if (customStatus?.stage === 'awaiting-ingress') {
+    return false;
+  }
+
   if (activeTurnEntries.length === 0) {
     return false;
   }
 
   return !activeTurnEntries.some(
-    (entry) => entry.stage === 'awaiting-ingress' && entry.instanceId === instanceId,
+    (entry) => entry.stage === 'awaiting-ingress',
   );
+}
+
+function parseOverseerCustomStatus(rawStatus: unknown): z.infer<typeof OverseerCustomStatusSchema> | undefined {
+  const parsed = OverseerCustomStatusSchema.safeParse(rawStatus);
+  return parsed.success ? parsed.data : undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -170,9 +188,13 @@ app.http('devloopPush', {
     const client = df.getClient(context);
     const activeOverseerInstanceId = await resolveDeliverableOverseerInstanceId(client, userId);
     const canIngressToRuntime = activeOverseerInstanceId && isRuntimeIngressMessageType(doc.messageType);
-    const activeTurnEntries = canIngressToRuntime
-      ? await getActiveTurnStagesForUser(userId)
-      : [];
+    const [activeTurnEntries, activeOverseerStatus] = canIngressToRuntime
+      ? await Promise.all([
+          getActiveTurnStagesForUser(userId),
+          client.getStatus(activeOverseerInstanceId),
+        ])
+      : [[], undefined] as const;
+    const activeOverseerCustomStatus = parseOverseerCustomStatus(activeOverseerStatus?.customStatus);
     const conversationReference = canIngressToRuntime
       ? await getConversationReference(userId)
       : null;
@@ -207,7 +229,7 @@ app.http('devloopPush', {
 
       try {
         if (ingressDecision.decision === 'steer') {
-          if (shouldBufferNewMessageForActiveProcessing(activeOverseerInstanceId, activeTurnEntries)) {
+          if (shouldBufferNewMessageForActiveProcessing(activeOverseerCustomStatus, activeTurnEntries)) {
             await queueBufferedNewMessage(event, userId, activeOverseerInstanceId);
             deliveryMode = 'buffered-active-processing';
           } else {
@@ -231,6 +253,7 @@ app.http('devloopPush', {
         messageId: doc.id,
         deliveredToOverseer,
         deliveryMode,
+        activeOverseerStage: activeOverseerCustomStatus?.stage ?? 'unknown',
         instanceId: activeOverseerInstanceId ?? 'none',
       },
     });
@@ -755,11 +778,18 @@ app.http('devloopNewMessage', {
     }
 
     const correlationId = `${body.correlationPrefix}-${Date.now()}`;
-    const activeTurnEntries = await getActiveTurnStagesForUser(userId);
-    const hasActiveSession = activeTurnEntries.some((entry) => entry.instanceId === resolvedInstanceId);
-    const activeSessionRoutable = activeTurnEntries.some(
-      (entry) => entry.stage === 'awaiting-ingress' && entry.instanceId === resolvedInstanceId,
-    );
+    const [activeTurnEntries, resolvedOverseerStatus] = await Promise.all([
+      getActiveTurnStagesForUser(userId),
+      client.getStatus(resolvedInstanceId),
+    ]);
+    const resolvedOverseerCustomStatus = parseOverseerCustomStatus(resolvedOverseerStatus?.customStatus);
+    const hasActiveSession = resolvedOverseerStatus?.runtimeStatus === OrchestrationRuntimeStatus.Running
+      || resolvedOverseerStatus?.runtimeStatus === OrchestrationRuntimeStatus.Pending
+      || activeTurnEntries.some((entry) => entry.instanceId === resolvedInstanceId);
+    const activeSessionRoutable = resolvedOverseerCustomStatus?.stage === 'awaiting-ingress'
+      || activeTurnEntries.some(
+        (entry) => entry.stage === 'awaiting-ingress' && entry.instanceId === resolvedInstanceId,
+      );
     recordLimbicIngressDecision({
       source: 'devloop-relay',
       userId,
@@ -777,7 +807,7 @@ app.http('devloopNewMessage', {
     };
 
     const shouldBuffer = shouldBufferNewMessageForActiveProcessing(
-      resolvedInstanceId,
+      resolvedOverseerCustomStatus,
       activeTurnEntries,
     );
 
@@ -819,6 +849,7 @@ app.http('devloopNewMessage', {
         deliveredToOverseer: true,
           deliveryMode: shouldBuffer ? 'buffered-active-processing' : 'external-event',
         source: 'devloop-relay',
+        activeOverseerStage: resolvedOverseerCustomStatus?.stage ?? 'unknown',
         activeTurnCount: activeTurnEntries.length,
         instanceId: resolvedInstanceId,
       },
@@ -829,6 +860,7 @@ app.http('devloopNewMessage', {
       jsonBody: {
         correlationId,
         deliveryMode: shouldBuffer ? 'buffered-active-processing' : 'external-event',
+        activeOverseerStage: resolvedOverseerCustomStatus?.stage ?? null,
         instanceId: resolvedInstanceId,
       },
     };

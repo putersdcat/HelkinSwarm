@@ -7,7 +7,10 @@ describe('devloop new-message injection proof surface', () => {
 
     expect(source).toContain("route: 'devloop/new-message'");
     expect(source).toContain("import { queueBufferedNewMessage } from '../orchestrator/bufferedIngressActivity.js';");
-    expect(source).toContain('const activeTurnEntries = await getActiveTurnStagesForUser(userId);');
+    expect(source).toContain('const [activeTurnEntries, resolvedOverseerStatus] = await Promise.all([');
+    expect(source).toContain('getActiveTurnStagesForUser(userId),');
+    expect(source).toContain('const OverseerCustomStatusSchema = z.object({');
+    expect(source).toContain('client.getStatus(resolvedInstanceId)');
     expect(source).toContain('recordLimbicIngressDecision({');
     expect(source).toContain("source: 'devloop-relay'");
     expect(source).toContain('compatibilityMode: getEnvConfig().livingMindCompatibilityMode');
@@ -19,6 +22,7 @@ describe('devloop new-message injection proof surface', () => {
     expect(source).toContain("endpoint: 'new-message'");
     expect(source).toContain('deliveredToOverseer: true,');
     expect(source).toContain("deliveryMode: shouldBuffer ? 'buffered-active-processing' : 'external-event'");
+    expect(source).toContain("activeOverseerStage: resolvedOverseerCustomStatus?.stage ?? null");
     expect(source).toContain('correlationPrefix: z.string().min(3).max(80).default(\'devloop-injected\')');
     expect(source).toContain('instanceIdOverride: z.string().min(1).optional()');
     expect(source).toContain('status: 500,');
