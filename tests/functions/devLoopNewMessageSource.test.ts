@@ -17,8 +17,9 @@ describe('devloop new-message injection proof surface', () => {
     expect(source).toContain('const resolvedInstanceId = body.instanceIdOverride');
     expect(source).toContain('?? await resolveDeliverableOverseerInstanceId(client, userId);');
     expect(source).toContain('const shouldBuffer = shouldBufferNewMessageForActiveProcessing(');
-    expect(source).toContain('await queueBufferedNewMessage(event, userId, resolvedInstanceId);');
-    expect(source).toContain("await client.raiseEvent(resolvedInstanceId, 'BufferedIngressQueued', {");
+    expect(source).toContain('const bufferedTargetInstanceId = pickBufferedIngressTargetInstanceId(activeTurnEntries, resolvedInstanceId);');
+    expect(source).toContain('await queueBufferedNewMessage(event, userId, bufferedTargetInstanceId);');
+    expect(source).toContain("await client.raiseEvent(bufferedTargetInstanceId, 'BufferedIngressQueued', {");
     expect(source).toContain("await client.raiseEvent(resolvedInstanceId, 'NewMessage', event);");
     expect(source).toContain("endpoint: 'new-message'");
     expect(source).toContain('deliveredToOverseer: true,');

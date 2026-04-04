@@ -149,6 +149,16 @@ function shouldBufferNewMessageForActiveProcessing(
   );
 }
 
+function pickBufferedIngressTargetInstanceId(
+  activeTurnEntries: ReadonlyArray<{ instanceId?: string; updatedAtMs?: number }>,
+  fallbackInstanceId: string,
+): string {
+  return activeTurnEntries
+    .filter((entry): entry is { instanceId: string; updatedAtMs?: number } => typeof entry.instanceId === 'string')
+    .sort((left, right) => (right.updatedAtMs ?? 0) - (left.updatedAtMs ?? 0))[0]?.instanceId
+    ?? fallbackInstanceId;
+}
+
 function parseOverseerCustomStatus(rawStatus: unknown): z.infer<typeof OverseerCustomStatusSchema> | undefined {
   const parsed = OverseerCustomStatusSchema.safeParse(rawStatus);
   return parsed.success ? parsed.data : undefined;
@@ -201,8 +211,10 @@ app.http('devloopPush', {
 
     let deliveredToOverseer = false;
     let deliveryMode: 'external-event' | 'buffered-active-processing' | 'not-delivered' = 'not-delivered';
+    let deliveredInstanceId: string | undefined = activeOverseerInstanceId ?? undefined;
     if (activeOverseerInstanceId && canIngressToRuntime) {
       const correlationId = doc.correlationTag;
+      const bufferedTargetInstanceId = pickBufferedIngressTargetInstanceId(activeTurnEntries, activeOverseerInstanceId);
       const ingressDecision = recordLimbicIngressDecision({
         source: 'devloop-relay',
         userId,
@@ -230,14 +242,16 @@ app.http('devloopPush', {
       try {
         if (ingressDecision.decision === 'steer') {
           if (shouldBufferNewMessageForActiveProcessing(activeOverseerCustomStatus, activeTurnEntries)) {
-            await queueBufferedNewMessage(event, userId, activeOverseerInstanceId);
-            await client.raiseEvent(activeOverseerInstanceId, 'BufferedIngressQueued', {
+            await queueBufferedNewMessage(event, userId, bufferedTargetInstanceId);
+            await client.raiseEvent(bufferedTargetInstanceId, 'BufferedIngressQueued', {
               correlationId,
             });
             deliveryMode = 'buffered-active-processing';
+            deliveredInstanceId = bufferedTargetInstanceId;
           } else {
             await client.raiseEvent(activeOverseerInstanceId, 'NewMessage', event);
             deliveryMode = 'external-event';
+            deliveredInstanceId = activeOverseerInstanceId;
           }
           deliveredToOverseer = true;
         }
@@ -257,7 +271,7 @@ app.http('devloopPush', {
         deliveredToOverseer,
         deliveryMode,
         activeOverseerStage: activeOverseerCustomStatus?.stage ?? 'unknown',
-        instanceId: activeOverseerInstanceId ?? 'none',
+        instanceId: deliveredInstanceId ?? 'none',
       },
     });
     return {
@@ -267,7 +281,7 @@ app.http('devloopPush', {
         correlationTag: doc.correlationTag,
         deliveredToOverseer,
         deliveryMode,
-        instanceId: activeOverseerInstanceId ?? null,
+        instanceId: deliveredInstanceId ?? null,
       },
     };
   },
@@ -809,6 +823,7 @@ app.http('devloopNewMessage', {
       correlationId,
     };
 
+    const bufferedTargetInstanceId = pickBufferedIngressTargetInstanceId(activeTurnEntries, resolvedInstanceId);
     const shouldBuffer = shouldBufferNewMessageForActiveProcessing(
       resolvedOverseerCustomStatus,
       activeTurnEntries,
@@ -816,8 +831,8 @@ app.http('devloopNewMessage', {
 
     try {
       if (shouldBuffer) {
-        await queueBufferedNewMessage(event, userId, resolvedInstanceId);
-        await client.raiseEvent(resolvedInstanceId, 'BufferedIngressQueued', {
+        await queueBufferedNewMessage(event, userId, bufferedTargetInstanceId);
+        await client.raiseEvent(bufferedTargetInstanceId, 'BufferedIngressQueued', {
           correlationId,
         });
       } else {
@@ -857,7 +872,7 @@ app.http('devloopNewMessage', {
         source: 'devloop-relay',
         activeOverseerStage: resolvedOverseerCustomStatus?.stage ?? 'unknown',
         activeTurnCount: activeTurnEntries.length,
-        instanceId: resolvedInstanceId,
+        instanceId: shouldBuffer ? bufferedTargetInstanceId : resolvedInstanceId,
       },
     });
 
@@ -867,7 +882,7 @@ app.http('devloopNewMessage', {
         correlationId,
         deliveryMode: shouldBuffer ? 'buffered-active-processing' : 'external-event',
         activeOverseerStage: resolvedOverseerCustomStatus?.stage ?? null,
-        instanceId: resolvedInstanceId,
+        instanceId: shouldBuffer ? bufferedTargetInstanceId : resolvedInstanceId,
       },
     };
   },
