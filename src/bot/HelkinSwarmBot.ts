@@ -89,6 +89,7 @@ import {
   readMindSessionGuardState,
   signalMindSessionAcquire,
 } from '../orchestrator/mindSessionGuard.js';
+import { queueBufferedNewMessage } from '../orchestrator/bufferedIngressActivity.js';
 
 const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
 const MODEL_OVERRIDE_ACK_RECOVERY_DELAY_MS = 45_000;
@@ -1195,6 +1196,32 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         consciousModelImpaired: consciousLane.isImpaired,
         requestedTaskComplexity,
       });
+
+      if (
+        ingressDecision.decision === 'queue'
+        && hasActiveGuard
+        && effectiveActiveInstanceId
+        && interruptionDepth < MAX_INTERRUPTION_DEPTH
+      ) {
+        trackEvent({
+          name: 'PolicyOverrideApplied',
+          correlationId: eventCorrelationId,
+          userId,
+          properties: {
+            authority: 'living-session-buffered-redirection',
+            source: 'teams-message',
+            activeInstanceId: effectiveActiveInstanceId,
+            requestedInstanceId: identity.instanceId,
+            interruptionDepth,
+          },
+        });
+
+        await queueBufferedNewMessage(event, userId, effectiveActiveInstanceId);
+        await client.raiseEvent(effectiveActiveInstanceId, 'BufferedIngressQueued', {
+          correlationId: eventCorrelationId,
+        });
+        return { outcome: 'started' };
+      }
 
       if (ingressDecision.decision === 'queue' || ingressDecision.decision === 'defer') {
         const creationReason = ingressDecision.decision === 'defer'
