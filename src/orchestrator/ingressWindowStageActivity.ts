@@ -5,6 +5,12 @@ import { trackEvent } from '../observability/telemetry.js';
 
 const IngressWindowStageInputSchema = z.discriminatedUnion('action', [
   z.object({
+    action: z.literal('mark-active-processing'),
+    correlationId: z.string().min(1),
+    userId: z.string().min(1),
+    instanceId: z.string().min(1),
+  }),
+  z.object({
     action: z.literal('open'),
     correlationId: z.string().min(1),
     userId: z.string().min(1),
@@ -39,6 +45,11 @@ export type { IngressWindowStageInput };
 
 export async function handleIngressWindowStage(rawInput: IngressWindowStageInput): Promise<void> {
   const input = IngressWindowStageInputSchema.parse(rawInput);
+
+  if (input.action === 'mark-active-processing') {
+    await recordOrchestratorStage(input.correlationId, 'active-processing', input.userId, Date.now(), input.instanceId);
+    return;
+  }
 
   if (input.action === 'open') {
     await recordOrchestratorStage(input.correlationId, 'awaiting-ingress', input.userId, Date.now(), input.instanceId);

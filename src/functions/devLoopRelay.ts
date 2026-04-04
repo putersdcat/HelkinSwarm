@@ -756,12 +756,17 @@ app.http('devloopNewMessage', {
 
     const correlationId = `${body.correlationPrefix}-${Date.now()}`;
     const activeTurnEntries = await getActiveTurnStagesForUser(userId);
+    const hasActiveSession = activeTurnEntries.some((entry) => entry.instanceId === resolvedInstanceId);
+    const activeSessionRoutable = activeTurnEntries.some(
+      (entry) => entry.stage === 'awaiting-ingress' && entry.instanceId === resolvedInstanceId,
+    );
     recordLimbicIngressDecision({
       source: 'devloop-relay',
       userId,
       correlationId,
       compatibilityMode: getEnvConfig().livingMindCompatibilityMode,
-      hasActiveSession: false,
+      hasActiveSession,
+      activeSessionRoutable,
     });
 
     const event: NewMessageEvent = {
@@ -814,6 +819,7 @@ app.http('devloopNewMessage', {
         deliveredToOverseer: true,
           deliveryMode: shouldBuffer ? 'buffered-active-processing' : 'external-event',
         source: 'devloop-relay',
+        activeTurnCount: activeTurnEntries.length,
         instanceId: resolvedInstanceId,
       },
     });

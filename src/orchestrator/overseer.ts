@@ -218,6 +218,13 @@ function* processTurn(
     quotedContext: event.quotedContext,
   };
 
+  yield context.df.callActivity('ingressWindowStageActivity', {
+    action: 'mark-active-processing',
+    correlationId,
+    userId: state.userId,
+    instanceId: context.df.instanceId,
+  } satisfies IngressWindowStageInput);
+
   // Guard: race sub-orchestrator against a 5-minute timeout (#211)
   const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
   const sessionDeadline = new Date(context.df.currentUtcDateTime.getTime() + SESSION_TIMEOUT_MS);
