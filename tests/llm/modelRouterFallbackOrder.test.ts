@@ -1,4 +1,16 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+async function seedDegradedLane(deploymentName: string) {
+  const circuitBreaker = await import('../../src/llm/modelCircuitBreaker.js');
+  circuitBreaker.markModelDegraded(deploymentName, 'HTTP 503', 60_000);
+}
+
+async function seedTrackedDownLane(deploymentName: string) {
+  const healthTracker = await import('../../src/llm/llmHealthTracker.js');
+  healthTracker.registerModels([deploymentName]);
+  healthTracker.reportLlmFailure(deploymentName);
+  healthTracker.reportLlmFailure(deploymentName);
+}
 
 async function loadModelRouterWithDefaults() {
   vi.resetModules();
@@ -15,6 +27,13 @@ async function loadModelRouterWithDefaults() {
 }
 
 describe('modelRouter fallback ordering (#411)', () => {
+  beforeEach(async () => {
+    const circuitBreaker = await import('../../src/llm/modelCircuitBreaker.js');
+    const healthTracker = await import('../../src/llm/llmHealthTracker.js');
+    circuitBreaker.resetAllDegraded();
+    healthTracker.resetLlmHealthTracker();
+  });
+
   afterEach(() => {
     delete process.env['LLM_PRIMARY_MODEL'];
     delete process.env['LLM_SECONDARY_MODEL'];
@@ -44,6 +63,36 @@ describe('modelRouter fallback ordering (#411)', () => {
 
     expect(routing.deploymentName).toBe('gpt-5.4-mini');
     expect(routing.isReasoning).toBe(false);
+  });
+
+  it('automatically restores ordinary routing to the high-capacity reasoning lane when the impaired default lane is degraded', async () => {
+    const modelRouter = await loadModelRouterWithDefaults();
+    await seedDegradedLane('gpt-5.4-mini');
+
+    const routing = modelRouter.getModelRouting();
+
+    expect(routing.deploymentName).toBe('o4-mini');
+    expect(routing.isReasoning).toBe(true);
+  });
+
+  it('automatically restores ordinary routing when the impaired default lane is tracked down by health signals', async () => {
+    const modelRouter = await loadModelRouterWithDefaults();
+    await seedTrackedDownLane('gpt-5.4-mini');
+
+    const routing = modelRouter.getModelRouting();
+
+    expect(routing.deploymentName).toBe('o4-mini');
+    expect(routing.isReasoning).toBe(true);
+  });
+
+  it('falls back to the primary lane when both the impaired default lane and reasoning lane are unavailable', async () => {
+    const modelRouter = await loadModelRouterWithDefaults();
+    await seedDegradedLane('gpt-5.4-mini');
+    await seedDegradedLane('o4-mini');
+
+    const routing = modelRouter.getModelRouting();
+
+    expect(routing.deploymentName).toBe('grok-4-1-fast-non-reasoning');
   });
 
   it('falls from gpt-5.4-mini into tertiary defaults before circling back to Grok primary', async () => {

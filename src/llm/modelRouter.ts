@@ -2,6 +2,8 @@
 // Spec ref: 06-Tool-Dispatch-LLM-Layer.md, 0b-Model-Specific-Tool-Presentation.md
 
 import { getEnvConfig } from '../config/envConfig.js';
+import { isModelDegraded } from './modelCircuitBreaker.js';
+import { isModelTrackedDown } from './llmHealthTracker.js';
 
 // ---------------------------------------------------------------------------
 // Model lanes
@@ -200,6 +202,45 @@ function findCapacityProfile(deploymentName: string): ModelCapacityProfile | und
     .find((profile) => normalized === profile.modelId.toLowerCase() || normalized.startsWith(`${profile.modelId.toLowerCase()}-`));
 }
 
+function isUnavailableForConsciousRouting(deploymentName: string | undefined): boolean {
+  if (!deploymentName) {
+    return true;
+  }
+
+  return isModelDegraded(deploymentName) || isModelTrackedDown(deploymentName);
+}
+
+function selectRestoredConsciousLaneDeployment(lane: ModelLane, currentDeploymentName: string): string {
+  const currentProfile = getModelCapacityProfile(currentDeploymentName);
+  if (currentProfile.capacityLevel !== 'low' || !isUnavailableForConsciousRouting(currentDeploymentName)) {
+    return currentDeploymentName;
+  }
+
+  const restorationCandidates = [lane.reasoning, lane.primary]
+    .filter((deploymentName): deploymentName is string => !!deploymentName)
+    .filter((deploymentName) => deploymentName !== currentDeploymentName)
+    .filter((deploymentName) => !isUnavailableForConsciousRouting(deploymentName));
+
+  const rankedCandidates = restorationCandidates
+    .map((deploymentName) => ({
+      deploymentName,
+      capacityLevel: getModelCapacityProfile(deploymentName).capacityLevel,
+    }))
+    .sort((left, right) => {
+      const rank = (capacityLevel: ModelCapacityLevel): number => {
+        switch (capacityLevel) {
+          case 'high': return 0;
+          case 'medium': return 1;
+          case 'low': return 2;
+        }
+      };
+
+      return rank(left.capacityLevel) - rank(right.capacityLevel);
+    });
+
+  return rankedCandidates[0]?.deploymentName ?? currentDeploymentName;
+}
+
 function getAzureRouting(config: ReturnType<typeof getEnvConfig>): ModelRouting {
   if (config.euResidencyMode) {
     const lane = getEuLane(config);
@@ -218,7 +259,7 @@ function getAzureRouting(config: ReturnType<typeof getEnvConfig>): ModelRouting 
   // /heavy still opts into reasoning explicitly, and the Grok slot remains available via
   // fallback plus direct override, but default unlabeled prompts should stay on the most
   // reliable lane during active development/debugging (#480).
-  const deploymentName = lane.secondary;
+  const deploymentName = selectRestoredConsciousLaneDeployment(lane, lane.secondary);
   return {
     lane,
     laneName: 'global',
