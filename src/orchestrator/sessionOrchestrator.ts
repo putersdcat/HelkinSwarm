@@ -176,12 +176,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     ? input.devLoopContext.body
     : input.userMessage;
 
-  const isExplicitReadOnlyDiscoveryRequest = isReadOnlyDiscoveryRequest(userMessageForLlm);
   const exactReplyInstruction = parseExactReplyInstruction(rawUserMessageForRouting);
-
-  if (isExplicitReadOnlyDiscoveryRequest) {
-    userMessageForLlm = buildReadOnlyDiscoveryQuery(userMessageForLlm);
-  }
 
   let resolvedModelOverride = input.modelOverride;
   let pendingClarificationUpdate: PendingClarification | null | undefined;
@@ -367,11 +362,17 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   const recentUserText = [...input.state.recentHistory]
     .reverse()
     .find((turn) => turn.role === 'user')?.content;
-  const effectiveTaskMessage = buildContextAwareRoutingMessage(userMessageForLlm, {
+  let effectiveTaskMessage = buildContextAwareRoutingMessage(userMessageForLlm, {
     quotedText: input.quotedContext?.text,
     recentUserText,
     recentAssistantText,
   });
+  const isExplicitReadOnlyDiscoveryRequest = isReadOnlyDiscoveryRequest(effectiveTaskMessage);
+  if (isExplicitReadOnlyDiscoveryRequest) {
+    const readOnlyDiscoveryQuery = buildReadOnlyDiscoveryQuery(effectiveTaskMessage);
+    userMessageForLlm = readOnlyDiscoveryQuery;
+    effectiveTaskMessage = readOnlyDiscoveryQuery;
+  }
 
   if (persistClarificationClearBeforeLongRunningWork) {
     const preConfirmationState: OverseerState = {

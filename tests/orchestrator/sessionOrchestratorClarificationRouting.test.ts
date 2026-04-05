@@ -5,8 +5,10 @@ describe('sessionOrchestrator clarification routing', () => {
   it('uses the effective resumed task text for discovery forcing and follow-up routing', () => {
     const source = readFileSync('src/orchestrator/sessionOrchestrator.ts', 'utf8');
 
-    expect(source).toContain('const isExplicitReadOnlyDiscoveryRequest = isReadOnlyDiscoveryRequest(userMessageForLlm);');
-    expect(source).toContain('const effectiveTaskMessage = buildContextAwareRoutingMessage(userMessageForLlm, {');
+    expect(source).toContain('let effectiveTaskMessage = buildContextAwareRoutingMessage(userMessageForLlm, {');
+    expect(source).toContain('const isExplicitReadOnlyDiscoveryRequest = isReadOnlyDiscoveryRequest(effectiveTaskMessage);');
+    expect(source).toContain('const readOnlyDiscoveryQuery = buildReadOnlyDiscoveryQuery(effectiveTaskMessage);');
+    expect(source).toContain('effectiveTaskMessage = readOnlyDiscoveryQuery;');
     expect(source).toContain('const allToolSchemas = toolRegistry.toFunctionSchemas();');
     expect(source).toContain('const initialToolSchemas = getDiscoveryFirstToolSchemas();');
     expect(source).toContain('synthesizeRuntimeAssetInlineEmailToolCall(');
