@@ -5,7 +5,7 @@
 import * as df from 'durable-functions';
 import type { OverseerState } from './stateManager.js';
 import type { BuildPromptInput, PromptResult } from './buildPromptActivity.js';
-import type { LlmResult } from './llmActivity.js';
+import type { LlmActivityInput, LlmResult } from './llmActivity.js';
 import type { SendReplyInput, SendReplyResult } from './sendReplyActivity.js';
 import type { ConversationReference } from 'botbuilder';
 import type { SteeringInjectionResult } from './steeringInjectionActivity.js';
@@ -415,6 +415,31 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   );
   spans.push({ label: 'prompt', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
 
+  if (prompt.replyAlreadyDelivered) {
+    trackEvent({
+      name: 'PolicyOverrideApplied',
+      correlationId,
+      userId: input.state.userId,
+      properties: {
+        authority: 'post-reply-activity-replay-suppression',
+        source: 'buildPromptActivity',
+      },
+    });
+
+    return {
+      response: '(duplicate replay suppressed after visible reply delivery)',
+      cleanResponse: '(duplicate replay suppressed after visible reply delivery)',
+      tokensUsed: 0,
+      promptTokens: 0,
+      model: 'duplicate-replay-suppressed',
+      toolCalls: [],
+      toolResults: null,
+      replySent: true,
+      safetyPassed: true,
+      duplicateReplaySuppressed: true,
+    } satisfies SessionResult;
+  }
+
   // 1b. Plan activity — classify complexity & decompose multi-step requests (#320)
   // Simple requests skip the LLM planning call (zero overhead).
   spanStart = context.df.currentUtcDateTime.getTime();
@@ -455,6 +480,17 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   const initialToolSchemas = deterministicInitialToolCall
     ? getDiscoveryFirstToolSchemas()
     : deriveContextAwareInitialToolSchemas(effectiveTaskMessage, allToolSchemas);
+  const llmInput: LlmActivityInput = {
+    ...promptWithPlan,
+    correlationId,
+    userId: input.state.userId,
+    conversationId: input.state.conversationId,
+    modelOverride: resolvedModelOverride,
+    imageUrls: input.imageUrls,
+    tools: initialToolSchemas,
+    toolChoice: getForcedInitialToolChoice(effectiveTaskMessage, initialToolSchemas) ?? 'auto',
+  };
+
   const llmResult: LlmResult = deterministicInitialToolCall
     ? {
         content: '',
@@ -470,19 +506,33 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         operationalNotices: [],
         failoverSteps: [],
       }
-    : yield context.df.callActivity(
-      'llmActivity',
-      {
-        ...promptWithPlan,
-        correlationId,
-        userId: input.state.userId,
-        modelOverride: resolvedModelOverride,
-        imageUrls: input.imageUrls,
-        tools: initialToolSchemas,
-        toolChoice: getForcedInitialToolChoice(effectiveTaskMessage, initialToolSchemas) ?? 'auto',
-      },
-    );
+    : yield context.df.callActivity('llmActivity', llmInput);
   spans.push({ label: 'llm', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
+
+  if (llmResult.replyAlreadyDelivered) {
+    trackEvent({
+      name: 'PolicyOverrideApplied',
+      correlationId,
+      userId: input.state.userId,
+      properties: {
+        authority: 'post-reply-activity-replay-suppression',
+        source: 'llmActivity',
+      },
+    });
+
+    return {
+      response: '(duplicate replay suppressed after visible reply delivery)',
+      cleanResponse: '(duplicate replay suppressed after visible reply delivery)',
+      tokensUsed: 0,
+      promptTokens: 0,
+      model: 'duplicate-replay-suppressed',
+      toolCalls: [],
+      toolResults: null,
+      replySent: true,
+      safetyPassed: true,
+      duplicateReplaySuppressed: true,
+    } satisfies SessionResult;
+  }
 
   // Cumulative token tracking across all LLM calls in this session (#253)
   let cumulativeTokensUsed = llmResult.tokensUsed + planResult.planTokensUsed;

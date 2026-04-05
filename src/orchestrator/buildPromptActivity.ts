@@ -14,6 +14,7 @@ import { buildPriorsPromptFragment } from '../persona/operatorDomainPriors.js';
 import { buildDevLoopSystemBlock } from '../devloop/sessionContext.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
+import { hasOutboundArtifactClaim } from '../bot/conversationStore.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { recordOrchestratorStage, recordSubstage } from '../observability/orchestratorStageHealth.js';
 import { getDiscoveryFirstToolDefinitions } from './discoveryToolInjection.js';
@@ -40,6 +41,7 @@ export interface PromptResult {
   systemPrompt: string;
   messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>;
   estimatedTokens: number;
+  replyAlreadyDelivered?: boolean;
 }
 
 const DEFAULT_PERSONA = 'You are HelkinSwarm — a personal sovereign AI copilot. You are direct, capable, and act with precision.';
@@ -63,6 +65,15 @@ async function loadPersona(): Promise<string> {
 function estimateTokens(text: string): number {
   // Rough estimate: ~4 chars per token
   return Math.ceil(text.length / 4);
+}
+
+function buildReplyAlreadyDeliveredPrompt(): PromptResult {
+  return {
+    systemPrompt: '(reply already delivered)',
+    messages: [{ role: 'system', content: '(reply already delivered)' }],
+    estimatedTokens: 0,
+    replyAlreadyDelivered: true,
+  } satisfies PromptResult;
 }
 
 async function withSoftTimeout<T>(
@@ -269,6 +280,16 @@ df.app.activity('buildPromptActivity', {
   handler: async (input: BuildPromptInput): Promise<PromptResult> => {
     const correlationId = input.correlationId ?? input.state.userId;
     console.log(`[buildPromptActivity] START correlationId=${correlationId} fastPath=${DIAGNOSTIC_FAST_PATH}`);
+
+    if (
+      input.correlationId
+      && await hasOutboundArtifactClaim(input.state.conversationId, 'reply', input.correlationId)
+    ) {
+      console.warn(
+        `[buildPromptActivity] Duplicate post-reply execution suppressed for correlationId=${input.correlationId}`,
+      );
+      return buildReplyAlreadyDeliveredPrompt();
+    }
 
     if (DIAGNOSTIC_FAST_PATH) {
       console.log(`[buildPromptActivity] FAST PATH — returning degraded prompt immediately`);

@@ -18,6 +18,7 @@ import { toolRegistry } from '../tools/toolRegistry.js';
 import type { PromptResult } from './buildPromptActivity.js';
 import type { ChatCompletionResponse, ChatMessage, ContentPart } from '../llm/foundryClient.js';
 import { textContent } from '../llm/foundryClient.js';
+import { hasOutboundArtifactClaim } from '../bot/conversationStore.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { recordSubstage } from '../observability/orchestratorStageHealth.js';
 
@@ -31,15 +32,46 @@ export interface LlmResult {
   finishReason: string;
   operationalNotices: string[];
   failoverSteps: LlmFailoverStep[];
+  replyAlreadyDelivered?: boolean;
+}
+
+export interface LlmActivityInput extends PromptResult {
+  correlationId?: string;
+  userId?: string;
+  conversationId?: string;
+  modelOverride?: string;
+  imageUrls?: string[];
+  tools?: Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }>;
+  toolChoice?: 'auto' | 'none' | { type: 'function'; function: { name: string } };
 }
 
 // DIAGNOSTIC (#327): Skip LLM entirely when fast-path is active
 const LLM_FAST_PATH = !!(process.env['LLM_FAST_PATH'] ?? '');
 
 df.app.activity('llmActivity', {
-  handler: async (input: PromptResult & { correlationId?: string; userId?: string; modelOverride?: string; imageUrls?: string[]; tools?: Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }>; toolChoice?: 'auto' | 'none' | { type: 'function'; function: { name: string } } }): Promise<LlmResult> => {
+  handler: async (input: LlmActivityInput): Promise<LlmResult> => {
     const routing = getModelRouting();
     const correlationId = input.correlationId ?? crypto.randomUUID();
+
+    if (
+      input.correlationId
+      && input.conversationId
+      && await hasOutboundArtifactClaim(input.conversationId, 'reply', input.correlationId)
+    ) {
+      console.warn(`[llmActivity] Duplicate post-reply execution suppressed for correlationId=${input.correlationId}`);
+      return {
+        content: '(reply already delivered)',
+        model: 'duplicate-replay-suppressed',
+        tokensUsed: 0,
+        promptTokens: 0,
+        toolCalls: [],
+        finishReason: 'stop',
+        operationalNotices: [],
+        failoverSteps: [],
+        replyAlreadyDelivered: true,
+      } satisfies LlmResult;
+    }
+
     recordSubstage(correlationId, 'llm', input.userId ?? 'unknown');
     console.log(`[llmActivity] START correlationId=${correlationId} fastPath=${LLM_FAST_PATH}`);
 
