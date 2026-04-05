@@ -69,7 +69,7 @@ function configureCommonHarness(): void {
   harness.getCorrelatedSpinnerAck.mockReturnValue('⠋ Still thinking... [corr:abc12345]');
 }
 
-async function loadSendReplyModule(options?: { hangUpdate?: boolean; hangAckClear?: boolean; fastPath?: boolean }) {
+async function loadSendReplyModule(options?: { hangUpdate?: boolean; hangAfterCallback?: boolean; hangAckClear?: boolean; fastPath?: boolean }) {
   vi.resetModules();
   vi.clearAllMocks();
   configureCommonHarness();
@@ -89,6 +89,9 @@ async function loadSendReplyModule(options?: { hangUpdate?: boolean; hangAckClea
     });
     const sendActivity = vi.fn(async () => ({ id: 'sent-1' }));
     await callback({ updateActivity, sendActivity });
+    if (options?.hangAfterCallback) {
+      return await new Promise(() => undefined);
+    }
     return { conversationReference, updateActivity, sendActivity };
   });
 
@@ -223,4 +226,17 @@ describe('ack correlation scoping', () => {
     expect(result.success).toBe(true);
     expect(clearPendingAckId).toHaveBeenCalledWith('conv-1', 'corr-hung-clear');
   });
+
+  it('sendReply does not hang when continueConversationAsync stalls after visible delivery already completed', async () => {
+    const { sendReply, continueConversationAsync } = await loadSendReplyModule({ hangAfterCallback: true });
+
+    const result = await sendReply({
+      userId: 'user-1',
+      correlationId: 'corr-hung-continue',
+      message: 'done',
+    });
+
+    expect(result.success).toBe(true);
+    expect(continueConversationAsync).toHaveBeenCalled();
+  }, 12_000);
 });

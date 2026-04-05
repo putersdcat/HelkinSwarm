@@ -64,6 +64,7 @@ export interface SendReplyResult {
 // Uses the UAMI credentials from the Bot Service registration.
 let adapterInstance: CloudAdapter | undefined;
 const ACK_UPDATE_TIMEOUT_MS = 3_000;
+const CONTINUE_CONVERSATION_TIMEOUT_MS = 8_000;
 const PENDING_ACK_CLEAR_TIMEOUT_MS = 2_000;
 
 async function withTimeout<T>(work: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -226,101 +227,116 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
     const ackActivityId = SENDREPLY_FAST_PATH ? null
       : (input.correlationId ? await getPendingAckId(input.correlationId) : null);
 
-    await adapter.continueConversationAsync(
-      appId,
-      conversationReference as ConversationReference,
-      async (turnContext) => {
-        if (ackActivityId) {
-          let firstChunkSent = false;
-          try {
-            // Replace the "⌛ Working on it..." placeholder in-place when Teams cooperates.
-            await withTimeout(turnContext.updateActivity({
-              type: ActivityTypes.Message,
-              id: ackActivityId,
-              text: replyChunks[0]!.text,
-              textFormat: 'markdown',
-            }), ACK_UPDATE_TIMEOUT_MS, 'ack update');
-            // Cache under ack ID so reply-with-quote can resolve full text (#166)
-            cacheSentMessage(ackActivityId, replyChunks[0]!.text);
-            firstChunkSent = true;
-            deliveredToUser = true;
-          } catch (err) {
-            // Timeout means the update HTTP call is still in-flight and may yet succeed.
-            // Sending a fallback message would cause a duplicate if the update completes (#329).
-            const isTimeout = err instanceof Error && err.name === 'TimeoutError';
-            if (isTimeout) {
-              console.warn(
-                `[sendReplyActivity] Ack update timed out for userId=${input.userId}; skipping fallback to avoid duplicate reply (#329)`,
-              );
-              // The in-flight update will likely complete — treat the first chunk as sent.
-              firstChunkSent = true;
-              deliveredToUser = true;
-            } else {
-              console.warn(
-                `[sendReplyActivity] Ack update failed for userId=${input.userId}; falling back to new message send: ${err instanceof Error ? err.message : err}`,
-              );
-              const response = await turnContext.sendActivity({
-                type: ActivityTypes.Message,
-                text: replyChunks[0]!.text,
-                textFormat: 'markdown',
-              });
-              if (response?.id) {
-                cacheSentMessage(response.id, replyChunks[0]!.text);
+    try {
+      await withTimeout(
+        adapter.continueConversationAsync(
+          appId,
+          conversationReference as ConversationReference,
+          async (turnContext) => {
+            if (ackActivityId) {
+              let firstChunkSent = false;
+              try {
+                // Replace the "⌛ Working on it..." placeholder in-place when Teams cooperates.
+                await withTimeout(turnContext.updateActivity({
+                  type: ActivityTypes.Message,
+                  id: ackActivityId,
+                  text: replyChunks[0]!.text,
+                  textFormat: 'markdown',
+                }), ACK_UPDATE_TIMEOUT_MS, 'ack update');
+                // Cache under ack ID so reply-with-quote can resolve full text (#166)
+                cacheSentMessage(ackActivityId, replyChunks[0]!.text);
+                firstChunkSent = true;
+                deliveredToUser = true;
+              } catch (err) {
+                // Timeout means the update HTTP call is still in-flight and may yet succeed.
+                // Sending a fallback message would cause a duplicate if the update completes (#329).
+                const isTimeout = err instanceof Error && err.name === 'TimeoutError';
+                if (isTimeout) {
+                  console.warn(
+                    `[sendReplyActivity] Ack update timed out for userId=${input.userId}; skipping fallback to avoid duplicate reply (#329)`,
+                  );
+                  // The in-flight update will likely complete — treat the first chunk as sent.
+                  firstChunkSent = true;
+                  deliveredToUser = true;
+                } else {
+                  console.warn(
+                    `[sendReplyActivity] Ack update failed for userId=${input.userId}; falling back to new message send: ${err instanceof Error ? err.message : err}`,
+                  );
+                  const response = await turnContext.sendActivity({
+                    type: ActivityTypes.Message,
+                    text: replyChunks[0]!.text,
+                    textFormat: 'markdown',
+                  });
+                  if (response?.id) {
+                    cacheSentMessage(response.id, replyChunks[0]!.text);
+                  }
+                  firstChunkSent = true;
+                  deliveredToUser = true;
+                }
               }
-              firstChunkSent = true;
-              deliveredToUser = true;
-            }
-          }
 
-          for (const chunk of firstChunkSent ? replyChunks.slice(1) : replyChunks) {
-            const response = await turnContext.sendActivity({
-              type: ActivityTypes.Message,
-              text: chunk.text,
-              textFormat: 'markdown',
-            });
-            if (response?.id) {
-              cacheSentMessage(response.id, chunk.text);
-            }
-            deliveredToUser = true;
-          }
+              for (const chunk of firstChunkSent ? replyChunks.slice(1) : replyChunks) {
+                const response = await turnContext.sendActivity({
+                  type: ActivityTypes.Message,
+                  text: chunk.text,
+                  textFormat: 'markdown',
+                });
+                if (response?.id) {
+                  cacheSentMessage(response.id, chunk.text);
+                }
+                deliveredToUser = true;
+              }
 
-          if (assetAttachments.length > 0) {
-            const response = await turnContext.sendActivity({
-              type: ActivityTypes.Message,
-              attachments: assetAttachments,
-            });
-            if (response?.id) {
-              cacheSentMessage(response.id, `[attachment-message] ${assetAttachments.map((attachment) => attachment.name ?? attachment.contentType ?? 'attachment').join(', ')}`);
-            }
-            deliveredToUser = true;
-          }
-        } else {
-          // No ack stored (e.g. first reply after container restart) — fall back to new message
-          for (const chunk of replyChunks) {
-            const response = await turnContext.sendActivity({
-              type: ActivityTypes.Message,
-              text: chunk.text,
-              textFormat: 'markdown',
-            });
-            if (response?.id) {
-              cacheSentMessage(response.id, chunk.text);
-            }
-            deliveredToUser = true;
-          }
+              if (assetAttachments.length > 0) {
+                const response = await turnContext.sendActivity({
+                  type: ActivityTypes.Message,
+                  attachments: assetAttachments,
+                });
+                if (response?.id) {
+                  cacheSentMessage(response.id, `[attachment-message] ${assetAttachments.map((attachment) => attachment.name ?? attachment.contentType ?? 'attachment').join(', ')}`);
+                }
+                deliveredToUser = true;
+              }
+            } else {
+              // No ack stored (e.g. first reply after container restart) — fall back to new message
+              for (const chunk of replyChunks) {
+                const response = await turnContext.sendActivity({
+                  type: ActivityTypes.Message,
+                  text: chunk.text,
+                  textFormat: 'markdown',
+                });
+                if (response?.id) {
+                  cacheSentMessage(response.id, chunk.text);
+                }
+                deliveredToUser = true;
+              }
 
-          if (assetAttachments.length > 0) {
-            const response = await turnContext.sendActivity({
-              type: ActivityTypes.Message,
-              attachments: assetAttachments,
-            });
-            if (response?.id) {
-              cacheSentMessage(response.id, `[attachment-message] ${assetAttachments.map((attachment) => attachment.name ?? attachment.contentType ?? 'attachment').join(', ')}`);
+              if (assetAttachments.length > 0) {
+                const response = await turnContext.sendActivity({
+                  type: ActivityTypes.Message,
+                  attachments: assetAttachments,
+                });
+                if (response?.id) {
+                  cacheSentMessage(response.id, `[attachment-message] ${assetAttachments.map((attachment) => attachment.name ?? attachment.contentType ?? 'attachment').join(', ')}`);
+                }
+                deliveredToUser = true;
+              }
             }
-            deliveredToUser = true;
-          }
-        }
-      },
-    );
+          },
+        ),
+        CONTINUE_CONVERSATION_TIMEOUT_MS,
+        'continue conversation',
+      );
+    } catch (err) {
+      const isTimeout = err instanceof Error && err.name === 'TimeoutError';
+      if (!(isTimeout && deliveredToUser)) {
+        throw err;
+      }
+
+      console.warn(
+        `[sendReplyActivity] continueConversationAsync timed out for userId=${input.userId}; continuing because visible reply delivery already completed`,
+      );
+    }
 
     if (ackActivityId && input.correlationId && !SENDREPLY_FAST_PATH) {
       try {
