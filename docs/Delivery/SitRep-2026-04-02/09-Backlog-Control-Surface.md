@@ -1,65 +1,38 @@
-# Backlog Control Surface — For Repeated Ignition Runs
+# Backlog Control Surface — Refreshed 2026-04-05
 
 ## Purpose
 
-This is the compact operating surface for future repeated backlog-reduction runs.
+This is the compact operating surface for repeated backlog-reduction runs.
 
-Use this file so the agent does **not** re-rank the entire open backlog from scratch every time.
-
-The main lesson from the SitRep is that the backlog is too large and mixed to be treated as one giant flat list.
-
-## Constitutional update — 2026-04-02 Living Mind Contract
-
-The creation of:
-- `#494` — `[EPIC] Living Mind Runtime – Single-Session Temporal Consciousness`
-- `#498` — `Implement Limbic System + MindSessionGuard + Chrono-Backplane (0za)`
-
-changed the operating model for repeated ignition runs.
-
-This means ordinary campaign ordering is now subordinate to one rule:
-
-> If the current target issue is explicitly blocked by the Living Mind constitutional foundation, the ignition loop must clear the blocker work first instead of churning on the downstream ticket.
+Its job is to stop the loop from re-ranking the whole backlog every time **and** to stop future runs from getting trapped on stale constitutional guidance after the active seam has materially narrowed.
 
 ---
 
 ## Core operating rules
 
-### 0. Constitutional blockers outrank normal zone order
-If an issue in Zone A or Zone B is explicitly blocked by the Living Mind foundation (`#494` / `#498`), the loop must not keep selecting that downstream issue as though the block does not exist.
+### 0. Constitutional blockers outrank ordinary zone order
+If the current downstream candidate is still explicitly blocked by the Living Mind foundation (`#494` / `#498`), the run must clear the blocker work first instead of pretending normal backlog order has resumed.
 
-Instead:
-- treat the blocker-removal work as the active campaign,
-- prefer `#498` as the executable target,
-- treat `#494` as the governing epic / control surface,
-- and if `#498` is too large for one honest run, split the smallest real child slice and work that.
+### 1. Use the narrowest honest executable slice
+Do **not** keep targeting a stale parent issue when a fresher child now isolates the real failure mode.
 
-### 1. Only Zone A issues compete by default
-Future ignition runs should choose from **Zone A — Now** unless:
-- every Zone A issue is honestly complete,
-- or every Zone A issue is blocked,
-- or the user explicitly changes the campaign.
+That means:
+- treat epics and parents as control surfaces,
+- but execute the deepest honest child slice when one exists,
+- and refresh this file whenever the active blocker narrows materially.
 
-### 2. Epics are control surfaces, not default implementation targets
-Issues like `#194`, `#448`, `#462`, and `#472` should usually be treated as:
-- campaign anchors
-- issue selectors
-- design boundaries
-
-They should **not** be the default implementation target unless a run is explicitly doing epic decomposition or the epic itself contains a narrow executable slice.
-
-The same now applies to `#494`: it governs the work, but `#498` (or a smaller child split from it) is the normal executable target.
+### 2. Closed or superseded slices do not keep competing
+If a child issue is already closed, mitigated, or superseded by a narrower blocker, remove it from the active front.
 
 ### 3. Recurring issues do not compete with shipping work
-These remain important, but they are non-competing rails:
+These remain important but non-competing:
 - `#3`
 - `#5`
 - `#202`
 - `#372`
 
-Use them to sync docs/architecture after meaningful delivery, not as the main target of a shipping run.
-
 ### 4. Confidence classes
-Use this shorthand in issue comments and reasoning:
+Use this shorthand in comments and reasoning:
 - **C0** — concept only
 - **C1** — researched
 - **C2** — repo-grounded
@@ -67,7 +40,7 @@ Use this shorthand in issue comments and reasoning:
 - **C4** — live validated
 
 ### 5. Closure discipline
-For user-facing issues, closure comments should ideally include a proof bundle:
+For user-facing issues, closure comments should include:
 - files changed
 - tests run
 - build result
@@ -76,215 +49,185 @@ For user-facing issues, closure comments should ideally include a proof bundle:
 
 ---
 
-## Constitutional Gate — Active Now
+## Constitutional Gate — Still Active, But Narrow
 
-## Active campaign: Living Mind Foundation Campaign
+The constitutional gate is **not** gone.
 
-This campaign still outranks the ordinary Trust Recovery order wherever the target issue is explicitly blocked by the Living Mind Contract.
+But it is no longer the broad 2026-04-02 shape, and it is no longer honest to keep treating stale parents like `#554` or `#555` as the active front.
 
-However, the constitutional surface is now **much narrower** than it was when this file was first written.
+### Recently cleared and no longer competing
 
-### Recently cleared first-wave slices (no longer competing)
+These are off the active front and must not keep pulling future runs backward:
 
-These are now shipped/closed and should not continue to masquerade as the active front:
-
-- `#525` — capacity-aware impairment routing
-- `#526` — autonomic sub-session preservation
-- `#527` — enforced Limbic ingress lifecycle
-
-Other major bridge slices under `#498` / `#520` have also been cleared since this control surface was first drafted, including steering injection, chrono continuity, interruption breadcrumbing, interruption-depth cap behavior, paused-task paging seams, and the explicit `awaiting-ingress` drain window.
+- `#525` — closed
+- `#526` — closed
+- `#527` — closed
+- `#554` — closed
+- `#555` — closed
+- earlier constitutional bridge/proof slices under `#498` / `#520` already closed in prior runs
 
 ### Current live constitutional stack
 
-| Order | Issue | Lane | Confidence | Why it is here now |
+| Order | Issue | Role | Confidence | Why it is here now |
 |---|---|---|---|---|
-| 0 | `#498` | Constitutional foundation / runtime continuity | C3 | The parent first-wave enforcement issue remains open, but most of its major bridge pieces are now shipped. The remaining gap is concentrated in the last hard single-session/event-drain/runtime-continuity tranche. |
-| 0a | `#494` | Constitutional epic / control surface | C2 | Governing epic and blocker anchor. Still the constitutional source of truth, but not the default direct implementation target. |
-| 0b | `#516` | Hard single-session enforcement | C2 | This is now the main open constitutional child: the runtime still preserves compatibility-managed behavior instead of proving a hard one-living-session invariant. |
-| 0c | `#520` | Event-draining living session architecture | C2 | The active architectural parent below `#516`: the runtime has a multi-turn ingress seam now, but it still does not honestly prove a fully reliable event-draining living session during active processing. |
-| 0d | `#556` | Active-processing event drain blocker | C2/C4-failed | Current deepest blocker. A `NewMessage` raised into an already-active living overseer can still be accepted as delivered without later showing `LivingSessionNewMessageDrained`, `ReplySent`, or a visible final reply. |
-| 0e | `#554` | Ordinary Teams overlap outside `awaiting-ingress` | C2 | Still a real user-facing seam, but no longer the deepest blocker. Ordinary Teams overlap remains queue-first outside the narrow proven-safe `awaiting-ingress` window. |
-| 0f | `#555` | Drained turn sub-orchestrator identity seam | C3 local / C4 failed | A real corrective fix has already shipped here, but live proof showed it was not sufficient. Treat this as a subordinate seam unless `#556` is cleared first. |
+| 0 | `#498` | Constitutional parent / first-wave enforcement | C3/C4-partial | Still open only because the final living-session continuity / hard-enforcement tranche is not honestly done. |
+| 0a | `#516` | Hard single-session enforcement parent | C3/C4-partial | Queue-first safety, active-turn routing, and default-off compatibility are shipped, but the runtime still is not honestly a fully proven single living session. |
+| 0b | `#520` | Living event-draining architecture parent | C3/C4-partial | Multi-turn ingress and buffered follower scaffolding exist, but ordinary same-instance drain is still not proven. |
+| 0c | `#556` | Buffered-follower architecture parent | C3/C4-partial | The old black-hole symptom is now mitigated by replay/rescue, but ordinary same-instance dequeue/drain is still not honestly proven. |
+| 0d | `#566` | Exact-target drain blocker parent | C3/C4-failed | Exact instance targeting shipped, but the original living overseer still did not dequeue/drain the follower itself. |
+| 0e | `#567` | Narrowed post-reply parent seam | C3/C4-failed | The stale-ack symptom was reduced, but repeated shipped attempts did not clear the live bar; this is now better treated as the immediate parent for the newer leader-correlation completion seam. |
+| 0f | `#568` | Current deepest executable blocker | C3/C4-failed | Latest live traces show the leader reaches visible `ReplySent`, then remains staged at `send-reply` and later re-enters same-correlation prompt / LLM work while the exact-target follower stays queued. |
+
+### Supporting open children under the same seam
+
+These still exist in GitHub but should **not** outrank the freshest executable slice unless their issue threads become the current live blocker again:
+
+- `#557` — persist active-processing overseer stage so cross-request ingress can choose buffered path
+- `#558` — use Durable `customStatus` for cross-request living-session ingress selection
+- `#559` — earlier same-correlation post-reply re-entry seam; recent `#567` / `#568` live evidence is now converging back toward this same architectural clue rather than away from it
+
+### Platform / tech-limit research note (2026-04-05)
+
+This seam has now had enough repeated live pressure that future runs must **not** assume it is still a simple app bug without checking the evidence.
+
+What was checked:
+
+- Microsoft Learn Durable instance-management docs still say that if an orchestration instance exists but is **not yet waiting** for an external event, the event is **stored in instance state until it is ready** rather than dropped.
+  - source: `https://learn.microsoft.com/azure/durable-task/common/durable-task-instance-management#send-events-to-instances`
+- Microsoft proactive-messaging docs still describe `continueConversation` + cached conversation reference as the supported proactive turn pattern, and Teams/Bot docs still describe inline message update via cached activity id as a supported pattern.
+  - sources:
+    - `https://learn.microsoft.com/azure/bot-service/bot-builder-howto-proactive-message?view=azure-bot-service-4.0#about-the-proactive-sample`
+    - `https://learn.microsoft.com/microsoftteams/platform/bots/build-conversational-capability#send-and-receive-messages`
+- GitHub MCP code search against upstream Azure Durable extension did **not** surface a clear documented engine limitation matching this exact “visible reply -> same-correlation re-entry -> queued follower never drains” shape.
+
+Current conclusion:
+
+- This is **not currently proven** to be a documented Durable Functions or Bot Framework platform limitation.
+- The strongest live evidence still points at an application/runtime lifecycle seam in HelkinSwarm, now best represented by `#568` and the older related clue in `#559`.
+- Therefore this should **not yet** be declared a permanent platform exception.
+
+### Loop-breaker rule for this seam
+
+Do **not** keep sending ordinary ignition runs back to stale `#567` wording after the same evidence repeats.
+
+From this point:
+
+1. treat `#568` as the freshest executable child, **not** `#567`
+2. use `#567` as the parent evidence bundle for the earlier stale-ack/send-reply hypotheses already tested
+3. if one more shipped `#568` attempt still ends with the same live signature:
+   - visible leader reply
+   - no pending ack
+   - leader correlation later re-enters prompt / LLM work
+   - exact-target follower still only shows `BufferedIngressQueued` / `DevLoopRelayPush`
+   - no `BufferedIngressDequeued` / `LivingSessionNewMessageDrained` / `ReplySent`
+   then **stop** treating this seam as the default next daily shipping target
+4. at that point, re-bucket this seam as a **constitutional exception / research rail** and resume ordinary backlog execution with `#485` until either:
+   - upstream platform evidence appears,
+   - a materially new repo-grounded hypothesis emerges,
+   - or a different repro path breaks the loop
 
 ### Constitutional gate execution rule
-- If the next candidate issue is explicitly marked blocked by `#494` and/or `#498`, do not run the normal Zone A ordering.
-- Prefer the active live constitutional stack above rather than the now-cleared `#525` / `#526` / `#527` tranche.
-- Default next-work bias inside the constitutional gate is now:
-	1. `#556`
-	2. then `#554`
-	3. then collapse `#520`
-	4. then close `#516`
-	5. then close `#498`
-- Resume ordinary Zone A ordering only when the blocker has been cleared, narrowed, or explicitly re-bucketed.
+
+When the constitutional gate is active, the default next-work bias is now:
+
+1. `#568`
+2. then collapse/close or honestly re-bucket `#567`
+3. then collapse/close or honestly re-bucket `#566`
+4. then collapse/close or honestly re-bucket `#556`
+5. then close `#520`
+6. then close `#516`
+7. then close `#498`
+
+Do **not** fall back to stale earlier guidance that still points at `#554`, `#555`, or the already-cleared early child slices.
 
 ---
 
-## Zone A — Now
+## Zone A — Regular backlog once the gate stops blocking
 
-## Active campaign: Trust Recovery Campaign
+This is the ordinary backlog surface that should resume **as soon as** the current constitutional seam is cleared, narrowed enough, or explicitly re-bucketed so it no longer blocks downstream work.
 
-This is the default campaign once the constitutional gate is honestly cleared enough to stop blocking downstream work.
+### Current live Zone A
 
-These issues remain important, but the table below must now be read with one caveat in mind:
-- `#485` and `#479` remain constitutionally downstream of the Living Mind runtime work
-- `#484` appears partially delivered in repo code already and may need narrowing/re-bucketing rather than greenfield implementation
-
-This tranche continues until these issues are either:
-- live-validated and closed, or
-- honestly re-bucketed as blocked / superseded / split.
-
-| Order | Issue | Lane | Confidence | Why it is here |
+| Order | Issue | Lane | Confidence | Why it is here now |
 |---|---|---|---|---|
-| 1 | `#484` | Trust / UX honesty | C2-C3 | Still an important trust/UX target, but no longer an untouched concept gap. Backend operational-state modeling and tab rendering exist; remaining work appears to be semantics cleanup, consistency, and honest closure review. |
-| 2 | `#485` | Trust / UX honesty | C2 | Important trust issue and still constitutionally downstream. Follow-up execution-proof routing appears partially hardened in code, but not yet honestly live-proven. |
-| 3 | `#479` | Runtime bug / trust | C2 | Concrete Outlook execution drift remains open. Deterministic Outlook execution shortcuts now exist in code, but deployed primary/secondary-lane proof is still missing. |
+| 1 | `#485` | Trust / UX honesty | C2-C3 | This is now the clearest remaining Trust Recovery issue once the constitutional seam stops blocking. Follow-up verification routing has hardened in code, but closure still needs honest proof. |
+
+### Recently cleared Zone A items
+
+These are no longer part of active competition:
+
+- `#479` — closed
+- `#480` — closed
+- `#484` — closed
 
 ### Zone A execution rule
-Future ignition runs should normally work these in the order above.
 
-Exception: if the selected issue is explicitly blocked by `#494` / `#498`, the Constitutional Gate above takes precedence.
+Once the constitutional gate is no longer the honest blocker, the default next target becomes:
 
-If one fails live validation and spawns a narrower follow-up bug, the new bug may replace it in Zone A if it is the more honest next slice.
+1. `#485`
 
-### Recently cleared Zone A item
-
-- `#480` — closed; remove it from active competition.
+If `#485` is closed, superseded, or explicitly re-bucketed, promote the strongest ready Zone B candidate.
 
 ---
 
-## Zone B — Next
+## Zone B — Next pivot after Trust Recovery
 
-## Next campaign: Enterprise Readiness Campaign
-
-These issues are the strongest next wave **after Zone A**, not during it by default.
-
-| Issue | Lane | Confidence | Role |
-|---|---|---|---|
-| `#501` | LLM provider stability / quota relief | C2 | High-priority runtime/provider abstraction to relieve Foundry quota pressure and stabilize orchestrator reasoning; strong promotion candidate once the constitutional gate and trust tranche are under control |
-| `#462` | Microsoft / M365 strategic capability | C1 | Epic control surface for official Microsoft MCP operational-control work |
-| `#472` | Microsoft / M365 strategic capability | C1 | Sub-epic control surface for operational admin workflows |
-| `#476` | Runtime readiness / M365 | C1 | Best first narrow implementation slice in the M365 admin family |
-| `#481` | Platform / MCP hygiene | C1 | Keeps integrated MCP skills maintainable and traceable |
-| `#482` | Platform / MCP hygiene | C1 | Improves discovery honesty between installed skills and external candidates |
-| `#439` | Runtime bug / capability completion | C2 | Good follow-on once Outlook read/search execution is trustworthy |
-| `#243` | Microsoft / directory capability | C1 | High-value strategic skill, but should follow readiness honesty improvements |
-
-### Zone B promotion rule
-Promote a Zone B item into Zone A only when:
-- the active Trust Recovery Campaign is complete enough,
-- or Zone A is blocked,
-- or the user explicitly chooses to switch campaigns.
-
-Current note:
-- `#501` is now the strongest non-constitutional infrastructure candidate in Zone B because it directly targets Foundry quota instability and reasoning reliability.
-- Near-term planning directive: once the Living Mind constitutional gate is cleared enough to permit promotion, `#501` should be treated as the most likely next campaign pivot because repeated fallback onto `gpt-5.4-mini` is not considered a strong enough long-term orchestrator reasoning substrate for the new runtime reality. The desired outcome is to restore Grok 4.1 Fast as the normal reasoning lane via the OpenRouter provider abstraction from `0zb`, while keeping the switch reversible.
+| Order | Issue | Lane | Confidence | Why it is here now |
+|---|---|---|---|---|
+| 1 | `#501` | Provider abstraction / runtime readiness | C2 | Strongest next non-constitutional pivot once the living-session seam and trust-recovery follow-up are no longer the honest front. |
+| 2 | `#462` | Microsoft / M365 strategic capability | C1 | Strategic epic, but not the next default execution target. |
+| 3 | `#472` | Microsoft / M365 strategic capability | C1 | Same. |
+| 4 | `#476` | Runtime readiness / M365 | C1 | Best likely narrow implementation slice in that family later. |
 
 ---
 
-## Zone C — Later
+## Retirement / handoff rule for this control surface
 
-These are real and valuable, but they should not compete with the two campaigns above right now.
+This file should **stop acting as a constitutional override** for ordinary runs when all of the following are true:
 
-| Issue | Lane | Confidence | Why deferred |
-|---|---|---|---|
-| `#448` | Platform / MCP | C1 | Important epic, but not the best immediate execution target while trust and readiness debt are still active |
-| `#194` | Skills platform | C2 | Broad epic; should absorb honest state/lifecycle work after current trust slices settle |
-| `#473` | Microsoft / M365 | C1 | Depends on clearer readiness and control-plane shape |
-| `#474` | Microsoft / M365 | C1 | Same |
-| `#475` | Microsoft / M365 | C1 | Same |
-| `#467` | Platform / Foundry | C1 | Strategic, but not current bottleneck |
-| `#468` | Research | C0-C1 | Interesting, but not pressure-worthy now |
-| `#392` | Infra / safety | C1 | Valuable substrate, but not current top leverage for user trust |
-| `#434` | Skills / LLM specialist | C1 | Expansion work, not current campaign |
-| `#435` | Skills / LLM specialist | C1 | Expansion work, not current campaign |
-| `#436` | Testing / benchmark | C1 | Useful later, but not more urgent than the trust and enterprise readiness paths |
-| `#398` | Cost / GitHub visibility | C1 | Nice strategic enhancement, not near-term control surface |
-| `#397` | Cost / GitHub visibility | C1 | Same |
-| `#249` | Virtual company | C1 | Northbound strategic capability, not next practical tranche |
-| `#244` | Skills / memory | C1 | High-value, but currently outcompeted by trust and M365 readiness |
-| `#240` | Skills | C1 | Valuable but not now |
-| `#239` | Skills | C1 | Valuable but not now |
-| `#238` | Skills | C1 | Valuable but not now |
+- the freshest live seam (`#568`, or whatever supersedes it) is closed or honestly re-bucketed,
+- `#566` / `#556` no longer represent an active blocker for same-instance living-session continuity,
+- and `#520` / `#516` / `#498` are either closed or narrow enough that downstream backlog work is no longer explicitly blocked by them.
+
+### At that moment, the default handoff is:
+
+1. return to ordinary DevLoop / regular backlog behavior
+2. take `#485` next
+3. then promote `#501` if no fresher Zone A blocker replaces it
+
+That is the explicit escape hatch. Future runs should **not** keep re-entering a stale `#556` loop once the live blocker chain has moved or cleared.
 
 ---
 
-## Zone D — Icebox / speculative / non-competing
+## Current recommendation encoded here
 
-These should remain visible, but they should not pressure ordinary ignition runs.
+### Honest short version
 
-### Personal / speculative skills
-- `#455`
-- `#456`
-- `#457`
-- `#458`
-- `#459`
-- `#460`
-- `#176`
-- `#180`
+- **No**, the constitutional gate is not fully gone yet.
+- **Yes**, the loop was partly stale and over-binding.
+- The current real blocker is no longer the generic `#556` framing, and it is no longer honest to keep treating `#567` as the freshest child either.
+- The freshest child is now `#568`, with `#567` serving as the already-tested parent for earlier stale-ack / reply-tail hypotheses.
+- Once that seam and its immediate parent chain are cleared or honestly re-bucketed, this control surface should hand us straight back to the regular backlog:
+  - `#485`
+  - then `#501`
 
-### Research-heavy or long-horizon concept work
-- `#157`
-- `#161`
-- `#162`
-- `#179`
-- `#207`
-- `#461`
+### Loop protection note — 2026-04-05 evening refresh
 
-### Dreaming / optional Night Watch concepts (parked behind `0z` signal)
-- `#489` — Dreaming remains conceptually promising as subconscious memory maintenance, but it should not pressure implementation until the Living Mind foundation has real runtime signal.
-- `#493` — Night Watch is now deprioritized as a generic system and retained only as a possible later specialization / Virtual Employee use case.
+This file must now actively prevent a repeat of the last two-day loop.
 
-### Major future architecture north-stars
-- `#101`
-- `#102`
-- `#103`
-- `#90`
-- `#94`
-- `#88`
-- `#68`
-- `#69`
-- `#70`
-- `#71`
-- `#75`
-- `#76`
-- `#78`
+What changed since the earlier refresh:
 
-These are not unimportant. They are simply not allowed to crowd the current shipping loop unless explicitly promoted.
+- live repo + runtime evidence now shows `#568` is the freshest child, not `#567`
+- first-party Microsoft docs review did **not** uncover a clear platform limitation that would explain the seam as expected behavior
+- repeated shipped attempts on `#567` narrowed the problem, but did not clear the live bar
+- future runs should therefore either work `#568` specifically or, after one more same-signature C4 failure, quarantine this seam as a constitutional exception rail and hand back to `#485`
 
----
+### Refresh note — 2026-04-05
 
-## Practical ignition behavior
+This refresh explicitly corrects the previous stale state:
 
-When future ignition runs start, the agent should behave as follows:
-
-1. Read this file first.
-2. Check whether the Constitutional Gate is active for the next candidate issue.
-3. Choose from the Constitutional Gate first when it blocks the downstream target; otherwise choose from Zone A.
-4. Treat the top non-blocked item from the active surface as the default next target.
-5. Use confidence class language in progress comments.
-6. Do not widen back to the whole open backlog unless the Constitutional Gate, Zone A, and Zone B all require reconfiguration.
-
----
-
-## Current recommendation encoded in this control surface
-
-### Default next-work bias
-- clear the Living Mind constitutional blocker honestly whenever it blocks downstream work
-- treat the active remaining constitutional stack as:
-	- `#556`
-	- then `#554`
-	- then collapse `#520`
-	- then `#516`
-	- then `#498`
-- once that gate is honestly cleared enough, continue the Trust Recovery Campaign
-- then move to Enterprise Readiness Campaign
-- only then reopen broader platform/skills expansion pressure
-
-### Refresh note — 2026-04-04
-
-This control surface now reflects the main post-SitRep decomposition that happened after the original draft:
-- the early constitutional bridge slices are no longer the active front
-- the remaining constitutional work is concentrated in the hard active-session event-drain / hard-single-session-enforcement seam
-- the strongest immediate blocker is `#556`
-
-That is the intended operating model until explicitly changed.
+- removes `#554` and `#555` from the active constitutional front
+- removes `#479` and `#484` from active Zone A competition
+- recognizes that `#556` is now a **mitigated-but-still-open architecture parent**, not the unchanged black-hole symptom from 2026-04-04
+- supersedes the older `#567`-is-deepest wording with `#568` as the freshest child
+- encodes the explicit handoff back to the ordinary backlog once this narrow seam is cleared
