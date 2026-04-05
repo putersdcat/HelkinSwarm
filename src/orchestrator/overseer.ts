@@ -120,6 +120,7 @@ df.app.orchestration('overseer', function* (context) {
     const bufferedNewMessage = (yield context.df.callActivity('bufferedIngressActivity', {
       action: 'dequeue-new-message',
       userId: state.userId,
+      targetInstanceId: context.df.instanceId,
     } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
 
     if (bufferedNewMessage) {
@@ -238,6 +239,7 @@ df.app.orchestration('overseer', function* (context) {
             action: 'claim-buffered-message',
             userId: state.userId,
             docId: bufferedIngressSignal.docId,
+            targetInstanceId: context.df.instanceId,
           } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
 
           if (claimedBufferedMessage) {
@@ -267,6 +269,7 @@ df.app.orchestration('overseer', function* (context) {
       const bufferedDuringIngressWindow = (yield context.df.callActivity('bufferedIngressActivity', {
         action: 'dequeue-new-message',
         userId: state.userId,
+        targetInstanceId: context.df.instanceId,
       } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
 
       if (bufferedDuringIngressWindow) {

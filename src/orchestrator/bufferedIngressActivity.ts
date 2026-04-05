@@ -13,11 +13,13 @@ const BufferedIngressActivityInputSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('dequeue-new-message'),
     userId: z.string().min(1),
+    targetInstanceId: z.string().min(1).optional(),
   }),
   z.object({
     action: z.literal('claim-buffered-message'),
     userId: z.string().min(1),
     docId: z.string().min(1),
+    targetInstanceId: z.string().min(1).optional(),
   }),
 ]);
 
@@ -166,6 +168,7 @@ export async function queueBufferedNewMessage(
 export async function claimBufferedNewMessageForUser(
   docId: string,
   userId: string,
+  targetInstanceId?: string,
 ): Promise<NewMessageEvent | null> {
   const container = getContainer(SESSIONS_CONTAINER);
   let doc: BufferedNewMessageDocument | undefined;
@@ -178,6 +181,10 @@ export async function claimBufferedNewMessageForUser(
   }
 
   if (!doc || doc.status !== 'queued') {
+    return null;
+  }
+
+  if (targetInstanceId && doc.targetInstanceId && doc.targetInstanceId !== targetInstanceId) {
     return null;
   }
 
@@ -201,8 +208,26 @@ export async function claimBufferedNewMessageForUser(
   return toNewMessageEvent(doc);
 }
 
+function selectQueuedBufferedMessageForUser(
+  docs: ReadonlyArray<BufferedNewMessageDocument>,
+  targetInstanceId?: string,
+): BufferedNewMessageDocument | undefined {
+  const queuedDocs = docs
+    .filter((doc) => doc.status === 'queued')
+    .slice()
+    .sort((left, right) => left.queuedAt.localeCompare(right.queuedAt));
+
+  if (!targetInstanceId) {
+    return queuedDocs[0];
+  }
+
+  return queuedDocs.find((doc) => doc.targetInstanceId === targetInstanceId)
+    ?? queuedDocs.find((doc) => !doc.targetInstanceId);
+}
+
 export async function dequeueBufferedNewMessageForUser(
   userId: string,
+  targetInstanceId?: string,
 ): Promise<NewMessageEvent | null> {
   const container = getContainer(SESSIONS_CONTAINER);
   const { resources } = await container.items
@@ -216,9 +241,7 @@ export async function dequeueBufferedNewMessageForUser(
     })
     .fetchAll();
 
-  const doc = resources
-    .slice()
-    .sort((left, right) => left.queuedAt.localeCompare(right.queuedAt))[0];
+  const doc = selectQueuedBufferedMessageForUser(resources, targetInstanceId);
   if (!doc) {
     return null;
   }
@@ -353,9 +376,9 @@ export async function handleBufferedIngressActivity(
 
   switch (input.action) {
     case 'dequeue-new-message':
-      return dequeueBufferedNewMessageForUser(input.userId);
+      return dequeueBufferedNewMessageForUser(input.userId, input.targetInstanceId);
     case 'claim-buffered-message':
-      return claimBufferedNewMessageForUser(input.docId, input.userId);
+      return claimBufferedNewMessageForUser(input.docId, input.userId, input.targetInstanceId);
   }
 }
 

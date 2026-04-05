@@ -12,6 +12,7 @@ describe('living session ingress window source guards', () => {
     expect(overseerSource).toContain("action: 'claim-buffered-message'");
     expect(overseerSource).toContain("action: 'mark-active-processing'");
     expect(overseerSource).toContain("action: 'dequeue-new-message'");
+    expect(overseerSource).toContain('targetInstanceId: context.df.instanceId,');
     expect(overseerSource).toContain("action: 'open'");
     expect(overseerSource).toContain("action: 'drain'");
     expect(overseerSource).toContain('const INGRESS_BUFFER_POLL_MS = 2_000;');
@@ -32,14 +33,18 @@ describe('living session ingress window source guards', () => {
     expect(activitySource).toContain("name: 'LivingSessionNewMessageDrained'");
     expect(bufferedIngressSource).toContain("action: z.literal('dequeue-new-message')");
     expect(bufferedIngressSource).toContain("action: z.literal('claim-buffered-message')");
+    expect(bufferedIngressSource).toContain('targetInstanceId: z.string().min(1).optional()');
     expect(bufferedIngressSource).toContain('await container.items.upsert(doc);');
     expect(bufferedIngressSource).toContain('export async function claimBufferedNewMessageForUser(');
+    expect(bufferedIngressSource).toContain('if (targetInstanceId && doc.targetInstanceId && doc.targetInstanceId !== targetInstanceId) {');
+    expect(bufferedIngressSource).toContain('function selectQueuedBufferedMessageForUser(');
+    expect(bufferedIngressSource).toContain('return queuedDocs.find((doc) => doc.targetInstanceId === targetInstanceId)');
     expect(bufferedIngressSource).toContain("name: 'BufferedIngressQueued'");
     expect(bufferedIngressSource).toContain("name: 'BufferedIngressDequeued'");
     expect(bufferedIngressSource).toContain("status: z.enum(['queued', 'dequeued', 'replayed']).default('queued')");
     expect(bufferedIngressSource).toContain("status: 'queued'");
     expect(bufferedIngressSource).toContain("c.status = @status");
     expect(bufferedIngressSource).toContain("status: 'dequeued'");
-    expect(bufferedIngressSource).toContain('return dequeueBufferedNewMessageForUser(input.userId);');
+    expect(bufferedIngressSource).toContain('return dequeueBufferedNewMessageForUser(input.userId, input.targetInstanceId);');
   });
 });
