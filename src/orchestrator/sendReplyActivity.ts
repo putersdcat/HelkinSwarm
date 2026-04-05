@@ -21,7 +21,7 @@ import { cacheSentMessage } from '../bot/sentMessageCache.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { splitReplyIntoChunks } from './replyChunking.js';
 import { trackEvent } from '../observability/telemetry.js';
-import { recordSubstage } from '../observability/orchestratorStageHealth.js';
+import { clearOrchestratorStage, recordSubstage } from '../observability/orchestratorStageHealth.js';
 import {
   loadRuntimeAssetReference,
   readRuntimeAssetContent,
@@ -374,6 +374,14 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
 
     if (input.correlationId) {
       trackEvent({ name: 'ReplySent', correlationId: input.correlationId, userId: input.userId, properties: { success: 'true', chunks: String(replyChunks.length), attachments: String(assetAttachments.length) } });
+
+      try {
+        await clearOrchestratorStage(input.correlationId, input.userId);
+      } catch (err) {
+        console.warn(
+          `[sendReplyActivity] Stage clear timed out/failed after visible reply delivery for userId=${input.userId}; continuing because the reply send already completed: ${err instanceof Error ? err.message : err}`,
+        );
+      }
     }
     console.log(`[sendReplyActivity] DONE correlationId=${correlationId}`);
     return { success: true };
