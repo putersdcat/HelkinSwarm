@@ -7,6 +7,7 @@ describe('post-reply replay suppression source guards', () => {
     const promptSource = readFileSync('src/orchestrator/buildPromptActivity.ts', 'utf8');
     const llmSource = readFileSync('src/orchestrator/llmActivity.ts', 'utf8');
     const overseerSource = readFileSync('src/orchestrator/overseer.ts', 'utf8');
+    const telemetryActivitySource = readFileSync('src/orchestrator/emitOrchestratorTelemetryActivity.ts', 'utf8');
     const guardSource = readFileSync('src/orchestrator/sessionReplayGuardActivity.ts', 'utf8');
     const indexSource = readFileSync('src/functions/index.ts', 'utf8');
 
@@ -23,10 +24,13 @@ describe('post-reply replay suppression source guards', () => {
     expect(llmSource).toContain("hasOutboundArtifactClaim(input.conversationId, 'reply', input.correlationId)");
     expect(llmSource).toContain("replyAlreadyDelivered: true,");
 
+    expect(telemetryActivitySource).toContain("df.app.activity('emitOrchestratorTelemetryActivity'");
+
     expect(overseerSource).toContain('if (sessionResult.duplicateReplaySuppressed) {');
     expect(overseerSource).toContain('duplicateReplaySuppressed: true,');
 
     expect(guardSource).toContain("hasOutboundArtifactClaim(input.conversationId, 'reply', input.correlationId)");
+    expect(indexSource).toContain("import '../orchestrator/emitOrchestratorTelemetryActivity.js';");
     expect(indexSource).toContain("import '../orchestrator/sessionReplayGuardActivity.js';");
   });
 });

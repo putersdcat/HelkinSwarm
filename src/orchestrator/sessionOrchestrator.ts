@@ -9,6 +9,7 @@ import type { LlmActivityInput, LlmResult } from './llmActivity.js';
 import type { SendReplyInput, SendReplyResult } from './sendReplyActivity.js';
 import type { ConversationReference } from 'botbuilder';
 import type { SteeringInjectionResult } from './steeringInjectionActivity.js';
+import type { EmitOrchestratorTelemetryInput } from './emitOrchestratorTelemetryActivity.js';
 
 import type { ToolDispatchInput, ToolDispatchResult } from './toolDispatchActivity.js';
 import type { LlmFollowUpInput } from './llmFollowUpActivity.js';
@@ -27,7 +28,6 @@ import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
 import { buildModelOverrideDisclosure, formatTelemetryFooter } from './turnTelemetry.js';
 import type { TurnTelemetryData, TelemetrySpan } from './turnTelemetry.js';
-import { trackEvent } from '../observability/telemetry.js';
 import type { RuntimeAssetReference } from '../integrations/runtimeAssetStore.js';
 import {
   canExecuteInMultiRound,
@@ -71,6 +71,14 @@ import {
   resolveClarificationAnswer,
   type PendingClarification,
 } from './clarificationLoop.js';
+
+function* emitOrchestratorTelemetry(
+  context: df.OrchestrationContext,
+  input: EmitOrchestratorTelemetryInput,
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions generator helper
+): Generator<df.Task, void, any> {
+  yield context.df.callActivity('emitOrchestratorTelemetryActivity', input);
+}
 
 export interface SessionInput {
   state: OverseerState;
@@ -140,7 +148,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   );
 
   if (duplicateReplayDetected) {
-    trackEvent({
+    yield* emitOrchestratorTelemetry(context, {
       name: 'PolicyOverrideApplied',
       correlationId,
       userId: input.state.userId,
@@ -197,7 +205,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       pendingClarificationUpdate = null;
       persistClarificationClearBeforeLongRunningWork = true;
       userMessageForLlm = clarificationResult.resumedUserMessage;
-      trackEvent({
+      yield* emitOrchestratorTelemetry(context, {
         name: 'ClarificationResumed',
         correlationId,
         userId: input.state.userId,
@@ -209,7 +217,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     } else if (clarificationResult.kind === 'retry') {
       pendingClarificationUpdate = clarificationResult.pending;
       clarificationShortCircuitResponse = clarificationResult.responseMessage;
-      trackEvent({
+      yield* emitOrchestratorTelemetry(context, {
         name: 'ClarificationRetryRequested',
         correlationId,
         userId: input.state.userId,
@@ -221,7 +229,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     } else {
       pendingClarificationUpdate = null;
       clarificationShortCircuitResponse = clarificationResult.responseMessage;
-      trackEvent({
+      yield* emitOrchestratorTelemetry(context, {
         name: clarificationResult.kind === 'expired' ? 'ClarificationExpired' : 'ClarificationCancelled',
         correlationId,
         userId: input.state.userId,
@@ -240,7 +248,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     if (clarificationRequest) {
       pendingClarificationUpdate = clarificationRequest.pending;
       clarificationShortCircuitResponse = clarificationRequest.responseMessage;
-      trackEvent({
+      yield* emitOrchestratorTelemetry(context, {
         name: 'ClarificationRequested',
         correlationId,
         userId: input.state.userId,
@@ -416,7 +424,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   spans.push({ label: 'prompt', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
 
   if (prompt.replyAlreadyDelivered) {
-    trackEvent({
+    yield* emitOrchestratorTelemetry(context, {
       name: 'PolicyOverrideApplied',
       correlationId,
       userId: input.state.userId,
@@ -510,7 +518,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   spans.push({ label: 'llm', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
 
   if (llmResult.replyAlreadyDelivered) {
-    trackEvent({
+    yield* emitOrchestratorTelemetry(context, {
       name: 'PolicyOverrideApplied',
       correlationId,
       userId: input.state.userId,
@@ -853,7 +861,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         followUpToolSchemas,
       );
       if (selectiveFollowUpSchemas) {
-        trackEvent({
+        yield* emitOrchestratorTelemetry(context, {
           name: 'DiscoveryToolSubsetSelected',
           correlationId,
           userId: input.state.userId,
@@ -864,7 +872,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         });
       }
       if (discoveryFollowUpModelOverride && !input.modelOverride) {
-        trackEvent({
+        yield* emitOrchestratorTelemetry(context, {
           name: 'PolicyOverrideApplied',
           correlationId,
           userId: input.state.userId,
@@ -1130,7 +1138,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           }
         }
 
-        trackEvent({
+        yield* emitOrchestratorTelemetry(context, {
           name: 'MultiRoundDispatch',
           correlationId,
           userId: input.state.userId,

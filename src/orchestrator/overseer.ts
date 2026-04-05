@@ -28,7 +28,7 @@ import { MIND_SESSION_GUARD_ENTITY_NAME, MindSessionGuardReleaseInputSchema } fr
 import type { SaveChronoContinuityInput } from './chronoBackplane.js';
 import type { BufferedIngressActivityInput } from './bufferedIngressActivity.js';
 import type { IngressWindowStageInput } from './ingressWindowStageActivity.js';
-import { trackEvent } from '../observability/telemetry.js';
+import type { EmitOrchestratorTelemetryInput } from './emitOrchestratorTelemetryActivity.js';
 
 /** Spinner starts after this many ms. Only long turns get spinner updates. */
 const SPINNER_INITIAL_DELAY_MS = 8_000;
@@ -320,7 +320,7 @@ function* processTurn(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions runtime drives the generator with mixed types
 ): Generator<df.Task, string | undefined, any> {
   const correlationId = event.correlationId ?? crypto.randomUUID();
-  trackEvent({
+  yield context.df.callActivity('emitOrchestratorTelemetryActivity', {
     name: 'TurnStarted',
     correlationId,
     userId: state.userId,
@@ -328,7 +328,7 @@ function* processTurn(
       instanceId: context.df.instanceId,
       source: event.devLoopContext?.isDevLoop ? 'devloop-relay' : 'teams-message',
     },
-  });
+  } satisfies EmitOrchestratorTelemetryInput);
 
   const sessionInput: SessionInput = {
     state,
@@ -497,7 +497,7 @@ function* processTurn(
       }),
     );
 
-    trackEvent({
+    yield context.df.callActivity('emitOrchestratorTelemetryActivity', {
       name: 'TurnCompleted',
       correlationId,
       userId: state.userId,
@@ -508,7 +508,7 @@ function* processTurn(
         model: sessionResult.model,
         duplicateReplaySuppressed: true,
       },
-    });
+    } satisfies EmitOrchestratorTelemetryInput);
 
     return correlationId;
   }
@@ -578,7 +578,7 @@ function* processTurn(
     }),
   );
 
-  trackEvent({
+  yield context.df.callActivity('emitOrchestratorTelemetryActivity', {
     name: 'TurnCompleted',
     correlationId,
     userId: state.userId,
@@ -588,7 +588,7 @@ function* processTurn(
       safetyPassed: sessionResult.safetyPassed,
       model: sessionResult.model,
     },
-  });
+  } satisfies EmitOrchestratorTelemetryInput);
 
   return correlationId;
 }
