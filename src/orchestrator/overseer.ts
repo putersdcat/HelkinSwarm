@@ -487,6 +487,32 @@ function* processTurn(
     return undefined;
   }
 
+  if (sessionResult.duplicateReplaySuppressed) {
+    context.df.signalEntity(
+      new df.EntityId(MIND_SESSION_GUARD_ENTITY_NAME, state.userId),
+      'release',
+      MindSessionGuardReleaseInputSchema.parse({
+        instanceId: context.df.instanceId,
+        correlationId: sessionInput.correlationId,
+      }),
+    );
+
+    trackEvent({
+      name: 'TurnCompleted',
+      correlationId,
+      userId: state.userId,
+      properties: {
+        instanceId: context.df.instanceId,
+        replySent: true,
+        safetyPassed: true,
+        model: sessionResult.model,
+        duplicateReplaySuppressed: true,
+      },
+    });
+
+    return correlationId;
+  }
+
   state.latestPromptTokens = sessionResult.promptTokens;
   state.accumulatedTokens = (state.accumulatedTokens ?? 0) + sessionResult.tokensUsed;
   state.model = sessionResult.model;

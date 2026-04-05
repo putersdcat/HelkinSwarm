@@ -107,6 +107,7 @@ export interface SessionResult {
   toolResults: ToolDispatchResult | null;
   replySent: boolean;
   safetyPassed: boolean;
+  duplicateReplaySuppressed?: boolean;
   pendingClarification?: PendingClarification | null;
 }
 
@@ -127,6 +128,40 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   const input: SessionInput = context.df.getInput() as SessionInput;
   const correlationId = input.correlationId ?? crypto.randomUUID();
   const turnStartTime = context.df.currentUtcDateTime.getTime();
+
+  const duplicateReplayDetected: boolean = yield context.df.callActivity(
+    'sessionReplayGuardActivity',
+    {
+      conversationId: input.state.conversationId,
+      correlationId,
+      userId: input.state.userId,
+    },
+  );
+
+  if (duplicateReplayDetected) {
+    trackEvent({
+      name: 'PolicyOverrideApplied',
+      correlationId,
+      userId: input.state.userId,
+      properties: {
+        authority: 'post-reply-replay-suppression',
+        source: 'sessionOrchestrator',
+      },
+    });
+
+    return {
+      response: '(duplicate replay suppressed after visible reply delivery)',
+      cleanResponse: '(duplicate replay suppressed after visible reply delivery)',
+      tokensUsed: 0,
+      promptTokens: 0,
+      model: 'duplicate-replay-suppressed',
+      toolCalls: [],
+      toolResults: null,
+      replySent: true,
+      safetyPassed: true,
+      duplicateReplaySuppressed: true,
+    } satisfies SessionResult;
+  }
 
   // 0. Canonicalize user input (#138)
   const { text: canonicalizedMessage } = canonicalizeInput(input.userMessage);

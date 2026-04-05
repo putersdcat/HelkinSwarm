@@ -198,6 +198,26 @@ export async function releaseOutboundArtifactClaim(
 }
 
 /**
+ * Check whether an outbound-artifact claim already exists.
+ * Used to suppress duplicate same-correlation session re-entry after a visible reply.
+ */
+export async function hasOutboundArtifactClaim(
+  conversationId: string,
+  kind: OutboundArtifactKind,
+  dedupKey: string,
+): Promise<boolean> {
+  const container = getContainer(CONTAINER_NAME);
+  try {
+    const { resource } = await container
+      .item(makeOutboundArtifactDocumentId(kind, dedupKey), conversationId)
+      .read<OutboundArtifactDocument>();
+    return resource !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Get all pending ack documents older than maxAgeMs.
  * Used by startup recovery to detect dangling acks from crashed sessions (#191).
  */

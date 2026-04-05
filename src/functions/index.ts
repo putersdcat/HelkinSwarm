@@ -53,6 +53,7 @@ import '../orchestrator/executorActivity.js';
 import '../orchestrator/verificationPipelineActivity.js';
 import '../orchestrator/sendConfirmationCardActivity.js';
 import '../orchestrator/saveStateActivity.js';
+import '../orchestrator/sessionReplayGuardActivity.js';
 import '../orchestrator/loadStateActivity.js';
 import '../orchestrator/storeMemoryActivity.js';
 import '../orchestrator/hookResolutionActivity.js';
