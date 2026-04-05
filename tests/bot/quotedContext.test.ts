@@ -3,9 +3,9 @@ import { describe, it, expect } from 'vitest';
 import type { QuotedContext, QuoteSource } from '../../src/bot/quotedContext.js';
 
 describe('QuotedContext', () => {
-  const sources: QuoteSource[] = ['cache', 'entity', 'channelData', 'blockquote', 'messageReference'];
+  const sources: QuoteSource[] = ['cache', 'store', 'entity', 'channelData', 'blockquote', 'messageReference'];
 
-  it('supports all four resolution sources', () => {
+  it('supports all quoted-context resolution sources', () => {
     for (const source of sources) {
       const ctx: QuotedContext = {
         text: 'Hello world',
@@ -44,6 +44,16 @@ describe('QuotedContext', () => {
       text: 'Full text from sent message cache',
       replyToId: 'reply-id',
       source: 'cache',
+      mayBeTruncated: false,
+    };
+    expect(ctx.mayBeTruncated).toBe(false);
+  });
+
+  it('store source is never truncated', () => {
+    const ctx: QuotedContext = {
+      text: 'Full text from persisted sent-message storage',
+      replyToId: 'reply-id',
+      source: 'store',
       mayBeTruncated: false,
     };
     expect(ctx.mayBeTruncated).toBe(false);

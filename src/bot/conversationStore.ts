@@ -6,6 +6,7 @@ import type { ConversationReference } from 'botbuilder';
 import { getContainer } from '../memory/cosmosClient.js';
 
 const CONTAINER_NAME = 'conversationReferences';
+const SENT_MESSAGE_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 interface ConvRefDocument {
   /** Document id — 'convref-{userId}' */
@@ -26,6 +27,18 @@ interface PendingAckDocument {
   correlationId: string;
   activityId: string;
   createdAt: string;
+}
+
+interface SentMessageDocument {
+  /** Document id — 'sentmsg-{activityId}' */
+  id: string;
+  /** Partition key — Teams conversation id */
+  conversationId: string;
+  userId: string;
+  activityId: string;
+  text: string;
+  createdAt: string;
+  ttl: number;
 }
 
 export interface PendingAckSnapshot {
@@ -57,6 +70,10 @@ export function makeOutboundArtifactDocumentId(
   dedupKey: string,
 ): string {
   return `outbound-${kind}-${dedupKey}`;
+}
+
+export function makeSentMessageDocumentId(activityId: string): string {
+  return `sentmsg-${activityId}`;
 }
 
 /** Upsert the ConversationReference for a user. Called on every inbound message. */
@@ -94,6 +111,59 @@ export async function getConversationReference(
     .fetchAll();
 
   return resources[0]?.conversationReference ?? null;
+}
+
+/** Persist a bot-sent message so quoted replies can recover full text after restarts/deploys. */
+export async function saveSentMessageText(
+  userId: string,
+  conversationId: string,
+  activityId: string,
+  text: string,
+  createdAt = new Date().toISOString(),
+): Promise<void> {
+  if (!activityId || !text) {
+    return;
+  }
+
+  const doc: SentMessageDocument = {
+    id: makeSentMessageDocumentId(activityId),
+    conversationId,
+    userId,
+    activityId,
+    text,
+    createdAt,
+    ttl: SENT_MESSAGE_TTL_SECONDS,
+  };
+
+  const container = getContainer(CONTAINER_NAME);
+  await container.items.upsert(doc);
+}
+
+/** Retrieve a persisted bot-sent message by activity id. */
+export async function getStoredSentMessage(
+  activityId: string,
+  conversationId?: string,
+): Promise<string | null> {
+  const container = getContainer(CONTAINER_NAME);
+  const documentId = makeSentMessageDocumentId(activityId);
+
+  if (conversationId) {
+    try {
+      const { resource } = await container.item(documentId, conversationId).read<SentMessageDocument>();
+      return resource?.text ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  const { resources } = await container.items
+    .query<SentMessageDocument>({
+      query: 'SELECT * FROM c WHERE c.id = @id',
+      parameters: [{ name: '@id', value: documentId }],
+    })
+    .fetchAll();
+
+  return resources[0]?.text ?? null;
 }
 
 /**

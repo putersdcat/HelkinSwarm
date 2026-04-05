@@ -19,7 +19,7 @@ import {
 import type { DurableClient } from 'durable-functions';
 import { OrchestrationRuntimeStatus } from 'durable-functions';
 import type { NewMessageEvent } from '../orchestrator/overseer.js';
-import { clearPendingAckId, getPendingAckId, saveConversationReference, savePendingAckId } from './conversationStore.js';
+import { clearPendingAckId, getPendingAckId, getStoredSentMessage, saveConversationReference, savePendingAckId } from './conversationStore.js';
 import { getSentMessage } from './sentMessageCache.js';
 import {
   getMaintenanceMode,
@@ -473,16 +473,15 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       }
     }
 
+    const quotedContext = await this.extractQuotedReply(context);
+
     // Emit bot-receive trace phase (#269)
     trackEvent({
       name: 'BotMessageReceived',
       correlationId,
       userId: userId ?? 'unknown',
-      properties: { userAlias, hasQuotedReply: String(!!this.extractQuotedReply(context)) },
+      properties: { userAlias, hasQuotedReply: String(!!quotedContext) },
     });
-
-    // Extract quoted reply context as structured metadata (#278)
-    const quotedContext = this.extractQuotedReply(context);
 
     if (!userId) {
       await context.sendActivity(
@@ -2400,7 +2399,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
    *
    * Returns { text, fromCache } so callers know whether truncation warning is needed.
    */
-  private extractQuotedReply(context: TurnContext): QuotedContext | undefined {
+  private async extractQuotedReply(context: TurnContext): Promise<QuotedContext | undefined> {
     const activity = context.activity;
     const replyToId = activity.replyToId ?? extractMessageReferenceId(activity.attachments);
 
@@ -2409,6 +2408,11 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       const cached = getSentMessage(replyToId);
       if (cached) {
         return { text: cached, replyToId, source: 'cache', mayBeTruncated: false };
+      }
+
+      const stored = await getStoredSentMessage(replyToId, activity.conversation?.id);
+      if (stored) {
+        return { text: stored, replyToId, source: 'store', mayBeTruncated: false };
       }
     }
 

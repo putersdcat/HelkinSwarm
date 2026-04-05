@@ -7,6 +7,7 @@ const harness = vi.hoisted(() => ({
   clearPendingAckId: vi.fn(),
   claimOutboundArtifact: vi.fn(),
   releaseOutboundArtifactClaim: vi.fn(),
+  saveSentMessageText: vi.fn(),
   cacheSentMessage: vi.fn(),
   readRuntimeAssetContent: vi.fn(),
   loadRuntimeAssetReference: vi.fn(),
@@ -20,6 +21,7 @@ vi.mock('../../src/bot/conversationStore.js', () => ({
   clearPendingAckId: harness.clearPendingAckId,
   claimOutboundArtifact: harness.claimOutboundArtifact,
   releaseOutboundArtifactClaim: harness.releaseOutboundArtifactClaim,
+  saveSentMessageText: harness.saveSentMessageText,
 }));
 
 vi.mock('../../src/bot/sentMessageCache.js', () => ({
@@ -62,6 +64,7 @@ function configureCommonHarness(): void {
   harness.clearPendingAckId.mockResolvedValue(undefined);
   harness.claimOutboundArtifact.mockResolvedValue(true);
   harness.releaseOutboundArtifactClaim.mockResolvedValue(undefined);
+  harness.saveSentMessageText.mockResolvedValue(undefined);
   harness.cacheSentMessage.mockImplementation(() => undefined);
   harness.readRuntimeAssetContent.mockResolvedValue(null);
   harness.loadRuntimeAssetReference.mockResolvedValue(null);
@@ -153,6 +156,7 @@ describe('ack correlation scoping', () => {
     expect(result.success).toBe(true);
     expect(getPendingAckId).toHaveBeenCalledWith('corr-123');
     expect(clearPendingAckId).toHaveBeenCalledWith('conv-1', 'corr-123');
+    expect(harness.saveSentMessageText).toHaveBeenCalledWith('user-1', 'conv-1', 'ack-activity-1', 'done');
   });
 
   it('sendReply skips fallback message when ack update times out to prevent duplicates (#329)', async () => {

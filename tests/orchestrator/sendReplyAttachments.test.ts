@@ -21,6 +21,7 @@ async function loadAttachmentReplyModule() {
     clearPendingAckId: vi.fn(async () => undefined),
     claimOutboundArtifact: vi.fn(async () => true),
     releaseOutboundArtifactClaim: vi.fn(async () => undefined),
+    saveSentMessageText: vi.fn(async () => undefined),
   }));
 
   vi.doMock('../../src/bot/sentMessageCache.js', () => ({

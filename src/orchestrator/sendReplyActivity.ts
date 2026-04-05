@@ -15,6 +15,7 @@ import {
   getPendingAckId,
   clearPendingAckId,
   releaseOutboundArtifactClaim,
+  saveSentMessageText,
 } from '../bot/conversationStore.js';
 import { cacheSentMessage } from '../bot/sentMessageCache.js';
 import { getEnvConfig } from '../config/envConfig.js';
@@ -83,6 +84,26 @@ async function withTimeout<T>(work: Promise<T>, timeoutMs: number, label: string
       clearTimeout(timer);
     }
   });
+}
+
+async function rememberSentMessage(
+  userId: string,
+  conversationId: string,
+  activityId: string | undefined,
+  text: string,
+): Promise<void> {
+  if (!activityId || !text) {
+    return;
+  }
+
+  cacheSentMessage(activityId, text);
+  try {
+    await saveSentMessageText(userId, conversationId, activityId, text);
+  } catch (err) {
+    console.warn(
+      `[sendReplyActivity] Failed to persist sent message text for activityId=${activityId}: ${err instanceof Error ? err.message : err}`,
+    );
+  }
 }
 
 function getAdapter(): CloudAdapter {
@@ -243,8 +264,7 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
                   text: replyChunks[0]!.text,
                   textFormat: 'markdown',
                 }), ACK_UPDATE_TIMEOUT_MS, 'ack update');
-                // Cache under ack ID so reply-with-quote can resolve full text (#166)
-                cacheSentMessage(ackActivityId, replyChunks[0]!.text);
+                await rememberSentMessage(input.userId, conversationId, ackActivityId, replyChunks[0]!.text);
                 firstChunkSent = true;
                 deliveredToUser = true;
               } catch (err) {
@@ -267,9 +287,7 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
                     text: replyChunks[0]!.text,
                     textFormat: 'markdown',
                   });
-                  if (response?.id) {
-                    cacheSentMessage(response.id, replyChunks[0]!.text);
-                  }
+                  await rememberSentMessage(input.userId, conversationId, response?.id, replyChunks[0]!.text);
                   firstChunkSent = true;
                   deliveredToUser = true;
                 }
@@ -281,9 +299,7 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
                   text: chunk.text,
                   textFormat: 'markdown',
                 });
-                if (response?.id) {
-                  cacheSentMessage(response.id, chunk.text);
-                }
+                await rememberSentMessage(input.userId, conversationId, response?.id, chunk.text);
                 deliveredToUser = true;
               }
 
@@ -292,9 +308,12 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
                   type: ActivityTypes.Message,
                   attachments: assetAttachments,
                 });
-                if (response?.id) {
-                  cacheSentMessage(response.id, `[attachment-message] ${assetAttachments.map((attachment) => attachment.name ?? attachment.contentType ?? 'attachment').join(', ')}`);
-                }
+                await rememberSentMessage(
+                  input.userId,
+                  conversationId,
+                  response?.id,
+                  `[attachment-message] ${assetAttachments.map((attachment) => attachment.name ?? attachment.contentType ?? 'attachment').join(', ')}`,
+                );
                 deliveredToUser = true;
               }
             } else {
@@ -305,9 +324,7 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
                   text: chunk.text,
                   textFormat: 'markdown',
                 });
-                if (response?.id) {
-                  cacheSentMessage(response.id, chunk.text);
-                }
+                await rememberSentMessage(input.userId, conversationId, response?.id, chunk.text);
                 deliveredToUser = true;
               }
 
@@ -316,9 +333,12 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
                   type: ActivityTypes.Message,
                   attachments: assetAttachments,
                 });
-                if (response?.id) {
-                  cacheSentMessage(response.id, `[attachment-message] ${assetAttachments.map((attachment) => attachment.name ?? attachment.contentType ?? 'attachment').join(', ')}`);
-                }
+                await rememberSentMessage(
+                  input.userId,
+                  conversationId,
+                  response?.id,
+                  `[attachment-message] ${assetAttachments.map((attachment) => attachment.name ?? attachment.contentType ?? 'attachment').join(', ')}`,
+                );
                 deliveredToUser = true;
               }
             }
