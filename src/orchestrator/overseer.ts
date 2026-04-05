@@ -18,6 +18,7 @@ import type { SaveStateInput } from './saveStateActivity.js';
 import type { LoadStateInput } from './loadStateActivity.js';
 import type { SendReplyInput } from './sendReplyActivity.js';
 import type { SpinnerHeartbeatInput } from './spinnerHeartbeatActivity.js';
+import type { ReplyDeliveryRecoveryInput, ReplyDeliveryRecoveryResult } from './replyDeliveryRecoveryActivity.js';
 import type { TerminateOrchestrationInput } from './terminateOrchestrationActivity.js';
 import type { PurgeOrchestrationInput } from './terminateOrchestrationActivity.js';
 import type { StoreMemoryInput } from './storeMemoryActivity.js';
@@ -480,6 +481,53 @@ function* processTurn(
           correlationId: sessionInput.correlationId,
           correlationTag,
         } satisfies SpinnerHeartbeatInput);
+
+        const replyDeliveryRecovery = (yield context.df.callActivity('replyDeliveryRecoveryActivity', {
+          conversationId: state.conversationId,
+          correlationId: sessionInput.correlationId,
+          userId: state.userId,
+        } satisfies ReplyDeliveryRecoveryInput)) as ReplyDeliveryRecoveryResult;
+
+        if (replyDeliveryRecovery.recovered) {
+          sessionTimer.cancel();
+          spinnerTimer.cancel();
+
+          try {
+            yield context.df.callActivity('terminateOrchestrationActivity', {
+              instanceId: sessionInstanceId,
+              reason: `Recovered reply-delivered turn after missing sub-orchestrator completion for correlation=${sessionInput.correlationId}`,
+            } satisfies TerminateOrchestrationInput);
+          } catch (termErr) {
+            console.warn(`[overseer] Failed to terminate recovered session ${sessionInstanceId}:`, termErr);
+          }
+
+          yield context.df.callActivity('emitOrchestratorTelemetryActivity', {
+            name: 'PolicyOverrideApplied',
+            correlationId,
+            userId: state.userId,
+            properties: {
+              authority: 'reply-delivery-recovery',
+              source: 'overseer',
+              pendingAckPresent: replyDeliveryRecovery.pendingAckPresent,
+            },
+          } satisfies EmitOrchestratorTelemetryInput);
+
+          sessionDone = true;
+          sessionResult = {
+            response: '(reply-delivered recovery after missing sub-orchestrator completion)',
+            cleanResponse: '(reply-delivered recovery after missing sub-orchestrator completion)',
+            tokensUsed: 0,
+            promptTokens: 0,
+            model: 'reply-delivery-recovered',
+            toolCalls: [],
+            toolResults: null,
+            replySent: true,
+            safetyPassed: true,
+            duplicateReplaySuppressed: true,
+          } satisfies SessionResult;
+          break;
+        }
+
         if (spinnerTicks < MAX_SPINNER_TICKS) {
           spinnerDeadline = new Date(context.df.currentUtcDateTime.getTime() + SPINNER_INTERVAL_MS);
           spinnerTimer = context.df.createTimer(spinnerDeadline);
