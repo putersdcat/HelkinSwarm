@@ -170,7 +170,8 @@ This is the ordinary backlog surface that should resume **as soon as** the curre
 
 | Order | Issue | Lane | Confidence | Why it is here now |
 |---|---|---|---|---|
-| 1 | `#485` | Trust / UX honesty | C2-C3 | This is now the clearest remaining Trust Recovery issue once the constitutional seam stops blocking. Follow-up verification routing has hardened in code, but closure still needs honest proof. |
+| 1 | `#485` | Trust / UX honesty parent | C3/C4-partial | The broad follow-up proof-routing concern remains open, but the live thread has now narrowed to a smaller executable child. |
+| 1a | `#565` | Current deepest Zone A blocker | C3/C4-failed | The remaining active trust seam is now the quoted Outlook proof follow-up that still collapses to `helkin_skill_search` discovery output instead of executing the safe mailbox proof path. |
 
 ### Recently cleared Zone A items
 
@@ -184,9 +185,10 @@ These are no longer part of active competition:
 
 Once the constitutional gate is no longer the honest blocker, the default next target becomes:
 
-1. `#485`
+1. `#565`
+2. then collapse/close or honestly re-bucket `#485`
 
-If `#485` is closed, superseded, or explicitly re-bucketed, promote the strongest ready Zone B candidate.
+If `#565` is closed, superseded, or explicitly re-bucketed, reassess whether `#485` still has a broader remaining seam. If not, promote the strongest ready Zone B candidate.
 
 ---
 
@@ -237,8 +239,19 @@ Reason:
 - **Yes**, the loop was stale enough that this seam has now been explicitly stepped over.
 - `#568` remains open, but it is quarantined on the research / exception rail rather than competing as the default daily target.
 - Ordinary backlog work should now resume with:
-  - `#485`
+  - `#565`
+  - then `#485` only if a broader parent seam still honestly remains
   - then `#501`
+
+### Trust surface refresh — 2026-04-05 late evening
+
+Live issue state narrowed again after the `#485` / `#564` validation chain:
+
+- `#564` is closed
+- `#485` remains open as the broader parent trust issue
+- the current executable child is now `#565`
+
+Future runs should therefore work `#565` first instead of treating `#485` as the immediate implementation target.
 
 ### Loop protection note — 2026-04-05 evening refresh
 
