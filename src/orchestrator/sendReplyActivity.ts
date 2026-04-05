@@ -20,7 +20,7 @@ import { cacheSentMessage } from '../bot/sentMessageCache.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { splitReplyIntoChunks } from './replyChunking.js';
 import { trackEvent } from '../observability/telemetry.js';
-import { clearOrchestratorStage, recordSubstage } from '../observability/orchestratorStageHealth.js';
+import { recordSubstage } from '../observability/orchestratorStageHealth.js';
 import {
   loadRuntimeAssetReference,
   readRuntimeAssetContent,
@@ -217,7 +217,6 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
       );
       if (!outboundClaimed) {
         console.warn(`[sendReplyActivity] Duplicate reply suppressed for correlationId=${input.correlationId}`);
-        await clearOrchestratorStage(correlationId, input.userId);
         return { success: true };
       }
     }
@@ -328,9 +327,6 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
     if (input.correlationId) {
       trackEvent({ name: 'ReplySent', correlationId: input.correlationId, userId: input.userId, properties: { success: 'true', chunks: String(replyChunks.length), attachments: String(assetAttachments.length) } });
     }
-    // Stage cleanup must happen even in fast-path mode. SENDREPLY_FAST_PATH only
-    // skips the ack/Cosmos reply plumbing, not turn completion bookkeeping.
-    await clearOrchestratorStage(correlationId, input.userId);
     console.log(`[sendReplyActivity] DONE correlationId=${correlationId}`);
     return { success: true };
   } catch (err: unknown) {

@@ -421,6 +421,11 @@ function* processTurn(
           console.error(`[overseer] Failed to send timeout reply for user=${state.userId}`, replyErr);
         }
         yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
+        yield context.df.callActivity('ingressWindowStageActivity', {
+          action: 'clear',
+          correlationId: sessionInput.correlationId,
+          userId: state.userId,
+        } satisfies IngressWindowStageInput);
         return undefined;
       } else if (winner === spinnerTimer) {
         spinnerTicks++;
@@ -456,6 +461,11 @@ function* processTurn(
       console.error(`[overseer] Failed to send error reply for user=${state.userId}`, replyErr);
     }
     yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
+    yield context.df.callActivity('ingressWindowStageActivity', {
+      action: 'clear',
+      correlationId: sessionInput.correlationId,
+      userId: state.userId,
+    } satisfies IngressWindowStageInput);
     context.df.signalEntity(
       new df.EntityId(MIND_SESSION_GUARD_ENTITY_NAME, state.userId),
       'release',
