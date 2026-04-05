@@ -609,13 +609,53 @@ describe('discoveryToolInjection', () => {
       'please do a simple functional test of the skill and output the results',
       {
         quotedText: 'Microsoft Graph Enterprise MCP is available. Recommended entry tools: graphenterprise_suggest_queries, graphenterprise_get.',
+        recentUserText: 'Tell me the current status of the Microsoft Graph Enterprise MCP skill and keep it concise.',
         recentAssistantText: 'Best matching skill: Microsoft Graph Enterprise MCP `graphenterprise`.',
       },
     );
 
     expect(routed).toContain('functional test');
     expect(routed).toContain('graphenterprise_suggest_queries');
+    expect(routed).toContain('current status of the Microsoft Graph Enterprise MCP skill');
     expect(routed).toContain('Best matching skill');
+  });
+
+  it('synthesizes the Outlook proof call from recent user context even when quoted context is truncated or generic', async () => {
+    const {
+      buildContextAwareRoutingMessage,
+      synthesizeDeterministicReadOnlyInitialToolCall,
+    } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const routed = buildContextAwareRoutingMessage(
+      'Please do a simple functional test of the skill and output the results.',
+      {
+        quotedText: 'I checked the installed skills without executing anything yet.',
+        recentUserText: 'Use discovery only and tell me which tool you would use to search mailbox emails. Do not execute any non-discovery tools.',
+      },
+    );
+
+    const call = synthesizeDeterministicReadOnlyInitialToolCall(
+      routed,
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_search_emails',
+            description: 'search emails',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(call).toEqual({
+      name: 'outlook_search_emails',
+      arguments: {
+        query: 'hasAttachment:true',
+        folder: 'inbox',
+        top: 5,
+      },
+    });
   });
 
   it('does not misclassify proof prompts as read-only discovery just because injected quote context contains old discovery wording', async () => {

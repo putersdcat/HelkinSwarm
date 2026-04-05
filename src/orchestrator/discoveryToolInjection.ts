@@ -11,6 +11,7 @@ export type DeterministicFollowUpToolCall = {
 
 type RoutingMessageContext = {
   quotedText?: string;
+  recentUserText?: string;
   recentAssistantText?: string;
 };
 
@@ -126,6 +127,9 @@ export function buildContextAwareRoutingMessage(
   const hints: string[] = [];
   if (context?.quotedText) {
     hints.push(`[Quoted context]\n${context.quotedText}`);
+  }
+  if (context?.recentUserText) {
+    hints.push(`[Recent user context]\n${context.recentUserText}`);
   }
   if (context?.recentAssistantText) {
     hints.push(`[Recent assistant context]\n${context.recentAssistantText}`);

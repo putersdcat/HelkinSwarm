@@ -364,8 +364,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   const recentAssistantText = [...input.state.recentHistory]
     .reverse()
     .find((turn) => turn.role === 'assistant')?.content;
+  const recentUserText = [...input.state.recentHistory]
+    .reverse()
+    .find((turn) => turn.role === 'user')?.content;
   const effectiveTaskMessage = buildContextAwareRoutingMessage(userMessageForLlm, {
     quotedText: input.quotedContext?.text,
+    recentUserText,
     recentAssistantText,
   });
 
