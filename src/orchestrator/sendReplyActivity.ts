@@ -64,6 +64,7 @@ export interface SendReplyResult {
 // Uses the UAMI credentials from the Bot Service registration.
 let adapterInstance: CloudAdapter | undefined;
 const ACK_UPDATE_TIMEOUT_MS = 3_000;
+const PENDING_ACK_CLEAR_TIMEOUT_MS = 2_000;
 
 async function withTimeout<T>(work: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -271,10 +272,6 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
             }
           }
 
-          if (input.correlationId && !SENDREPLY_FAST_PATH) {
-            await clearPendingAckId(conversationId, input.correlationId);
-          }
-
           for (const chunk of firstChunkSent ? replyChunks.slice(1) : replyChunks) {
             const response = await turnContext.sendActivity({
               type: ActivityTypes.Message,
@@ -324,6 +321,21 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
         }
       },
     );
+
+    if (ackActivityId && input.correlationId && !SENDREPLY_FAST_PATH) {
+      try {
+        await withTimeout(
+          clearPendingAckId(conversationId, input.correlationId),
+          PENDING_ACK_CLEAR_TIMEOUT_MS,
+          'pending ack clear',
+        );
+      } catch (err) {
+        console.warn(
+          `[sendReplyActivity] Pending ack clear timed out/failed for userId=${input.userId}; continuing because the reply send already completed: ${err instanceof Error ? err.message : err}`,
+        );
+      }
+    }
+
     if (input.correlationId) {
       trackEvent({ name: 'ReplySent', correlationId: input.correlationId, userId: input.userId, properties: { success: 'true', chunks: String(replyChunks.length), attachments: String(assetAttachments.length) } });
     }

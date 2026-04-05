@@ -10,7 +10,6 @@ const harness = vi.hoisted(() => ({
   cacheSentMessage: vi.fn(),
   readRuntimeAssetContent: vi.fn(),
   loadRuntimeAssetReference: vi.fn(),
-  clearOrchestratorStage: vi.fn(),
   recordSubstage: vi.fn(),
   getCorrelatedSpinnerAck: vi.fn(),
 }));
@@ -44,7 +43,6 @@ vi.mock('../../src/config/envConfig.js', () => ({
 }));
 
 vi.mock('../../src/observability/orchestratorStageHealth.js', () => ({
-  clearOrchestratorStage: harness.clearOrchestratorStage,
   recordSubstage: harness.recordSubstage,
 }));
 
@@ -67,12 +65,11 @@ function configureCommonHarness(): void {
   harness.cacheSentMessage.mockImplementation(() => undefined);
   harness.readRuntimeAssetContent.mockResolvedValue(null);
   harness.loadRuntimeAssetReference.mockResolvedValue(null);
-  harness.clearOrchestratorStage.mockResolvedValue(undefined);
   harness.recordSubstage.mockImplementation(() => undefined);
   harness.getCorrelatedSpinnerAck.mockReturnValue('⠋ Still thinking... [corr:abc12345]');
 }
 
-async function loadSendReplyModule(options?: { hangUpdate?: boolean; fastPath?: boolean }) {
+async function loadSendReplyModule(options?: { hangUpdate?: boolean; hangAckClear?: boolean; fastPath?: boolean }) {
   vi.resetModules();
   vi.clearAllMocks();
   configureCommonHarness();
@@ -96,6 +93,9 @@ async function loadSendReplyModule(options?: { hangUpdate?: boolean; fastPath?: 
   });
 
   const mod = await import('../../src/orchestrator/sendReplyActivity.js');
+  if (options?.hangAckClear) {
+    harness.clearPendingAckId.mockImplementation(async () => await new Promise(() => undefined));
+  }
   return {
     ...mod,
     getPendingAckId: harness.getPendingAckId,
@@ -103,7 +103,6 @@ async function loadSendReplyModule(options?: { hangUpdate?: boolean; fastPath?: 
     claimOutboundArtifact: harness.claimOutboundArtifact,
     releaseOutboundArtifactClaim: harness.releaseOutboundArtifactClaim,
     continueConversationAsync: harness.continueConversationAsync,
-    clearOrchestratorStage: harness.clearOrchestratorStage,
     recordSubstage: harness.recordSubstage,
   };
 }
@@ -181,7 +180,7 @@ describe('ack correlation scoping', () => {
   }, 15_000);
 
   it('sendReply suppresses duplicate proactive replies for the same correlationId', async () => {
-    const { sendReply, claimOutboundArtifact, continueConversationAsync, clearOrchestratorStage } = await loadSendReplyModule();
+    const { sendReply, claimOutboundArtifact, continueConversationAsync, recordSubstage } = await loadSendReplyModule();
     claimOutboundArtifact.mockResolvedValue(false);
 
     const result = await sendReply({
@@ -193,11 +192,11 @@ describe('ack correlation scoping', () => {
     expect(result.success).toBe(true);
     expect(claimOutboundArtifact).toHaveBeenCalledWith('conv-1', 'user-1', 'reply', 'corr-duplicate');
     expect(continueConversationAsync).not.toHaveBeenCalled();
-    expect(clearOrchestratorStage).toHaveBeenCalledWith('corr-duplicate', 'user-1');
+    expect(recordSubstage).toHaveBeenCalledWith('corr-duplicate', 'send-reply', 'user-1');
   });
 
-  it('sendReply still clears orchestrator stage when SENDREPLY_FAST_PATH is enabled', async () => {
-    const { sendReply, clearOrchestratorStage, getPendingAckId, claimOutboundArtifact } = await loadSendReplyModule({ fastPath: true });
+  it('sendReply skips pending-ack lookup and claim logic when SENDREPLY_FAST_PATH is enabled', async () => {
+    const { sendReply, getPendingAckId, claimOutboundArtifact, clearPendingAckId, recordSubstage } = await loadSendReplyModule({ fastPath: true });
 
     const result = await sendReply({
       userId: 'user-1',
@@ -208,6 +207,20 @@ describe('ack correlation scoping', () => {
     expect(result.success).toBe(true);
     expect(claimOutboundArtifact).not.toHaveBeenCalled();
     expect(getPendingAckId).not.toHaveBeenCalled();
-    expect(clearOrchestratorStage).toHaveBeenCalledWith('corr-fast-path', 'user-1');
+    expect(clearPendingAckId).not.toHaveBeenCalled();
+    expect(recordSubstage).toHaveBeenCalledWith('corr-fast-path', 'send-reply', 'user-1');
+  });
+
+  it('sendReply does not hang the reply path when pending-ack cleanup stalls after a successful send', async () => {
+    const { sendReply, clearPendingAckId } = await loadSendReplyModule({ hangAckClear: true });
+
+    const result = await sendReply({
+      userId: 'user-1',
+      correlationId: 'corr-hung-clear',
+      message: 'done',
+    });
+
+    expect(result.success).toBe(true);
+    expect(clearPendingAckId).toHaveBeenCalledWith('conv-1', 'corr-hung-clear');
   });
 });
