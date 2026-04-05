@@ -3,6 +3,7 @@
 // Spec ref: 08-Orchestrator-Patterns.md, 0e-Safety-and-Four-Eyes-Verification-Pipeline.md
 
 import * as df from 'durable-functions';
+import { z } from 'zod';
 import type { OverseerState } from './stateManager.js';
 import type { BuildPromptInput, PromptResult } from './buildPromptActivity.js';
 import type { LlmActivityInput, LlmResult } from './llmActivity.js';
@@ -78,6 +79,27 @@ function* emitOrchestratorTelemetry(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions generator helper
 ): Generator<df.Task, void, any> {
   yield context.df.callActivity('emitOrchestratorTelemetryActivity', input);
+}
+
+const ConfirmationResponseSchema = z.object({
+  action: z.enum(['approved', 'denied']),
+  correlationId: z.string().min(1),
+  toolName: z.string().min(1),
+  userId: z.string().min(1),
+  sessionInstanceId: z.string().min(1),
+  respondedAt: z.string().min(1).optional(),
+});
+
+type ConfirmationResponse = z.infer<typeof ConfirmationResponseSchema>;
+
+function isMatchingConfirmationResponse(
+  response: ConfirmationResponse,
+  expected: { correlationId: string; toolName: string; userId: string; sessionInstanceId: string },
+): boolean {
+  return response.correlationId === expected.correlationId
+    && response.toolName === expected.toolName
+    && response.userId === expected.userId
+    && response.sessionInstanceId === expected.sessionInstanceId;
 }
 
 export interface SessionInput {
@@ -690,8 +712,16 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             safetyPassed = false;
           } else {
             timer.cancel();
-            const response = confirmation.result as { action: string };
-            if (response.action !== 'approved') {
+            const parsedResponse = ConfirmationResponseSchema.safeParse(confirmation.result);
+            if (!parsedResponse.success || !isMatchingConfirmationResponse(parsedResponse.data, {
+              correlationId,
+              toolName: cardInput.toolName,
+              userId: input.state.userId,
+              sessionInstanceId: context.df.instanceId,
+            })) {
+              responseContent = '❌ Confirmation response did not match the active approval request. Action cancelled.';
+              safetyPassed = false;
+            } else if (parsedResponse.data.action !== 'approved') {
               responseContent = `❌ Action cancelled by user.`;
               safetyPassed = false;
             }
@@ -1110,8 +1140,23 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             }
 
             timer.cancel();
-            const response = confirmation.result as { action: string };
-            if (response.action !== 'approved') {
+            const parsedResponse = ConfirmationResponseSchema.safeParse(confirmation.result);
+            if (!parsedResponse.success || !isMatchingConfirmationResponse(parsedResponse.data, {
+              correlationId,
+              toolName: cardInput.toolName,
+              userId: input.state.userId,
+              sessionInstanceId: context.df.instanceId,
+            })) {
+              followUp = {
+                ...followUp,
+                content: '❌ Confirmation response did not match the active approval request. Action cancelled.',
+                toolCalls: [],
+                finishReason: 'stop',
+              };
+              break;
+            }
+
+            if (parsedResponse.data.action !== 'approved') {
               followUp = {
                 ...followUp,
                 content: '❌ Action cancelled by user.',

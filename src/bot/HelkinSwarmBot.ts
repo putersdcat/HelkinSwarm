@@ -314,6 +314,8 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         action: data.action,
         correlationId: data.correlationId,
         toolName: data.toolName,
+        userId: data.userId,
+        sessionInstanceId: data.sessionInstanceId,
         respondedAt: new Date().toISOString(),
       });
     }
