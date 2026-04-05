@@ -7,8 +7,9 @@ describe('post-reply memory ordering source guards', () => {
     const overseerSource = readFileSync('src/orchestrator/overseer.ts', 'utf8');
 
     expect(sessionSource).not.toContain("yield context.df.callActivity('storeMemoryActivity'");
-    expect(overseerSource).toContain("yield context.df.callActivity('storeMemoryActivity', {");
+    expect(overseerSource).toContain("yield* runBestEffortPostReplyActivity(");
+    expect(overseerSource).toContain("'storeMemoryActivity'");
     expect(overseerSource).toContain('assistantReply: sessionResult.cleanResponse || sessionResult.response || \'(no response)\',');
-    expect(overseerSource).toContain('[overseer] storeMemoryActivity failed after reply');
+    expect(overseerSource).toContain('[overseer] ${label} failed after reply');
   });
 });

@@ -38,6 +38,8 @@ const SPINNER_INTERVAL_MS = 8_000;
 const MAX_SPINNER_TICKS = 6;
 /** Poll buffered ingress during the waiting window to absorb short Cosmos visibility lag. */
 const INGRESS_BUFFER_POLL_MS = 2_000;
+/** Bound best-effort post-reply activities at the overseer layer so a stuck durable activity cannot pin completion. */
+const POST_REPLY_ACTIVITY_TIMEOUT_MS = 15_000;
 /**
  * How long to keep the overseer instance in Running state after processing.
  * Azure Storage startNew silently overwrites Completed instances, so this timer
@@ -91,6 +93,41 @@ interface BufferedIngressQueuedEvent {
 interface OverseerCustomStatus {
   stage: 'active-processing' | 'awaiting-ingress';
   correlationId: string;
+}
+
+function* runBestEffortPostReplyActivity(
+  context: df.OrchestrationContext,
+  activityName: string,
+  input: unknown,
+  userId: string,
+  correlationId: string,
+  label: string,
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions runtime drives the generator with mixed types
+): Generator<df.Task, void, any> {
+  const activityTask = context.df.callActivity(activityName, input);
+  const timeoutDeadline = new Date(
+    context.df.currentUtcDateTime.getTime() + POST_REPLY_ACTIVITY_TIMEOUT_MS,
+  );
+  const timeoutTask = context.df.createTimer(timeoutDeadline);
+  const winner = yield context.df.Task.any([activityTask, timeoutTask]) as df.Task;
+
+  if (winner === timeoutTask) {
+    console.warn(
+      `[overseer] ${label} timed out after reply for user=${userId} correlationId=${correlationId}; continuing turn completion`,
+    );
+    return;
+  }
+
+  timeoutTask.cancel();
+
+  try {
+    void activityTask.result;
+  } catch (activityError) {
+    console.warn(
+      `[overseer] ${label} failed after reply for user=${userId} correlationId=${correlationId}`,
+      activityError,
+    );
+  }
 }
 
 df.app.orchestration('overseer', function* (context) {
@@ -530,44 +567,44 @@ function* processTurn(
   );
   state.recentHistory = history.slice(-10);
 
-  try {
-    yield context.df.callActivity('storeMemoryActivity', {
+  yield* runBestEffortPostReplyActivity(
+    context,
+    'storeMemoryActivity',
+    {
       userId: state.userId,
       userMessage: event.userMessage,
       assistantReply: sessionResult.cleanResponse || sessionResult.response || '(no response)',
-    } satisfies StoreMemoryInput);
-  } catch (storeMemoryError) {
-    console.warn(
-      `[overseer] storeMemoryActivity failed after reply for user=${state.userId} correlationId=${sessionInput.correlationId}`,
-      storeMemoryError,
-    );
-  }
+    } satisfies StoreMemoryInput,
+    state.userId,
+    sessionInput.correlationId,
+    'storeMemoryActivity',
+  );
 
-  try {
-    yield context.df.callActivity('saveStateActivity', {
+  yield* runBestEffortPostReplyActivity(
+    context,
+    'saveStateActivity',
+    {
       state,
       correlationId: sessionInput.correlationId,
-    } satisfies SaveStateInput);
-  } catch (saveStateError) {
-    console.warn(
-      `[overseer] saveStateActivity failed after reply for user=${state.userId} correlationId=${sessionInput.correlationId}`,
-      saveStateError,
-    );
-  }
+    } satisfies SaveStateInput,
+    state.userId,
+    sessionInput.correlationId,
+    'saveStateActivity',
+  );
 
-  try {
-    yield context.df.callActivity('saveChronoContinuityActivity', {
+  yield* runBestEffortPostReplyActivity(
+    context,
+    'saveChronoContinuityActivity',
+    {
       userId: state.userId,
       correlationId: sessionInput.correlationId,
       userMessage: event.userMessage,
       assistantReply: sessionResult.cleanResponse || sessionResult.response || '(no response)',
-    } satisfies SaveChronoContinuityInput);
-  } catch (saveChronoError) {
-    console.warn(
-      `[overseer] saveChronoContinuityActivity failed after reply for user=${state.userId} correlationId=${sessionInput.correlationId}`,
-      saveChronoError,
-    );
-  }
+    } satisfies SaveChronoContinuityInput,
+    state.userId,
+    sessionInput.correlationId,
+    'saveChronoContinuityActivity',
+  );
 
   context.df.signalEntity(
     new df.EntityId(MIND_SESSION_GUARD_ENTITY_NAME, state.userId),
