@@ -357,6 +357,11 @@ function* processTurn(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions runtime drives the generator with mixed types
 ): Generator<df.Task, string | undefined, any> {
   const correlationId = event.correlationId ?? crypto.randomUUID();
+  const currentConversationId = event.conversationReference?.conversation?.id;
+  if (currentConversationId && state.conversationId !== currentConversationId) {
+    state.conversationId = currentConversationId;
+  }
+
   yield context.df.callActivity('emitOrchestratorTelemetryActivity', {
     name: 'TurnStarted',
     correlationId,

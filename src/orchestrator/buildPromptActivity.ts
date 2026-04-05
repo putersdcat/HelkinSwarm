@@ -25,6 +25,7 @@ export interface BuildPromptInput {
   state: OverseerState;
   userMessage: string;
   steeringContext?: string;
+  conversationId?: string;
   /** Structured runtime asset references extracted from inbound Teams attachments (#416) */
   runtimeAssets?: RuntimeAssetReference[];
   /** Prompt-safe notes about inbound attachment ingestion outcomes (#416) */
@@ -279,11 +280,12 @@ const DIAGNOSTIC_FAST_PATH = !!(process.env['BUILDPROMPT_FAST_PATH'] ?? '');
 df.app.activity('buildPromptActivity', {
   handler: async (input: BuildPromptInput): Promise<PromptResult> => {
     const correlationId = input.correlationId ?? input.state.userId;
+    const conversationId = input.conversationId ?? input.state.conversationId;
     console.log(`[buildPromptActivity] START correlationId=${correlationId} fastPath=${DIAGNOSTIC_FAST_PATH}`);
 
     if (
       input.correlationId
-      && await hasOutboundArtifactClaim(input.state.conversationId, 'reply', input.correlationId)
+      && await hasOutboundArtifactClaim(conversationId, 'reply', input.correlationId)
     ) {
       console.warn(
         `[buildPromptActivity] Duplicate post-reply execution suppressed for correlationId=${input.correlationId}`,

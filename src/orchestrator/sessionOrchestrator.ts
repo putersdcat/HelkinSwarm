@@ -159,11 +159,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   const input: SessionInput = context.df.getInput() as SessionInput;
   const correlationId = input.correlationId ?? crypto.randomUUID();
   const turnStartTime = context.df.currentUtcDateTime.getTime();
+  const turnConversationId = input.conversationReference?.conversation?.id ?? input.state.conversationId;
 
   const duplicateReplayDetected: boolean = yield context.df.callActivity(
     'sessionReplayGuardActivity',
     {
-      conversationId: input.state.conversationId,
+      conversationId: turnConversationId,
       correlationId,
       userId: input.state.userId,
     },
@@ -432,6 +433,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     state: input.state,
     userMessage: userMessageForLlm,
     steeringContext: steeringInjection.injectionBlock,
+    conversationId: turnConversationId,
     runtimeAssets: input.runtimeAssets,
     attachmentNotices: input.attachmentNotices,
     devLoopContext: input.devLoopContext,
@@ -514,7 +516,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     ...promptWithPlan,
     correlationId,
     userId: input.state.userId,
-    conversationId: input.state.conversationId,
+    conversationId: turnConversationId,
     modelOverride: resolvedModelOverride,
     imageUrls: input.imageUrls,
     tools: initialToolSchemas,
@@ -1238,7 +1240,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             correlationId,
             sessionId: input.state.userId,
             userId: input.state.userId,
-            conversationId: input.state.conversationId,
+            conversationId: turnConversationId,
           };
           roundDirectResults = yield context.df.callActivity(
             'toolDispatchActivity',

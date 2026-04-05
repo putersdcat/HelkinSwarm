@@ -18,7 +18,8 @@ describe('post-reply replay suppression source guards', () => {
     expect(sessionSource).toContain("authority: 'post-reply-replay-suppression'");
     expect(sessionSource).toContain('duplicateReplaySuppressed: true,');
 
-    expect(promptSource).toContain("hasOutboundArtifactClaim(input.state.conversationId, 'reply', input.correlationId)");
+    expect(promptSource).toContain('const conversationId = input.conversationId ?? input.state.conversationId;');
+    expect(promptSource).toContain("hasOutboundArtifactClaim(conversationId, 'reply', input.correlationId)");
     expect(promptSource).toContain('return buildReplyAlreadyDeliveredPrompt();');
 
     expect(llmSource).toContain("hasOutboundArtifactClaim(input.conversationId, 'reply', input.correlationId)");
