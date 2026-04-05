@@ -64,9 +64,8 @@ app.timer('selfAwakenTimer', {
         const guardState = await readMindSessionGuardState(client, wake.userId);
         const activeSummary = await resolveActiveOverseerSummary(client, wake.userId);
         const activeTurnCount = await getActiveTurnCountForUser(wake.userId);
-        const observedActiveInstanceId = activeSummary.latestInstanceId;
-        const effectiveActiveInstanceId = observedActiveInstanceId ?? (activeTurnCount > 0 ? guardState?.activeInstanceId : undefined);
-        const hasActiveGuard = activeTurnCount > 0 && effectiveActiveInstanceId !== undefined;
+        const effectiveActiveInstanceId = activeSummary.latestInstanceId;
+        const hasActiveGuard = activeSummary.activeCount > 0 && effectiveActiveInstanceId !== undefined;
         const interruptionDepth = Math.max(
           guardState?.interruptionDepth ?? 0,
           Math.max(0, activeTurnCount - 1),

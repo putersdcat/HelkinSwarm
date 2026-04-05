@@ -1171,9 +1171,8 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       const activeSummary = await resolveActiveOverseerSummary(client, userId);
       const activeTurnCount = await getActiveTurnCountForUser(userId);
       const activeTurnEntries = await getActiveTurnStagesForUser(userId);
-      const observedActiveInstanceId = activeSummary.latestInstanceId;
-      const effectiveActiveInstanceId = observedActiveInstanceId ?? (activeTurnCount > 0 ? guardState?.activeInstanceId : undefined);
-      const hasActiveGuard = activeTurnCount > 0 && effectiveActiveInstanceId !== identity.instanceId;
+      const effectiveActiveInstanceId = activeSummary.latestInstanceId;
+      const hasActiveGuard = activeSummary.activeCount > 0 && effectiveActiveInstanceId !== identity.instanceId;
       const activeSessionRoutable = hasActiveGuard
         && effectiveActiveInstanceId !== undefined
         && activeTurnEntries.some((entry) => entry.stage === 'awaiting-ingress' && entry.instanceId === effectiveActiveInstanceId);
