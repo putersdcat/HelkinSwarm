@@ -142,6 +142,28 @@ export interface SessionResult {
   pendingClarification?: PendingClarification | null;
 }
 
+function summarizeToolResultsForSessionResult(
+  toolResults: ToolDispatchResult | null,
+): ToolDispatchResult | null {
+  if (!toolResults) {
+    return null;
+  }
+
+  return {
+    totalCalls: toolResults.totalCalls,
+    results: toolResults.results.map((result) => ({
+      toolCallId: result.toolCallId,
+      toolName: result.toolName,
+      success: result.success,
+      ...(result.error !== undefined ? { error: result.error } : {}),
+      requiresExecutor: result.requiresExecutor,
+      ...(result.scopedTokenMinted !== undefined ? { scopedTokenMinted: result.scopedTokenMinted } : {}),
+      ...(result.scopedTokenMethod !== undefined ? { scopedTokenMethod: result.scopedTokenMethod } : {}),
+      ...(result.scopedTokenScope !== undefined ? { scopedTokenScope: result.scopedTokenScope } : {}),
+    })),
+  };
+}
+
 function rememberOperationalEvidence(
   notices: Set<string>,
   result: Pick<LlmResult, 'operationalNotices' | 'failoverSteps'>,
@@ -1391,7 +1413,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     promptTokens: cumulativePromptTokens,
     model: llmResult.model,
     toolCalls: llmResult.toolCalls,
-    toolResults,
+    toolResults: summarizeToolResultsForSessionResult(toolResults),
     replySent: replyResult.success,
     safetyPassed,
     pendingClarification: pendingClarificationUpdate,
