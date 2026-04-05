@@ -370,7 +370,7 @@ export function classifyRequestedTaskComplexity(input: RequestedTaskComplexityIn
     return 'complex';
   }
 
-  if (input.hasQuotedContext && isQuotedSkillProofPrompt(normalized)) {
+  if (isQuotedSkillProofPrompt(normalized)) {
     return 'simple';
   }
 

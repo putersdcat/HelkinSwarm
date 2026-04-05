@@ -67,6 +67,16 @@ describe('ingress task complexity + turn assessment (#531)', () => {
     expect(complexity).toBe('simple');
   });
 
+  it('keeps unquoted skill-proof prompts on the simple path too, so live reply-with-quote turns do not depend on quote extraction being present at ingress time', async () => {
+    const modelRouter = await loadModelRouterWithDefaults();
+
+    const complexity = modelRouter.classifyRequestedTaskComplexity({
+      userMessage: 'Please do a simple functional test of the skill and output the results.',
+    });
+
+    expect(complexity).toBe('simple');
+  });
+
   it('still treats generic quoted follow-ups as compound when they are not explicit proof prompts', async () => {
     const modelRouter = await loadModelRouterWithDefaults();
 
