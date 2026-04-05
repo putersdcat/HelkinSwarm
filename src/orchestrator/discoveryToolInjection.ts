@@ -91,6 +91,7 @@ function stripValidationNoise(userMessage: string): string {
 function stripInjectedRoutingContext(userMessage: string): string {
   return userMessage
     .replace(/\n+\[Quoted context\][\s\S]*$/i, '')
+    .replace(/\n+\[Recent user context\][\s\S]*$/i, '')
     .replace(/\n+\[Recent assistant context\][\s\S]*$/i, '')
     .trim();
 }

@@ -675,6 +675,24 @@ describe('discoveryToolInjection', () => {
     expect(isReadOnlyDiscoveryRequest(routed)).toBe(false);
   });
 
+  it('does not misclassify proof prompts as read-only discovery when recent user context carries the prior discovery-only setup text', async () => {
+    const {
+      buildContextAwareRoutingMessage,
+      buildReadOnlyDiscoveryQuery,
+      isReadOnlyDiscoveryRequest,
+    } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const routed = buildContextAwareRoutingMessage(
+      'Please do a simple functional test of the skill and output the results.',
+      {
+        recentUserText: 'Use discovery only and tell me which tool you would use to search mailbox emails. Do not execute any non-discovery tools.',
+      },
+    );
+
+    expect(isReadOnlyDiscoveryRequest(routed)).toBe(false);
+    expect(buildReadOnlyDiscoveryQuery(routed)).toBe('Please do a simple functional test of the skill and output the results');
+  });
+
   it('synthesizes a deterministic read-only initial call for natural Outlook mailbox-search prompts', async () => {
     const { synthesizeDeterministicReadOnlyInitialToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
 
