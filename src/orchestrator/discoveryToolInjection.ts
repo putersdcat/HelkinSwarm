@@ -87,6 +87,13 @@ function stripValidationNoise(userMessage: string): string {
     .trim();
 }
 
+function stripInjectedRoutingContext(userMessage: string): string {
+  return userMessage
+    .replace(/\n+\[Quoted context\][\s\S]*$/i, '')
+    .replace(/\n+\[Recent assistant context\][\s\S]*$/i, '')
+    .trim();
+}
+
 function collapseWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
@@ -360,7 +367,7 @@ export function buildDeterministicExactToolResponse(
 }
 
 export function isReadOnlyDiscoveryRequest(userMessage: string): boolean {
-  const normalized = stripValidationNoise(userMessage).toLowerCase();
+  const normalized = stripValidationNoise(stripInjectedRoutingContext(userMessage)).toLowerCase();
   const hasReadOnlyConstraint = /(discovery[- ]only|read[- ]only|do not execute|don't execute|without executing|non-discovery tools)/.test(normalized);
   const hasDiscoveryQuestion = /(which tool would you use|what tool would you use|tell me which tool|tell me what tool|which skill would you use|what skill would you use)/.test(normalized);
   const hasDiscoveryTopic = /(tool|skill|mailbox|email|calendar|meeting|github|repo|issue|weather|search)/.test(normalized);
@@ -368,7 +375,7 @@ export function isReadOnlyDiscoveryRequest(userMessage: string): boolean {
 }
 
 export function buildReadOnlyDiscoveryQuery(userMessage: string): string {
-  const stripped = stripValidationNoise(userMessage);
+  const stripped = stripValidationNoise(stripInjectedRoutingContext(userMessage));
   const cleaned = collapseWhitespace(
     stripped
       .replace(/\buse\s+(?:read[- ]only|discovery[- ]only|discovery only)\b/ig, '')

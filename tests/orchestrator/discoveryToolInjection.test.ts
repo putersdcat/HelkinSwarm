@@ -618,6 +618,23 @@ describe('discoveryToolInjection', () => {
     expect(routed).toContain('Best matching skill');
   });
 
+  it('does not misclassify proof prompts as read-only discovery just because injected quote context contains old discovery wording', async () => {
+    const {
+      buildContextAwareRoutingMessage,
+      isReadOnlyDiscoveryRequest,
+    } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const routed = buildContextAwareRoutingMessage(
+      'Please do a simple functional test of the skill and output the results.',
+      {
+        quotedText: 'I checked the installed skills without executing anything yet. Best matching tool: outlook_search_emails (outlook, risk: low).',
+        recentAssistantText: 'Best matching skill: Outlook `outlook`.',
+      },
+    );
+
+    expect(isReadOnlyDiscoveryRequest(routed)).toBe(false);
+  });
+
   it('synthesizes a deterministic read-only initial call for natural Outlook mailbox-search prompts', async () => {
     const { synthesizeDeterministicReadOnlyInitialToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
 
@@ -686,6 +703,33 @@ describe('discoveryToolInjection', () => {
       name: 'graphenterprise_list_properties',
       arguments: {
         entity: 'user',
+      },
+    });
+  });
+
+  it('synthesizes a deterministic Outlook proof call even when the quoted context includes previous discovery-only wording', async () => {
+    const { synthesizeDeterministicReadOnlyInitialToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const call = synthesizeDeterministicReadOnlyInitialToolCall(
+      'Please do a simple functional test of the skill and output the results\n\n[Quoted context]\nI checked the installed skills without executing anything yet. Best matching capability group: outlook/mail-read (outlook). Best matching tool: outlook_search_emails (outlook, risk: low).',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_search_emails',
+            description: 'search emails',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(call).toEqual({
+      name: 'outlook_search_emails',
+      arguments: {
+        query: 'hasAttachment:true',
+        folder: 'inbox',
+        top: 5,
       },
     });
   });
