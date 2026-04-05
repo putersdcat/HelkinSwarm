@@ -682,6 +682,34 @@ export function getDiscoveryFirstToolSchemas(): ToolDefinition[] {
     .filter((tool) => isCoreTool(tool.function.name));
 }
 
+export function deriveContextAwareInitialToolSchemas(
+  userMessage: string,
+  allToolSchemas: ToolDefinition[],
+): ToolDefinition[] {
+  const coreOnlySchemas = allToolSchemas.filter((tool) => isCoreTool(tool.function.name));
+  if (!isExecutionProofPrompt(userMessage)) {
+    return coreOnlySchemas;
+  }
+
+  const allToolNames = new Set(allToolSchemas.map((tool) => tool.function.name));
+  const expandedNames = new Set(coreOnlySchemas.map((tool) => tool.function.name));
+  const explicitToolName = findExplicitToolNameMention(userMessage.toLowerCase(), allToolNames);
+
+  if (explicitToolName && !isCoreTool(explicitToolName)) {
+    expandedNames.add(explicitToolName);
+  }
+
+  if (/(outlook|mailbox|email|attachments?)/i.test(userMessage) && allToolNames.has('outlook_search_emails')) {
+    expandedNames.add('outlook_search_emails');
+  }
+
+  if (/(graphenterprise|microsoft graph enterprise mcp)/i.test(userMessage) && allToolNames.has('graphenterprise_list_properties')) {
+    expandedNames.add('graphenterprise_list_properties');
+  }
+
+  return allToolSchemas.filter((tool) => expandedNames.has(tool.function.name));
+}
+
 export function getDiscoveryFirstToolDefinitions(): Array<{ name: string; description: string }> {
   return toolRegistry
     .getSafetyFiltered()

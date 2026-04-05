@@ -52,6 +52,7 @@ import {
   buildReadOnlyDiscoveryResponse,
   buildDeterministicExactToolResponse,
   buildDiscoveryDeadEndResponse,
+  deriveContextAwareInitialToolSchemas,
   deriveSelectiveFollowUpToolSchemas,
   getDiscoveryFollowUpModelOverride,
   getForcedInitialToolChoice,
@@ -445,13 +446,15 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // 2. Call LLM (global frontier model via Foundry client)
   spanStart = context.df.currentUtcDateTime.getTime();
   const allToolSchemas = toolRegistry.toFunctionSchemas();
-  const initialToolSchemas = getDiscoveryFirstToolSchemas();
   const deterministicInitialToolCall = synthesizeRuntimeAssetInlineEmailToolCall(
     effectiveTaskMessage,
     input.runtimeAssets,
   )
     ?? synthesizeExactToolCall(effectiveTaskMessage, allToolSchemas)
     ?? synthesizeDeterministicReadOnlyInitialToolCall(effectiveTaskMessage, allToolSchemas);
+  const initialToolSchemas = deterministicInitialToolCall
+    ? getDiscoveryFirstToolSchemas()
+    : deriveContextAwareInitialToolSchemas(effectiveTaskMessage, allToolSchemas);
   const llmResult: LlmResult = deterministicInitialToolCall
     ? {
         content: '',

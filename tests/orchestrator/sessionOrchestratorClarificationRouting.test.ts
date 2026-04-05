@@ -10,7 +10,8 @@ describe('sessionOrchestrator clarification routing', () => {
     expect(source).toContain('const readOnlyDiscoveryQuery = buildReadOnlyDiscoveryQuery(effectiveTaskMessage);');
     expect(source).toContain('effectiveTaskMessage = readOnlyDiscoveryQuery;');
     expect(source).toContain('const allToolSchemas = toolRegistry.toFunctionSchemas();');
-    expect(source).toContain('const initialToolSchemas = getDiscoveryFirstToolSchemas();');
+    expect(source).toContain('const initialToolSchemas = deterministicInitialToolCall');
+    expect(source).toContain('deriveContextAwareInitialToolSchemas(effectiveTaskMessage, allToolSchemas);');
     expect(source).toContain('synthesizeRuntimeAssetInlineEmailToolCall(');
     expect(source).toContain('?? synthesizeExactToolCall(effectiveTaskMessage, allToolSchemas)');
     expect(source).toContain('?? synthesizeDeterministicReadOnlyInitialToolCall(effectiveTaskMessage, allToolSchemas);');

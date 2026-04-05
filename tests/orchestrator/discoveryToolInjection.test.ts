@@ -213,13 +213,79 @@ describe('discoveryToolInjection', () => {
     await seedRegistry();
   });
 
-  it('keeps the initial discovery-first tool surface core-only', async () => {
-    const { getDiscoveryFirstToolSchemas } = await import('../../src/orchestrator/discoveryToolInjection.js');
+  it('keeps the initial discovery-first tool surface core-only for non-proof prompts', async () => {
+    const { deriveContextAwareInitialToolSchemas } = await import('../../src/orchestrator/discoveryToolInjection.js');
 
-    const initial = getDiscoveryFirstToolSchemas();
+    const initial = deriveContextAwareInitialToolSchemas('hello there', [
+      {
+        type: 'function',
+        function: {
+          name: 'helkin_skill_search',
+          description: 'discover tools',
+          parameters: { type: 'object', properties: {}, required: [] },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'helkin_health_check',
+          description: 'health',
+          parameters: { type: 'object', properties: {}, required: [] },
+        },
+      },
+      {
+        type: 'function',
+        function: {
+          name: 'outlook_search_emails',
+          description: 'search email',
+          parameters: { type: 'object', properties: {}, required: [] },
+        },
+      },
+    ]);
+
     expect(initial.map((tool) => tool.function.name)).toEqual([
       'helkin_skill_search',
       'helkin_health_check',
+    ]);
+  });
+
+  it('widens the initial tool surface for proof-style Outlook follow-ups so the surfaced mailbox tool can execute immediately', async () => {
+    const { deriveContextAwareInitialToolSchemas } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const initial = deriveContextAwareInitialToolSchemas(
+      'Please do a simple functional test of the skill and output the results. [Quoted context] Best matching tool: outlook_search_emails (outlook, risk: low).',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'helkin_skill_search',
+            description: 'discover tools',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'helkin_health_check',
+            description: 'health',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_search_emails',
+            description: 'search email',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(initial.map((tool) => tool.function.name)).toEqual([
+      'helkin_skill_search',
+      'helkin_health_check',
+      'outlook_search_emails',
     ]);
   });
 
