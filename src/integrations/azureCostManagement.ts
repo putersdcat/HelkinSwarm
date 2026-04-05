@@ -74,6 +74,31 @@ export type AzureCostSummary =
       detail?: string;
     };
 
+interface CostQueryFailure {
+  status: 'unavailable' | 'forbidden' | 'error';
+  message: string;
+  detail?: string;
+  throttle?: boolean;
+  retryAfterMs?: number;
+}
+
+interface CachedCostSummary {
+  summary: Extract<AzureCostSummary, { status: 'success' }>;
+  fetchedAtMs: number;
+}
+
+interface CostSummaryLoadResult {
+  summary: AzureCostSummary;
+  throttled: boolean;
+  retryAfterMs?: number;
+}
+
+interface AzureCostUnavailableSummary {
+  status: 'unavailable';
+  message: string;
+  detail?: string;
+}
+
 const CostResultSchema = z.object({
   properties: z.object({
     columns: z.array(z.object({ name: z.string(), type: z.string() })).optional(),
@@ -85,7 +110,15 @@ type CostTimeframe =
   | { kind: 'preset'; value: 'MonthToDate' }
   | { kind: 'custom'; from: Date; to: Date };
 
-type CostQueryError = Extract<AzureCostSummary, { status: 'unavailable' | 'forbidden' | 'error' }>;
+type CostQueryError = CostQueryFailure;
+
+const COST_SUMMARY_CACHE_TTL_MS = 5 * 60 * 1000;
+const COST_SUMMARY_DEFAULT_BACKOFF_MS = 60 * 1000;
+
+let cachedCostSummary: CachedCostSummary | undefined;
+let inFlightCostSummary: Promise<AzureCostSummary> | undefined;
+let throttleBackoffUntilMs = 0;
+let lastThrottleMessage: string | undefined;
 
 function roundCurrency(value: number): number {
   return Math.round(value * 100) / 100;
@@ -165,10 +198,86 @@ function buildCostQueryBody(
   };
 }
 
+function parseRetryAfterMs(headers: Headers): number | undefined {
+  const retryAfterMs = headers.get('retry-after-ms');
+  if (retryAfterMs) {
+    const parsedMs = Number(retryAfterMs);
+    if (Number.isFinite(parsedMs) && parsedMs > 0) {
+      return parsedMs;
+    }
+  }
+
+  const retryAfter = headers.get('retry-after');
+  if (retryAfter) {
+    const parsedSeconds = Number(retryAfter);
+    if (Number.isFinite(parsedSeconds) && parsedSeconds > 0) {
+      return parsedSeconds * 1000;
+    }
+  }
+
+  return undefined;
+}
+
 function isCostQueryError(value: unknown): value is CostQueryError {
   return typeof value === 'object' && value !== null && 'status' in value && (
     value.status === 'unavailable' || value.status === 'forbidden' || value.status === 'error'
   );
+}
+
+function isSuccessfulCostSummary(
+  value: AzureCostSummary,
+): value is Extract<AzureCostSummary, { status: 'success' }> {
+  return value.status === 'success';
+}
+
+function getFreshCachedCostSummary(nowMs: number): Extract<AzureCostSummary, { status: 'success' }> | undefined {
+  if (!cachedCostSummary) {
+    return undefined;
+  }
+
+  if (nowMs - cachedCostSummary.fetchedAtMs >= COST_SUMMARY_CACHE_TTL_MS) {
+    return undefined;
+  }
+
+  return cachedCostSummary.summary;
+}
+
+function getAnyCachedCostSummary(): Extract<AzureCostSummary, { status: 'success' }> | undefined {
+  return cachedCostSummary?.summary;
+}
+
+function isThrottleFailure(value: unknown): value is CostQueryFailure {
+  return isCostQueryError(value) && value.throttle === true;
+}
+
+function pickRetryAfterMs(values: ReadonlyArray<unknown>): number | undefined {
+  const retryAfterValues = values
+    .filter(isThrottleFailure)
+    .map((value) => value.retryAfterMs)
+    .filter((value): value is number => value !== undefined && Number.isFinite(value) && value > 0);
+
+  if (retryAfterValues.length === 0) {
+    return undefined;
+  }
+
+  return Math.max(...retryAfterValues);
+}
+
+function buildThrottledSummary(retryAfterMs?: number, message?: string): AzureCostUnavailableSummary {
+  const effectiveRetryAfterMs = retryAfterMs ?? COST_SUMMARY_DEFAULT_BACKOFF_MS;
+  const retryAfterSeconds = Math.max(1, Math.ceil(effectiveRetryAfterMs / 1000));
+  return {
+    status: 'unavailable',
+    message: message ?? `Cost Management API is throttling requests right now. Please retry in about ${retryAfterSeconds}s.`,
+    detail: `Backoff active for approximately ${retryAfterSeconds}s after a 429 response.`,
+  };
+}
+
+export function resetAzureCostManagementCacheForTests(): void {
+  cachedCostSummary = undefined;
+  inFlightCostSummary = undefined;
+  throttleBackoffUntilMs = 0;
+  lastThrottleMessage = undefined;
 }
 
 function normalizeCostDate(rawDate: unknown): string {
@@ -463,7 +572,7 @@ export function buildCostComparisonSummary(
   };
 }
 
-async function queryCostManagement(body: Record<string, unknown>): Promise<unknown> {
+async function queryCostManagement(body: Record<string, unknown>): Promise<unknown | CostQueryFailure> {
   const config = getEnvConfig();
   const subscriptionId = config.azureSubscriptionId;
   const resourceGroup = config.azureResourceGroup;
@@ -510,19 +619,30 @@ async function queryCostManagement(body: Record<string, unknown>): Promise<unkno
       return {
         status: 'forbidden',
         message: 'Cost Management Reader role not yet assigned to the managed identity. Re-deploy infra/main.bicep to apply.',
-      } satisfies AzureCostSummary;
+      } satisfies CostQueryFailure;
+    }
+    if (response.status === 429) {
+      const retryAfterMs = parseRetryAfterMs(response.headers) ?? COST_SUMMARY_DEFAULT_BACKOFF_MS;
+      const retryAfterSeconds = Math.max(1, Math.ceil(retryAfterMs / 1000));
+      return {
+        status: 'unavailable',
+        message: `Cost Management API: 429 Too Many Requests. Backing off repeated reads for about ${retryAfterSeconds}s.`,
+        detail: text.substring(0, 400),
+        throttle: true,
+        retryAfterMs,
+      } satisfies CostQueryFailure;
     }
     return {
       status: 'error',
       message: `Cost Management API: ${response.status} ${response.statusText}`,
       detail: text.substring(0, 400),
-    } satisfies AzureCostSummary;
+    } satisfies CostQueryFailure;
   }
 
   return response.json() as Promise<unknown>;
 }
 
-export async function getAzureResourceGroupCostSummary(): Promise<AzureCostSummary> {
+async function loadAzureResourceGroupCostSummary(): Promise<CostSummaryLoadResult> {
   const config = getEnvConfig();
   const resourceGroup = config.azureResourceGroup;
 
@@ -539,8 +659,15 @@ export async function getAzureResourceGroupCostSummary(): Promise<AzureCostSumma
     queryCostManagement(buildCostQueryBody('Daily', { kind: 'custom', from: previousMonthStart, to: previousMonthEnd }, false)),
   ]);
 
+  const throttled = [currentSummaryRaw, currentDailyRaw, previousSummaryRaw, previousDailyRaw].some(isThrottleFailure);
+  const retryAfterMs = pickRetryAfterMs([currentSummaryRaw, currentDailyRaw, previousSummaryRaw, previousDailyRaw]);
+
   if (isCostQueryError(currentSummaryRaw)) {
-    return currentSummaryRaw;
+    return {
+      summary: currentSummaryRaw,
+      throttled,
+      retryAfterMs,
+    };
   }
 
   const currentMonth = buildPeriodSummary({
@@ -553,7 +680,11 @@ export async function getAzureResourceGroupCostSummary(): Promise<AzureCostSumma
   });
 
   if (currentMonth.status !== 'success') {
-    return { status: 'error', message: 'Unexpected Cost Management API response shape.' };
+    return {
+      summary: { status: 'error', message: 'Unexpected Cost Management API response shape.' },
+      throttled,
+      retryAfterMs,
+    };
   }
 
   const previousMonth = isCostQueryError(previousSummaryRaw)
@@ -576,15 +707,80 @@ export async function getAzureResourceGroupCostSummary(): Promise<AzureCostSumma
   const comparison = buildCostComparisonSummary(currentMonth, previousMonth);
 
   return {
-    status: 'success',
-    period: 'MonthToDate',
-    resourceGroup: resourceGroup ?? 'unknown',
-    currency: currentMonth.currency,
-    totalCost: currentMonth.totalCost,
-    breakdown: currentMonth.breakdown,
-    daily: currentMonth.daily,
-    currentMonth,
-    previousMonth,
-    comparison,
+    summary: {
+      status: 'success',
+      period: 'MonthToDate',
+      resourceGroup: resourceGroup ?? 'unknown',
+      currency: currentMonth.currency,
+      totalCost: currentMonth.totalCost,
+      breakdown: currentMonth.breakdown,
+      daily: currentMonth.daily,
+      currentMonth,
+      previousMonth,
+      comparison,
+    },
+    throttled,
+    retryAfterMs,
   };
+}
+
+export async function getAzureResourceGroupCostSummary(): Promise<AzureCostSummary> {
+  const nowMs = Date.now();
+  const freshCachedSummary = getFreshCachedCostSummary(nowMs);
+  if (freshCachedSummary) {
+    return freshCachedSummary;
+  }
+
+  if (nowMs < throttleBackoffUntilMs) {
+    const cachedSummary = getAnyCachedCostSummary();
+    if (cachedSummary) {
+      return cachedSummary;
+    }
+
+    return buildThrottledSummary(throttleBackoffUntilMs - nowMs, lastThrottleMessage);
+  }
+
+  if (inFlightCostSummary) {
+    return await inFlightCostSummary;
+  }
+
+  inFlightCostSummary = (async () => {
+    const loadResult = await loadAzureResourceGroupCostSummary();
+
+    if (loadResult.throttled) {
+      const effectiveRetryAfterMs = loadResult.retryAfterMs ?? COST_SUMMARY_DEFAULT_BACKOFF_MS;
+      throttleBackoffUntilMs = Math.max(throttleBackoffUntilMs, Date.now() + effectiveRetryAfterMs);
+      if (isCostQueryError(loadResult.summary)) {
+        lastThrottleMessage = loadResult.summary.message;
+      }
+
+      const cachedSummary = getAnyCachedCostSummary();
+      if (cachedSummary) {
+        console.warn('[azureCostManagement] Reusing cached cost summary after Cost Management API throttling');
+        return cachedSummary;
+      }
+    } else {
+      throttleBackoffUntilMs = 0;
+      lastThrottleMessage = undefined;
+    }
+
+    if (isSuccessfulCostSummary(loadResult.summary)) {
+      cachedCostSummary = {
+        summary: loadResult.summary,
+        fetchedAtMs: Date.now(),
+      };
+    }
+
+    if (loadResult.throttled && isCostQueryError(loadResult.summary)) {
+      return buildThrottledSummary(loadResult.retryAfterMs, loadResult.summary.message);
+    }
+
+    return loadResult.summary;
+  })();
+
+  try {
+    return await inFlightCostSummary;
+  } finally {
+    inFlightCostSummary = undefined;
+  }
 }
