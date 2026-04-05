@@ -1,0 +1,12 @@
+{
+  "subject": "Overlap depth signal selection",
+  "fact": "In HelkinSwarm, raw Durable getStatusAll() Running/Pending overseer counts are not a reliable proxy for real in-flight overlap pressure because overseer.ts intentionally holds instances Running for 60 seconds during dedup hold. For live queue/depth decisions, use orchestratorStageHealth active-turn tracking instead of Durable runner count.",
+  "citations": [
+    "src/orchestrator/overseer.ts lines 41, 256-257",
+    "src/observability/orchestratorStageHealth.ts",
+    "src/bot/HelkinSwarmBot.ts around raiseToOverseer activeTurnCount fallback",
+    "issue #512"
+  ],
+  "reason": "This is a subtle runtime behavior that caused a false-positive live queue regression when using getStatusAll() to infer interruption depth. Recording it should prevent future orchestrator/guard fixes from repeating the same mistake.",
+  "category": "runtime-behavior"
+}

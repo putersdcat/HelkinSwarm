@@ -87,7 +87,7 @@ The Master remains the heaviest reasoning and planning member. Its additional re
 
 - Maintain the global swarm registry and cross-child visibility.
 - Act as final arbiter when multiple children surface conflicting priorities.
-- Periodically run a “Company Alignment” dreaming pass (0w) that synthesizes cross-child themes and feeds them back into each child’s Limbic System.
+- Periodically run a low-priority “Company Alignment” dreaming pass (0w) as serialized subconscious maintenance during planned rest windows, synthesizing cross-child themes and feeding them back into each child’s Limbic System without violating the Single-Session Contract.
 - Enforce the Single-Session Contract across the entire swarm.
 
 ### 6. Session Lifetime & Compaction Contract

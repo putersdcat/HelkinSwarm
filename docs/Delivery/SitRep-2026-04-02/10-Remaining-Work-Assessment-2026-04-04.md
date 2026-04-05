@@ -1,470 +1,238 @@
-# Remaining Work Assessment — 2026-04-04
+# Remaining Work Assessment — 2026-04-05 Refresh
 
-This follow-up records where delivery now stands relative to `09-Backlog-Control-Surface.md`, the issues spun out since that control surface was written, and the current code state in the repo.
+This refresh supersedes the 2026-04-04 assessment where it conflicts with current trunk and live issue state.
 
-It is intentionally evidence-based rather than aspirational.
+The short version is:
+
+- the constitutional gate is **still real**
+- but the docs were **too stale and too sticky**
+- the live blocker has narrowed from broad `#556` to the current child seam `#567`
+- and the handoff back to the ordinary backlog is now clear once that narrow chain is resolved or honestly re-bucketed
 
 ---
 
 ## Executive summary
 
-### Short version
+### Where we really are now
 
-The **Living Mind constitutional gate is much narrower than it was on 2026-04-02**, but it is **not cleared yet**.
+The Living Mind constitutional gate is **not fully cleared**.
 
-A large amount of first-wave constitutional work has already shipped and closed, including:
-- cognitive-capacity / impairment routing (`#525`)
-- autonomic sub-session preservation (`#526`)
-- enforced limbic ingress lifecycle (`#527`)
-- steering injection, chrono continuity, interruption breadcrumbing, depth-cap behavior, paused-task paging seams, and the safe `awaiting-ingress` drain window (multiple child slices under `#498` / `#520`)
+But it is also no longer honest to describe the repo as if it were still sitting at the old 2026-04-04 failure shape.
 
-What remains is no longer broad constitutional vagueness. It is now concentrated in the **hard single-session/event-drain seam**:
-- `#516`
-- `#520`
+Since then, trunk now contains all of the following repo-grounded changes:
+
+- explicit buffered follower storage in `src/orchestrator/bufferedIngressActivity.ts`
+- active-processing buffering in `src/functions/devLoopRelay.ts`
+- active-processing Teams buffering in `src/bot/HelkinSwarmBot.ts`
+- same-instance drain attempts in `src/orchestrator/overseer.ts`
+- automatic stale buffered-follower rescue in `src/functions/bufferedIngressReplayTimer.ts`
+- owner-side buffered-ingress inspection/replay seams in `src/functions/devLoopBufferedIngress.ts`
+
+So the active question is no longer:
+
+> “Do active-processing followers just vanish with no recovery path?”
+
+It is now:
+
+> “Why does the original living overseer still fail to perform ordinary same-instance dequeue/drain, even though buffering, targeting, and rescue paths now exist?”
+
+### Practical conclusion
+
+We are **closer than the previous assessment said**, but **not yet past the constitutional gate**.
+
+The good news:
+
+- the user-facing black-hole symptom is no longer the full truth
+- automatic recovery paths exist and are live-proven in issue discussion under `#556`
+- the active front has narrowed to a very specific reply/ack-stage starvation seam
+
+The bad news:
+
+- the ordinary same-instance drain path is still not honestly proven
+- the gate therefore still remains active
+- and the current deepest executable blocker is now `#567`, not the older broader wording in `#556`
+
+---
+
+## What was stale in the previous assessment
+
+The earlier document is now wrong or incomplete on several important points.
+
+### Issue-state drift
+
+These issues are now **closed** and should no longer be treated as active fronts:
+
 - `#554`
 - `#555`
-- `#556`
+- `#479`
+- `#484`
 
-The deepest currently exposed blocker is `#556`.
+### `#556` framing drift
 
-### Is the end in sight soon?
+The old assessment treated `#556` as the unchanged deepest blocker.
 
-**There is an end shape in sight for the first-wave constitutional tranche, but I would not call it "nearly done" yet.**
+That is no longer precise enough.
+
+`#556` is still open, but it is now an **architecture parent** with meaningful mitigation already shipped:
+
+- buffered follower ingress exists
+- replay rescue exists
+- user-visible follower replies can be recovered
+
+The newest live failure mode has narrowed through:
+
+- `#566`
+- and then `#567`
+
+So if a future run keeps blindly selecting `#556` as though nothing changed, it will re-enter a stale loop.
+
+---
+
+## What the repo now proves
+
+### 1. Active-processing buffering is real code, not just theory
+
+Repo-grounded evidence:
+
+- `src/orchestrator/bufferedIngressActivity.ts`
+  - persists buffered follower docs
+  - supports targeted dequeue / claim
+- `src/functions/devLoopRelay.ts`
+  - `devloop/new-message` can choose `buffered-active-processing`
+- `src/bot/HelkinSwarmBot.ts`
+  - direct Teams overlap can queue buffered followers against the active instance
+- `src/orchestrator/overseer.ts`
+  - checks buffered ingress before and during the ingress window
+  - waits on `BufferedIngressQueued`
+
+### 2. The new activity is actually wired
+
+`src/functions/index.ts` imports:
+
+- `../orchestrator/bufferedIngressActivity.js`
+- `./bufferedIngressReplayTimer.js`
+- `./devLoopBufferedIngress.js`
+
+So this is not just dead code sitting in the repo unwired.
+
+### 3. Automatic rescue now exists for stranded followers
+
+`src/functions/bufferedIngressReplayTimer.ts`:
+
+- lists stale queued buffered followers
+- starts a replay overseer when needed
+- records `BufferedIngressFallbackReplayed`
+
+This means the old user-facing “silent black hole forever” description is no longer the full current truth.
+
+### 4. Owner-side inspection/replay seams also exist
+
+`src/functions/devLoopBufferedIngress.ts` now exposes:
+
+- buffered-ingress listing
+- manual replay
+- force-start-new replay
+
+So the platform now has both automatic and operator-side rescue surfaces.
+
+---
+
+## What still remains open
+
+### 1. `#567` — current deepest executable blocker
+
+**Title:** Exact-target follower no longer replays, but stays queued behind a long-lived `send-reply` stage and can surface stale-ack interruption on the leader turn
+
+This is the freshest honest next target.
 
 Why:
-- The remaining problem is now very specific.
-- But it sits in the center of the runtime’s active-session event-delivery model.
-- That means the next fix could be small **or** it could force a deeper architectural adjustment in `src/orchestrator/overseer.ts`.
 
-My honest read:
-- **Best case:** the constitutional gate is only a small number of real slices away.
-- **Worst case:** `#556` proves the current active-processing delivery assumption is wrong, and the runtime needs a more substantial redesign for active-session message buffering / drain semantics.
+- issue `#567` is open
+- its issue thread says the latest live failure no longer looks like wrong-instance replay rescue
+- the follower remains queued on the original instance
+- runtime diagnostics still show the original instance holding an active `send-reply` stage
+- the leader can surface the warning text from `src/bot/staleAckRecovery.ts`
 
-So: **the end is visible, but not yet safely schedulable as “soon.”**
+Relevant repo surfaces:
 
----
+- `src/orchestrator/sendReplyActivity.ts`
+  - reply update/send lifecycle
+  - pending-ack clearing
+- `src/bot/staleAckRecovery.ts`
+  - emits the visible interruption warning
 
-## What is stale in the original control surface
+### 2. `#566` — still open parent, but no longer the freshest slice
 
-The original `09-Backlog-Control-Surface.md` is now partially out of date.
+`#566` remains open and still matters.
 
-### Constitutional section drift
+But its main optimistic wrong-instance hypothesis has already been narrowed by live proof.
 
-The file still lists these as active clearest child slices:
-- `#525`
-- `#526`
-- `#527`
+So it should be treated as the parent seam immediately above `#567`, not the default next execution target.
 
-That is now stale.
+### 3. `#556` — still open honestly, but materially narrower
 
-Current GitHub state:
-- `#525` — **closed**
-- `#526` — **closed**
-- `#527` — **closed**
+The remaining open claim in `#556` is now much more specific:
 
-### Zone A drift
+- ordinary same-instance dequeue/drain is still not proven
+- replay/rescue still does too much of the real user-facing work
 
-The file still lists:
-- `#480` as an open Zone A runtime bug
+That means `#556` is still active, but not in the same way the older assessment described.
 
-Current GitHub state:
-- `#480` — **closed**
+### 4. `#520`, `#516`, `#498` — still-open parent chain
 
-### Trust Recovery drift
+These remain real because the runtime still does **not** honestly prove the full end-state:
 
-The control surface implicitly treats `#484` as a still-open concept gap.
+- a truly healthy event-draining living session
+- a fully proven hard single-session invariant
+- closure of the first-wave constitutional parent
 
-Current repo state shows it is **partially delivered in code already**:
-- `src/capabilities/capabilityLoader.ts:300` — `getSkillCatalog()` now computes `operationalState` and `operationalSummary`
-- `src/capabilities/capabilityLoader.ts:352` — `inspectSkillInstall()` now returns richer install states instead of only blunt ready/blocked semantics
-- `src/capabilities/skillOperationalState.ts:56` — explicit `operator-setup-required` support exists
-- `tabs/app.js:1458` and `tabs/app.js:1487` — the Skills tab renders operational badges
-- `tabs/app.js:1467` and `tabs/app.js:1491` — operational summaries are shown in the UI
-
-That does **not** prove `#484` is closeable today, but it does mean the control surface understates how much of that issue has already been delivered.
+But those parents are no longer the right default execution target while `#567` is the concrete blocker.
 
 ---
 
-## What has actually been delivered under the constitutional gate
+## What this means for the control surface
 
-This is the clearest reason the remaining work is narrower than it looks from the original control surface.
+### Are we nearly done with the constitutional gate?
 
-### Closed constitutional children now verified
+**Closer, yes. Done, no.**
 
-- `#525` — **closed**
-  - code now includes model cognitive-capacity profiles and impairment semantics
-  - evidence in `src/llm/modelRouter.ts`
-    - `ModelCapacityProfile` at `line 65`
-    - `MODEL_CAPACITY_PROFILES` at `line 95`
-    - `selectRestoredConsciousLaneDeployment(...)` at `line 213`
-    - `getConsciousLaneAssessment(...)` at `line 313`
+I would describe the current state like this:
 
-- `#526` — **closed**
-  - issue status closed, preserving autonomic/instrumental sub-sessions as allowed under the contract
+- we are in the **late narrow-seam phase**, not the broad-foundation phase
+- the docs should no longer force repeated returns to stale parent wording
+- but the ordinary backlog should not fully take over until the `#567` → `#566` → `#556` chain is resolved or honestly re-bucketed as non-blocking
 
-- `#527` — **closed**
-  - the enforced limbic lifecycle issue is closed
-  - the active routing paths still call `recordLimbicIngressDecision(...)`
-    - `src/bot/HelkinSwarmBot.ts:1186`
-    - `src/orchestrator/pendingIntentReplay.ts:132`
+### Should 09 still govern the next run?
 
-### Additional shipped constitutional bridge work
+**Yes, but only in its refreshed form.**
 
-The current issue tree also shows that multiple major bridge slices already closed under `#498` / `#520`, including:
-- steering injection compatibility seam (`#502`)
-- chrono continuity seam (`#504`)
-- interruption breadcrumb seam (`#509`)
-- interruption depth cap seam (`#511`)
-- paused-task paging/resume seam (`#515`)
-- explicit `awaiting-ingress` drain window (`#521`)
-- later ordinary Teams safe-window reroute work (`#549`, `#552`)
+The old version over-bound the loop.
 
-The code confirms the architectural pieces exist:
-- `src/orchestrator/overseer.ts:107` — explicit ingress window open action
-- `src/orchestrator/overseer.ts:115` — `waitForExternalEvent('NewMessage')`
-- `src/orchestrator/sessionOrchestrator.ts:347` — context-aware routing message construction
-- `src/orchestrator/sessionOrchestrator.ts:368` and `:381` — quoted context threaded into steering/prompt paths
+The refreshed version should govern like this:
 
-### Bottom line
+1. take `#567` next
+2. then collapse the remaining parent chain (`#566`, `#556`, `#520`, `#516`, `#498`)
+3. then return to the ordinary backlog immediately
 
-The first-wave constitutional work is **not** “unstarted.”
+### What is the ordinary backlog handoff after that?
 
-It is already in the late, ugly phase where the remaining bugs are **runtime-behavior seams** rather than missing major components.
+Once the constitutional seam stops being the honest blocker:
+
+1. `#485`
+2. then `#501`
+
+That is the concrete post-gate path back to normal DevLoop work.
 
 ---
 
-## What still remains under the constitutional campaign
+## Bottom line
 
-This is the active remaining stack as of 2026-04-04.
+The earlier assessment was directionally right, but it is now status-stale.
 
-### 1. `#556` — current deepest blocker
+Today’s honest state is:
 
-**Title:** Raised `NewMessage` events are not later drained when sent to an active-processing living overseer
-
-This is currently the most important remaining issue in the constitutional chain.
-
-#### Why it matters
-
-It directly challenges the assumption that an already-active living overseer can safely accept follow-on same-identity work during active processing.
-
-#### Current repo evidence
-
-`src/orchestrator/overseer.ts` only starts waiting on external follow-on events **after** `processTurn(...)` returns:
-- `src/orchestrator/overseer.ts:115` — `waitForExternalEvent('NewMessage')`
-- the ingress window is only opened after the turn completes (`line 107` action open)
-
-That means the runtime is not explicitly waiting on `NewMessage` while a leader turn is still active-processing.
-
-#### Current live evidence
-
-Per `#556`, a live injected follower turn was accepted as delivered to the active overseer, but never later showed:
-- `LivingSessionNewMessageDrained`
-- `ReplySent`
-- any visible final reply
-
-That is the strongest remaining architectural blocker.
-
-#### Assessment
-
-This is the issue most likely to determine whether the remaining constitutional work ends quickly or explodes into a deeper redesign.
-
----
-
-### 2. `#555` — shipped improvement, but not yet closure-worthy
-
-**Title:** Fix drained living-session turns to use unique session sub-orchestrator instance IDs
-
-This issue is **partially delivered in code**, but still open because live proof failed.
-
-#### What is already true in code
-
-The fix shipped on trunk:
-- `src/orchestrator/overseer.ts:206`
-  - `const sessionInstanceId = \`session-${context.df.instanceId}-${sessionInput.correlationId}\`;`
-
-That is better than the previous reused per-overseer session sub-orchestrator ID.
-
-#### Why it is still open
-
-Live proof showed that this was **not sufficient** to restore real drained follower behavior.
-
-#### Assessment
-
-`#555` is probably not the root remaining problem anymore.
-It is better viewed as:
-- a shipped corrective improvement
-- that may become closeable after `#556` is resolved
-- or may need to be superseded as a contributing seam rather than the primary blocker
-
----
-
-### 3. `#554` — ordinary Teams overlap still not safely redirected outside `awaiting-ingress`
-
-**Title:** Redirect ordinary Teams overlap into active living session outside awaiting-ingress window
-
-This remains a user-visible seam.
-
-#### Current repo evidence
-
-In `src/bot/HelkinSwarmBot.ts`, ordinary Teams overlap is still stage-gated to the narrow proven-safe ingress window:
-- `src/bot/HelkinSwarmBot.ts:1170` — `activeSessionRoutable = hasActiveGuard ...`
-- `src/bot/HelkinSwarmBot.ts:1172` — routable only when an entry is at stage `awaiting-ingress`
-- `src/bot/HelkinSwarmBot.ts:1233` — authority `living-session-awaiting-ingress-redirection`
-
-By contrast, pending-intent replay is broader:
-- `src/orchestrator/pendingIntentReplay.ts:119` — active session routable whenever an active instance exists
-- `src/orchestrator/pendingIntentReplay.ts:191` — authority `living-session-active-redirection`
-
-#### Assessment
-
-`#554` is still real, but I would **not** attack it first.
-
-If `#556` is unresolved, retrying broader ordinary Teams redirection risks repeating the same failed outside-in behavior on a more user-visible path.
-
-So `#554` is now more of a **dependent seam** than the deepest blocker.
-
----
-
-### 4. `#520` — the architectural parent is still open honestly
-
-**Title:** Replace one-shot overseer ingress with a true event-draining living session
-
-This is still the right parent framing for the active constitutional runtime gap.
-
-#### Why it is still open
-
-Even though the overseer now has a multi-turn loop and an explicit ingress window, the runtime still does **not** yet prove a reliable event-draining active session for same-identity work during active processing.
-
-#### Assessment
-
-`#520` will not close until `#556` is resolved and the live runtime proves that same-identity work can really be drained and replied to on the current living session path.
-
----
-
-### 5. `#516` — hard single-session enforcement is not complete yet
-
-**Title:** Flip MindSessionGuard from compatibility seam to hard single-session enforcement
-
-This is still the real constitutional “done done” gate.
-
-#### Current repo evidence
-
-The repo still preserves compatibility-mode behavior rather than true hard enforcement:
-- `src/bot/HelkinSwarmBot.ts:1186` — limbic decisioning is active, but ordinary overlap still falls back to queue outside the safe window
-- `src/orchestrator/pendingIntentReplay.ts:119` / `:191` — redirection exists on some paths, but not as a universal hard single-session model
-- issue `#516` remains open because `compat-start` / compatibility-mode semantics are still part of the runtime story
-
-#### Assessment
-
-`#516` is unlikely to close directly.
-It should close only **after** the `#520`/`#556` event-draining problem is solved and live proof can show a single living session invariant instead of compatibility-managed behavior.
-
----
-
-### 6. `#498` — still open because the final enforcement tranche is not yet complete
-
-This parent is much closer than it was on 2026-04-02, but it is still not honestly closable.
-
-#### What is already done
-
-Most of the first-wave components are now in code and many child issues are closed.
-
-#### What still blocks closure
-
-At minimum:
-- reliable active-processing drain/reply semantics (`#556`)
-- ordinary Teams overlap outside the narrow safe window (`#554`) or an honest re-bucketing of that path
-- final hard single-session enforcement (`#516`)
-
----
-
-## Trust Recovery campaign: where that stands now
-
-The constitutional gate still outranks Zone A when blocked issues depend on it. But several Zone A items are worth reassessing because the code has moved since the original control surface.
-
-### `#484` — partially delivered already
-
-**Issue:** Distinguish loaded/installed from operational state in Skills Library and readiness UX
-
-#### Current repo evidence
-
-Backend:
-- `src/capabilities/capabilityLoader.ts:300` — `getSkillCatalog()`
-- `src/capabilities/capabilityLoader.ts:322-323` — emits `operationalState` and `operationalSummary`
-- `src/capabilities/capabilityLoader.ts:352` — `inspectSkillInstall()`
-- `src/capabilities/capabilityLoader.ts:379` — returns `status: assessment.operationalState`
-
-State model:
-- `src/capabilities/skillOperationalState.ts:56` — `operator-setup-required`
-- `src/capabilities/skillOperationalState.ts:64` — explicit `/link` action step
-- `src/capabilities/skillOperationalState.ts:82-83` — explicit user-action/operator-setup messaging
-
-UI:
-- `tabs/app.js:1458` — renders operational badge on catalog cards
-- `tabs/app.js:1467` — renders operational summary
-- `tabs/app.js:1470` — shows operational row in metadata
-- `tabs/app.js:1487` and `:1491` — same on manage cards
-
-#### Remaining gap
-
-The UI still also shows `Installed` / `Loaded` badges:
-- `tabs/app.js:1457` — `Installed`
-- `tabs/app.js:1486` — `Loaded`
-
-So the issue looks more like **UX semantics are mixed**, not “operational state model missing entirely.”
-
-#### Assessment
-
-`#484` is **closer than the original control surface suggests**.
-It likely needs a review/narrowing pass, not a greenfield implementation.
-
----
-
-### `#485` — partially bridged, not yet proven
-
-**Issue:** Follow-up skill verification drifts into health/discovery prose instead of execution proof
-
-#### Current repo evidence
-
-The repo now does more than prompt-only quoted context:
-- `src/orchestrator/sessionOrchestrator.ts:347` — `buildContextAwareRoutingMessage(...)`
-- `src/orchestrator/sessionOrchestrator.ts:428` — `synthesizeDeterministicReadOnlyInitialToolCall(...)`
-- quoted context is threaded structurally into orchestration paths at `:368` and `:381`
-
-The deterministic follow-up helper has explicit execution-proof heuristics:
-- `src/orchestrator/discoveryToolInjection.ts:105` — `isExecutionProofPrompt(...)`
-- `src/orchestrator/discoveryToolInjection.ts:258` — `parseDeterministicSkillVerificationIntent(...)`
-- `src/orchestrator/discoveryToolInjection.ts:288-291` — Outlook proof prompts can synthesize `outlook_search_emails`
-
-#### Remaining gap
-
-This is still heuristic-first, not a universally proven deterministic continuity model.
-The issue remains open because the fix still needs deployed E2E proof in the exact scenarios that previously drifted.
-
-#### Assessment
-
-`#485` is **not untouched**.
-It looks like a partially implemented routing-hardening issue that still needs live validation and perhaps narrowing.
-
----
-
-### `#479` — likely partially improved, but still not honestly proven closed
-
-**Issue:** Outlook read/search validation drifts into discovery metadata instead of executing mailbox tools
-
-#### Current repo evidence
-
-The repo does now include deterministic Outlook execution shortcuts:
-- `src/orchestrator/discoveryToolInjection.ts:289-291` — returns `outlook_search_emails`
-- `src/orchestrator/discoveryToolInjection.ts:746-747` — forced function choice for search/look-up shapes
-- actual mailbox handlers remain implemented in `skills/outlook/handlers.ts`
-
-#### Remaining gap
-
-The issue remains open because the product still needs live E2E proof on the active model lanes that the mailbox tool path executes instead of drifting back into discovery/describe output.
-
-#### Assessment
-
-Like `#485`, this feels closer to **validation-and-polish** than to greenfield design, but it is still open honestly until live proof is rerun.
-
----
-
-### `#480` — already done
-
-This one is closed and should be removed from the live control surface the next time the control surface is refreshed.
-
----
-
-## Blocked downstream work still waiting on `#498`
-
-A large amount of backlog pressure is still constitutionally downstream of the unfinished single-session runtime.
-
-Representative open issues that remain blocked or materially constrained by `#494` / `#498` include:
-- `#103` — virtual employee persona/capability restrictions
-- `#238` — deep research / extended research
-- `#244` — AI-native lightweight document storage (VE execution aspects)
-- `#249` — revenue discovery primitive for the virtual company
-- plus the broader Virtual Employee / virtual-company expansion stack named on `#498`
-
-This is why the constitutional campaign still matters: it is blocking a lot more than just overlap-routing cosmetics.
-
----
-
-## Real path to the end from here
-
-### Path to end of the constitutional first wave
-
-The next honest path is:
-
-1. **Fix `#556` first**
-   - make active-processing `NewMessage` delivery actually drain later on the same overseer
-   - prove this with owner-only relay injection and runtime trace
-
-2. **Then revisit `#554`**
-   - only after active-processing drain is trustworthy
-   - retry the broader ordinary Teams redirect outside the safe `awaiting-ingress` window
-
-3. **Then collapse `#520`**
-   - once same-instance drain is proven in both helper and ordinary Teams paths
-
-4. **Then close `#516`**
-   - remove the remaining compatibility-managed story and prove the single living session invariant
-
-5. **Then close `#498`**
-   - once the first-wave enforcement contract is honestly complete
-
-### What could make this go quickly
-
-If `#556` turns out to be a small fix in how active-session delivery is buffered/consumed, the remainder of the constitutional gate could shrink fast.
-
-### What could make this take longer
-
-If `#556` exposes a deeper Durable limitation in the current overseer model, the runtime may need a more explicit mailbox/queue architecture for active-session follow-on work rather than the current assumption that a raised event will naturally drain later.
-
-That would be a deeper redesign.
-
----
-
-## Overall assessment
-
-### Where we stand now
-
-- The original control surface was directionally right, but is now status-stale.
-- The constitutional campaign has already delivered **most of the first-wave scaffolding and many concrete behaviors**.
-- The remaining work is concentrated in the **last hard runtime continuity seam**, not in broad missing foundations.
-- Trust Recovery is partly blocked and partly already overtaken by code progress.
-
-### Is an end in sight?
-
-**Yes, the end shape is visible.**
-
-But the honest qualifier is:
-- **for the constitutional first wave:** maybe soon, depending almost entirely on `#556`
-- **for the whole control surface:** not yet, because Trust Recovery and Enterprise Readiness still remain after the constitutional gate clears
-
-### My practical conclusion
-
-The work is no longer sprawling in every direction.
-It has condensed into a small number of highly specific runtime seams.
-
-That is good news.
-
-But one of those seams (`#556`) sits directly under the heart of the living-session design, so I would treat it as the decisive test of whether this wave is in its final stretch or still one architectural turn away.
-
----
-
-## Suggested next refresh to the control surface
-
-When `09-Backlog-Control-Surface.md` is next updated, I would change at least the following:
-
-- remove `#525`, `#526`, `#527` from “active now” and mark them delivered
-- remove `#480` from open Zone A
-- note that `#484` is partially delivered in code and may need re-bucketing
-- replace the top constitutional execution focus with the current live stack:
-  - `#516`
-  - `#520`
-  - `#556`
-  - `#554`
-  - `#555` (possibly as a dependent/subordinate seam rather than the main next target)
-
-That would better match the repo and issue reality as of 2026-04-04.
+- the constitutional gate is still active
+- the work has narrowed much further than the previous draft said
+- the active blocker is now `#567`
+- `#556` is still open, but now as a parent architecture issue with mitigations already shipped
+- once the current narrow seam is cleared or honestly re-bucketed, the control surface should hand us back to the regular backlog rather than dragging us back into the old constitutional wording again

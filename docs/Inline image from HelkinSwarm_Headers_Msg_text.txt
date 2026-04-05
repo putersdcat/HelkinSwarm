@@ -1,0 +1,113 @@
+Delivered-To: eric@eanderson.de
+Received: by 2002:a05:6504:5189:10b0:2f6:6577:8346 with SMTP id n9-n1csp490514ltb;
+        Thu, 2 Apr 2026 01:14:31 -0700 (PDT)
+X-Received: by 2002:a05:6214:1c46:b0:8a2:de92:26da with SMTP id 6a1803df08f44-8a436d1a2dbmr106242016d6.11.1775117671514;
+        Thu, 02 Apr 2026 01:14:31 -0700 (PDT)
+ARC-Seal: i=2; a=rsa-sha256; t=1775117671; cv=pass;
+        d=google.com; s=arc-20240605;
+        b=SHv9QF1kugoHNDoTf2QFtTMDOWKOSIlVVDLN2jcN6pH8eBaC0oMe1IqdghZ1ojP/Ve
+         0sCKhbV8ZX7zu04qUzcuuJOukuVauIeRFC6L1hWz/zX0M8wlTFvGAfWXRi8nXB6LtcR2
+         hFrfZLZGZrNlNz9UdDGj/2DMQjEzQjcKpP268gVhNbM6+rZ9zJJQaYbJ5fiIThWz8U6X
+         fJoFnEuRz8rnNVTaYA6M2l74TDzhh1jgQiH7E9uHR6Y3E83C6FMokp4+QNjDlULAW7Qn
+         e4mgg0Cr/NRq8xPl+lKg6S+WfnxZSSVuQnwV6oxS3LzNx5eTyiS6ozaJ7HjkM0/GRx3C
+         w0fw==
+ARC-Message-Signature: i=2; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20240605;
+        h=mime-version:content-language:accept-language:message-id:date
+         :thread-index:thread-topic:subject:to:from:dkim-signature;
+        bh=HnICM7sFp1YRex3pPAodSaCMpy7YgStbl4HOT637Flc=;
+        fh=y6TUzHBkUKGYFRBGTI8bpsksuwEPexRsqSp+sGKMtN4=;
+        b=Qe6fxz2PmrZ7Xq8j3YhxwJiOBoyJhY9l82gR2rik1nEIA7yTFoOxUxdAHRsfs15K4J
+         vEQH71j/PPQK7GwXCrZpyrdlOO5ru9HLJ44BV6eSeqSwVk83lyHhQEoihuJDaBPMiZzk
+         gAppXHzEZgbWZT+sB9RH32dEL3Gus4lLkKOM+ip+vBkMArGvq647WhgT2rA20nPu9isF
+         hoIAtzcRx1Lc+Ktqn6rNyFnAfTd75b4dbnCu54GIKsD3ZkFgdrgTdmknmrwVM8/E6Ed7
+         nWYDuBZ27tfY6cbXk27pjx5Gf5HDwR42JmSMNt+iAjfhAfmzuFnK/LSP53GipzCEjpOX
+         iZMw==;
+        dara=google.com
+ARC-Authentication-Results: i=2; mx.google.com;
+       dkim=permerror (no key for signature) header.i=@eandersonde.onmicrosoft.com header.s=selector1-eandersonde-onmicrosoft-com header.b=IYL4akbj;
+       arc=pass (i=1 spf=pass spfdomain=putersdcat.com dkim=pass dkdomain=putersdcat.com dmarc=pass fromdomain=putersdcat.com);
+       spf=pass (google.com: domain of eric@putersdcat.com designates 2a01:111:f403:c101::7 as permitted sender) smtp.mailfrom=eric@putersdcat.com
+Return-Path: <eric@putersdcat.com>
+Received: from BL0PR03CU003.outbound.protection.outlook.com (mail-eastusazlp170120007.outbound.protection.outlook.com. [2a01:111:f403:c101::7])
+        by mx.google.com with ESMTPS id 6a1803df08f44-8a5973e6ea5si29215196d6.168.2026.04.02.01.14.30
+        for <eric@eanderson.de>
+        (version=TLS1_3 cipher=TLS_AES_256_GCM_SHA384 bits=256/256);
+        Thu, 02 Apr 2026 01:14:31 -0700 (PDT)
+Received-SPF: pass (google.com: domain of eric@putersdcat.com designates 2a01:111:f403:c101::7 as permitted sender) client-ip=2a01:111:f403:c101::7;
+Authentication-Results: mx.google.com;
+       dkim=permerror (no key for signature) header.i=@eandersonde.onmicrosoft.com header.s=selector1-eandersonde-onmicrosoft-com header.b=IYL4akbj;
+       arc=pass (i=1 spf=pass spfdomain=putersdcat.com dkim=pass dkdomain=putersdcat.com dmarc=pass fromdomain=putersdcat.com);
+       spf=pass (google.com: domain of eric@putersdcat.com designates 2a01:111:f403:c101::7 as permitted sender) smtp.mailfrom=eric@putersdcat.com
+ARC-Seal: i=1; a=rsa-sha256; s=arcselector10001; d=microsoft.com; cv=none; b=iFrqpc+zwiovbYDMPQ3nDUQOtim5dwHAv4Cj+q97NO3uR49yrLmZTREGak0fIaucRvTGV682XneGSwIvWrn19wAEKOk3l+DH7JI9KiEfgTnUeVPMmM++zHv+7/nR5dslXXEuuqI8BbvwloijMETD9BusjeXAlVGhFHJxuOdfuc3jD3wQ4D5OC8Z4IxdztFxKsTulFZJ95u2cN4yJzjPcIJ002NXUYdla++Eur1vMaDH273KMw9eUKLZx4IevMj78tJNI91tREGoQblTsoYZqJxedBaaB//l67JwXbx+J5j58y7gpJ5pXFMJ+KrO3nntNYQZC2wMrf5SqlTLNrCI6Eg==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=microsoft.com; s=arcselector10001; h=From:Date:Subject:Message-ID:Content-Type:MIME-Version:X-MS-Exchange-AntiSpam-MessageData-ChunkCount:X-MS-Exchange-AntiSpam-MessageData-0:X-MS-Exchange-AntiSpam-MessageData-1; bh=HnICM7sFp1YRex3pPAodSaCMpy7YgStbl4HOT637Flc=; b=Cwwynf1TGSB4eWknXpdHUzbRzTeHgEDsuLlE7L1CwTWTxODSVw5pHwpBZ6pVfcy0yb3OjE0X5TAZV9QPBd4mGoxdUSu8YSwvb+wbUTNsIpY5/ejPF3xsTSEa/2mks5INRgbHoEPZJ/Y5TNjrzY8cUvula+JKrzque103MvKyojKU6d9hHrHud1w2GDNxxIrC4MMtnnJpKSn9CnrW80/TLDyuQCBE8JQNTfYkh19E9HWEMuJhgfh34dPB2OIGyZ2FFU0/zz3CW3jc171UEeF6iv9w2Tn/cucjbgU9x68TEcowU4edYVc95v/ug9FiUYyNaUSuQiQ/WKD9IbdZCQIwnQ==
+ARC-Authentication-Results: i=1; mx.microsoft.com 1; spf=pass smtp.mailfrom=putersdcat.com; dmarc=pass action=none header.from=putersdcat.com; dkim=pass header.d=putersdcat.com; arc=none
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=eandersonde.onmicrosoft.com; s=selector1-eandersonde-onmicrosoft-com; h=From:Date:Subject:Message-ID:Content-Type:MIME-Version:X-MS-Exchange-SenderADCheck; bh=HnICM7sFp1YRex3pPAodSaCMpy7YgStbl4HOT637Flc=; b=IYL4akbjvT/6rM/XPHPAtxHOH63EO77QHBPDqdF7J9+QS8JIl07jjwzMVgZvJkVd5ZvrAiSAsanL7CaiLY8UrexoB9aHz+8FBI46eSZTsuWWql3HQx+VgBNL26PClo+RJAWAjflxVPhrCwWA+1Xll3QoGQFfhNXoB+f36RvtRs8=
+Received: from DS0PR22MB5971.namprd22.prod.outlook.com (2603:10b6:8:1ce::19) by LV3PR22MB5949.namprd22.prod.outlook.com (2603:10b6:408:276::13) with Microsoft SMTP Server (version=TLS1_2, cipher=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) id 15.20.9769.20; Thu, 2 Apr 2026 08:14:28 +0000
+Received: from DS0PR22MB5971.namprd22.prod.outlook.com ([fe80::2f4e:e860:fd8b:bf9a]) by DS0PR22MB5971.namprd22.prod.outlook.com ([fe80::2f4e:e860:fd8b:bf9a%6]) with mapi id 15.20.9769.014; Thu, 2 Apr 2026 08:14:28 +0000
+From: Eric Anderson <eric@putersdcat.com>
+To: "eric@eanderson.de" <eric@eanderson.de>
+Subject: Inline image from HelkinSwarm
+Thread-Topic: Inline image from HelkinSwarm
+Thread-Index: AQHcwni5CSkpXvCcMkyJxnPBNnq1nQ==
+Date: Thu, 2 Apr 2026 08:14:28 +0000
+Message-ID: <DS0PR22MB5971F8B5F8075673EB11F3B1AF51A@DS0PR22MB5971.namprd22.prod.outlook.com>
+Accept-Language: en-US
+Content-Language: en-US
+X-MS-Has-Attach: yes
+X-MS-TNEF-Correlator: 
+authentication-results: dkim=none (message not signed) header.d=none;dmarc=none action=none header.from=putersdcat.com;
+x-ms-publictraffictype: Email
+x-ms-traffictypediagnostic: DS0PR22MB5971:EE_|LV3PR22MB5949:EE_
+x-ms-office365-filtering-correlation-id: b69e3891-6c1c-486f-2b7b-08de908fdc71
+x-microsoft-antispam: BCL:0;ARA:13230040|366016|6049299003|18002099003|56012099003|8096899003|41050700001;
+x-microsoft-antispam-message-info: 8OhNJY//5cjdISF1XMaCYRuQpez5f/2eWAofnkyiQD+k9oArTKjK6AJI8UUr7IQ4idyUjSRvMgrLm012jr+2sK3ig3nmmY0INscPlxiz+2eeULfgeRPI32SENicCrttU2SfYkq4S0RKBj7s6EuRZia9dXUMZ0v7JxhRnktl1gXy/qs68uaNT2bYPvsK248phby4s3HDHi4eoD5sLdqU9TlJVrcTa8qFi6FNlX1DqCSZbS0oRxten0wsAuqWKNLq0AedVZLGcMk9xwinLm577khvidh1SDAL22IjI7+RrsKCRYgp3SpirU6mi9ZHfDZbGu7H7MykjXBX4IgLrNXkxea4dxm4z0nevmnx6o2ASCVu0Zxlj9Kh06TOtLzmQNoqOeBbBpds9jO5S0tVCQdP1+D2k4wWcPJ9FEjMpAeH2Ywnp/q7uuh2uujO0ODQ/dGaGAOeP24rncQYQV/oKwDN+FehIOE56p8XlXLqr1FgFyZ3rWOaFtd7Z6kQTmGqvYLKmeGdeyvQL8mrgx9bf0kerQxq3b2VrCIijd137xIBqekZfT/7Ue1eu/joixXuhhzl7U/SNnxHmSF/je9zlyfzVVbF3kG5qoH9EfNaPEKrCGeng7YPC618iw57qMc0F4lNSTKOzo8YqUgMG2+rvLjg1TYdmJoT/ecw5QyHU6E3oxQkdjNIqC9RSzbmZ3oyTHLzijaVTZNHLd1A4FAQiNEUEHUWLzkmm6SEUtxiVU0NWWXg=
+x-forefront-antispam-report: CIP:255.255.255.255;CTRY:;LANG:en;SCL:1;SRV:;IPV:NLI;SFV:NSPM;H:DS0PR22MB5971.namprd22.prod.outlook.com;PTR:;CAT:NONE;SFS:(13230040)(366016)(6049299003)(18002099003)(56012099003)(8096899003)(41050700001);DIR:INT;
+Content-Type: multipart/related; boundary="_004_DS0PR22MB5971F8B5F8075673EB11F3B1AF51ADS0PR22MB5971namp_"; type="multipart/alternative"
+MIME-Version: 1.0
+X-OriginatorOrg: putersdcat.com
+X-MS-Exchange-CrossTenant-AuthAs: Internal
+X-MS-Exchange-CrossTenant-AuthSource: DS0PR22MB5971.namprd22.prod.outlook.com
+X-MS-Exchange-CrossTenant-Network-Message-Id: b69e3891-6c1c-486f-2b7b-08de908fdc71
+X-MS-Exchange-CrossTenant-originalarrivaltime: 02 Apr 2026 08:14:28.6033 (UTC)
+X-MS-Exchange-CrossTenant-fromentityheader: Hosted
+X-MS-Exchange-CrossTenant-id: 51b1f02a-e19b-4089-a5f6-3ebb72835521
+X-MS-Exchange-CrossTenant-mailboxtype: HOSTED
+X-MS-Exchange-CrossTenant-userprincipalname: tDi8huud7e/Qxvdf5EdCj5uXPGOSSjgxp2//r8Z3p0L7WDN8kE1YntV4iIl8F6kSrEEZLV+vP3Wwko3i4zITtA==
+X-MS-Exchange-Transport-CrossTenantHeadersStamped: LV3PR22MB5949
+
+--_004_DS0PR22MB5971F8B5F8075673EB11F3B1AF51ADS0PR22MB5971namp_
+Content-Type: multipart/alternative; boundary="_000_DS0PR22MB5971F8B5F8075673EB11F3B1AF51ADS0PR22MB5971namp_"
+
+--_000_DS0PR22MB5971F8B5F8075673EB11F3B1AF51ADS0PR22MB5971namp_
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: quoted-printable
+
+Here is the inline image you requested.
+
+[cid:inline-image-1]
+
+--_000_DS0PR22MB5971F8B5F8075673EB11F3B1AF51ADS0PR22MB5971namp_
+Content-Type: text/html; charset="us-ascii"
+Content-Transfer-Encoding: quoted-printable
+
+<html>
+<head>
+<meta http-equiv=3D"Content-Type" content=3D"text/html; charset=3Dus-ascii"=
+>
+</head>
+<body>
+<p>Here is the inline image you requested.</p>
+<img data-outlook-trace=3D"F:0|T:1" src=3D"cid:inline-image-1">
+</body>
+</html>
+
+--_000_DS0PR22MB5971F8B5F8075673EB11F3B1AF51ADS0PR22MB5971namp_--
+--_004_DS0PR22MB5971F8B5F8075673EB11F3B1AF51ADS0PR22MB5971namp_
+Content-Type: image/*; name="inline-inline-image-1"
+Content-Description: inline-inline-image-1
+Content-Disposition: inline; filename="inline-inline-image-1"; size=2923026; creation-date="Thu, 02 Apr 2026 08:14:28 GMT"; modification-date="Thu, 02 Apr 2026 08:14:28 GMT"
+Content-ID: <inline-image-1>
+Content-Transfer-Encoding: base64
+
+
+--_004_DS0PR22MB5971F8B5F8075673EB11F3B1AF51ADS0PR22MB5971namp_--
