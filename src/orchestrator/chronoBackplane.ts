@@ -5,6 +5,25 @@ import { trackEvent } from '../observability/telemetry.js';
 
 const CHRONO_CONTAINER = 'chronoBackplane';
 const CHRONO_TTL_SECONDS = 7 * 24 * 60 * 60;
+const CHRONO_ACTIVITY_TIMEOUT_MS = 5_000;
+
+async function withActivityTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  return await Promise.race([
+    work,
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        const timeoutError = new Error(`chrono activity timed out after ${timeoutMs}ms`);
+        timeoutError.name = 'TimeoutError';
+        reject(timeoutError);
+      }, timeoutMs);
+    }),
+  ]).finally(() => {
+    if (timer) {
+      clearTimeout(timer);
+    }
+  });
+}
 
 export const ChronoContinuityDocumentSchema = z.object({
   id: z.string(),
@@ -397,15 +416,21 @@ export async function loadChronoInterruptionBreadcrumb(
 df.app.activity('saveChronoContinuityActivity', {
   handler: async (rawInput: unknown): Promise<void> => {
     const input = SaveChronoContinuityInputSchema.parse(rawInput);
-    const doc = await saveChronoContinuity(input);
-    trackEvent({
-      name: 'ChronoBackplaneWritten',
-      correlationId: input.correlationId,
-      userId: input.userId,
-      properties: {
-        type: doc.type,
-        intention: doc.intention,
-      },
-    });
+    try {
+      const doc = await withActivityTimeout(saveChronoContinuity(input), CHRONO_ACTIVITY_TIMEOUT_MS);
+      trackEvent({
+        name: 'ChronoBackplaneWritten',
+        correlationId: input.correlationId,
+        userId: input.userId,
+        properties: {
+          type: doc.type,
+          intention: doc.intention,
+        },
+      });
+    } catch (err) {
+      console.warn(
+        `[saveChronoContinuityActivity] Skipping chrono persistence after timeout/error: ${err instanceof Error ? err.message : err}`,
+      );
+    }
   },
 });

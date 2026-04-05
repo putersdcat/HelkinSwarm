@@ -1049,6 +1049,11 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
           return;
         }
 
+        const activeTurnStages = await getActiveTurnStagesForUser(userId);
+        if (activeTurnStages.some((entry) => entry.correlationId === correlationId)) {
+          return;
+        }
+
         await recoverStaleAck(
           conversationId,
           ackActivityId,

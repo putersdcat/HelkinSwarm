@@ -9,6 +9,8 @@ describe('model override ack recovery source guards', () => {
     expect(source).toContain('private scheduleModelOverrideAckRecovery(');
     expect(source).toContain('const pendingAckId = await getPendingAckId(correlationId);');
     expect(source).toContain('if (pendingAckId !== ackActivityId) {');
+    expect(source).toContain('const activeTurnStages = await getActiveTurnStagesForUser(userId);');
+    expect(source).toContain('if (activeTurnStages.some((entry) => entry.correlationId === correlationId)) {');
     expect(source).toContain('await recoverStaleAck(');
     expect(source).toContain("console.warn('[HelkinSwarmBot] model-override ack recovery failed:'");
     expect(source).toContain('this.scheduleModelOverrideAckRecovery(context, userId, correlationId, ackResponse.id);');
