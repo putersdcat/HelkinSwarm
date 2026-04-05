@@ -61,7 +61,7 @@ import {
 } from '../auth/pendingLinkChallengeStore.js';
 import { buildSkillLinkSigninCard, buildSkillRelinkSigninCard } from './linkCards.js';
 import { extractMessageReferenceId, extractMessageReferencePreview } from './messageReference.js';
-import type { QuotedContext } from './quotedContext.js';
+import { sanitizeQuotedReplyText, type QuotedContext } from './quotedContext.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { clearOrchestratorStagesForInstanceIds, recordOrchestratorStage } from '../observability/orchestratorStageHealth.js';
 import { clearOboSession } from '../auth/oboSessionStore.js';
@@ -2409,12 +2409,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     if (replyToId) {
       const cached = getSentMessage(replyToId);
       if (cached) {
-        return { text: cached, replyToId, source: 'cache', mayBeTruncated: false };
+        return { text: sanitizeQuotedReplyText(cached), replyToId, source: 'cache', mayBeTruncated: false };
       }
 
       const stored = await getStoredSentMessage(replyToId, activity.conversation?.id);
       if (stored) {
-        return { text: stored, replyToId, source: 'store', mayBeTruncated: false };
+        return { text: sanitizeQuotedReplyText(stored), replyToId, source: 'store', mayBeTruncated: false };
       }
     }
 
@@ -2423,7 +2423,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     if (entities) {
       for (const entity of entities) {
         if (entity.type === 'quote' && typeof entity.text === 'string') {
-          return { text: entity.text.trim(), replyToId, source: 'entity', mayBeTruncated: entity.text.length < 180 };
+          return {
+            text: sanitizeQuotedReplyText(entity.text),
+            replyToId,
+            source: 'entity',
+            mayBeTruncated: entity.text.length < 180,
+          };
         }
       }
     }
@@ -2431,13 +2436,23 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     // 3. Check channelData for quoted message content (Teams may include it here)
     const channelData = activity.channelData as Record<string, unknown> | undefined;
     if (channelData?.quotedMessageContent && typeof channelData.quotedMessageContent === 'string') {
-      return { text: channelData.quotedMessageContent.trim(), replyToId, source: 'channelData', mayBeTruncated: channelData.quotedMessageContent.length < 180 };
+      return {
+        text: sanitizeQuotedReplyText(channelData.quotedMessageContent),
+        replyToId,
+        source: 'channelData',
+        mayBeTruncated: channelData.quotedMessageContent.length < 180,
+      };
     }
 
     // 4. Teams desktop/web quoted replies may arrive as messageReference attachments (#221)
     const messageReferencePreview = extractMessageReferencePreview(activity.attachments);
     if (replyToId && messageReferencePreview) {
-      return { text: messageReferencePreview, replyToId, source: 'messageReference', mayBeTruncated: true };
+      return {
+        text: sanitizeQuotedReplyText(messageReferencePreview),
+        replyToId,
+        source: 'messageReference',
+        mayBeTruncated: true,
+      };
     }
 
     // 5. Fallback: extract from HTML body if textFormat is 'html'
@@ -2447,7 +2462,12 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       );
       if (blockquoteMatch?.[1]) {
         const stripped = blockquoteMatch[1].replace(/<[^>]+>/g, '').trim();
-        return { text: stripped, replyToId, source: 'blockquote', mayBeTruncated: true };
+        return {
+          text: sanitizeQuotedReplyText(stripped),
+          replyToId,
+          source: 'blockquote',
+          mayBeTruncated: true,
+        };
       }
     }
 

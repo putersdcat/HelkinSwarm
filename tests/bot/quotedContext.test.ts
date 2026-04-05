@@ -1,6 +1,10 @@
 // Tests for QuotedContext type and buildPrompt quoted-context injection (#278)
 import { describe, it, expect } from 'vitest';
-import type { QuotedContext, QuoteSource } from '../../src/bot/quotedContext.js';
+import {
+  sanitizeQuotedReplyText,
+  type QuotedContext,
+  type QuoteSource,
+} from '../../src/bot/quotedContext.js';
 
 describe('QuotedContext', () => {
   const sources: QuoteSource[] = ['cache', 'store', 'entity', 'channelData', 'blockquote', 'messageReference'];
@@ -59,3 +63,22 @@ describe('QuotedContext', () => {
     expect(ctx.mayBeTruncated).toBe(false);
   });
 });
+
+
+  it('strips telemetry footers from stored bot replies before they are reused as quoted context', () => {
+    const sanitized = sanitizeQuotedReplyText(
+      'I checked the installed skills without executing anything yet. Best matching tool: outlook_search_emails.\n\n[E2E:3062ms|m:gpt-5.4-mini-2026-03-17|pt:3068|ct:42|prompt:1751ms|llm:880ms|tools:103ms|tools:helkin_skill_search|safe:✓|tok:1|corr:fd7105b9]',
+    );
+
+    expect(sanitized).toBe(
+      'I checked the installed skills without executing anything yet. Best matching tool: outlook_search_emails.',
+    );
+    expect(sanitized).not.toContain('helkin_skill_search');
+    expect(sanitized).not.toContain('[E2E:');
+  });
+
+  it('preserves quoted replies that do not have telemetry footers', () => {
+    expect(sanitizeQuotedReplyText('Best matching tool: outlook_search_emails')).toBe(
+      'Best matching tool: outlook_search_emails',
+    );
+  });
