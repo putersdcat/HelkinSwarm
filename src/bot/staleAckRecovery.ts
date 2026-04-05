@@ -11,6 +11,7 @@ import {
 } from './conversationStore.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { trackEvent } from '../observability/telemetry.js';
+import { clearOrchestratorStage } from '../observability/orchestratorStageHealth.js';
 
 export const STALE_ACK_THRESHOLD_MS = 5 * 60 * 1000;
 
@@ -35,6 +36,18 @@ export interface StaleAckRecoveryStats {
   failed: number;
 }
 
+async function clearRecoveredTurnArtifacts(
+  conversationId: string,
+  correlationId: string,
+  userId: string,
+): Promise<void> {
+  try {
+    await clearPendingAckId(conversationId, correlationId);
+  } finally {
+    await clearOrchestratorStage(correlationId, userId);
+  }
+}
+
 export async function recoverStaleAck(
   conversationId: string,
   ackActivityId: string,
@@ -48,7 +61,7 @@ export async function recoverStaleAck(
     ?? await getConversationReference(userId);
 
   if (!conversationReference) {
-    await clearPendingAckId(conversationId, correlationId);
+    await clearRecoveredTurnArtifacts(conversationId, correlationId, userId);
     return 'cleared-without-reference';
   }
 
@@ -65,7 +78,7 @@ export async function recoverStaleAck(
     },
   );
 
-  await clearPendingAckId(conversationId, correlationId);
+  await clearRecoveredTurnArtifacts(conversationId, correlationId, userId);
   return 'recovered';
 }
 
@@ -104,7 +117,7 @@ export async function recoverStaleAcks(maxAgeMs = STALE_ACK_THRESHOLD_MS): Promi
     } catch (err) {
       stats.failed++;
       try {
-        await clearPendingAckId(ack.conversationId, ack.correlationId);
+        await clearRecoveredTurnArtifacts(ack.conversationId, ack.correlationId, ack.userId);
       } catch {
         // Nothing more we can do.
       }

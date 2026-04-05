@@ -9,6 +9,7 @@ describe('HelkinSwarmBot /validate-stale-ack routing', () => {
     expect(source).toContain("if (lowerMessage === '/validate-stale-ack' || lowerMessage === 'validate stale ack') {");
     expect(source).toContain('⌛ Working on it... (🧪 stale-ack validation)');
     expect(source).toContain('STALE_ACK_VALIDATION_DELAY_MS = 4_000');
+    expect(source).toContain("await recordOrchestratorStage(correlationId, 'build-prompt', userId);");
     expect(source).toContain('const conversationReference = TurnContextClass.getConversationReference(context.activity);');
     expect(source).toContain('void (async () => {');
     expect(source).toContain('await recoverStaleAck(');
