@@ -33,6 +33,36 @@ describe('messageReference helpers', () => {
     expect(extractMessageReferencePreview(attachments)).toBe('📄');
   });
 
+  it('accepts Teams message-reference attachments that use a hyphenated content type', () => {
+    const attachments = [
+      {
+        contentType: 'message-reference',
+        content: {
+          messageId: '1775343853560',
+          messagePreview: 'Best matching tool: outlook_search_emails',
+        },
+      },
+    ];
+
+    expect(extractMessageReferenceId(attachments)).toBe('1775343853560');
+    expect(extractMessageReferencePreview(attachments)).toBe('Best matching tool: outlook_search_emails');
+  });
+
+  it('falls back to cardPayload when Teams emits message-reference metadata there instead of content', () => {
+    const attachments = [
+      {
+        contentType: 'message-reference',
+        cardPayload: {
+          messageId: '1775347257681',
+          messagePreview: 'Microsoft Graph Enterprise MCP is installed but in operator-setup-required state.',
+        },
+      },
+    ];
+
+    expect(extractMessageReferenceId(attachments)).toBe('1775347257681');
+    expect(extractMessageReferencePreview(attachments)).toBe('Microsoft Graph Enterprise MCP is installed but in operator-setup-required state.');
+  });
+
   it('ignores unrelated attachments', () => {
     const attachments = [
       {

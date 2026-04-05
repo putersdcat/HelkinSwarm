@@ -6,20 +6,37 @@ interface MessageReferenceContent {
 interface MessageReferenceAttachment {
   contentType?: unknown;
   content?: unknown;
+  cardPayload?: unknown;
+}
+
+function isMessageReferenceContentType(contentType: unknown): boolean {
+  if (typeof contentType !== 'string') {
+    return false;
+  }
+
+  const normalized = contentType.trim().toLowerCase();
+  return normalized === 'messagereference'
+    || normalized === 'message-reference'
+    || normalized.endsWith('.messagereference')
+    || normalized.endsWith('.message-reference');
 }
 
 function getMessageReferenceContent(
   attachment: MessageReferenceAttachment,
 ): MessageReferenceContent | undefined {
-  if (attachment.contentType !== 'messageReference') {
+  if (!isMessageReferenceContentType(attachment.contentType)) {
     return undefined;
   }
 
-  if (!attachment.content || typeof attachment.content !== 'object') {
-    return undefined;
+  if (attachment.content && typeof attachment.content === 'object') {
+    return attachment.content as MessageReferenceContent;
   }
 
-  return attachment.content as MessageReferenceContent;
+  if (attachment.cardPayload && typeof attachment.cardPayload === 'object') {
+    return attachment.cardPayload as MessageReferenceContent;
+  }
+
+  return undefined;
 }
 
 export function extractMessageReferenceId(
