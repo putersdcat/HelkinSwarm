@@ -20,6 +20,7 @@ import type { SendReplyInput } from './sendReplyActivity.js';
 import type { SpinnerHeartbeatInput } from './spinnerHeartbeatActivity.js';
 import type { TerminateOrchestrationInput } from './terminateOrchestrationActivity.js';
 import type { PurgeOrchestrationInput } from './terminateOrchestrationActivity.js';
+import type { StoreMemoryInput } from './storeMemoryActivity.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
 import type { RuntimeAssetReference } from '../integrations/runtimeAssetStore.js';
@@ -502,6 +503,19 @@ function* processTurn(
     { role: 'assistant' as const, content: sessionResult.cleanResponse || sessionResult.response || '(no response)' },
   );
   state.recentHistory = history.slice(-10);
+
+  try {
+    yield context.df.callActivity('storeMemoryActivity', {
+      userId: state.userId,
+      userMessage: event.userMessage,
+      assistantReply: sessionResult.cleanResponse || sessionResult.response || '(no response)',
+    } satisfies StoreMemoryInput);
+  } catch (storeMemoryError) {
+    console.warn(
+      `[overseer] storeMemoryActivity failed after reply for user=${state.userId} correlationId=${sessionInput.correlationId}`,
+      storeMemoryError,
+    );
+  }
 
   try {
     yield context.df.callActivity('saveStateActivity', {

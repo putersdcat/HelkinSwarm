@@ -14,7 +14,6 @@ import type { ToolDispatchInput, ToolDispatchResult } from './toolDispatchActivi
 import type { LlmFollowUpInput } from './llmFollowUpActivity.js';
 import type { SendConfirmationCardInput, SendConfirmationCardResult } from './sendConfirmationCardActivity.js';
 import type { SaveStateInput } from './saveStateActivity.js';
-import type { StoreMemoryInput } from './storeMemoryActivity.js';
 import type { SubAgentInput, SubAgentResult } from './subAgentActivity.js';
 import type { ExecutorInput, ExecutorResult } from './executorActivity.js';
 import { signExecutorPayload, hashPayload } from './executorActivity.js';
@@ -267,13 +266,6 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       replyInput,
     );
 
-    const memoryInput: StoreMemoryInput = {
-      userId: input.state.userId,
-      userMessage: input.userMessage,
-      assistantReply: exactReplyInstruction,
-    };
-    yield context.df.callActivity('storeMemoryActivity', memoryInput);
-
     return {
       response: exactReplyInstruction,
       cleanResponse: exactReplyInstruction,
@@ -319,13 +311,6 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       'sendReplyActivity',
       replyInput,
     );
-
-    const memoryInput: StoreMemoryInput = {
-      userId: input.state.userId,
-      userMessage: input.userMessage,
-      assistantReply: clarificationShortCircuitResponse,
-    };
-    yield context.df.callActivity('storeMemoryActivity', memoryInput);
 
     return {
       response: clarificationShortCircuitResponse,
@@ -1250,14 +1235,6 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     'sendReplyActivity',
     replyInput,
   );
-
-  // 6. Store conversation turn in vector memory (non-blocking, best-effort) (#134)
-  const memoryInput: StoreMemoryInput = {
-    userId: input.state.userId,
-    userMessage: input.userMessage,
-    assistantReply: responseContent,
-  };
-  yield context.df.callActivity('storeMemoryActivity', memoryInput);
 
   return {
     response: displayResponse,
