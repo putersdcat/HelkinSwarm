@@ -253,6 +253,31 @@ Live issue state narrowed again after the `#485` / `#564` validation chain:
 
 Future runs should therefore work `#565` first instead of treating `#485` as the immediate implementation target.
 
+### Trust validation blocker note — 2026-04-05 late night
+
+The selector still points at `#565` as the active trust-recovery child, but closure-grade C4 on `#565` is **not always obtainable on demand** while the older living-session seam is still polluting the runtime.
+
+Fresh evidence from the latest shipped `#565` repair cluster:
+
+- one clean C4 run still failed on the real Outlook quoted-proof path (`corr:2b0913cc`) and showed the turn collapsing to `helkin_skill_search`
+- later post-fix probes were no longer clean trust tests because ordinary setup turns themselves were intermittently interrupted with:
+  - `⚠️ This turn was interrupted before a final reply could be delivered. Please resend it if you still need a response.`
+- runtime health at the same time continued to show the old lingering living-session correlation from the existing constitutional seam:
+  - `2b0913cc-e40b-4a55-82cb-86133167d09e`
+  - stage `build-prompt`
+
+Operational meaning:
+
+- `#565` remains the correct Zone A child for trust routing work
+- but when this runtime-interruption pattern is present, **do not** mistake the noisy setup-turn failures for closure evidence about `#565`
+- in that state, the existing `#568` seam has temporarily reasserted itself as a validation blocker even though it remains quarantined as day-to-day implementation work
+
+Default behavior from here:
+
+1. still prefer `#565` for repo-side trust-routing improvements
+2. but if clean C4 is blocked by the stale living-session interference pattern above, record that honestly on `#565`
+3. and treat `#568` as the active blocker rail for validation, not as a fresh re-ranking of the whole backlog
+
 ### Loop protection note — 2026-04-05 evening refresh
 
 This file must now actively prevent a repeat of the last two-day loop.
