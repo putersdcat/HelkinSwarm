@@ -76,7 +76,7 @@ These are off the active front and must not keep pulling future runs backward:
 | 0c | `#556` | Buffered-follower architecture parent | C3/C4-partial | The old black-hole symptom is now mitigated by replay/rescue, but ordinary same-instance dequeue/drain is still not honestly proven. |
 | 0d | `#566` | Exact-target drain blocker parent | C3/C4-failed | Exact instance targeting shipped, but the original living overseer still did not dequeue/drain the follower itself. |
 | 0e | `#567` | Narrowed post-reply parent seam | C3/C4-failed | The stale-ack symptom was reduced, but repeated shipped attempts did not clear the live bar; this is now better treated as the immediate parent for the newer leader-correlation completion seam. |
-| 0f | `#568` | Current deepest executable blocker | C3/C4-failed | Latest live traces show the leader reaches visible `ReplySent`, then remains staged at `send-reply` and later re-enters same-correlation prompt / LLM work while the exact-target follower stays queued. |
+| 0f | `#568` | Quarantined research rail | C3/C4-failed | Two additional shipped slices (`577993e`, `70308e7`) still failed live. The seam is real, but it is no longer the default daily shipping target without a materially new hypothesis. |
 
 ### Supporting open children under the same seam
 
@@ -126,17 +126,37 @@ From this point:
    - a materially new repo-grounded hypothesis emerges,
    - or a different repro path breaks the loop
 
+### Loop-breaker result — triggered on 2026-04-05
+
+This threshold has now been met in practice.
+
+Evidence:
+
+- `577993e` (`fix(#568): move memory write out of reply path`) still failed live:
+  - follower remained queued
+  - exact full-correlation leader bundle still showed same-correlation `PromptBuilt` / `LlmCallStarted` / `LlmCallCompleted` after `ReplySent`
+- `70308e7` (`fix(#568): suppress post-reply session reentry`) also failed live:
+  - leader surfaced the stale interruption warning instead of a clean final answer
+  - exact-target follower still remained queued
+  - runtime later showed `activeTurns: 0`, so the seam changed shape again without clearing
+
+Decision now encoded here:
+
+- `#568` remains open as a **research / exception rail**
+- it is **not** the default next daily shipping target anymore
+- ordinary backlog execution resumes with `#485`
+- future work should return to `#568` only when there is:
+  - upstream/platform evidence,
+  - a materially new repo-grounded hypothesis,
+  - or a fresh repro that breaks the current loop
+
 ### Constitutional gate execution rule
 
 When the constitutional gate is active, the default next-work bias is now:
 
-1. `#568`
-2. then collapse/close or honestly re-bucket `#567`
-3. then collapse/close or honestly re-bucket `#566`
-4. then collapse/close or honestly re-bucket `#556`
-5. then close `#520`
-6. then close `#516`
-7. then close `#498`
+1. do **not** keep targeting `#568` by default — it is quarantined on the exception rail
+2. resume ordinary backlog execution with `#485`
+3. revisit `#568` only with materially new evidence/hypothesis
 
 Do **not** fall back to stale earlier guidance that still points at `#554`, `#555`, or the already-cleared early child slices.
 
@@ -195,7 +215,17 @@ This file should **stop acting as a constitutional override** for ordinary runs 
 2. take `#485` next
 3. then promote `#501` if no fresher Zone A blocker replaces it
 
-That is the explicit escape hatch. Future runs should **not** keep re-entering a stale `#556` loop once the live blocker chain has moved or cleared.
+That is the explicit escape hatch. Future runs should **not** keep re-entering a stale `#556` / `#568` loop once the live blocker chain has moved or been honestly quarantined.
+
+### Handoff status — active as of 2026-04-05 evening
+
+The handoff is now considered **active** for ordinary backlog runs.
+
+Reason:
+
+- `#568` has been explicitly re-bucketed to the exception rail after repeated shipped C4 failures
+- the seam is still open, but it no longer deserves to block routine backlog reduction by default
+- future runs should therefore switch back to the regular backlog loop and take `#485` next unless new evidence re-activates this campaign
 
 ---
 
@@ -203,11 +233,10 @@ That is the explicit escape hatch. Future runs should **not** keep re-entering a
 
 ### Honest short version
 
-- **No**, the constitutional gate is not fully gone yet.
-- **Yes**, the loop was partly stale and over-binding.
-- The current real blocker is no longer the generic `#556` framing, and it is no longer honest to keep treating `#567` as the freshest child either.
-- The freshest child is now `#568`, with `#567` serving as the already-tested parent for earlier stale-ack / reply-tail hypotheses.
-- Once that seam and its immediate parent chain are cleared or honestly re-bucketed, this control surface should hand us straight back to the regular backlog:
+- **No**, the constitutional architecture questions are not magically solved.
+- **Yes**, the loop was stale enough that this seam has now been explicitly stepped over.
+- `#568` remains open, but it is quarantined on the research / exception rail rather than competing as the default daily target.
+- Ordinary backlog work should now resume with:
   - `#485`
   - then `#501`
 
@@ -220,7 +249,8 @@ What changed since the earlier refresh:
 - live repo + runtime evidence now shows `#568` is the freshest child, not `#567`
 - first-party Microsoft docs review did **not** uncover a clear platform limitation that would explain the seam as expected behavior
 - repeated shipped attempts on `#567` narrowed the problem, but did not clear the live bar
-- future runs should therefore either work `#568` specifically or, after one more same-signature C4 failure, quarantine this seam as a constitutional exception rail and hand back to `#485`
+- the additional `#568` loop-breaker probe has now been spent and failed
+- future runs should therefore treat `#568` as quarantined exception work and hand back to `#485`
 
 ### Refresh note — 2026-04-05
 
