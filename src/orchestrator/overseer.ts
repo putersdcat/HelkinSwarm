@@ -420,7 +420,10 @@ function* processTurn(
         } catch (replyErr) {
           console.error(`[overseer] Failed to send timeout reply for user=${state.userId}`, replyErr);
         }
-        yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
+        yield context.df.callActivity('saveStateActivity', {
+          state,
+          correlationId: sessionInput.correlationId,
+        } satisfies SaveStateInput);
         yield context.df.callActivity('ingressWindowStageActivity', {
           action: 'clear',
           correlationId: sessionInput.correlationId,
@@ -460,7 +463,10 @@ function* processTurn(
     } catch (replyErr) {
       console.error(`[overseer] Failed to send error reply for user=${state.userId}`, replyErr);
     }
-    yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
+    yield context.df.callActivity('saveStateActivity', {
+      state,
+      correlationId: sessionInput.correlationId,
+    } satisfies SaveStateInput);
     yield context.df.callActivity('ingressWindowStageActivity', {
       action: 'clear',
       correlationId: sessionInput.correlationId,
@@ -498,7 +504,10 @@ function* processTurn(
   state.recentHistory = history.slice(-10);
 
   try {
-    yield context.df.callActivity('saveStateActivity', { state } satisfies SaveStateInput);
+    yield context.df.callActivity('saveStateActivity', {
+      state,
+      correlationId: sessionInput.correlationId,
+    } satisfies SaveStateInput);
   } catch (saveStateError) {
     console.warn(
       `[overseer] saveStateActivity failed after reply for user=${state.userId} correlationId=${sessionInput.correlationId}`,

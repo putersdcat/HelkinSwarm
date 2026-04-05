@@ -356,6 +356,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     };
     yield context.df.callActivity('saveStateActivity', {
       state: preConfirmationState,
+      correlationId,
     } satisfies SaveStateInput);
   }
 
