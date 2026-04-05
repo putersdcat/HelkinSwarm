@@ -427,7 +427,7 @@ function* processTurn(
   let spinnerDeadline = new Date(context.df.currentUtcDateTime.getTime() + SPINNER_INITIAL_DELAY_MS);
   let spinnerTimer: df.TimerTask = context.df.createTimer(spinnerDeadline);
 
-  let sessionResult: SessionResult;
+  let sessionResult: SessionResult | undefined;
   try {
     let sessionDone = false;
     let timedOut = false;
@@ -539,7 +539,9 @@ function* processTurn(
       }
     }
 
-    sessionResult = sessionTask.result as SessionResult;
+    if (!sessionDone || sessionResult === undefined) {
+      sessionResult = sessionTask.result as SessionResult;
+    }
   } catch (err) {
     sessionTimer.cancel();
     spinnerTimer.cancel();
@@ -575,6 +577,10 @@ function* processTurn(
     const errDedupDeadline = new Date(context.df.currentUtcDateTime.getTime() + DEDUP_HOLD_MS);
     yield context.df.createTimer(errDedupDeadline);
     return undefined;
+  }
+
+  if (!sessionResult) {
+    throw new Error(`processTurn completed without a session result for correlation=${sessionInput.correlationId}`);
   }
 
   if (sessionResult.duplicateReplaySuppressed) {
