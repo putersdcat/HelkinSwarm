@@ -655,6 +655,13 @@ jobs:
           delete_resource "helkinswarm-appi-${{ env.USER_ALIAS }}" "Microsoft.Insights/components"
           delete_resource "helkinswarm-law-${{ env.USER_ALIAS }}" "Microsoft.OperationalInsights/workspaces"
 
+          az resource list \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --resource-type 'Microsoft.Insights/actionGroups' \
+            --query '[].name' -o tsv 2>/dev/null | while read -r ACTION_GROUP_NAME; do
+              [ -n "$ACTION_GROUP_NAME" ] && delete_resource "$ACTION_GROUP_NAME" "Microsoft.Insights/actionGroups"
+            done
+
           CAE_ID=$(az resource show \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
             --name "helkinswarm-cae-${{ env.USER_ALIAS }}" \
