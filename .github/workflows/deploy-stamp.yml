@@ -757,7 +757,7 @@ jobs:
           BUDGET_JSON=$(az rest --method GET \
             --url "https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Consumption/budgets/${BUDGET_NAME}?api-version=2024-08-01")
 
-          BUDGET_AMOUNT=$(echo "$BUDGET_JSON" | jq -r '.properties.amount')
+          BUDGET_AMOUNT=$(echo "$BUDGET_JSON" | jq -r '.properties.amount | tonumber | floor')
           if [ "$BUDGET_AMOUNT" != "${{ env.EARLY_DEV_MONTHLY_BUDGET_USD }}" ]; then
             echo "❌ EARLY_DEV_COST_GUARD violation: RG budget amount is '$BUDGET_AMOUNT' instead of '${{ env.EARLY_DEV_MONTHLY_BUDGET_USD }}'"
             exit 1
