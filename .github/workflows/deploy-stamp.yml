@@ -655,6 +655,20 @@ jobs:
           delete_resource "helkinswarm-appi-${{ env.USER_ALIAS }}" "Microsoft.Insights/components"
           delete_resource "helkinswarm-law-${{ env.USER_ALIAS }}" "Microsoft.OperationalInsights/workspaces"
 
+          CAE_ID=$(az resource show \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --name "helkinswarm-cae-${{ env.USER_ALIAS }}" \
+            --resource-type 'Microsoft.App/managedEnvironments' \
+            --api-version 2024-03-01 \
+            --query id -o tsv 2>/dev/null || echo "")
+
+          if [ -n "$CAE_ID" ]; then
+            az monitor diagnostic-settings list --resource "$CAE_ID" --query '[].name' -o tsv 2>/dev/null | while read -r DIAG_NAME; do
+              [ -n "$DIAG_NAME" ] && az monitor diagnostic-settings delete --resource "$CAE_ID" --name "$DIAG_NAME" >/dev/null 2>&1 || true
+            done
+            echo "✅ Removed Container Apps environment diagnostic settings from $CAE_ID"
+          fi
+
           echo "✅ Dirty Dev Mode cleanup pass completed"
 
       - name: Assert early-dev cost guard invariants
@@ -676,8 +690,21 @@ jobs:
             --api-version 2024-03-01 \
             --query 'properties.appLogsConfiguration.destination' -o tsv)
 
-          if [ "$CAE_DEST" != "none" ]; then
-            echo "❌ EARLY_DEV_COST_GUARD violation: Container Apps environment logs destination is '$CAE_DEST' instead of 'none'."
+          if [ "$CAE_DEST" != "azure-monitor" ]; then
+            echo "❌ EARLY_DEV_COST_GUARD violation: Container Apps environment logs destination is '$CAE_DEST' instead of 'azure-monitor'."
+            exit 1
+          fi
+
+          CAE_ID=$(az resource show \
+            --resource-group "$RG" \
+            --name "$CAE_NAME" \
+            --resource-type 'Microsoft.App/managedEnvironments' \
+            --api-version 2024-03-01 \
+            --query id -o tsv)
+
+          CAE_DIAG_COUNT=$(az monitor diagnostic-settings list --resource "$CAE_ID" --query 'length(@)' -o tsv 2>/dev/null || echo 0)
+          if [ "$CAE_DIAG_COUNT" != "0" ]; then
+            echo "❌ EARLY_DEV_COST_GUARD violation: $CAE_NAME still has $CAE_DIAG_COUNT diagnostic setting(s); azure-monitor must have no persistent sinks in early dev."
             exit 1
           fi
 

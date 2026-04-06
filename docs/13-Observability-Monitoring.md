@@ -98,6 +98,7 @@ Critical P0 rules (auto-created in Bicep):
 The current personal dev phase operates under an explicit cost emergency exception:
 
 - stamp-level **paid observability is intentionally disabled by default** via `earlyDevCostGuard`
+- the current Azure-safe implementation of that posture is `azure-monitor` with no diagnostic settings on the Container Apps environment, so live log streaming remains available without workspace persistence
 - this does **not** mean observability is architecturally unimportant; it means retained Azure Monitor telemetry is temporarily too expensive for the current development burn rate
 - live log streaming, health checks, workflow assertions, and targeted investigations remain available, but persistent LAW/App Insights history on the main dev stamp is intentionally suppressed until the owner authorizes re-enablement
 

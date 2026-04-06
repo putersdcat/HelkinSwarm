@@ -62,6 +62,7 @@ The stamped deployment pipeline now carries a **source-controlled early-dev cost
 While this lock is active:
 - push-triggered stamp deploys always run Bicep, even for code-only changes, so cost invariants are continuously re-asserted
 - stamped Container Apps environments must use **no persisted logs**
+- the current Azure-supported implementation of that posture is `azure-monitor` with **zero diagnostic settings** on the Container Apps environment
 - stamp LAW/App Insights/query-alert resources must remain absent
 - the Function App must not carry `APPLICATIONINSIGHTS_CONNECTION_STRING`
 - a stamped RG budget of `$30/month` must exist

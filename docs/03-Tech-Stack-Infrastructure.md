@@ -160,7 +160,7 @@ For short-lived personal development stamps where cost matters more than retaine
 
 | Setting | Normal | Dirty Dev Mode |
 |---------|--------|----------------|
-| Container Apps environment logs | `log-analytics` | `none` (no persisted destination; live stream only) |
+| Container Apps environment logs | `log-analytics` | `azure-monitor` with **no diagnostic settings** (no persisted destination; live stream only) |
 | Log Analytics workspace | deployed | not deployed |
 | Application Insights resource | deployed | not deployed |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | set | omitted |
@@ -170,7 +170,7 @@ For short-lived personal development stamps where cost matters more than retaine
 
 **Activation**: As of `#579`, furious-development-phase stamps are source-controlled into this posture by the **Early Dev Cost Guard**. Push deployments and manual stamp deploys both preserve observability-off mode until the owner explicitly authorizes removal.
 
-> ⚠️ This mode is intentionally blunt. It avoids the paid Log Analytics workspace by switching the Container Apps environment to **don't save logs**. You keep live log streaming, but you lose retained Log Analytics/App Insights history and Azure Monitor query alerts for that stamp.
+> ⚠️ This mode is intentionally blunt. On the currently deployed ARM path, the no-persistence posture is `azure-monitor` **without any diagnostic settings**. You keep live log streaming, but you lose retained Log Analytics/App Insights history and Azure Monitor query alerts for that stamp.
 
 When enabled on an existing stamp, the deployment workflow also performs an explicit cleanup pass to remove previously-created Log Analytics, Application Insights, and query-alert resources, because incremental ARM/Bicep deployments do not prune old resources automatically.
 
