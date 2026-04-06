@@ -1225,6 +1225,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         await client.raiseEvent(effectiveActiveInstanceId, 'BufferedIngressQueued', {
           docId: queuedBufferedMessage.docId,
           correlationId: queuedBufferedMessage.correlationId,
+          event,
         });
         return { outcome: 'started' };
       }

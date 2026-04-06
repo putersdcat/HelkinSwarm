@@ -22,6 +22,7 @@ describe('devloop new-message injection proof surface', () => {
     expect(source).toContain('const queuedBufferedMessage = await queueBufferedNewMessage(event, userId, bufferedTargetInstanceId);');
     expect(source).toContain("await client.raiseEvent(bufferedTargetInstanceId, 'BufferedIngressQueued', {");
     expect(source).toContain('docId: queuedBufferedMessage.docId,');
+    expect(source).toContain('event,');
     expect(source).toContain("await client.raiseEvent(resolvedInstanceId, 'NewMessage', event);");
     expect(source).toContain("endpoint: 'new-message'");
     expect(source).toContain('deliveredToOverseer: true,');

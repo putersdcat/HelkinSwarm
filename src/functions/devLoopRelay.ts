@@ -246,6 +246,7 @@ app.http('devloopPush', {
             await client.raiseEvent(bufferedTargetInstanceId, 'BufferedIngressQueued', {
               docId: queuedBufferedMessage.docId,
               correlationId: queuedBufferedMessage.correlationId,
+              event,
             });
             deliveryMode = 'buffered-active-processing';
             deliveredInstanceId = bufferedTargetInstanceId;
@@ -836,6 +837,7 @@ app.http('devloopNewMessage', {
         await client.raiseEvent(bufferedTargetInstanceId, 'BufferedIngressQueued', {
           docId: queuedBufferedMessage.docId,
           correlationId: queuedBufferedMessage.correlationId,
+          event,
         });
       } else {
         await client.raiseEvent(resolvedInstanceId, 'NewMessage', event);

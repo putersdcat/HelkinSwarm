@@ -89,6 +89,7 @@ interface HookFiredEvent {
 interface BufferedIngressQueuedEvent {
   docId?: string;
   correlationId?: string;
+  event?: NewMessageEvent;
 }
 
 interface ProcessTurnResult {
@@ -167,6 +168,20 @@ df.app.orchestration('overseer', function* (context) {
     for (const bufferedIngressSignal of processTurnResult.bufferedIngressSignals) {
       if (!bufferedIngressSignal.docId) {
         continue;
+      }
+
+      if (bufferedIngressSignal.event) {
+        const markedDequeued = (yield context.df.callActivity('bufferedIngressActivity', {
+          action: 'mark-buffered-message-dequeued',
+          userId: state.userId,
+          docId: bufferedIngressSignal.docId,
+          targetInstanceId: context.df.instanceId,
+        } satisfies BufferedIngressActivityInput)) as boolean;
+
+        if (markedDequeued) {
+          bufferedNewMessage = bufferedIngressSignal.event;
+          break;
+        }
       }
 
       bufferedNewMessage = (yield context.df.callActivity('bufferedIngressActivity', {

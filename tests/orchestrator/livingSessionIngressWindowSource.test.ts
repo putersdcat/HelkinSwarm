@@ -15,6 +15,9 @@ describe('living session ingress window source guards', () => {
     expect(overseerSource).toContain(': [sessionTask, sessionTimer, bufferedIngressQueuedEvent];');
     expect(overseerSource).toContain('bufferedIngressSignals.push(bufferedIngressQueuedEvent.result as BufferedIngressQueuedEvent);');
     expect(overseerSource).toContain('for (const bufferedIngressSignal of processTurnResult.bufferedIngressSignals) {');
+    expect(overseerSource).toContain('if (bufferedIngressSignal.event) {');
+    expect(overseerSource).toContain("action: 'mark-buffered-message-dequeued'");
+    expect(overseerSource).toContain('bufferedNewMessage = bufferedIngressSignal.event;');
     expect(overseerSource).toContain("action: 'claim-buffered-message'");
     expect(overseerSource).toContain("action: 'mark-active-processing'");
     expect(overseerSource).toContain("action: 'dequeue-new-message'");
@@ -39,9 +42,11 @@ describe('living session ingress window source guards', () => {
     expect(activitySource).toContain("name: 'LivingSessionNewMessageDrained'");
     expect(bufferedIngressSource).toContain("action: z.literal('dequeue-new-message')");
     expect(bufferedIngressSource).toContain("action: z.literal('claim-buffered-message')");
+    expect(bufferedIngressSource).toContain("action: z.literal('mark-buffered-message-dequeued')");
     expect(bufferedIngressSource).toContain('targetInstanceId: z.string().min(1).optional()');
     expect(bufferedIngressSource).toContain('await container.items.upsert(doc);');
     expect(bufferedIngressSource).toContain('export async function claimBufferedNewMessageForUser(');
+    expect(bufferedIngressSource).toContain('export async function markBufferedNewMessageDequeued(');
     expect(bufferedIngressSource).toContain('if (targetInstanceId && doc.targetInstanceId && doc.targetInstanceId !== targetInstanceId) {');
     expect(bufferedIngressSource).toContain('function selectQueuedBufferedMessageForUser(');
     expect(bufferedIngressSource).toContain('return queuedDocs.find((doc) => doc.targetInstanceId === targetInstanceId)');

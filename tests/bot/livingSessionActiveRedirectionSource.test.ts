@@ -15,6 +15,7 @@ describe('living session active redirection source guards', () => {
     expect(botSource).toContain("'living-session-buffered-redirection'");
     expect(botSource).toContain("await queueBufferedNewMessage(event, userId, effectiveActiveInstanceId);");
     expect(botSource).toContain("await client.raiseEvent(effectiveActiveInstanceId, 'BufferedIngressQueued', {");
+    expect(botSource).toContain('event,');
     expect(botSource).toContain("'living-session-awaiting-ingress-redirection'");
     expect(botSource).toContain("await client.raiseEvent(effectiveActiveInstanceId, 'NewMessage', event);");
     expect(limbicSource).toContain('activeSessionRoutable: z.boolean().default(false),');
