@@ -745,6 +745,9 @@ jobs:
             --resource-group "$RG" \
             --query "[?name=='EARLY_DEV_COST_GUARD'] | [0].value" -o tsv)
 
+          DIRTY_SETTING=$(echo "$DIRTY_SETTING" | tr '[:upper:]' '[:lower:]')
+          GUARD_SETTING=$(echo "$GUARD_SETTING" | tr '[:upper:]' '[:lower:]')
+
           if [ "$DIRTY_SETTING" != "true" ] || [ "$GUARD_SETTING" != "true" ]; then
             echo "❌ EARLY_DEV_COST_GUARD violation: expected DIRTY_DEV_MODE=true and EARLY_DEV_COST_GUARD=true on $FUNC_NAME"
             echo "    DIRTY_DEV_MODE=$DIRTY_SETTING EARLY_DEV_COST_GUARD=$GUARD_SETTING"
