@@ -1,5 +1,0 @@
-{
-    "copilot-resurrect.startNewSession": false,
-    "copilot-resurrect.silenceTimeoutSeconds": 420,
-    "copilot-resurrect.rateLimitCooldownBaseSeconds": 60
-}

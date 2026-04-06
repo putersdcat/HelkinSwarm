@@ -48,8 +48,8 @@
           "type": "number",
           "default": 180,
           "minimum": 60,
-          "maximum": 600,
-          "description": "How many seconds of silence before declaring the Copilot Chat session dead and triggering resurrection. Default: 180s (3 minutes)."
+          "maximum": 1200,
+          "description": "How many seconds of silence before declaring the Copilot Chat session dead and triggering resurrection. Default: 180s (3 minutes). Supported range: 60-1200s."
         },
         "copilot-resurrect.maxRestartsPerDay": {
           "type": "number",

@@ -1,6 +1,8 @@
 import * as vscode from 'vscode';
 
 export const EXT_ID = 'copilot-resurrect';
+export const SILENCE_TIMEOUT_MIN_SECONDS = 60;
+export const SILENCE_TIMEOUT_MAX_SECONDS = 1200;
 
 export type ApprovalsMode = 'default' | 'bypass' | 'autopilot';
 
@@ -22,12 +24,22 @@ export interface ResurrectConfig {
   watchIgnorePatterns: string[];
 }
 
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
 export function getConfig(): ResurrectConfig {
   const cfg = vscode.workspace.getConfiguration(EXT_ID);
+  const silenceTimeoutSeconds = clampNumber(
+    cfg.get<number>('silenceTimeoutSeconds', 180),
+    SILENCE_TIMEOUT_MIN_SECONDS,
+    SILENCE_TIMEOUT_MAX_SECONDS,
+  );
+
   return {
     enabled: cfg.get<boolean>('enabled', false),
     ignitionPrompt: cfg.get<string>('ignitionPrompt', ''),
-    silenceTimeoutSeconds: cfg.get<number>('silenceTimeoutSeconds', 180),
+    silenceTimeoutSeconds,
     maxRestartsPerDay: cfg.get<number>('maxRestartsPerDay', 50),
     preferredModel: cfg.get<string>('preferredModel', ''),
     fallbackModel: cfg.get<string>('fallbackModel', ''),
