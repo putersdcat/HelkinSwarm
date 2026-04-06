@@ -8,11 +8,16 @@ describe('session execution replay guard source guards', () => {
     const sessionSource = readFileSync('src/orchestrator/sessionOrchestrator.ts', 'utf8');
 
     expect(conversationStoreSource).toContain("export type OutboundArtifactKind = 'reply' | 'confirmation-card' | 'email-send' | 'session-execution';");
+    expect(conversationStoreSource).toContain('ownerInstanceId?: string;');
+    expect(conversationStoreSource).toContain('export async function getOutboundArtifactClaim(');
     expect(guardSource).toContain("if (await hasOutboundArtifactClaim(input.conversationId, 'reply', input.correlationId)) {");
+    expect(guardSource).toContain("const existingSessionExecutionClaim = await getOutboundArtifactClaim(");
     expect(guardSource).toContain("const claimedSessionExecution = await claimOutboundArtifact(");
     expect(guardSource).toContain("'session-execution',");
-    expect(guardSource).toContain('return !claimedSessionExecution;');
+    expect(guardSource).toContain('input.sessionInstanceId,');
+    expect(guardSource).toContain('ownerInstanceId !== input.sessionInstanceId');
     expect(sessionSource).toContain("'sessionReplayGuardActivity'");
+    expect(sessionSource).toContain('sessionInstanceId: context.df.instanceId,');
     expect(sessionSource).toContain("duplicateReplaySuppressed: true,");
   });
 });

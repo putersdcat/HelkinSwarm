@@ -189,6 +189,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       conversationId: turnConversationId,
       correlationId,
       userId: input.state.userId,
+      sessionInstanceId: context.df.instanceId,
     },
   );
 

@@ -58,6 +58,16 @@ interface OutboundArtifactDocument {
   userId: string;
   kind: OutboundArtifactKind;
   dedupKey: string;
+  ownerInstanceId?: string;
+  createdAt: string;
+}
+
+export interface OutboundArtifactClaim {
+  conversationId: string;
+  userId: string;
+  kind: OutboundArtifactKind;
+  dedupKey: string;
+  ownerInstanceId?: string;
   createdAt: string;
 }
 
@@ -224,6 +234,7 @@ export async function claimOutboundArtifact(
   userId: string,
   kind: OutboundArtifactKind,
   dedupKey: string,
+  ownerInstanceId?: string,
 ): Promise<boolean> {
   const container = getContainer(CONTAINER_NAME);
   const doc: OutboundArtifactDocument = {
@@ -232,6 +243,7 @@ export async function claimOutboundArtifact(
     userId,
     kind,
     dedupKey,
+    ownerInstanceId,
     createdAt: new Date().toISOString(),
   };
 
@@ -248,6 +260,34 @@ export async function claimOutboundArtifact(
       return false;
     }
     throw err;
+  }
+}
+
+export async function getOutboundArtifactClaim(
+  conversationId: string,
+  kind: OutboundArtifactKind,
+  dedupKey: string,
+): Promise<OutboundArtifactClaim | null> {
+  const container = getContainer(CONTAINER_NAME);
+  try {
+    const { resource } = await container
+      .item(makeOutboundArtifactDocumentId(kind, dedupKey), conversationId)
+      .read<OutboundArtifactDocument>();
+
+    if (!resource) {
+      return null;
+    }
+
+    return {
+      conversationId: resource.conversationId,
+      userId: resource.userId,
+      kind: resource.kind,
+      dedupKey: resource.dedupKey,
+      ownerInstanceId: resource.ownerInstanceId,
+      createdAt: resource.createdAt,
+    } satisfies OutboundArtifactClaim;
+  } catch {
+    return null;
   }
 }
 

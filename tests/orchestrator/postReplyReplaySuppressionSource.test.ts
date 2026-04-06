@@ -30,10 +30,12 @@ describe('post-reply replay suppression source guards', () => {
     expect(overseerSource).toContain('if (sessionResult.duplicateReplaySuppressed) {');
     expect(overseerSource).toContain('duplicateReplaySuppressed: true,');
 
-    expect(guardSource).toContain("import { claimOutboundArtifact, hasOutboundArtifactClaim } from '../bot/conversationStore.js';");
+    expect(guardSource).toContain("import { claimOutboundArtifact, getOutboundArtifactClaim, hasOutboundArtifactClaim } from '../bot/conversationStore.js';");
     expect(guardSource).toContain("hasOutboundArtifactClaim(input.conversationId, 'reply', input.correlationId)");
+    expect(guardSource).toContain("sessionInstanceId: z.string().min(1)");
     expect(guardSource).toContain("'session-execution'");
-    expect(guardSource).toContain('return !claimedSessionExecution;');
+    expect(guardSource).toContain('ownerInstanceId !== input.sessionInstanceId');
+    expect(sessionSource).toContain('sessionInstanceId: context.df.instanceId,');
     expect(indexSource).toContain("import '../orchestrator/emitOrchestratorTelemetryActivity.js';");
     expect(indexSource).toContain("import '../orchestrator/sessionReplayGuardActivity.js';");
   });
