@@ -14,8 +14,8 @@ The pipeline is intentionally simple, observable, and safe for a personal projec
 |-----------------------|--------------------------|--------------|
 | `ci.yml`              | Every push + PR          | Lint, TypeScript compile, type-check, Bicep validation |
 | `deploy-stamp.yml`    | Push to `main` + manual dispatch | Stamped Bicep deploy → Docker build → ACR push → Container Apps update + post-deploy guardrail assertions |
-| `deploy-router.yml`   | Manual dispatch          | Deploys the global router (rg-helkinswarm-router + Bot Service + Teams channel). Sets `BOT_APP_ID` and `ROUTER_UAMI_ID` GitHub variables. |
-| `deploy-tabs.yml`     | Manual dispatch          | Deploys the global tab SPA (rg-helkinswarm-tabs + Azure Storage static website). Sets `TAB_HOST_URL` GitHub variable. |
+| `deploy-router.yml`   | Push to `main` on router-affecting files + manual dispatch | Deploys the global router (rg-helkinswarm-router + Bot Service + Teams channel), reapplies the early-dev cost guard, and sets `BOT_APP_ID` / `ROUTER_UAMI_ID` GitHub variables. |
+| `deploy-tabs.yml`     | Push to `main` on tab-host files + manual dispatch | Deploys the global tab SPA (rg-helkinswarm-tabs + Azure Storage static website) and reasserts the tab-host low-cost posture plus RG budget. |
 | `teams-package.yml`   | Manual dispatch + push to `appPackage/**` | Substitutes `{{BOT_APP_ID}}`, `{{TAB_HOST_URL}}`, `{{TAB_HOST_DOMAIN}}` in manifest.json, then produces a sideloadable zip |
 
 All workflows use **OIDC federation** (no secrets stored in GitHub).
@@ -68,6 +68,16 @@ While this lock is active:
 - a stamped RG budget of `$30/month` must exist
 
 > ⛔ These controls are not to be removed, relaxed, or bypassed until the owner/human-in-the-loop explicitly authorizes the end of the furious development phase.
+
+### Global Surface Cost Lock (`#580`)
+
+The same durability rule now applies to the global router and tab host:
+
+- router deploys reassert observability-off posture and a `$10/month` RG budget
+- tab-host deploys reassert storage-only posture and a `$5/month` RG budget
+- both workflows fail if their guarded Azure state drifts away from the intended furious-development-phase posture
+
+This means the cost emergency controls are now **comprehensive across stamp + router + tabs**, not just the original user stamp.
 
 
 ### Docker & Container Apps Flow

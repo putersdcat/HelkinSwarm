@@ -98,10 +98,12 @@ Critical P0 rules (auto-created in Bicep):
 The current personal dev phase operates under an explicit cost emergency exception:
 
 - stamp-level **paid observability is intentionally disabled by default** via `earlyDevCostGuard`
+- router-level **paid observability is intentionally disabled by default** via the same source-controlled guard extension (`#580`)
+- the global tab host remains a storage-only surface and now carries its own RG budget/assertion layer so hidden monitor resources cannot quietly appear there (`#580`)
 - the current Azure-safe implementation of that posture is `azure-monitor` with no diagnostic settings on the Container Apps environment, so live log streaming remains available without workspace persistence
 - this does **not** mean observability is architecturally unimportant; it means retained Azure Monitor telemetry is temporarily too expensive for the current development burn rate
 - live log streaming, health checks, workflow assertions, and targeted investigations remain available, but persistent LAW/App Insights history on the main dev stamp is intentionally suppressed until the owner authorizes re-enablement
 
 This exception exists because April 2026 proved that workspace-backed observability could silently regress to >$1/day during early development without improving product functionality.
 
-> ⛔ Do not remove the early-dev observability exception, the resource-group budget, or the workflow post-deploy assertions until the owner/human-in-the-loop explicitly authorizes the end of the furious development phase.
+> ⛔ Do not remove the early-dev observability exception, the stamp/router/tab-host resource-group budgets, or the workflow post-deploy assertions until the owner/human-in-the-loop explicitly authorizes the end of the furious development phase.

@@ -192,3 +192,16 @@ This guard is **not** a suggestion. It exists because paid observability is non-
 
 > ⛔ Do not remove or weaken `earlyDevCostGuard`, the dirty-dev cleanup pass, the RG budget, or the post-deploy assertions until the owner/human-in-the-loop explicitly authorizes the end of the furious development phase.
 
+### Global Router + Tab Host Guard Extension (`#580`)
+
+The same furious-development-phase guard philosophy now extends beyond the user stamp:
+
+| Surface | Guarded posture |
+|---------|------------------|
+| Global router (`rg-helkinswarm-router`) | paid LAW/App Insights off by default, CAE logs set to `azure-monitor` with zero diagnostic settings, RG budget = `$10/month`, post-deploy invariants enforced |
+| Global tab host (`rg-helkinswarm-tabs`) | storage-only posture preserved, RG budget = `$5/month`, post-deploy invariants fail if monitor resources appear |
+
+This closes the flank left open after `#579`: even if the stamp stayed cheap, the global router or tab host could still silently regrow avoidable spend if they were left outside the guardrail system.
+
+> ⛔ During the furious development phase, do not re-enable paid router observability by default, do not add monitor resources to the tab host RG, and do not weaken the router/tab RG budgets or post-deploy assertions without explicit owner authorization.
+

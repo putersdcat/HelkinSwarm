@@ -4,15 +4,6 @@
 # Deploys the Azure Storage static website that hosts the global tab SPA.
 # Resource group: rg-helkinswarm-tabs
 # Storage account: helkinswarmtabsst
-#
-# After deployment:
-#   1. Enables static website hosting on the storage account
-#   2. Uploads the tab SPA assets from tabs/ directory
-#   3. Persists TAB_HOST_URL + TAB_HOST_DOMAIN as GitHub variables for use
-#      by teams-package.yml manifest substitution
-#
-# Spec ref: 0o-Microsoft-Teams-App-Expansion-with-Tabs.md
-# Architecture decision: issue #107
 # ============================================================================
 
 name: Deploy Tab Host
@@ -40,13 +31,12 @@ env:
   AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
   AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
   AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-  RESOURCE_GROUP: "rg-helkinswarm-tabs"
-  STORAGE_ACCOUNT: "helkinswarmtabsst"
+  RESOURCE_GROUP: 'rg-helkinswarm-tabs'
+  STORAGE_ACCOUNT: 'helkinswarmtabsst'
+  EARLY_DEV_COST_GUARD: 'true'
+  EARLY_DEV_MONTHLY_BUDGET_USD: '5'
 
 jobs:
-  # ─────────────────────────────────────────────────────────────────────────
-  # 1. Deploy Infrastructure (Bicep)
-  # ─────────────────────────────────────────────────────────────────────────
   deploy-infra:
     name: Deploy Tab Host Infra
     runs-on: ubuntu-latest
@@ -58,6 +48,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Validate early-dev cost guard prerequisites
+        run: |
+          if [ "${{ env.EARLY_DEV_COST_GUARD }}" = "true" ] && [ -z "${{ vars.ALERT_EMAIL }}" ]; then
+            echo "❌ ALERT_EMAIL must be configured while the tab-host early-dev cost guard is active."
+            exit 1
+          fi
+          echo "✅ Tab-host early-dev cost guard prerequisites are satisfied"
 
       - name: Azure Login (OIDC)
         uses: azure/login@v3
@@ -96,8 +94,27 @@ jobs:
             --parameters \
               routerUamiResourceId=${{ vars.ROUTER_UAMI_ID }} \
               cicdPrincipalId=${{ steps.cicd-sp.outputs.object-id }} \
+              alertEmail="${{ vars.ALERT_EMAIL }}" \
+              earlyDevCostGuard=${{ env.EARLY_DEV_COST_GUARD }} \
+              earlyDevMonthlyBudgetUsd=${{ env.EARLY_DEV_MONTHLY_BUDGET_USD }} \
             --query 'properties.outputs' -o json)
           echo "storageAccountName=$(echo $RESULT | jq -r '.storageAccountName.value')" >> "$GITHUB_OUTPUT"
+
+      - name: Remove paid observability leftovers from tab host
+        if: env.EARLY_DEV_COST_GUARD == 'true'
+        run: |
+          set +e
+          delete_resource() {
+            local name="$1"
+            local type="$2"
+            az resource delete --resource-group "${{ env.RESOURCE_GROUP }}" --name "$name" --resource-type "$type" >/dev/null 2>&1 || true
+          }
+
+          az resource list --resource-group "${{ env.RESOURCE_GROUP }}" --resource-type 'Microsoft.OperationalInsights/workspaces' --query '[].name' -o tsv 2>/dev/null | while read -r NAME; do [ -n "$NAME" ] && delete_resource "$NAME" 'Microsoft.OperationalInsights/workspaces'; done
+          az resource list --resource-group "${{ env.RESOURCE_GROUP }}" --resource-type 'Microsoft.Insights/components' --query '[].name' -o tsv 2>/dev/null | while read -r NAME; do [ -n "$NAME" ] && delete_resource "$NAME" 'Microsoft.Insights/components'; done
+          az resource list --resource-group "${{ env.RESOURCE_GROUP }}" --resource-type 'Microsoft.Insights/actionGroups' --query '[].name' -o tsv 2>/dev/null | while read -r NAME; do [ -n "$NAME" ] && delete_resource "$NAME" 'Microsoft.Insights/actionGroups'; done
+          az resource list --resource-group "${{ env.RESOURCE_GROUP }}" --resource-type 'Microsoft.Insights/scheduledQueryRules' --query '[].name' -o tsv 2>/dev/null | while read -r NAME; do [ -n "$NAME" ] && delete_resource "$NAME" 'Microsoft.Insights/scheduledQueryRules'; done
+          echo "✅ Tab-host cleanup pass completed"
 
       - name: Enable static website hosting
         id: enable-static
@@ -109,7 +126,6 @@ jobs:
             --404-document 404.html \
             --auth-mode login
 
-          # Get the static website primary endpoint
           ENDPOINT=$(az storage account show \
             --name ${{ env.STORAGE_ACCOUNT }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
@@ -120,9 +136,33 @@ jobs:
           echo "tab-host-domain=${DOMAIN}" >> "$GITHUB_OUTPUT"
           echo "✅ Static website endpoint: ${ENDPOINT}"
 
-  # ─────────────────────────────────────────────────────────────────────────
-  # 2. Upload Tab SPA Assets
-  # ─────────────────────────────────────────────────────────────────────────
+      - name: Assert tab-host early-dev cost guard invariants
+        if: env.EARLY_DEV_COST_GUARD == 'true'
+        run: |
+          set -euo pipefail
+          RG="${{ env.RESOURCE_GROUP }}"
+          SUB="${{ env.AZURE_SUBSCRIPTION_ID }}"
+          BUDGET_NAME="helkinswarm-earlydev-budget-tabs"
+          LAW_COUNT=$(az resource list --resource-group "$RG" --resource-type 'Microsoft.OperationalInsights/workspaces' --query 'length(@)' -o tsv)
+          APPI_COUNT=$(az resource list --resource-group "$RG" --resource-type 'Microsoft.Insights/components' --query 'length(@)' -o tsv)
+          ALERT_COUNT=$(az resource list --resource-group "$RG" --resource-type 'Microsoft.Insights/scheduledQueryRules' --query 'length(@)' -o tsv)
+          ACTION_GROUP_COUNT=$(az resource list --resource-group "$RG" --resource-type 'Microsoft.Insights/actionGroups' --query 'length(@)' -o tsv)
+
+          if [ "$LAW_COUNT" != "0" ] || [ "$APPI_COUNT" != "0" ] || [ "$ALERT_COUNT" != "0" ] || [ "$ACTION_GROUP_COUNT" != "0" ]; then
+            echo "❌ Tab-host EARLY_DEV_COST_GUARD violation: monitor resources exist in $RG"
+            echo "    LAW=$LAW_COUNT APPI=$APPI_COUNT ALERTS=$ALERT_COUNT ACTION_GROUPS=$ACTION_GROUP_COUNT"
+            exit 1
+          fi
+
+          BUDGET_JSON=$(az rest --method GET --url "https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Consumption/budgets/${BUDGET_NAME}?api-version=2024-08-01")
+          BUDGET_AMOUNT=$(echo "$BUDGET_JSON" | jq -r '.properties.amount | tonumber | floor')
+          if [ "$BUDGET_AMOUNT" != "${{ env.EARLY_DEV_MONTHLY_BUDGET_USD }}" ]; then
+            echo "❌ Tab-host EARLY_DEV_COST_GUARD violation: RG budget amount is '$BUDGET_AMOUNT' instead of '${{ env.EARLY_DEV_MONTHLY_BUDGET_USD }}'"
+            exit 1
+          fi
+
+          echo "✅ Tab-host EARLY_DEV_COST_GUARD invariants hold"
+
   deploy-spa:
     name: Upload Tab SPA to Storage
     needs: deploy-infra
@@ -194,7 +234,6 @@ jobs:
               --content-cache-control "no-cache, no-store, must-revalidate"
             echo "✅ SPA assets uploaded"
           else
-            # No SPA yet — upload a placeholder index.html
             echo "⚠️  tabs/ directory not found or empty — uploading placeholder index.html"
             cat > /tmp/index.html << 'EOF'
           <!DOCTYPE html>
@@ -204,8 +243,8 @@ jobs:
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>HelkinSwarm</title>
             <style>
-              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; 
-                     display: flex; align-items: center; justify-content: center; 
+              body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                     display: flex; align-items: center; justify-content: center;
                      min-height: 100vh; margin: 0; background: #1a1a2e; color: #e8e8f0; }
               .container { text-align: center; padding: 2rem; }
               h1 { color: #9b59b6; font-size: 2rem; margin-bottom: 0.5rem; }
@@ -228,9 +267,8 @@ jobs:
               --name index.html \
               --auth-mode login \
               --overwrite true \
-              --content-type "text/html" \
-              --content-cache-control "public, max-age=300"
-            # Also create a simple 404.html
+              --content-type 'text/html' \
+              --content-cache-control 'public, max-age=300'
             cp /tmp/index.html /tmp/404.html
             az storage blob upload \
               --account-name ${{ env.STORAGE_ACCOUNT }} \
@@ -239,17 +277,10 @@ jobs:
               --name 404.html \
               --auth-mode login \
               --overwrite true \
-              --content-type "text/html"
+              --content-type 'text/html'
             echo "✅ Placeholder index.html uploaded"
           fi
 
-  # ─────────────────────────────────────────────────────────────────────────
-  # 3. Report deployment result
-  # ─────────────────────────────────────────────────────────────────────────
-  # NOTE: GITHUB_TOKEN cannot set repository variables (HTTP 403) — this is a
-  # GitHub platform limitation. The storage account endpoint is static and has
-  # been hardcoded directly in appPackage/manifest.json. No variable-setting
-  # step is needed here.
   report:
     name: Report Deployment
     needs: [deploy-infra, deploy-spa]
@@ -262,6 +293,8 @@ jobs:
         run: |
           echo "✅ Tab host deployed"
           echo "   URL: ${TAB_HOST_URL}"
+          echo "   Early Dev Cost Guard: ${{ env.EARLY_DEV_COST_GUARD }}"
+          echo "   Tabs Budget (USD): ${{ env.EARLY_DEV_MONTHLY_BUDGET_USD }}"
           echo ""
           echo "📋 Tab URL is hardcoded in appPackage/manifest.json"
           echo "   Run teams-package.yml to rebuild the Teams app package if manifest changed."

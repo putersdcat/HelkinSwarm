@@ -10,6 +10,22 @@
 name: Deploy Router
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/router/**'
+      - 'src/config/envConfig.ts'
+      - 'src/config/version.ts'
+      - 'src/observability/messagePathHealth.ts'
+      - 'config/user-map.json'
+      - 'infra/main-router.bicep'
+      - 'Dockerfile.router'
+      - 'host.json'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'tsconfig.json'
+      - '.github/workflows/deploy-router.yml'
   workflow_dispatch:
     inputs:
       CREATE_OAUTH_CONNECTION:
@@ -21,7 +37,7 @@ on:
           - 'false'
           - 'true'
       LOW_COST_DEV_MODE:
-        description: 'Enable Low Cost Dev Mode: keep the global router warm, but reduce spend via 30-day minimum-valid retention, 0.1 GB/day Log Analytics ingestion cap, and minimal App Insights sampling. (#303, #341, #410, #442)'
+        description: 'Enable Low Cost Dev Mode: keep the global router warm, but reduce spend via 30-day minimum-valid retention, 0.1 GB/day Log Analytics ingestion cap, and minimal App Insights sampling. Ignored while EARLY_DEV_COST_GUARD is active. (#303, #341, #410, #442, #580)'
         required: false
         type: boolean
         default: false
@@ -38,12 +54,11 @@ env:
   AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
   AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
   AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
-  RESOURCE_GROUP: "rg-helkinswarm-router"
+  RESOURCE_GROUP: 'rg-helkinswarm-router'
+  EARLY_DEV_COST_GUARD: 'true'
+  EARLY_DEV_MONTHLY_BUDGET_USD: '10'
 
 jobs:
-  # ─────────────────────────────────────────────────────────────────────────
-  # 1. Deploy Infrastructure (Bicep)
-  # ─────────────────────────────────────────────────────────────────────────
   deploy-infra:
     name: Deploy Router Infra
     runs-on: ubuntu-latest
@@ -55,9 +70,18 @@ jobs:
       acr-login-server: ${{ steps.deploy.outputs.routerAcrLoginServer }}
       router-uami-client-id: ${{ steps.deploy.outputs.routerUamiClientId }}
       router-uami-resource-id: ${{ steps.deploy.outputs.routerUamiResourceId }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Validate early-dev cost guard prerequisites
+        run: |
+          if [ "${{ env.EARLY_DEV_COST_GUARD }}" = "true" ] && [ -z "${{ vars.ALERT_EMAIL }}" ]; then
+            echo "❌ ALERT_EMAIL must be configured while the router early-dev cost guard is active."
+            exit 1
+          fi
+          echo "✅ Router early-dev cost guard prerequisites are satisfied"
 
       - name: Azure Login (OIDC)
         uses: azure/login@v3
@@ -83,10 +107,6 @@ jobs:
       - name: Migrate — remove legacy Microsoft.Web/sites router if it exists
         continue-on-error: true
         run: |
-          # One-time migration: the router was previously a Microsoft.Web/sites resource.
-          # The Bicep now uses Microsoft.App/containerApps. Both resource types use the same
-          # app name (helkinswarm-router) which would conflict in the CAE FQDN.
-          # Safely delete the old resource if it still exists. (#235)
           LEGACY_EXISTS=$(az webapp show \
             --name helkinswarm-router \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
@@ -104,20 +124,24 @@ jobs:
       - name: Deploy Bicep
         id: deploy
         run: |
-          # Read DelegatedAuth client secret from stamp KV if creating OAuth connection
           OAUTH_SECRET=""
-          if [ "${{ github.event.inputs.CREATE_OAUTH_CONNECTION }}" = "true" ]; then
+          if [ "${{ github.event.inputs.CREATE_OAUTH_CONNECTION || 'false' }}" = "true" ]; then
             OAUTH_SECRET=$(az keyvault secret show --vault-name helkinswarm-kv-a7f2 --name DelegatedAuthClientSecret --query value -o tsv)
           fi
+
           RESULT=$(az deployment group create \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --template-file infra/main-router.bicep \
             --parameters \
               userPrincipalId=${{ vars.USER_PRINCIPAL_ID }} \
+              alertEmail="${{ vars.ALERT_EMAIL }}" \
               createOAuthConnection=${{ github.event.inputs.CREATE_OAUTH_CONNECTION || 'false' }} \
               delegatedAuthClientSecret="$OAUTH_SECRET" \
               lowCostDevMode=${{ github.event.inputs.LOW_COST_DEV_MODE || 'false' }} \
+              earlyDevCostGuard=${{ env.EARLY_DEV_COST_GUARD }} \
+              earlyDevMonthlyBudgetUsd=${{ env.EARLY_DEV_MONTHLY_BUDGET_USD }} \
             --query 'properties.outputs' -o json)
+
           echo "routerEndpoint=$(echo $RESULT | jq -r '.routerEndpoint.value')" >> "$GITHUB_OUTPUT"
           echo "routerHostName=$(echo $RESULT | jq -r '.routerHostName.value')" >> "$GITHUB_OUTPUT"
           echo "routerFunctionAppName=$(echo $RESULT | jq -r '.routerFunctionAppName.value')" >> "$GITHUB_OUTPUT"
@@ -125,6 +149,100 @@ jobs:
           echo "routerAcrLoginServer=$(echo $RESULT | jq -r '.routerAcrLoginServer.value')" >> "$GITHUB_OUTPUT"
           echo "routerUamiClientId=$(echo $RESULT | jq -r '.routerUamiClientId.value')" >> "$GITHUB_OUTPUT"
           echo "routerUamiResourceId=$(echo $RESULT | jq -r '.routerUamiResourceId.value')" >> "$GITHUB_OUTPUT"
+
+      - name: Remove paid observability leftovers in router dirty dev mode
+        if: env.EARLY_DEV_COST_GUARD == 'true'
+        run: |
+          set +e
+
+          delete_resource() {
+            local name="$1"
+            local type="$2"
+            az resource delete --resource-group "${{ env.RESOURCE_GROUP }}" --name "$name" --resource-type "$type" >/dev/null 2>&1 || true
+          }
+
+          delete_resource "helkinswarm-law-router" "Microsoft.OperationalInsights/workspaces"
+          delete_resource "helkinswarm-appi-router" "Microsoft.Insights/components"
+
+          az resource list \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --resource-type 'Microsoft.Insights/actionGroups' \
+            --query '[].name' -o tsv 2>/dev/null | while read -r ACTION_GROUP_NAME; do
+              [ -n "$ACTION_GROUP_NAME" ] && delete_resource "$ACTION_GROUP_NAME" "Microsoft.Insights/actionGroups"
+            done
+
+          az resource list \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --resource-type 'Microsoft.Insights/scheduledQueryRules' \
+            --query '[].name' -o tsv 2>/dev/null | while read -r RULE_NAME; do
+              [ -n "$RULE_NAME" ] && delete_resource "$RULE_NAME" "Microsoft.Insights/scheduledQueryRules"
+            done
+
+          CAE_ID=$(az resource show \
+            --resource-group "${{ env.RESOURCE_GROUP }}" \
+            --name helkinswarm-cae-router \
+            --resource-type 'Microsoft.App/managedEnvironments' \
+            --api-version 2024-03-01 \
+            --query id -o tsv 2>/dev/null || echo "")
+
+          if [ -n "$CAE_ID" ]; then
+            az monitor diagnostic-settings list --resource "$CAE_ID" --query '[].name' -o tsv 2>/dev/null | while read -r DIAG_NAME; do
+              [ -n "$DIAG_NAME" ] && az monitor diagnostic-settings delete --resource "$CAE_ID" --name "$DIAG_NAME" >/dev/null 2>&1 || true
+            done
+          fi
+
+          echo "✅ Router dirty-dev cleanup pass completed"
+
+      - name: Assert router early-dev cost guard invariants
+        if: env.EARLY_DEV_COST_GUARD == 'true'
+        run: |
+          set -euo pipefail
+
+          RG="${{ env.RESOURCE_GROUP }}"
+          SUB="${{ env.AZURE_SUBSCRIPTION_ID }}"
+          BUDGET_NAME="helkinswarm-earlydev-budget-router"
+          CAE_ID=$(az resource show --resource-group "$RG" --name helkinswarm-cae-router --resource-type 'Microsoft.App/managedEnvironments' --api-version 2024-03-01 --query id -o tsv)
+          CAE_DEST=$(az resource show --resource-group "$RG" --name helkinswarm-cae-router --resource-type 'Microsoft.App/managedEnvironments' --api-version 2024-03-01 --query 'properties.appLogsConfiguration.destination' -o tsv)
+
+          if [ "$CAE_DEST" != "azure-monitor" ]; then
+            echo "❌ Router EARLY_DEV_COST_GUARD violation: CAE logs destination is '$CAE_DEST' instead of 'azure-monitor'."
+            exit 1
+          fi
+
+          CAE_DIAG_COUNT=$(az monitor diagnostic-settings list --resource "$CAE_ID" --query 'length(@)' -o tsv 2>/dev/null || echo 0)
+          LAW_COUNT=$(az resource list --resource-group "$RG" --resource-type 'Microsoft.OperationalInsights/workspaces' --query 'length(@)' -o tsv)
+          APPI_COUNT=$(az resource list --resource-group "$RG" --resource-type 'Microsoft.Insights/components' --query 'length(@)' -o tsv)
+          ALERT_COUNT=$(az resource list --resource-group "$RG" --resource-type 'Microsoft.Insights/scheduledQueryRules' --query 'length(@)' -o tsv)
+          ACTION_GROUP_COUNT=$(az resource list --resource-group "$RG" --resource-type 'Microsoft.Insights/actionGroups' --query 'length(@)' -o tsv)
+
+          if [ "$CAE_DIAG_COUNT" != "0" ] || [ "$LAW_COUNT" != "0" ] || [ "$APPI_COUNT" != "0" ] || [ "$ALERT_COUNT" != "0" ] || [ "$ACTION_GROUP_COUNT" != "0" ]; then
+            echo "❌ Router EARLY_DEV_COST_GUARD violation: persistence resources remain in $RG"
+            echo "    CAE_DIAG=$CAE_DIAG_COUNT LAW=$LAW_COUNT APPI=$APPI_COUNT ALERTS=$ALERT_COUNT ACTION_GROUPS=$ACTION_GROUP_COUNT"
+            exit 1
+          fi
+
+          ROUTER_ENV=$(az containerapp show --name helkinswarm-router --resource-group "$RG" --output json)
+          DIRTY_SETTING=$(echo "$ROUTER_ENV" | jq -r '.properties.template.containers[0].env[] | select(.name=="DIRTY_DEV_MODE") | .value // empty')
+          GUARD_SETTING=$(echo "$ROUTER_ENV" | jq -r '.properties.template.containers[0].env[] | select(.name=="EARLY_DEV_COST_GUARD") | .value // empty')
+          APPINSIGHTS_SETTING=$(echo "$ROUTER_ENV" | jq -r '.properties.template.containers[0].env[] | select(.name=="APPLICATIONINSIGHTS_CONNECTION_STRING") | .value // empty')
+          DIRTY_SETTING=$(echo "$DIRTY_SETTING" | tr '[:upper:]' '[:lower:]')
+          GUARD_SETTING=$(echo "$GUARD_SETTING" | tr '[:upper:]' '[:lower:]')
+
+          if [ "$DIRTY_SETTING" != "true" ] || [ "$GUARD_SETTING" != "true" ] || [ -n "$APPINSIGHTS_SETTING" ]; then
+            echo "❌ Router EARLY_DEV_COST_GUARD violation: router container env not in guarded posture"
+            echo "    DIRTY_DEV_MODE=$DIRTY_SETTING EARLY_DEV_COST_GUARD=$GUARD_SETTING APPINSIGHTS_PRESENT=$( [ -n "$APPINSIGHTS_SETTING" ] && echo true || echo false )"
+            exit 1
+          fi
+
+          BUDGET_JSON=$(az rest --method GET --url "https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Consumption/budgets/${BUDGET_NAME}?api-version=2024-08-01")
+          BUDGET_AMOUNT=$(echo "$BUDGET_JSON" | jq -r '.properties.amount | tonumber | floor')
+          if [ "$BUDGET_AMOUNT" != "${{ env.EARLY_DEV_MONTHLY_BUDGET_USD }}" ]; then
+            echo "❌ Router EARLY_DEV_COST_GUARD violation: RG budget amount is '$BUDGET_AMOUNT' instead of '${{ env.EARLY_DEV_MONTHLY_BUDGET_USD }}'"
+            exit 1
+          fi
+
+          echo "✅ Router EARLY_DEV_COST_GUARD invariants hold"
+
       - name: Register global bot identity as GitHub variables
         continue-on-error: true
         env:
@@ -134,9 +252,7 @@ jobs:
           gh variable set ROUTER_UAMI_ID --body "${{ steps.deploy.outputs.routerUamiResourceId }}"
           echo "✅ BOT_APP_ID set to router UAMI client ID: ${{ steps.deploy.outputs.routerUamiClientId }}"
           echo "✅ ROUTER_UAMI_ID set to router UAMI resource ID: ${{ steps.deploy.outputs.routerUamiResourceId }}"
-  # ─────────────────────────────────────────────────────────────────────────
-  # 2. Build & Push Container Image to Router ACR
-  # ─────────────────────────────────────────────────────────────────────────
+
   build-and-push:
     name: Build & Push Router Image
     needs: deploy-infra
@@ -160,14 +276,10 @@ jobs:
         run: |
           IMAGE=${{ needs.deploy-infra.outputs.acr-login-server }}/helkinswarm-router:${{ github.sha }}
           IMAGE_LATEST=${{ needs.deploy-infra.outputs.acr-login-server }}/helkinswarm-router:latest
-          # Disable BuildKit to avoid cache key errors with newly-added directories
           DOCKER_BUILDKIT=0 docker build -f Dockerfile.router -t $IMAGE -t $IMAGE_LATEST .
           DOCKER_BUILDKIT=0 docker push $IMAGE
           DOCKER_BUILDKIT=0 docker push $IMAGE_LATEST
 
-  # ─────────────────────────────────────────────────────────────────────────
-  # 3. Deploy Router Image to Container Apps Function App
-  # ─────────────────────────────────────────────────────────────────────────
   deploy-code:
     name: Deploy Router to Container Apps
     needs: [deploy-infra, build-and-push]
@@ -187,7 +299,6 @@ jobs:
           IMAGE_TAG=${{ github.sha }}
           REVISION_SUFFIX="r${IMAGE_TAG:0:8}"
 
-          # Log current revision for rollback reference
           CURRENT=$(az containerapp show \
             --name "${FUNC_NAME}" \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
@@ -195,9 +306,6 @@ jobs:
           echo "Current revision: $CURRENT"
           echo "New revision suffix: $REVISION_SUFFIX"
 
-          # Deploy new revision via Container Apps native revision management.
-          # Single-revision mode: platform keeps old revision serving until new one is ready.
-          # This replaces the az rest PATCH approach that caused downtime (#235).
           az containerapp update \
             --name "${FUNC_NAME}" \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
@@ -211,7 +319,6 @@ jobs:
           echo "⏳ Waiting for new revision to start (90s — Container Apps revision warmup)..."
           sleep 90
 
-          # Get stable ingress FQDN from Container Apps (not az functionapp — resource type changed to Microsoft.App)
           HOSTNAME=$(az containerapp show \
             --name ${{ needs.deploy-infra.outputs.function-app-name }} \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
@@ -241,11 +348,9 @@ jobs:
 
           if [ "$HEALTHY" != "true" ]; then
             echo "❌ Router health check failed after $((90 + MAX_RETRIES * 30))s"
-            echo "⚠️  Router may be experiencing downtime. Check Application Insights for errors."
             exit 1
           fi
 
-          # Additional warmup: do a second health request 10s later to confirm stability
           sleep 10
           HTTP_CODE2=$(curl -s -o /dev/null -w "%{http_code}" "https://$HOSTNAME/api/health" 2>/dev/null || echo "000")
           if [ "$HTTP_CODE2" != "200" ]; then
@@ -254,9 +359,6 @@ jobs:
           fi
           echo "✅ Router warmup confirmed stable"
 
-  # ─────────────────────────────────────────────────────────────────────────
-  # 3. Deployment Report
-  # ─────────────────────────────────────────────────────────────────────────
   report:
     name: Deployment Report
     needs: [deploy-infra, build-and-push, deploy-code]
@@ -276,4 +378,6 @@ jobs:
           echo "Router Endpoint:      ${{ needs.deploy-infra.outputs.router-endpoint }}"
           echo "Function App:         ${{ needs.deploy-infra.outputs.function-app-name }}"
           echo "Router UAMI ClientId: ${{ needs.deploy-infra.outputs.router-uami-client-id }}"
+          echo "Early Dev Cost Guard: ${{ env.EARLY_DEV_COST_GUARD }}"
+          echo "Router Budget (USD):  ${{ env.EARLY_DEV_MONTHLY_BUDGET_USD }}"
           echo "═══════════════════════════════════════════════"

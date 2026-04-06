@@ -24,10 +24,24 @@ param routerUamiResourceId string
 @description('Object ID of the CICD service principal — gets Storage Blob Data Contributor so the GitHub Actions workflow can upload SPA assets')
 param cicdPrincipalId string
 
+@description('Owner email for tab-host cost-budget notifications while the furious-development-phase guard is active.')
+param alertEmail string = ''
+
+@description('Early Dev Cost Guard — source-controlled budget/surface guard for the global tab host during the furious development phase. (#580)')
+param earlyDevCostGuard bool = true
+
+@description('Monthly Azure spend ceiling in USD for the tab-host resource group while the early dev cost guard is active. Default: 5 USD.')
+@minValue(1)
+param earlyDevMonthlyBudgetUsd int = 5
+
+@description('Budget start date for the tab-host early-dev cost guard. Defaults to the first day of the current UTC month.')
+param earlyDevBudgetStartDate string = utcNow('yyyy-MM-01T00:00:00Z')
+
 // ─── Variables ──────────────────────────────────────────────────────────────
 
 var tabsStName = 'helkinswarmtabsst'
 var roleStorageBlobDataContributor = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+var tabsBudgetName = 'helkinswarm-earlydev-budget-tabs'
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  1. STORAGE ACCOUNT (StorageV2 + Static Website hosting)
@@ -79,6 +93,51 @@ resource routerBlobContributorRole 'Microsoft.Authorization/roleAssignments@2022
   }
 }
 
+resource tabsBudget 'Microsoft.Consumption/budgets@2024-08-01' = if (earlyDevCostGuard && alertEmail != '') {
+  scope: resourceGroup()
+  name: tabsBudgetName
+  properties: {
+    amount: earlyDevMonthlyBudgetUsd
+    category: 'Cost'
+    timeGrain: 'Monthly'
+    timePeriod: {
+      startDate: earlyDevBudgetStartDate
+    }
+    notifications: {
+      Actual80: {
+        enabled: true
+        operator: 'GreaterThanOrEqualTo'
+        threshold: 80
+        thresholdType: 'Actual'
+        contactEmails: [ alertEmail ]
+        contactRoles: []
+        contactGroups: []
+        locale: 'en-us'
+      }
+      Actual100: {
+        enabled: true
+        operator: 'GreaterThanOrEqualTo'
+        threshold: 100
+        thresholdType: 'Actual'
+        contactEmails: [ alertEmail ]
+        contactRoles: []
+        contactGroups: []
+        locale: 'en-us'
+      }
+      Forecast100: {
+        enabled: true
+        operator: 'GreaterThanOrEqualTo'
+        threshold: 100
+        thresholdType: 'Forecasted'
+        contactEmails: [ alertEmail ]
+        contactRoles: []
+        contactGroups: []
+        locale: 'en-us'
+      }
+    }
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  3. OUTPUTS
 //     staticWebEndpoint: https://{account}.z{n}.web.core.windows.net
@@ -87,6 +146,7 @@ resource routerBlobContributorRole 'Microsoft.Authorization/roleAssignments@2022
 
 output storageAccountName string = tabsStorage.name
 output storageAccountId string = tabsStorage.id
+output tabsBudgetName string = earlyDevCostGuard && alertEmail != '' ? tabsBudget.name : ''
 // Note: static website must be enabled via az storage blob service-properties update
 // after the storage account is created (not supported as a Bicep resource property).
 // The deploy-tabs.yml workflow handles this in the post-deploy step.

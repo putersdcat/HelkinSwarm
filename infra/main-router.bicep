@@ -29,6 +29,19 @@ param createOAuthConnection bool = false
 @description('Low Cost Dev Mode — keeps the global router warm while reducing observability spend via ingestion cap + sampling. (#303, #410, #442)')
 param lowCostDevMode bool = false
 
+@description('Owner email for router cost-budget notifications while the furious-development-phase guard is active.')
+param alertEmail string = ''
+
+@description('Early Dev Cost Guard — source-controlled router cost lockdown for the furious development phase. While true, the router must not recreate paid LAW/App Insights by default until the owner explicitly authorizes removal. (#580)')
+param earlyDevCostGuard bool = true
+
+@description('Monthly Azure spend ceiling in USD for the router resource group while the early dev cost guard is active. Default: 10 USD.')
+@minValue(1)
+param earlyDevMonthlyBudgetUsd int = 10
+
+@description('Budget start date for the router early-dev cost guard. Defaults to the first day of the current UTC month.')
+param earlyDevBudgetStartDate string = utcNow('yyyy-MM-01T00:00:00Z')
+
 @description('Client ID of the HelkinSwarm-DelegatedAuth Entra app for user-delegated Graph access.')
 param delegatedAuthClientId string = 'd4e5cf74-9f99-4504-b4ab-d4516dd10577'
 
@@ -46,6 +59,7 @@ var routerAcrName  = 'helkinswarmrouteracr'
 var routerBotName  = 'helkinswarm-router-bot'
 var routerLawName  = 'helkinswarm-law-router'
 var routerAppiName = 'helkinswarm-appi-router'
+var routerBudgetName = 'helkinswarm-earlydev-budget-router'
 
 // Built-in ARM role definition IDs
 var roleStorageBlobDataOwner    = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
@@ -59,9 +73,11 @@ var roleAcrPull                 = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 // turn can vanish before the user stamp sees any /api/messages request at all.
 // Keep the router warm even in low-cost mode; save money via cap/sampling only.
 var routerLawRetentionDays  = 30
-var routerLawDailyCapGb     = lowCostDevMode ? json('0.1') : json('-1')
-var routerAppInsSamplingPct = lowCostDevMode ? 10 : 100
+var effectiveRouterLowCostDevMode = !earlyDevCostGuard && lowCostDevMode
+var routerLawDailyCapGb     = effectiveRouterLowCostDevMode ? json('0.1') : json('-1')
+var routerAppInsSamplingPct = effectiveRouterLowCostDevMode ? 10 : 100
 var routerMinReplicas       = 1
+var routerLogsDestination   = earlyDevCostGuard ? 'azure-monitor' : 'log-analytics'
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  1. USER-ASSIGNED MANAGED IDENTITY (global bot identity — fresh, not Alpha)
@@ -76,7 +92,7 @@ resource routerUami 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31
 //  1b. OBSERVABILITY — Log Analytics + Application Insights
 // ═══════════════════════════════════════════════════════════════════════════
 
-resource routerLaw 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
+resource routerLaw 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (!earlyDevCostGuard) {
   name: routerLawName
   location: location
   properties: {
@@ -88,7 +104,7 @@ resource routerLaw 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   }
 }
 
-resource routerAppi 'Microsoft.Insights/components@2020-02-02' = {
+resource routerAppi 'Microsoft.Insights/components@2020-02-02' = if (!earlyDevCostGuard) {
   name: routerAppiName
   location: location
   kind: 'web'
@@ -183,6 +199,17 @@ resource routerCae 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: routerCaeName
   location: location
   properties: {
+    appLogsConfiguration: earlyDevCostGuard
+      ? {
+          destination: routerLogsDestination
+        }
+      : {
+          destination: routerLogsDestination
+          logAnalyticsConfiguration: {
+            customerId: routerLaw!.properties.customerId
+            sharedKey: routerLaw!.listKeys().primarySharedKey
+          }
+        }
     workloadProfiles: [
       { name: 'Consumption', workloadProfileType: 'Consumption' }
     ]
@@ -241,7 +268,7 @@ resource routerFunc 'Microsoft.App/containerApps@2024-03-01' = {
             cpu: json('0.5')
             memory: '1Gi'
           }
-          env: [
+          env: concat([
             // Managed identity storage auth — no key exposure
             { name: 'AzureWebJobsStorage__accountName', value: routerStorage.name }
             { name: 'AzureWebJobsStorage__credential', value: 'managedidentity' }
@@ -253,9 +280,20 @@ resource routerFunc 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'MicrosoftAppId', value: routerUami.properties.clientId }
             { name: 'MicrosoftAppType', value: 'UserAssignedMSI' }
             { name: 'MicrosoftAppTenantId', value: subscription().tenantId }
+            { name: 'DIRTY_DEV_MODE', value: string(earlyDevCostGuard) }
+            { name: 'EARLY_DEV_COST_GUARD', value: string(earlyDevCostGuard) }
+            { name: 'DEV_TELEMETRY_MODE', value: 'minimal' }
+            { name: 'AzureFunctionsJobHost__logging__logLevel__Host.Aggregator', value: 'Warning' }
+            { name: 'AzureFunctionsJobHost__logging__logLevel__Azure.Core', value: 'Warning' }
+            { name: 'AzureFunctionsJobHost__logging__logLevel__Azure.Core.1', value: 'Warning' }
+            { name: 'AzureFunctionsJobHost__logging__logLevel__Azure.Identity', value: 'Warning' }
+            { name: 'AzureFunctionsJobHost__logging__logLevel__Azure.Identity.1', value: 'Warning' }
+            { name: 'AzureFunctionsJobHost__logging__logLevel__DurableTask.AzureStorage', value: 'Warning' }
+            { name: 'AzureFunctionsJobHost__logging__logLevel__Host.Triggers.DurableTask', value: 'Warning' }
+          ], earlyDevCostGuard ? [] : [
             // Observability
-            { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: routerAppi.properties.ConnectionString }
-          ]
+            { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: routerAppi!.properties.ConnectionString }
+          ])
         }
       ]
       scale: {
@@ -318,6 +356,51 @@ resource oauthConnection 'Microsoft.BotService/botServices/connections@2022-09-1
   }
 }
 
+resource routerBudget 'Microsoft.Consumption/budgets@2024-08-01' = if (earlyDevCostGuard && alertEmail != '') {
+  scope: resourceGroup()
+  name: routerBudgetName
+  properties: {
+    amount: earlyDevMonthlyBudgetUsd
+    category: 'Cost'
+    timeGrain: 'Monthly'
+    timePeriod: {
+      startDate: earlyDevBudgetStartDate
+    }
+    notifications: {
+      Actual80: {
+        enabled: true
+        operator: 'GreaterThanOrEqualTo'
+        threshold: 80
+        thresholdType: 'Actual'
+        contactEmails: [ alertEmail ]
+        contactRoles: []
+        contactGroups: []
+        locale: 'en-us'
+      }
+      Actual100: {
+        enabled: true
+        operator: 'GreaterThanOrEqualTo'
+        threshold: 100
+        thresholdType: 'Actual'
+        contactEmails: [ alertEmail ]
+        contactRoles: []
+        contactGroups: []
+        locale: 'en-us'
+      }
+      Forecast100: {
+        enabled: true
+        operator: 'GreaterThanOrEqualTo'
+        threshold: 100
+        thresholdType: 'Forecasted'
+        contactEmails: [ alertEmail ]
+        contactRoles: []
+        contactGroups: []
+        locale: 'en-us'
+      }
+    }
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  OUTPUTS
 // ═══════════════════════════════════════════════════════════════════════════
@@ -334,3 +417,4 @@ output routerAcrLoginServer string = routerAcr.properties.loginServer
 // routerUamiClientId is the global bot identity — stamp Bicep deploy needs this as routerBotId param
 output routerUamiClientId string = routerUami.properties.clientId
 output routerUamiResourceId string = routerUami.id
+output routerBudgetName string = earlyDevCostGuard && alertEmail != '' ? routerBudget.name : ''

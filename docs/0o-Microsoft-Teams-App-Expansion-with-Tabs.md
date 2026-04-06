@@ -36,6 +36,7 @@ This expansion integrates deeply with observability (13) and DevLoop (0g), makin
    - One deployment, one URL, serves all users.
    - Built and deployed via `deploy-tabs.yml` (new workflow).
    - `{{TAB_HOST_URL}}` placeholder in `appPackage/manifest.json` substituted by `teams-package.yml` at build time.
+   - During the furious development phase, the tab host also carries a source-controlled RG budget and post-deploy cost assertions so monitor resources cannot silently appear there (`#580`).
 
 2. **Tab Backends — Per-Stamp Function App Endpoints** (`src/functions/tab*.ts`):
    - Each stamp's Function App exposes tab API endpoints (e.g., `/api/tab/getting-started`, `/api/tab/control-center`).

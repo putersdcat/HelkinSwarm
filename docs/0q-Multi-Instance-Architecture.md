@@ -81,6 +81,10 @@ Examples for default alias `a7f2`:
 - **Per-Stamp Tab Backends**: Each stamp's Function App exposes `/api/tab/getting-started`, `/api/tab/control-center`, `/api/tab/dev-console`. Return JSON/HTML with stamp-specific data.
 - **Client-Side Routing**: SPA reads `aadObjectId` from Teams tab JWT context, looks up stamp alias from bundled `user-map.json`, calls stamp API with OBO token.
 
+**Cost guard (furious development phase):**
+- the global router now carries the same source-controlled early-dev cost guard philosophy as the stamp (`#580`)
+- the global tab host remains storage-only and carries its own RG budget/assertion layer (`#580`)
+
 **Resource group:** `rg-helkinswarm-tabs` (separate from stamps and router)
 
 ### Deployment Flow
