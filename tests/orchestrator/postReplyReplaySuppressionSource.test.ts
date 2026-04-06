@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 describe('post-reply replay suppression source guards', () => {
-  it('suppresses same-correlation session re-entry once the reply claim already exists', () => {
+  it('suppresses same-correlation session re-entry once a session execution is already claimed and still honors the late reply claim guard', () => {
     const sessionSource = readFileSync('src/orchestrator/sessionOrchestrator.ts', 'utf8');
     const promptSource = readFileSync('src/orchestrator/buildPromptActivity.ts', 'utf8');
     const llmSource = readFileSync('src/orchestrator/llmActivity.ts', 'utf8');
@@ -30,7 +30,10 @@ describe('post-reply replay suppression source guards', () => {
     expect(overseerSource).toContain('if (sessionResult.duplicateReplaySuppressed) {');
     expect(overseerSource).toContain('duplicateReplaySuppressed: true,');
 
+    expect(guardSource).toContain("import { claimOutboundArtifact, hasOutboundArtifactClaim } from '../bot/conversationStore.js';");
     expect(guardSource).toContain("hasOutboundArtifactClaim(input.conversationId, 'reply', input.correlationId)");
+    expect(guardSource).toContain("'session-execution'");
+    expect(guardSource).toContain('return !claimedSessionExecution;');
     expect(indexSource).toContain("import '../orchestrator/emitOrchestratorTelemetryActivity.js';");
     expect(indexSource).toContain("import '../orchestrator/sessionReplayGuardActivity.js';");
   });

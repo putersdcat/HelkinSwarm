@@ -48,7 +48,7 @@ export interface PendingAckSnapshot {
   oldestStalePendingAgeMs: number | null;
 }
 
-export type OutboundArtifactKind = 'reply' | 'confirmation-card' | 'email-send';
+export type OutboundArtifactKind = 'reply' | 'confirmation-card' | 'email-send' | 'session-execution';
 
 interface OutboundArtifactDocument {
   /** Document id — 'outbound-{kind}-{dedupKey}' */

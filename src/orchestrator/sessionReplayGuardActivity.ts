@@ -1,6 +1,6 @@
 import * as df from 'durable-functions';
 import { z } from 'zod';
-import { hasOutboundArtifactClaim } from '../bot/conversationStore.js';
+import { claimOutboundArtifact, hasOutboundArtifactClaim } from '../bot/conversationStore.js';
 
 const SessionReplayGuardInputSchema = z.object({
   conversationId: z.string().min(1),
@@ -12,7 +12,19 @@ export type SessionReplayGuardInput = z.infer<typeof SessionReplayGuardInputSche
 
 export async function detectDuplicateSessionReplay(rawInput: SessionReplayGuardInput): Promise<boolean> {
   const input = SessionReplayGuardInputSchema.parse(rawInput);
-  return await hasOutboundArtifactClaim(input.conversationId, 'reply', input.correlationId);
+
+  if (await hasOutboundArtifactClaim(input.conversationId, 'reply', input.correlationId)) {
+    return true;
+  }
+
+  const claimedSessionExecution = await claimOutboundArtifact(
+    input.conversationId,
+    input.userId,
+    'session-execution',
+    input.correlationId,
+  );
+
+  return !claimedSessionExecution;
 }
 
 df.app.activity('sessionReplayGuardActivity', {
