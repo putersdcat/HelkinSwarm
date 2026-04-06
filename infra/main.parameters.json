@@ -10,6 +10,12 @@
     },
     "alertEmail": {
       "value": ""
+    },
+    "earlyDevCostGuard": {
+      "value": true
+    },
+    "earlyDevMonthlyBudgetUsd": {
+      "value": 30
     }
   }
 }

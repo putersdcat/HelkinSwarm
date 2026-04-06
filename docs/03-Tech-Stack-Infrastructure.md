@@ -160,16 +160,35 @@ For short-lived personal development stamps where cost matters more than retaine
 
 | Setting | Normal | Dirty Dev Mode |
 |---------|--------|----------------|
-| Container Apps environment logs | `log-analytics` | `azure-monitor` (with no diagnostic settings) |
+| Container Apps environment logs | `log-analytics` | `none` (no persisted destination; live stream only) |
 | Log Analytics workspace | deployed | not deployed |
 | Application Insights resource | deployed | not deployed |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | set | omitted |
 | Azure Monitor exporter | enabled | disabled at runtime |
 | Query-based Azure Monitor alerts | enabled | not created |
+| Resource-group cost budget | optional | enforced at $30/month during early dev guard |
 
-**Activation**: Trigger `deploy-stamp.yml` with `DIRTY_DEV_MODE=true`.
+**Activation**: As of `#579`, furious-development-phase stamps are source-controlled into this posture by the **Early Dev Cost Guard**. Push deployments and manual stamp deploys both preserve observability-off mode until the owner explicitly authorizes removal.
 
-> ⚠️ This mode is intentionally blunt. It avoids the paid Log Analytics workspace by switching the Container Apps environment to `azure-monitor` without diagnostic settings. You keep live log streaming, but you lose retained Log Analytics/App Insights history and Azure Monitor query alerts for that stamp.
+> ⚠️ This mode is intentionally blunt. It avoids the paid Log Analytics workspace by switching the Container Apps environment to **don't save logs**. You keep live log streaming, but you lose retained Log Analytics/App Insights history and Azure Monitor query alerts for that stamp.
 
 When enabled on an existing stamp, the deployment workflow also performs an explicit cleanup pass to remove previously-created Log Analytics, Application Insights, and query-alert resources, because incremental ARM/Bicep deployments do not prune old resources automatically.
+
+### Early Dev Cost Guard (`earlyDevCostGuard`, #579)
+
+The April 2026 Log Analytics spend regression proved that a manual `DIRTY_DEV_MODE` switch was not durable enough: push-triggered infra deploys silently fell back to paid observability and recreated the workspace-backed stack.
+
+To stop that class of regression, the furious development phase now uses a **source-controlled Early Dev Cost Guard**:
+
+| Control | Value during early dev |
+|---------|------------------------|
+| `earlyDevCostGuard` | `true` |
+| Effective dirty-dev posture | always on |
+| Monthly RG budget | `$30` |
+| Push deploy behavior | always runs stamped Bicep to re-assert cost invariants |
+| Post-deploy enforcement | fails if LAW/App Insights/query alerts return or if the budget is missing |
+
+This guard is **not** a suggestion. It exists because paid observability is non-essential for functionality during the current personal dev phase and previously regressed silently.
+
+> ⛔ Do not remove or weaken `earlyDevCostGuard`, the dirty-dev cleanup pass, the RG budget, or the post-deploy assertions until the owner/human-in-the-loop explicitly authorizes the end of the furious development phase.
 

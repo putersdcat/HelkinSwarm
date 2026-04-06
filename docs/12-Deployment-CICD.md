@@ -13,8 +13,7 @@ The pipeline is intentionally simple, observable, and safe for a personal projec
 | Workflow              | Trigger                  | What It Does |
 |-----------------------|--------------------------|--------------|
 | `ci.yml`              | Every push + PR          | Lint, TypeScript compile, type-check, Bicep validation |
-| `cd.yml`              | Push to `main`           | Bicep deploy → Docker build → ACR push → Container Apps update + SkillForge base image sync |
-| `deploy-stamp.yml`    | Manual dispatch (`USER_ALIAS`) | Deploys a complete stamped user instance (RG + all resources) |
+| `deploy-stamp.yml`    | Push to `main` + manual dispatch | Stamped Bicep deploy → Docker build → ACR push → Container Apps update + post-deploy guardrail assertions |
 | `deploy-router.yml`   | Manual dispatch          | Deploys the global router (rg-helkinswarm-router + Bot Service + Teams channel). Sets `BOT_APP_ID` and `ROUTER_UAMI_ID` GitHub variables. |
 | `deploy-tabs.yml`     | Manual dispatch          | Deploys the global tab SPA (rg-helkinswarm-tabs + Azure Storage static website). Sets `TAB_HOST_URL` GitHub variable. |
 | `teams-package.yml`   | Manual dispatch + push to `appPackage/**` | Substitutes `{{BOT_APP_ID}}`, `{{TAB_HOST_URL}}`, `{{TAB_HOST_DOMAIN}}` in manifest.json, then produces a sideloadable zip |
@@ -34,13 +33,14 @@ All workflows use **OIDC federation** (no secrets stored in GitHub).
 - AI Foundry models (global frontier default; EU DataZoneStandard when `euResidencyMode=true`)
 - App Insights + Log Analytics
 
-Key parameter (propagated everywhere):
+Key parameters (propagated everywhere):
 ```bicep
 param euResidencyMode bool = false   // ← default = global frontier performance
 param lowCostDevMode bool = false     // ← reduces ingestion cap/sampling while keeping both the stamp and router warm for first-turn chat reliability (#303, #341, #393, #410)
+param earlyDevCostGuard bool = true   // ← furious-development-phase cost lockdown; keeps paid observability off until owner authorizes removal (#579)
 ```
 
-Changing `euResidencyMode` and pushing to `main` automatically switches the entire LLM, embeddings, memory, and routing layer. Activating `lowCostDevMode` requires triggering a manual `workflow_dispatch` with `LOW_COST_DEV_MODE=true` (push-triggered deploys always default to `false` to preserve existing resource state). The current low-cost profile preserves a warm floor on both the stamped chat runtime and the global router because live backlog work showed that either layer scaling to zero could break the first-turn chat contract.
+Changing `euResidencyMode` and pushing to `main` automatically switches the entire LLM, embeddings, memory, and routing layer. `lowCostDevMode` remains available for future non-off observability profiles, but **furious-development-phase production deploys are currently governed by `earlyDevCostGuard=true`**, which forces dirty-dev cost posture, deploys a resource-group budget, and fails the workflow if paid observability resources reappear.
 
 ### workflow_dispatch Inputs (`deploy-stamp.yml`)
 
@@ -53,7 +53,20 @@ Changing `euResidencyMode` and pushing to `main` automatically switches the enti
 | `EU_RESIDENCY_MODE` | `false` | EU DataZoneStandard toggle |
 | `CREATE_OAUTH_CONNECTION` | `false` | Recreate GraphOAuth Bot Service connection |
 | `LOW_COST_DEV_MODE` | `false` | Activate Low Cost Dev Mode cost controls; both stamp and router stay warm while observability-cost knobs still apply (#303, #393, #410) |
-| `DIRTY_DEV_MODE` | `false` | Disable paid Log Analytics/App Insights for the dev stamp (#382) |
+| `DIRTY_DEV_MODE` | `false` | Disable paid Log Analytics/App Insights for the dev stamp (#382). While `earlyDevCostGuard=true`, workflow input cannot disable the enforced off posture. |
+
+### Furious Development Phase Cost Lock (`#579`)
+
+The stamped deployment pipeline now carries a **source-controlled early-dev cost lock** because manual dirty-dev toggles were not durable enough.
+
+While this lock is active:
+- push-triggered stamp deploys always run Bicep, even for code-only changes, so cost invariants are continuously re-asserted
+- stamped Container Apps environments must use **no persisted logs**
+- stamp LAW/App Insights/query-alert resources must remain absent
+- the Function App must not carry `APPLICATIONINSIGHTS_CONNECTION_STRING`
+- a stamped RG budget of `$30/month` must exist
+
+> ⛔ These controls are not to be removed, relaxed, or bypassed until the owner/human-in-the-loop explicitly authorizes the end of the furious development phase.
 
 
 ### Docker & Container Apps Flow

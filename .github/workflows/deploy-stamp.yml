@@ -57,12 +57,12 @@ on:
         type: boolean
         default: false
       LOW_COST_DEV_MODE:
-        description: "Enable Low Cost Dev Mode: 30-day minimum-valid retention, scale-to-zero, minimal telemetry, 0.1 GB/day Log Analytics cap. (#303, #341)"
+        description: "Enable Low Cost Dev Mode: 30-day minimum-valid retention, minimal telemetry, 0.1 GB/day Log Analytics cap while keeping the stamp warm for first-turn reliability. (#303, #341)"
         required: false
         type: boolean
         default: false
       DIRTY_DEV_MODE:
-        description: "Enable Dirty Dev Mode: disable paid Log Analytics/App Insights for the stamp and switch Container Apps logs to azure-monitor without diagnostic sinks. (#382)"
+        description: "Enable Dirty Dev Mode: disable paid Log Analytics/App Insights for the stamp and switch Container Apps logs to no persisted destination. While EARLY_DEV_COST_GUARD is true, workflow input cannot disable this posture. (#382, #579)"
         required: false
         type: boolean
         default: false
@@ -86,6 +86,8 @@ env:
   AZURE_CLIENT_ID: ${{ vars.AZURE_CLIENT_ID }}
   AZURE_CLIENT_OBJECT_ID: ${{ vars.AZURE_CLIENT_OBJECT_ID }}
   USER_PRINCIPAL_ID: ${{ vars.USER_PRINCIPAL_ID }}
+  EARLY_DEV_COST_GUARD: 'true'
+  EARLY_DEV_MONTHLY_BUDGET_USD: '30'
   # Prefer explicit dispatch input; fall back to repo variable for push-triggered runs
   USER_ALIAS: ${{ github.event.inputs.USER_ALIAS || vars.USER_ALIAS }}
   RESOURCE_GROUP: "rg-helkinswarm-${{ github.event.inputs.USER_ALIAS || vars.USER_ALIAS }}"
@@ -136,6 +138,14 @@ jobs:
             echo "✅ DEVELOPER_ALLOWED_IP_CIDRS is a valid JSON array"
           fi
 
+      - name: Validate early-dev cost guard prerequisites
+        run: |
+          if [ "${{ env.EARLY_DEV_COST_GUARD }}" = "true" ] && [ -z "${{ vars.ALERT_EMAIL }}" ]; then
+            echo "❌ ALERT_EMAIL must be configured while EARLY_DEV_COST_GUARD is active so the RG budget can notify the owner."
+            exit 1
+          fi
+          echo "✅ Early-dev cost guard prerequisites are satisfied"
+
   # ─────────────────────────────────────────────────────────────────────────
   # 2. Deploy Infrastructure (Bicep)
   # ─────────────────────────────────────────────────────────────────────────
@@ -174,6 +184,12 @@ jobs:
       - name: Detect infrastructure changes
         id: changes
         run: |
+          if [ "${{ env.EARLY_DEV_COST_GUARD }}" = "true" ]; then
+            echo "infraChanged=true" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ EARLY_DEV_COST_GUARD is active — always running Bicep to enforce cost-control invariants."
+            exit 0
+          fi
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "infraChanged=true" >> "$GITHUB_OUTPUT"
             echo "ℹ️ Manual dispatch — running full infra deployment."
@@ -320,6 +336,8 @@ jobs:
             delegatedAuthClientSecret="$DELEGATED_SECRET"
             lowCostDevMode=${{ github.event.inputs.LOW_COST_DEV_MODE || 'false' }}
             dirtyDevMode=${{ github.event.inputs.DIRTY_DEV_MODE || 'false' }}
+            earlyDevCostGuard=${{ env.EARLY_DEV_COST_GUARD }}
+            earlyDevMonthlyBudgetUsd=${{ env.EARLY_DEV_MONTHLY_BUDGET_USD }}
             developerAllowedIpCidrs="${DEVELOPER_ALLOWED_IP_CIDRS:-[]}"
             stampPolicyAllowOutlookSendWithoutConfirmation=${STAMP_POLICY_OUTLOOK_SEND_BYPASS}
           )
@@ -560,7 +578,7 @@ jobs:
             }' > foundry-capacity-summary.json
 
       - name: Emit post-deploy quota telemetry
-        if: steps.changes.outputs.infraChanged == 'true' && (github.event.inputs.DIRTY_DEV_MODE || 'false') != 'true'
+        if: steps.changes.outputs.infraChanged == 'true' && env.EARLY_DEV_COST_GUARD != 'true' && (github.event.inputs.DIRTY_DEV_MODE || 'false') != 'true'
         run: |
           CONNECTION_STRING=$(az resource show \
             --resource-group "${{ env.RESOURCE_GROUP }}" \
@@ -605,7 +623,7 @@ jobs:
           fi
 
       - name: Remove paid observability leftovers in dirty dev mode
-        if: steps.changes.outputs.infraChanged == 'true' && (github.event.inputs.DIRTY_DEV_MODE || 'false') == 'true'
+        if: steps.changes.outputs.infraChanged == 'true' && (env.EARLY_DEV_COST_GUARD == 'true' || (github.event.inputs.DIRTY_DEV_MODE || 'false') == 'true')
         run: |
           set +e
           FUNC_NAME="${{ steps.query.outputs.functionAppName }}"
@@ -638,6 +656,77 @@ jobs:
           delete_resource "helkinswarm-law-${{ env.USER_ALIAS }}" "Microsoft.OperationalInsights/workspaces"
 
           echo "✅ Dirty Dev Mode cleanup pass completed"
+
+      - name: Assert early-dev cost guard invariants
+        if: env.EARLY_DEV_COST_GUARD == 'true'
+        run: |
+          set -euo pipefail
+
+          RG="${{ env.RESOURCE_GROUP }}"
+          SUB="${{ env.AZURE_SUBSCRIPTION_ID }}"
+          ALIAS="${{ env.USER_ALIAS }}"
+          FUNC_NAME="${{ steps.query.outputs.functionAppName }}"
+          CAE_NAME="helkinswarm-cae-${ALIAS}"
+          BUDGET_NAME="helkinswarm-earlydev-budget-${ALIAS}"
+
+          CAE_DEST=$(az resource show \
+            --resource-group "$RG" \
+            --name "$CAE_NAME" \
+            --resource-type 'Microsoft.App/managedEnvironments' \
+            --api-version 2024-03-01 \
+            --query 'properties.appLogsConfiguration.destination' -o tsv)
+
+          if [ "$CAE_DEST" != "none" ]; then
+            echo "❌ EARLY_DEV_COST_GUARD violation: Container Apps environment logs destination is '$CAE_DEST' instead of 'none'."
+            exit 1
+          fi
+
+          LAW_COUNT=$(az resource list --resource-group "$RG" --resource-type 'Microsoft.OperationalInsights/workspaces' --query 'length(@)' -o tsv)
+          APPI_COUNT=$(az resource list --resource-group "$RG" --resource-type 'Microsoft.Insights/components' --query 'length(@)' -o tsv)
+          ALERT_COUNT=$(az resource list --resource-group "$RG" --resource-type 'Microsoft.Insights/scheduledQueryRules' --query 'length(@)' -o tsv)
+          ACTION_GROUP_COUNT=$(az resource list --resource-group "$RG" --resource-type 'Microsoft.Insights/actionGroups' --query 'length(@)' -o tsv)
+
+          if [ "$LAW_COUNT" != "0" ] || [ "$APPI_COUNT" != "0" ] || [ "$ALERT_COUNT" != "0" ] || [ "$ACTION_GROUP_COUNT" != "0" ]; then
+            echo "❌ EARLY_DEV_COST_GUARD violation: paid observability resources still exist in $RG"
+            echo "    LAW=$LAW_COUNT APPI=$APPI_COUNT ALERTS=$ALERT_COUNT ACTION_GROUPS=$ACTION_GROUP_COUNT"
+            exit 1
+          fi
+
+          APPINSIGHTS_SETTING=$(az functionapp config appsettings list \
+            --name "$FUNC_NAME" \
+            --resource-group "$RG" \
+            --query "[?name=='APPLICATIONINSIGHTS_CONNECTION_STRING'] | [0].value" -o tsv 2>/dev/null || true)
+
+          if [ -n "$APPINSIGHTS_SETTING" ]; then
+            echo "❌ EARLY_DEV_COST_GUARD violation: APPLICATIONINSIGHTS_CONNECTION_STRING is still present on $FUNC_NAME"
+            exit 1
+          fi
+
+          DIRTY_SETTING=$(az functionapp config appsettings list \
+            --name "$FUNC_NAME" \
+            --resource-group "$RG" \
+            --query "[?name=='DIRTY_DEV_MODE'] | [0].value" -o tsv)
+          GUARD_SETTING=$(az functionapp config appsettings list \
+            --name "$FUNC_NAME" \
+            --resource-group "$RG" \
+            --query "[?name=='EARLY_DEV_COST_GUARD'] | [0].value" -o tsv)
+
+          if [ "$DIRTY_SETTING" != "true" ] || [ "$GUARD_SETTING" != "true" ]; then
+            echo "❌ EARLY_DEV_COST_GUARD violation: expected DIRTY_DEV_MODE=true and EARLY_DEV_COST_GUARD=true on $FUNC_NAME"
+            echo "    DIRTY_DEV_MODE=$DIRTY_SETTING EARLY_DEV_COST_GUARD=$GUARD_SETTING"
+            exit 1
+          fi
+
+          BUDGET_JSON=$(az rest --method GET \
+            --url "https://management.azure.com/subscriptions/${SUB}/resourceGroups/${RG}/providers/Microsoft.Consumption/budgets/${BUDGET_NAME}?api-version=2024-08-01")
+
+          BUDGET_AMOUNT=$(echo "$BUDGET_JSON" | jq -r '.properties.amount')
+          if [ "$BUDGET_AMOUNT" != "${{ env.EARLY_DEV_MONTHLY_BUDGET_USD }}" ]; then
+            echo "❌ EARLY_DEV_COST_GUARD violation: RG budget amount is '$BUDGET_AMOUNT' instead of '${{ env.EARLY_DEV_MONTHLY_BUDGET_USD }}'"
+            exit 1
+          fi
+
+          echo "✅ EARLY_DEV_COST_GUARD invariants hold for ${RG}"
 
   # ─────────────────────────────────────────────────────────────────────────
   # 3. Build & Push Container Image
@@ -890,8 +979,10 @@ jobs:
           | **ACR** | \`${{ needs.deploy-infra.outputs.acr-login-server }}\` |
           | **Image Tag** | \`${{ github.sha }}\` |
           | **EU Residency** | \`${{ github.event.inputs.EU_RESIDENCY_MODE }}\` |
+          | **Early Dev Cost Guard** | \`${{ env.EARLY_DEV_COST_GUARD }}\` |
+          | **Early Dev Monthly Budget (USD)** | \`${{ env.EARLY_DEV_MONTHLY_BUDGET_USD }}\` |
           | **Low Cost Dev Mode** | \`${{ github.event.inputs.LOW_COST_DEV_MODE || 'false' }}\` |
-          | **Dirty Dev Mode** | \`${{ github.event.inputs.DIRTY_DEV_MODE || 'false' }}\` |
+          | **Dirty Dev Mode (requested)** | \`${{ github.event.inputs.DIRTY_DEV_MODE || 'false' }}\` |
           | **Developer Debug CIDRs** | \`${{ github.event.inputs.DEVELOPER_ALLOWED_IP_CIDRS || '[]' }}\` |
           | **Commit** | \`${{ github.sha }}\` |
           | **Triggered by** | \`${{ github.actor }}\` |

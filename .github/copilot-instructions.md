@@ -89,6 +89,7 @@ HelkinSwarm v2 is a **nuclear clean-start** from the scrapped first attempt ("He
 - ✅ Search the codebase for existing patterns before implementing new ones
 - ✅ Follow domain-specific `.github/instructions/` files for your work area
 - ✅ For bot-response debugging, use the Teams Test Harness MCP (never Playwright to send messages)
+- ✅ During the furious development phase, preserve the `#579` early-dev cost guard: paid stamp observability stays off by default, the RG budget stays present, and future infra changes must not silently recreate Log Analytics/App Insights without explicit owner authorization
 
 ---
 

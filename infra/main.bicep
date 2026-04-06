@@ -99,6 +99,16 @@ param lowCostDevMode bool = false
 @description('Dirty Dev Mode — disables paid Azure observability for the stamp (no Log Analytics persistence, no Application Insights resource, no Azure Monitor exporter). Intended for short-lived personal dev stamps only. (#382)')
 param dirtyDevMode bool = false
 
+@description('Early Dev Cost Guard — source-controlled cost lockdown for the furious development phase. While true, the stamp must stay in observability-off mode and keep a hard resource-group budget until the owner explicitly authorizes removal. (#579)')
+param earlyDevCostGuard bool = true
+
+@description('Monthly Azure spend ceiling in USD for the stamped resource group while the early dev cost guard is active. Default: 30 USD (~1 USD/day). (#579)')
+@minValue(1)
+param earlyDevMonthlyBudgetUsd int = 30
+
+@description('Budget start date for the early-dev cost guard. Defaults to the first day of the current UTC month.')
+param earlyDevBudgetStartDate string = utcNow('yyyy-MM-01T00:00:00Z')
+
 @description('Enable the stamp-local Outlook send confirmation bypass policy for the primary developer stamp only.')
 param stampPolicyAllowOutlookSendWithoutConfirmation bool = false
 
@@ -126,13 +136,16 @@ var botName       = 'helkinswarm-bot-${userAlias}'
 // own live evidence showed the first real post-idle user turn could still vanish
 // before the handler existed. Preserve the personal-copilot stamp warm floor and
 // save money through caps, sampling, and minimal telemetry instead.
-var lawRetentionDays       = 30
-var appInsRetentionDays    = 30
-var funcInstanceMin        = 1
-var effectiveTelemetryMode = lowCostDevMode ? 'minimal' : devTelemetryMode
-var lawDailyCapGb          = lowCostDevMode ? json('0.1') : json('-1')  // -1 = no cap
-var appInsSamplingPct      = lowCostDevMode ? 10  : 100
-var appLogsDestination     = dirtyDevMode ? 'azure-monitor' : 'log-analytics'
+var effectiveDirtyDevMode   = earlyDevCostGuard || dirtyDevMode
+var effectiveLowCostDevMode = !effectiveDirtyDevMode && lowCostDevMode
+var lawRetentionDays        = 30
+var appInsRetentionDays     = 30
+var funcInstanceMin         = 1
+var effectiveTelemetryMode  = effectiveDirtyDevMode ? 'minimal' : effectiveLowCostDevMode ? 'minimal' : devTelemetryMode
+var lawDailyCapGb           = effectiveLowCostDevMode ? json('0.1') : json('-1')  // -1 = no cap
+var appInsSamplingPct       = effectiveLowCostDevMode ? 10  : 100
+var appLogsDestination      = effectiveDirtyDevMode ? 'none' : 'log-analytics'
+var earlyDevBudgetName      = 'helkinswarm-earlydev-budget-${userAlias}'
 
 var roleKvSecretsUser           = '4633458b-17de-408a-b874-0445c86b69e6'
 var roleKvAdmin                 = '00482a5a-887f-4fb3-b363-3b7fe8e74483'
@@ -162,7 +175,7 @@ var allIdentityObjs = union(stampIdentityObj, routerIdentityObj)
 //  1. LOG ANALYTICS WORKSPACE
 // ═══════════════════════════════════════════════════════════════════════════
 
-resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (!dirtyDevMode) {
+resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (!effectiveDirtyDevMode) {
   name: lawName
   location: location
   properties: {
@@ -178,7 +191,7 @@ resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if
 //  2. APPLICATION INSIGHTS (spec 13)
 // ═══════════════════════════════════════════════════════════════════════════
 
-resource appInsights 'Microsoft.Insights/components@2020-02-02' = if (!dirtyDevMode) {
+resource appInsights 'Microsoft.Insights/components@2020-02-02' = if (!effectiveDirtyDevMode) {
   name: appInsName
   location: location
   kind: 'web'
@@ -512,7 +525,7 @@ resource containerAppsEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
   name: caeName
   location: location
   properties: {
-    appLogsConfiguration: dirtyDevMode
+    appLogsConfiguration: effectiveDirtyDevMode
       ? {
           destination: appLogsDestination
         }
@@ -618,7 +631,17 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
 
         // ── Stamp identity ──
         { name: 'USER_ALIAS', value: userAlias }
-        { name: 'DIRTY_DEV_MODE', value: string(dirtyDevMode) }
+        { name: 'DIRTY_DEV_MODE', value: string(effectiveDirtyDevMode) }
+        { name: 'EARLY_DEV_COST_GUARD', value: string(earlyDevCostGuard) }
+
+        // ── Host logging overrides — suppress known Azure SDK / Durable chatter that exploded LAW cost in dev (#579) ──
+        { name: 'AzureFunctionsJobHost__logging__logLevel__Host.Aggregator', value: 'Warning' }
+        { name: 'AzureFunctionsJobHost__logging__logLevel__Azure.Core', value: 'Warning' }
+        { name: 'AzureFunctionsJobHost__logging__logLevel__Azure.Core.1', value: 'Warning' }
+        { name: 'AzureFunctionsJobHost__logging__logLevel__Azure.Identity', value: 'Warning' }
+        { name: 'AzureFunctionsJobHost__logging__logLevel__Azure.Identity.1', value: 'Warning' }
+        { name: 'AzureFunctionsJobHost__logging__logLevel__DurableTask.AzureStorage', value: 'Warning' }
+        { name: 'AzureFunctionsJobHost__logging__logLevel__Host.Triggers.DurableTask', value: 'Warning' }
 
         // ── Feature toggles ──
         { name: 'SKILLFORGE_ENABLED', value: 'true' }
@@ -635,7 +658,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
 
         // ── Dev telemetry (spec 0n, #174) ──
         { name: 'DEV_TELEMETRY_MODE', value: effectiveTelemetryMode }
-      ], dirtyDevMode ? [] : [
+      ], effectiveDirtyDevMode ? [] : [
         // ── Observability (spec 13) ──
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights!.properties.ConnectionString }
       ])
@@ -692,6 +715,57 @@ resource oauthConnection 'Microsoft.BotService/botServices/connections@2022-09-1
       { key: 'clientSecret', value: delegatedAuthClientSecret }
       { key: 'scopes', value: 'User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Files.ReadWrite offline_access' }
     ]
+  }
+}
+
+resource earlyDevBudget 'Microsoft.Consumption/budgets@2024-08-01' = if (earlyDevCostGuard && alertEmail != '') {
+  scope: resourceGroup()
+  name: earlyDevBudgetName
+  properties: {
+    amount: earlyDevMonthlyBudgetUsd
+    category: 'Cost'
+    timeGrain: 'Monthly'
+    timePeriod: {
+      startDate: earlyDevBudgetStartDate
+    }
+    notifications: {
+      Actual80: {
+        enabled: true
+        operator: 'GreaterThanOrEqualTo'
+        threshold: 80
+        thresholdType: 'Actual'
+        contactEmails: [
+          alertEmail
+        ]
+        contactRoles: []
+        contactGroups: []
+        locale: 'en-us'
+      }
+      Actual100: {
+        enabled: true
+        operator: 'GreaterThanOrEqualTo'
+        threshold: 100
+        thresholdType: 'Actual'
+        contactEmails: [
+          alertEmail
+        ]
+        contactRoles: []
+        contactGroups: []
+        locale: 'en-us'
+      }
+      Forecast100: {
+        enabled: true
+        operator: 'GreaterThanOrEqualTo'
+        threshold: 100
+        thresholdType: 'Forecasted'
+        contactEmails: [
+          alertEmail
+        ]
+        contactRoles: []
+        contactGroups: []
+        locale: 'en-us'
+      }
+    }
   }
 }
 
@@ -814,7 +888,7 @@ resource roleCostMgmtUami 'Microsoft.Authorization/roleAssignments@2022-04-01' =
 //  13. P0 ALERTING RULES (spec 13)
 // ═══════════════════════════════════════════════════════════════════════════
 
-resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if (!dirtyDevMode && alertEmail != '') {
+resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if (!effectiveDirtyDevMode && alertEmail != '') {
   name: 'helkinswarm-ag-${userAlias}'
   location: 'global'
   properties: {
@@ -830,7 +904,7 @@ resource actionGroup 'Microsoft.Insights/actionGroups@2023-01-01' = if (!dirtyDe
   }
 }
 
-resource alertEmergencyStop 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (!dirtyDevMode) {
+resource alertEmergencyStop 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (!effectiveDirtyDevMode) {
   name: 'helkinswarm-alert-estop-${userAlias}'
   location: location
   properties: {
@@ -857,7 +931,7 @@ resource alertEmergencyStop 'Microsoft.Insights/scheduledQueryRules@2023-03-15-p
   }
 }
 
-resource alertRateLimit 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (!dirtyDevMode) {
+resource alertRateLimit 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (!effectiveDirtyDevMode) {
   name: 'helkinswarm-alert-ratelimit-${userAlias}'
   location: location
   properties: {
@@ -884,7 +958,7 @@ resource alertRateLimit 'Microsoft.Insights/scheduledQueryRules@2023-03-15-previ
   }
 }
 
-resource alertVerificationFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (!dirtyDevMode) {
+resource alertVerificationFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (!effectiveDirtyDevMode) {
   name: 'helkinswarm-alert-verify-${userAlias}'
   location: location
   properties: {
@@ -911,7 +985,7 @@ resource alertVerificationFailure 'Microsoft.Insights/scheduledQueryRules@2023-0
   }
 }
 
-resource alertPromptShield 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (!dirtyDevMode) {
+resource alertPromptShield 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (!effectiveDirtyDevMode) {
   name: 'helkinswarm-alert-shield-${userAlias}'
   location: location
   properties: {
@@ -938,7 +1012,7 @@ resource alertPromptShield 'Microsoft.Insights/scheduledQueryRules@2023-03-15-pr
   }
 }
 
-resource alertOrchestratorFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (!dirtyDevMode) {
+resource alertOrchestratorFailure 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (!effectiveDirtyDevMode) {
   name: 'helkinswarm-alert-orch-${userAlias}'
   location: location
   properties: {
@@ -965,7 +1039,7 @@ resource alertOrchestratorFailure 'Microsoft.Insights/scheduledQueryRules@2023-0
   }
 }
 
-resource alertEuViolation 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (!dirtyDevMode) {
+resource alertEuViolation 'Microsoft.Insights/scheduledQueryRules@2023-03-15-preview' = if (!effectiveDirtyDevMode) {
   name: 'helkinswarm-alert-eu-${userAlias}'
   location: location
   properties: {
@@ -1003,7 +1077,8 @@ output managedIdentityClientId string = uami.properties.clientId
 output managedIdentityResourceId string = uami.id
 output cosmosEndpoint string = cosmosAccount.properties.documentEndpoint
 output aiEndpoint string = aiServices.properties.endpoint
-output appInsightsConnectionString string = dirtyDevMode ? '' : appInsights!.properties.ConnectionString
+output appInsightsConnectionString string = effectiveDirtyDevMode ? '' : appInsights!.properties.ConnectionString
 output botEndpoint string = 'https://${functionApp.properties.defaultHostName}/api/messages'
 output healthEndpoint string = 'https://${functionApp.properties.defaultHostName}/api/health'
 output developerAllowedIpCidrsConfigured array = developerAllowedIpCidrs
+output earlyDevBudgetName string = earlyDevCostGuard && alertEmail != '' ? earlyDevBudget.name : ''

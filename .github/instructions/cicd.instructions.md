@@ -60,6 +60,7 @@ Every deployment targets a specific **user stamp** (`userAlias`). There is no un
 - ✅ Run `pnpm lint && pnpm build` (ci.yml) before any merge
 - ✅ Run `az bicep build` validation before any infra change
 - ✅ Mark any new workflow with `# [REFACTOR-BEFORE-FIRST-RUN]` if not yet tested end-to-end
+- ✅ Preserve the furious-development-phase cost guard from `#579`: stamped dev deploys must keep paid observability off by default, carry the RG budget, and fail if LAW/App Insights return unexpectedly
 
 ## Never
 - ❌ Do NOT Deploy via Azure portal or ad-hoc `az` commands (one-time bootstrap excepted)
@@ -68,5 +69,6 @@ Every deployment targets a specific **user stamp** (`userAlias`). There is no un
 - ❌ Do NOT Run `az containerapp update` manually
 - ❌ Do NOT Add a `cd.yml` general-purpose deploy workflow — all deploys are stamped
 - ❌ Do NOT Upload Teams app package without running `teams-package.yml` first
+- ❌ Do NOT Re-enable stamp Log Analytics / App Insights / query alerts for the early-dev stamp by default, and do NOT weaken the `earlyDevCostGuard` / budget / post-deploy assertions, until the owner explicitly authorizes the end of the furious development phase
 
 *We are the bridge.*

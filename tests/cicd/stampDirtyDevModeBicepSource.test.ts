@@ -2,14 +2,20 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 describe('stamp dirty dev mode bicep wiring', () => {
-  it('can disable paid observability resources and set Container Apps logs destination to none', () => {
+  it('enforces paid observability off during the early dev cost guard and sets Container Apps logs destination to none', () => {
     const source = readFileSync('infra/main.bicep', 'utf8');
 
     expect(source).toContain('param dirtyDevMode bool = false');
-    expect(source).toContain("var appLogsDestination     = dirtyDevMode ? 'azure-monitor' : 'log-analytics'");
-    expect(source).toContain("resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (!dirtyDevMode)");
-    expect(source).toContain("resource appInsights 'Microsoft.Insights/components@2020-02-02' = if (!dirtyDevMode)");
+    expect(source).toContain('param earlyDevCostGuard bool = true');
+    expect(source).toContain('param earlyDevMonthlyBudgetUsd int = 30');
+    expect(source).toContain("var effectiveDirtyDevMode   = earlyDevCostGuard || dirtyDevMode");
+    expect(source).toContain("var appLogsDestination      = effectiveDirtyDevMode ? 'none' : 'log-analytics'");
+    expect(source).toContain("resource logAnalytics 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (!effectiveDirtyDevMode)");
+    expect(source).toContain("resource appInsights 'Microsoft.Insights/components@2020-02-02' = if (!effectiveDirtyDevMode)");
+    expect(source).toContain("resource earlyDevBudget 'Microsoft.Consumption/budgets@2024-08-01' = if (earlyDevCostGuard && alertEmail != '') {");
     expect(source).toContain("destination: appLogsDestination");
-    expect(source).toContain("{ name: 'DIRTY_DEV_MODE', value: string(dirtyDevMode) }");
+    expect(source).toContain("{ name: 'DIRTY_DEV_MODE', value: string(effectiveDirtyDevMode) }");
+    expect(source).toContain("{ name: 'EARLY_DEV_COST_GUARD', value: string(earlyDevCostGuard) }");
+    expect(source).toContain("{ name: 'AzureFunctionsJobHost__logging__logLevel__Azure.Core', value: 'Warning' }");
   });
 });
