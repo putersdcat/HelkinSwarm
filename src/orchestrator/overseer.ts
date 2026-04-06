@@ -91,6 +91,11 @@ interface BufferedIngressQueuedEvent {
   correlationId?: string;
 }
 
+interface ProcessTurnResult {
+  completedCorrelationId?: string;
+  bufferedIngressSignals: BufferedIngressQueuedEvent[];
+}
+
 interface OverseerCustomStatus {
   stage: 'active-processing' | 'awaiting-ingress';
   correlationId: string;
@@ -151,16 +156,38 @@ df.app.orchestration('overseer', function* (context) {
   let nextMessage: NewMessageEvent = msg;
 
   while (true) {
-    const completedCorrelationId = yield* processTurn(context, state, nextMessage);
+    const processTurnResult = yield* processTurn(context, state, nextMessage);
+    const completedCorrelationId = processTurnResult.completedCorrelationId;
     if (!completedCorrelationId) {
       return;
     }
 
-    const bufferedNewMessage = (yield context.df.callActivity('bufferedIngressActivity', {
-      action: 'dequeue-new-message',
-      userId: state.userId,
-      targetInstanceId: context.df.instanceId,
-    } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
+    let bufferedNewMessage: NewMessageEvent | null = null;
+
+    for (const bufferedIngressSignal of processTurnResult.bufferedIngressSignals) {
+      if (!bufferedIngressSignal.docId) {
+        continue;
+      }
+
+      bufferedNewMessage = (yield context.df.callActivity('bufferedIngressActivity', {
+        action: 'claim-buffered-message',
+        userId: state.userId,
+        docId: bufferedIngressSignal.docId,
+        targetInstanceId: context.df.instanceId,
+      } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
+
+      if (bufferedNewMessage) {
+        break;
+      }
+    }
+
+    if (!bufferedNewMessage) {
+      bufferedNewMessage = (yield context.df.callActivity('bufferedIngressActivity', {
+        action: 'dequeue-new-message',
+        userId: state.userId,
+        targetInstanceId: context.df.instanceId,
+      } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
+    }
 
     if (bufferedNewMessage) {
       const drainedCorrelationId = bufferedNewMessage.correlationId ?? crypto.randomUUID();
@@ -356,8 +383,9 @@ function* processTurn(
   state: OverseerState,
   event: NewMessageEvent,
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions runtime drives the generator with mixed types
-): Generator<df.Task, string | undefined, any> {
+): Generator<df.Task, ProcessTurnResult, any> {
   const correlationId = event.correlationId ?? crypto.randomUUID();
+  const bufferedIngressSignals: BufferedIngressQueuedEvent[] = [];
   const currentConversationId = event.conversationReference?.conversation?.id;
   if (currentConversationId && state.conversationId !== currentConversationId) {
     state.conversationId = currentConversationId;
@@ -421,6 +449,7 @@ function* processTurn(
     sessionInput,
     sessionInstanceId,
   );
+  let bufferedIngressQueuedEvent = context.df.waitForExternalEvent('BufferedIngressQueued');
 
   // Spinner heartbeat (#267)
   const correlationTag = event.correlationTag ?? sessionInput.correlationId.slice(0, 8);
@@ -435,8 +464,8 @@ function* processTurn(
 
     while (!sessionDone && !timedOut) {
       const raceTasks = spinnerTicks < MAX_SPINNER_TICKS
-        ? [sessionTask, sessionTimer, spinnerTimer]
-        : [sessionTask, sessionTimer];
+        ? [sessionTask, sessionTimer, spinnerTimer, bufferedIngressQueuedEvent]
+        : [sessionTask, sessionTimer, bufferedIngressQueuedEvent];
       const winner = yield context.df.Task.any(raceTasks) as df.Task;
 
       if (winner === sessionTimer) {
@@ -473,7 +502,14 @@ function* processTurn(
           correlationId: sessionInput.correlationId,
           userId: state.userId,
         } satisfies IngressWindowStageInput);
-        return undefined;
+        return {
+          completedCorrelationId: undefined,
+          bufferedIngressSignals,
+        } satisfies ProcessTurnResult;
+      } else if (winner === bufferedIngressQueuedEvent) {
+        bufferedIngressSignals.push(bufferedIngressQueuedEvent.result as BufferedIngressQueuedEvent);
+        bufferedIngressQueuedEvent = context.df.waitForExternalEvent('BufferedIngressQueued');
+        continue;
       } else if (winner === spinnerTimer) {
         spinnerTicks++;
         yield context.df.callActivity('spinnerHeartbeatActivity', {
@@ -576,7 +612,10 @@ function* processTurn(
     // Dedup hold on error path — keep Running to block retries (#300)
     const errDedupDeadline = new Date(context.df.currentUtcDateTime.getTime() + DEDUP_HOLD_MS);
     yield context.df.createTimer(errDedupDeadline);
-    return undefined;
+    return {
+      completedCorrelationId: undefined,
+      bufferedIngressSignals,
+    } satisfies ProcessTurnResult;
   }
 
   if (!sessionResult) {
@@ -606,7 +645,10 @@ function* processTurn(
       },
     } satisfies EmitOrchestratorTelemetryInput);
 
-    return correlationId;
+    return {
+      completedCorrelationId: correlationId,
+      bufferedIngressSignals,
+    } satisfies ProcessTurnResult;
   }
 
   state.latestPromptTokens = sessionResult.promptTokens;
@@ -686,5 +728,8 @@ function* processTurn(
     },
   } satisfies EmitOrchestratorTelemetryInput);
 
-  return correlationId;
+  return {
+    completedCorrelationId: correlationId,
+    bufferedIngressSignals,
+  } satisfies ProcessTurnResult;
 }

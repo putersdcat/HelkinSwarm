@@ -9,6 +9,12 @@ describe('living session ingress window source guards', () => {
 
     expect(overseerSource).toContain("context.df.waitForExternalEvent('NewMessage')");
     expect(overseerSource).toContain("context.df.waitForExternalEvent('BufferedIngressQueued')");
+    expect(overseerSource).toContain('const bufferedIngressSignals: BufferedIngressQueuedEvent[] = [];');
+    expect(overseerSource).toContain('let bufferedIngressQueuedEvent = context.df.waitForExternalEvent(\'BufferedIngressQueued\');');
+    expect(overseerSource).toContain('? [sessionTask, sessionTimer, spinnerTimer, bufferedIngressQueuedEvent]');
+    expect(overseerSource).toContain(': [sessionTask, sessionTimer, bufferedIngressQueuedEvent];');
+    expect(overseerSource).toContain('bufferedIngressSignals.push(bufferedIngressQueuedEvent.result as BufferedIngressQueuedEvent);');
+    expect(overseerSource).toContain('for (const bufferedIngressSignal of processTurnResult.bufferedIngressSignals) {');
     expect(overseerSource).toContain("action: 'claim-buffered-message'");
     expect(overseerSource).toContain("action: 'mark-active-processing'");
     expect(overseerSource).toContain("action: 'dequeue-new-message'");
