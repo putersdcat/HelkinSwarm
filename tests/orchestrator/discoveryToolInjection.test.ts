@@ -356,6 +356,40 @@ describe('discoveryToolInjection', () => {
     expect(shouldForceDiscoveryToolSearch(prompt)).toBe(true);
   });
 
+  it('does not collapse a proof follow-up back into read-only discovery when raw Teams text is polluted by quoted preview text', async () => {
+    const {
+      isReadOnlyDiscoveryRequest,
+      synthesizeDeterministicReadOnlyInitialToolCall,
+    } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const contaminatedPrompt = 'HelkinSwarm I checked the installed skills without executing anything yet Best matching capability group: outlook/mail-read (outlook) Search, read, and inspect mailbox messages and attachments status: action-required Best matching tool: outlook_search_emails (outlook, risk: low) Search emails across th /light Please do a simple functional test of the skill and output the results. End with EXACT-578-LIGHT-20260407.';
+
+    expect(isReadOnlyDiscoveryRequest(contaminatedPrompt)).toBe(false);
+
+    const call = synthesizeDeterministicReadOnlyInitialToolCall(
+      contaminatedPrompt,
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_search_emails',
+            description: 'search emails',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(call).toEqual({
+      name: 'outlook_search_emails',
+      arguments: {
+        query: 'hasAttachment:true',
+        folder: 'inbox',
+        top: 5,
+      },
+    });
+  });
+
   it('forces the concrete follow-up action tool when discovery surfaced it', async () => {
     const { getForcedDiscoveryFollowUpToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
 

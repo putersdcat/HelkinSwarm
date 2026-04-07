@@ -373,6 +373,14 @@ export function buildDeterministicExactToolResponse(
 
 export function isReadOnlyDiscoveryRequest(userMessage: string): boolean {
   const normalized = stripValidationNoise(stripInjectedRoutingContext(userMessage)).toLowerCase();
+  // #578: Teams quoted-reply previews can leak the previous discovery-only bot
+  // reply into the new raw user message. If the current turn is asking for an
+  // execution proof, do not let stale quoted discovery phrasing collapse the
+  // turn back into a read-only helkin_skill_search request.
+  if (isExecutionProofPrompt(normalized)) {
+    return false;
+  }
+
   const hasReadOnlyConstraint = /(discovery[- ]only|read[- ]only|do not execute|don't execute|without executing|non-discovery tools)/.test(normalized);
   const hasDiscoveryQuestion = /(which tool would you use|what tool would you use|tell me which tool|tell me what tool|which skill would you use|what skill would you use)/.test(normalized);
   const hasDiscoveryTopic = /(tool|skill|mailbox|email|calendar|meeting|github|repo|issue|weather|search)/.test(normalized);
