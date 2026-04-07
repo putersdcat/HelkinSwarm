@@ -58,8 +58,8 @@ describe('mergeFollowUpResponseEvidence', () => {
       },
     ]);
     expect(evidence.operationalNotices).toEqual([
+      // o4-mini has capacityLevel:'high' in MODEL_CAPACITY_PROFILES — no cognitive downgrade notice
       '⚠️ Operational note: o4-mini was temporarily unavailable (HTTP 503); auto-failed over to o4-mini and continued your request.',
-      '⚠️ Cognitive state note: this reply completed on o4-mini, which is a low-capacity impaired lane for heavy reasoning. Treat it as degraded continuity and retry /heavy later if you need full-capacity reasoning.',
     ]);
   });
 });

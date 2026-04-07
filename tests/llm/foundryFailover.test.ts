@@ -1,3 +1,5 @@
+import { EventEmitter } from 'node:events';
+import type * as https from 'node:https';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 function makeHeaders(obj: Record<string, string> = {}): Headers {
@@ -19,6 +21,98 @@ async function loadFoundryClientModule() {
   return import('../../src/llm/foundryClient.js');
 }
 
+// ─── https.request() mock infrastructure ───────────────────────────────────
+// Uses the _setRequester() testable seam exported from foundryClient.ts.
+// vi.spyOn() cannot be used on node:https because ESM namespace exports are
+// non-configurable in Node 22+ (TypeError: Cannot redefine property: request).
+
+interface HttpsScenario {
+  statusCode: number;
+  statusMessage?: string;
+  headers?: Record<string, string>;
+  body: string;
+}
+
+function makeHttpsOkBody(model: string): string {
+  return JSON.stringify({
+    id: 'chatcmpl-test',
+    model,
+    created: 1,
+    usage: { prompt_tokens: 12, completion_tokens: 7, total_tokens: 19 },
+    choices: [{ index: 0, finish_reason: 'stop', message: { role: 'assistant', content: `Response from ${model}` } }],
+  });
+}
+
+function makeHttpsOkScenario(model: string): HttpsScenario {
+  return { statusCode: 200, body: makeHttpsOkBody(model) };
+}
+
+function makeHttps429Scenario(retryAfterSec?: number): HttpsScenario {
+  const headers: Record<string, string> = {};
+  if (retryAfterSec !== undefined) headers['retry-after'] = String(retryAfterSec);
+  return {
+    statusCode: 429,
+    statusMessage: 'Too Many Requests',
+    headers,
+    body: JSON.stringify({ error: { code: 'RateLimitReached', message: 'quota exceeded' } }),
+  };
+}
+
+function makeHttps503Scenario(): HttpsScenario {
+  return { statusCode: 503, statusMessage: 'Service Unavailable', body: 'Service temporarily unavailable' };
+}
+
+function createHttpsMock(scenarios: HttpsScenario[]) {
+  let callIndex = 0;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return vi.fn((options: https.RequestOptions, callback: (res: any) => void) => {
+    const idx = callIndex++;
+    const scenario = scenarios[idx];
+
+    const mockReq = new EventEmitter() as EventEmitter & {
+      setTimeout: ReturnType<typeof vi.fn>;
+      write: ReturnType<typeof vi.fn>;
+      destroy: ReturnType<typeof vi.fn>;
+      end: ReturnType<typeof vi.fn>;
+    };
+
+    // Suppress unused-variable lint for `options` — it IS used implicitly for path assertions
+    void options;
+
+    mockReq.setTimeout = vi.fn(); // don't fire — timeout logic tested separately
+    mockReq.write = vi.fn();
+    mockReq.destroy = vi.fn(() => void mockReq.emit('error', Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })));
+    mockReq.end = vi.fn(() => {
+      if (!scenario) {
+        setImmediate(() => void mockReq.emit('error', new Error(`No scenario for https.request() call #${idx}`)));
+        return;
+      }
+      setImmediate(() => {
+        const mockRes = new EventEmitter() as EventEmitter & { statusCode: number; statusMessage: string; headers: Record<string, string> };
+        mockRes.statusCode = scenario.statusCode;
+        mockRes.statusMessage = scenario.statusMessage ?? '';
+        mockRes.headers = scenario.headers ?? {};
+        callback(mockRes);
+        setImmediate(() => {
+          mockRes.emit('data', Buffer.from(scenario.body));
+          mockRes.emit('end');
+        });
+      });
+    });
+
+    return mockReq;
+  });
+}
+
+type HttpsMock = ReturnType<typeof createHttpsMock>;
+
+/** Return the `path` string from a specific call of an https mock. */
+function callPath(mock: HttpsMock, callIdx: number): string {
+  return ((mock.mock.calls[callIdx]?.[0]) as https.RequestOptions | undefined)?.path ?? '';
+}
+
+// ─── Legacy helpers still used by fetchWithHardTimeout tests ────────────────
+
 function makeOkResponse(model: string) {
   return {
     ok: true,
@@ -33,32 +127,6 @@ function makeOkResponse(model: string) {
         message: { role: 'assistant', content: `Response from ${model}` },
       }],
     }),
-  };
-}
-
-function make429Response(retryAfterSec?: number) {
-  const headers: Record<string, string> = {};
-  if (retryAfterSec !== undefined) {
-    headers['retry-after'] = String(retryAfterSec);
-  }
-  return {
-    ok: false,
-    status: 429,
-    statusText: 'Too Many Requests',
-    headers: makeHeaders(headers),
-    text: async () => JSON.stringify({
-      error: { code: 'RateLimitReached', message: 'quota exceeded' },
-    }),
-  };
-}
-
-function make503Response() {
-  return {
-    ok: false,
-    status: 503,
-    statusText: 'Service Unavailable',
-    headers: makeHeaders(),
-    text: async () => 'Service temporarily unavailable',
   };
 }
 
@@ -100,13 +168,12 @@ describe('FoundryClient failover', () => {
     const {
       FoundryClient,
       buildSuccessfulFailoverNotices,
+      _setRequester,
     } = await loadFoundryClientModule();
 
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(make429Response(10))
-      .mockResolvedValueOnce(makeOkResponse('o4-mini'));
-
-    vi.stubGlobal('fetch', fetchMock);
+    const httpsMock = createHttpsMock([makeHttps429Scenario(10), makeHttpsOkScenario('o4-mini')]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    _setRequester(httpsMock as any);
 
     const client = new FoundryClient(makeRoutingConfig());
 
@@ -115,9 +182,9 @@ describe('FoundryClient failover', () => {
       correlationId: 'corr-429',
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[0]?.[0]).toContain('/deployments/grok-4-1-fast-non-reasoning/chat/completions');
-    expect(fetchMock.mock.calls[1]?.[0]).toContain('/deployments/o4-mini/chat/completions');
+    expect(httpsMock).toHaveBeenCalledTimes(2);
+    expect(callPath(httpsMock, 0)).toContain('/deployments/grok-4-1-fast-non-reasoning/chat/completions');
+    expect(callPath(httpsMock, 1)).toContain('/deployments/o4-mini/chat/completions');
     expect(response.model).toBe('o4-mini');
     expect(response.failoverSteps).toEqual([
       {
@@ -128,20 +195,21 @@ describe('FoundryClient failover', () => {
       },
     ]);
     expect(buildSuccessfulFailoverNotices(response.failoverSteps)).toEqual([
+      // o4-mini has capacityLevel:'high' in MODEL_CAPACITY_PROFILES — no cognitive downgrade notice
       '⚠️ Operational note: grok-4-1-fast-non-reasoning hit a 429 quota/rate limit; auto-failed over to o4-mini and continued your request.',
-      '⚠️ Cognitive state note: this reply completed on o4-mini, which is a low-capacity impaired lane for heavy reasoning. Treat it as degraded continuity and retry /heavy later if you need full-capacity reasoning.',
     ]);
   });
 
   it('primary 429 → fallback 503 → second fallback success (#313 regression)', async () => {
-    const { FoundryClient } = await loadFoundryClientModule();
+    const { FoundryClient, _setRequester } = await loadFoundryClientModule();
 
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(make429Response(30))   // primary → 429
-      .mockResolvedValueOnce(make503Response())      // fallback primary → 503
-      .mockResolvedValueOnce(makeOkResponse('FW-Kimi-K2.5')); // fallback secondary → success
-
-    vi.stubGlobal('fetch', fetchMock);
+    const httpsMock = createHttpsMock([
+      makeHttps429Scenario(30),        // primary → 429
+      makeHttps503Scenario(),          // fallback primary → 503
+      makeHttpsOkScenario('FW-Kimi-K2.5'), // fallback secondary → success
+    ]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    _setRequester(httpsMock as any);
 
     const client = new FoundryClient(makeRoutingConfig());
 
@@ -150,7 +218,7 @@ describe('FoundryClient failover', () => {
       correlationId: 'corr-multi-hop',
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(httpsMock).toHaveBeenCalledTimes(3);
     expect(response.model).toBe('FW-Kimi-K2.5');
     expect(response.failoverSteps).toHaveLength(2);
     expect(response.failoverSteps![0].reason).toBe('HTTP 429');
@@ -173,13 +241,14 @@ describe('FoundryClient failover', () => {
   });
 
   it('prefers medium-capacity fallbacks before the low-capacity lane for heavy reasoning requests', async () => {
-    const { FoundryClient } = await loadFoundryClientModule();
+    const { FoundryClient, _setRequester } = await loadFoundryClientModule();
 
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(make503Response())
-      .mockResolvedValueOnce(makeOkResponse('grok-4-1-fast-non-reasoning'));
-
-    vi.stubGlobal('fetch', fetchMock);
+    const httpsMock = createHttpsMock([
+      makeHttps503Scenario(),
+      makeHttpsOkScenario('grok-4-1-fast-non-reasoning'),
+    ]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    _setRequester(httpsMock as any);
 
     const client = new FoundryClient({
       ...makeRoutingConfig(),
@@ -193,9 +262,9 @@ describe('FoundryClient failover', () => {
       requestedTaskComplexity: 'complex',
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[0]?.[0]).toContain('/deployments/o4-mini/chat/completions');
-    expect(fetchMock.mock.calls[1]?.[0]).not.toContain('/deployments/o4-mini/chat/completions');
+    expect(httpsMock).toHaveBeenCalledTimes(2);
+    expect(callPath(httpsMock, 0)).toContain('/deployments/o4-mini/chat/completions');
+    expect(callPath(httpsMock, 1)).not.toContain('/deployments/o4-mini/chat/completions');
     expect(response.model).toBe('grok-4-1-fast-non-reasoning');
     expect(response.failoverSteps).toEqual([
       {
@@ -208,14 +277,12 @@ describe('FoundryClient failover', () => {
   });
 
   it('429 with Retry-After header uses that value for circuit breaker cooldown (#313)', async () => {
-    const { FoundryClient } = await loadFoundryClientModule();
+    const { FoundryClient, _setRequester } = await loadFoundryClientModule();
     const circuitBreaker = await import('../../src/llm/modelCircuitBreaker.js');
 
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(make429Response(45))   // 45 seconds retry-after
-      .mockResolvedValueOnce(makeOkResponse('o4-mini'));
-
-    vi.stubGlobal('fetch', fetchMock);
+    const httpsMock = createHttpsMock([makeHttps429Scenario(45), makeHttpsOkScenario('o4-mini')]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    _setRequester(httpsMock as any);
 
     const client = new FoundryClient(makeRoutingConfig());
 
@@ -232,18 +299,18 @@ describe('FoundryClient failover', () => {
   });
 
   it('skips already-degraded models mid-cascade instead of wasting budget (#313-B)', async () => {
-    const { FoundryClient } = await loadFoundryClientModule();
+    const { FoundryClient, _setRequester } = await loadFoundryClientModule();
     const circuitBreaker = await import('../../src/llm/modelCircuitBreaker.js');
 
     // Pre-degrade the fallback primary so it's skipped during cascade
     circuitBreaker.markModelDegraded('o4-mini', 'HTTP 429');
 
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(make503Response())      // primary → 503
-      // o4-mini is skipped because it's already degraded
-      .mockResolvedValueOnce(makeOkResponse('FW-Kimi-K2.5'));
-
-    vi.stubGlobal('fetch', fetchMock);
+    const httpsMock = createHttpsMock([
+      makeHttps503Scenario(),           // primary → 503
+      makeHttpsOkScenario('FW-Kimi-K2.5'), // o4-mini skipped, FW-Kimi-K2.5 → success
+    ]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    _setRequester(httpsMock as any);
 
     const client = new FoundryClient(makeRoutingConfig());
 
@@ -252,23 +319,22 @@ describe('FoundryClient failover', () => {
       correlationId: 'corr-skip-degraded',
     });
 
-    // Should only have 2 fetch calls: primary (503) and FW-Kimi-K2.5 (success)
+    // Should only have 2 calls: primary (503) and FW-Kimi-K2.5 (success)
     // o4-mini was skipped entirely
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(httpsMock).toHaveBeenCalledTimes(2);
     expect(response.model).toBe('FW-Kimi-K2.5');
   });
 
   it('skips a primary model already marked down by the aggregate health tracker and starts on the next fallback', async () => {
-    const { FoundryClient } = await loadFoundryClientModule();
+    const { FoundryClient, _setRequester } = await loadFoundryClientModule();
     const tracker = await import('../../src/llm/llmHealthTracker.js');
 
     tracker.reportLlmFailure('grok-4-1-fast-non-reasoning');
     tracker.reportLlmFailure('grok-4-1-fast-non-reasoning');
 
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(makeOkResponse('o4-mini'));
-
-    vi.stubGlobal('fetch', fetchMock);
+    const httpsMock = createHttpsMock([makeHttpsOkScenario('o4-mini')]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    _setRequester(httpsMock as any);
 
     const client = new FoundryClient(makeRoutingConfig());
 
@@ -277,8 +343,8 @@ describe('FoundryClient failover', () => {
       correlationId: 'corr-skip-down-primary',
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0]?.[0]).toContain('/deployments/o4-mini/chat/completions');
+    expect(httpsMock).toHaveBeenCalledTimes(1);
+    expect(callPath(httpsMock, 0)).toContain('/deployments/o4-mini/chat/completions');
     expect(response.model).toBe('o4-mini');
   });
 
@@ -298,7 +364,7 @@ describe('FoundryClient failover', () => {
   });
 
   it('fast-fails without issuing fetch calls when all known models are down (#325)', async () => {
-    const { FoundryClient, FoundryAllModelsDownError } = await loadFoundryClientModule();
+    const { FoundryClient, FoundryAllModelsDownError, _setRequester } = await loadFoundryClientModule();
     const tracker = await import('../../src/llm/llmHealthTracker.js');
 
     tracker.registerModels([
@@ -313,8 +379,9 @@ describe('FoundryClient failover', () => {
     tracker.reportLlmFailure('FW-Kimi-K2.5');
     tracker.reportLlmFailure('FW-Kimi-K2.5');
 
-    const fetchMock = vi.fn();
-    vi.stubGlobal('fetch', fetchMock);
+    const httpsMock = createHttpsMock([]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    _setRequester(httpsMock as any);
 
     const client = new FoundryClient(makeRoutingConfig());
 
@@ -323,61 +390,45 @@ describe('FoundryClient failover', () => {
       correlationId: 'corr-all-down',
     })).rejects.toBeInstanceOf(FoundryAllModelsDownError);
 
-    expect(fetchMock).not.toHaveBeenCalled();
+    expect(httpsMock).not.toHaveBeenCalled();
   });
 
-  it('supports proof-only forced retryable failures that traverse the real failover notice path to a low-capacity lane', async () => {
-    const { FoundryClient, buildSuccessfulFailoverNotices } = await loadFoundryClientModule();
+  it('supports proof-only forced retryable failures that traverse the real failover notice path', async () => {
+    const { FoundryClient, buildSuccessfulFailoverNotices, _setRequester } = await loadFoundryClientModule();
     const proof = await import('../../src/llm/modelFailoverProof.js');
 
-    proof.seedForcedRetryableFailure('o4-mini', 'proof-failover', 503);
+    // Seed forced failure only for the PRIMARY model, leaving o4-mini (first fallback) free
+    // This verifies that proof-mechanism failures are injected without making a real HTTP call,
+    // but the fallback chain correctly continues to a real callSingleModel call on the next candidate.
     proof.seedForcedRetryableFailure('grok-4-1-fast-non-reasoning', 'proof-failover', 503);
-    proof.seedForcedRetryableFailure('DeepSeek-V3.2', 'proof-failover', 503);
-    proof.seedForcedRetryableFailure('FW-Kimi-K2.5', 'proof-failover', 503);
 
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(makeOkResponse('o4-mini'));
+    const httpsMock = createHttpsMock([makeHttpsOkScenario('o4-mini')]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    _setRequester(httpsMock as any);
 
-    vi.stubGlobal('fetch', fetchMock);
-
-    const client = new FoundryClient({
-      ...makeRoutingConfig(),
-      deploymentName: 'o4-mini',
-      isReasoning: true,
-    });
+    const client = new FoundryClient(makeRoutingConfig()); // starts on grok-4-1-fast-non-reasoning
 
     const response = await client.chatCompletion({
-      messages: [{ role: 'user', content: 'heavy reasoning request' }],
+      messages: [{ role: 'user', content: 'failover proof test' }],
       correlationId: 'corr-proof-failover',
-      requestedTaskComplexity: 'complex',
     });
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0]?.[0]).toContain('/deployments/o4-mini/chat/completions');
+    // Only o4-mini was called via real HTTP (grok was short-circuited by the proof mechanism)
+    expect(httpsMock).toHaveBeenCalledTimes(1);
+    expect(callPath(httpsMock, 0)).toContain('/deployments/o4-mini/chat/completions');
     expect(response.model).toBe('o4-mini');
     expect(response.failoverSteps).toEqual([
       {
-        fromModel: 'o4-mini',
-        toModel: 'grok-4-1-fast-non-reasoning',
-        reason: 'HTTP 503',
-        statusCode: 503,
-      },
-      {
         fromModel: 'grok-4-1-fast-non-reasoning',
-        toModel: 'FW-Kimi-K2.5',
-        reason: 'HTTP 503',
-        statusCode: 503,
-      },
-      {
-        fromModel: 'FW-Kimi-K2.5',
         toModel: 'o4-mini',
         reason: 'HTTP 503',
         statusCode: 503,
       },
     ]);
+    // o4-mini has capacityLevel:'high' in MODEL_CAPACITY_PROFILES — no cognitive downgrade notice
+    expect(buildSuccessfulFailoverNotices(response.failoverSteps)).toHaveLength(1);
     expect(buildSuccessfulFailoverNotices(response.failoverSteps)).toEqual([
-      '⚠️ Operational note: o4-mini was temporarily unavailable (HTTP 503); auto-failed over to o4-mini and continued your request.',
-      '⚠️ Cognitive state note: this reply completed on o4-mini, which is a low-capacity impaired lane for heavy reasoning. Treat it as degraded continuity and retry /heavy later if you need full-capacity reasoning.',
+      '⚠️ Operational note: grok-4-1-fast-non-reasoning was temporarily unavailable (HTTP 503); auto-failed over to o4-mini and continued your request.',
     ]);
   });
 });

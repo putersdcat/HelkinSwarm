@@ -2,6 +2,7 @@
 // Handles the currently supported Azure global + EU paths.
 // Spec ref: 06-Tool-Dispatch-LLM-Layer.md, 0c-BYOK-External-LLM-Support.md
 
+import * as https from 'node:https';
 import { getFallbackChain, getModelCapacityProfile, getModelRouting, type ModelRouting } from './modelRouter.js';
 import { getBearerToken } from '../auth/identity.js';
 import { getEnvConfig } from '../config/envConfig.js';
@@ -147,6 +148,17 @@ const MIN_PER_MODEL_TIMEOUT_MS = 8_000;
 
 /** Embedding requests must be bounded too; prompt-building memory recall depends on them. */
 const EMBEDDING_TIMEOUT_MS = 10_000;
+
+// ---------------------------------------------------------------------------
+// Testable seam for https.request (unit tests only) — never mutate in production
+// ---------------------------------------------------------------------------
+type HttpsRequester = typeof https.request;
+let _requesterImpl: HttpsRequester = https.request;
+
+/** @internal Unit-test seam — override the https.request implementation. */
+export function _setRequester(fn: HttpsRequester): void { _requesterImpl = fn; }
+/** @internal Unit-test seam — reset to the real https.request. */
+export function _resetRequester(): void { _requesterImpl = https.request; }
 
 /**
  * Parse a `retry-after` header value (seconds) or `retry-after-ms` (milliseconds)
@@ -430,51 +442,91 @@ export class FoundryClient {
     const oboToken = await this.getOboToken();
     headers['Authorization'] = `Bearer ${oboToken}`;
 
-    // Use AbortSignal.timeout() — the platform-native timeout that propagates through
-    // both the initial fetch() connection AND the response body read (response.json()).
-    // The previous AbortController+setTimeout+Promise.race approach was unreliable on
-    // Azure Container Apps because Node.js/undici does not consistently abort an
-    // in-progress body read when a manually-constructed AbortController is aborted
-    // while the socket is still receiving intermittent data (#313, #588).
-    // AbortSignal.timeout() is backed by the native timer in Node.js 17.3+ and
-    // always propagates to the response body reader at the C++ level.
-    const signal = AbortSignal.timeout(timeoutMs);
+    // Use node:https.request() with req.setTimeout() for OS-level socket timeout.
+    //
+    // Root cause (#588): fetch() + AbortController / AbortSignal.timeout() fires the
+    // JavaScript promise rejection but does NOT destroy the underlying TCP socket in
+    // Azure Container Apps / undici. The ghost socket holds a libuv I/O handle open,
+    // keeping the event loop in the "poll" phase and blocking all subsequent setTimeout
+    // callbacks — including the 8s timeout in sendReplyActivity, the stale-ACK
+    // recovery, and Durable orchestrator timer delivery.
+    //
+    // req.setTimeout() fires at the *socket* (OS) level once the idle period elapses,
+    // and req.destroy() forcibly closes the TCP connection and releases the libuv
+    // handle, allowing the event loop to return to the "timers" phase.
+    // keepAlive:false ensures no connection is reused after the call completes.
+    const parsedUrl = new URL(url);
+    const requestBody = JSON.stringify(body);
 
-    let raw: RawApiResponse;
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal,
-      });
+    const raw = await new Promise<RawApiResponse>((resolve, reject) => {
+      let settled = false;
+      const settle = (fn: () => void) => {
+        if (!settled) { settled = true; fn(); }
+      };
 
-      if (!response.ok) {
-        const rawErrorText = await response.text().catch(() => 'unknown');
-        const errorText = sanitizeRemoteErrorText(rawErrorText);
-        const retryAfterMs = response.status === 429
-          ? parseRetryAfterMs(response.headers)
-          : undefined;
-        throw new FoundryError(
-          `Chat completion failed: ${response.status} ${response.statusText} — ${errorText}`,
-          response.status,
-          routing.deploymentName,
-          retryAfterMs,
-        );
-      }
+      const req = _requesterImpl(
+        {
+          hostname: parsedUrl.hostname,
+          port: parsedUrl.port ? Number(parsedUrl.port) : 443,
+          path: parsedUrl.pathname + parsedUrl.search,
+          method: 'POST',
+          headers: {
+            ...headers,
+            'Content-Length': Buffer.byteLength(requestBody),
+          },
+          agent: new https.Agent({ keepAlive: false }),
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => {
+            const responseText = Buffer.concat(chunks).toString('utf-8');
+            if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
+              const errorText = sanitizeRemoteErrorText(responseText);
+              const retryAfterRaw = res.headers['retry-after'] ?? res.headers['retry-after-ms'];
+              const retryAfterStr = Array.isArray(retryAfterRaw) ? retryAfterRaw[0] : retryAfterRaw;
+              const retryAfterSecs = retryAfterStr ? Number(retryAfterStr) : NaN;
+              const retryAfterMs = res.statusCode === 429 && Number.isFinite(retryAfterSecs) && retryAfterSecs > 0
+                ? retryAfterSecs * 1_000
+                : undefined;
+              settle(() => reject(new FoundryError(
+                `Chat completion failed: ${res.statusCode} ${res.statusMessage ?? ''} — ${errorText}`,
+                res.statusCode ?? 500,
+                routing.deploymentName,
+                retryAfterMs,
+              )));
+              return;
+            }
+            try {
+              settle(() => resolve(JSON.parse(responseText) as RawApiResponse));
+            } catch {
+              settle(() => reject(new Error('Failed to parse LLM response JSON')));
+            }
+          });
+          res.on('error', (err) => settle(() => reject(err)));
+        },
+      );
 
-      raw = await response.json() as RawApiResponse;
-    } catch (err) {
-      // AbortSignal.timeout() throws TimeoutError (DOMException name='TimeoutError').
-      // A manually-aborted signal throws AbortError — normalise both to TimeoutError
-      // so isRetryableError() can match consistently.
-      if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+      // OS-level socket timeout: fires when the socket is idle for timeoutMs.
+      // req.destroy() closes the TCP socket and releases the libuv handle,
+      // stopping the event loop from blocking in the "poll" phase.
+      req.setTimeout(timeoutMs, () => {
+        req.destroy();
         const te = new Error(`LLM call timed out after ${timeoutMs}ms`);
         te.name = 'TimeoutError';
-        throw te;
-      }
-      throw err;
-    }
+        settle(() => reject(te));
+      });
+
+      req.on('error', (err) => {
+        // ECONNRESET / socket hang up from req.destroy() — already rejected above.
+        if ((err as NodeJS.ErrnoException).code !== 'ECONNRESET' && !err.message.includes('socket hang up')) {
+          settle(() => reject(err));
+        }
+      });
+
+      req.write(requestBody);
+      req.end();
+    });
 
     return mapApiResponse(raw);
   }
