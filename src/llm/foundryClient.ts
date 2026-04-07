@@ -430,28 +430,63 @@ export class FoundryClient {
     const oboToken = await this.getOboToken();
     headers['Authorization'] = `Bearer ${oboToken}`;
 
-    const response = await fetchWithHardTimeout(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-    }, timeoutMs);
+    // Guard both the connection AND the body read with a single AbortController.
+    // fetchWithHardTimeout clears its timer once fetch() returns a Response, leaving
+    // response.json() unguarded.  A model that sends headers immediately but takes
+    // minutes to flush the JSON body would hang indefinitely without this wrapper.
+    const controller = new AbortController();
+    let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutTimer = setTimeout(() => {
+        controller.abort();
+        const err = new Error(`LLM call timed out after ${timeoutMs}ms (fetch + body read)`);
+        err.name = 'TimeoutError';
+        reject(err);
+      }, timeoutMs);
+    });
 
-    if (!response.ok) {
-      const rawErrorText = await response.text().catch(() => 'unknown');
-      const errorText = sanitizeRemoteErrorText(rawErrorText);
-      // Parse Retry-After header for 429 responses (per Microsoft Azure AI Foundry docs, #313).
-      const retryAfterMs = response.status === 429
-        ? parseRetryAfterMs(response.headers)
-        : undefined;
-      throw new FoundryError(
-        `Chat completion failed: ${response.status} ${response.statusText} — ${errorText}`,
-        response.status,
-        routing.deploymentName,
-        retryAfterMs,
-      );
+    let raw: RawApiResponse;
+    try {
+      raw = await Promise.race([
+        (async () => {
+          const response = await fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(body),
+            signal: controller.signal,
+          });
+
+          if (!response.ok) {
+            const rawErrorText = await response.text().catch(() => 'unknown');
+            const errorText = sanitizeRemoteErrorText(rawErrorText);
+            const retryAfterMs = response.status === 429
+              ? parseRetryAfterMs(response.headers)
+              : undefined;
+            throw new FoundryError(
+              `Chat completion failed: ${response.status} ${response.statusText} — ${errorText}`,
+              response.status,
+              routing.deploymentName,
+              retryAfterMs,
+            );
+          }
+
+          return await response.json() as RawApiResponse;
+        })(),
+        timeoutPromise,
+      ]);
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        const te = new Error(`LLM call timed out after ${timeoutMs}ms`);
+        te.name = 'TimeoutError';
+        throw te;
+      }
+      throw err;
+    } finally {
+      if (timeoutTimer) {
+        clearTimeout(timeoutTimer);
+      }
     }
 
-    const raw = await response.json() as RawApiResponse;
     return mapApiResponse(raw);
   }
 
