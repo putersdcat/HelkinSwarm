@@ -34,7 +34,7 @@ describe('post-reply replay suppression source guards', () => {
     expect(guardSource).toContain("hasOutboundArtifactClaim(input.conversationId, 'reply', input.correlationId)");
     expect(guardSource).toContain("sessionInstanceId: z.string().min(1)");
     expect(guardSource).toContain("'session-execution'");
-    expect(guardSource).toContain('ownerInstanceId !== input.sessionInstanceId');
+    expect(guardSource).toContain('return effectiveSessionExecutionClaim !== undefined;');
     expect(sessionSource).toContain('sessionInstanceId: context.df.instanceId,');
     expect(indexSource).toContain("import '../orchestrator/emitOrchestratorTelemetryActivity.js';");
     expect(indexSource).toContain("import '../orchestrator/sessionReplayGuardActivity.js';");

@@ -15,7 +15,8 @@ describe('session execution replay guard source guards', () => {
     expect(guardSource).toContain("const claimedSessionExecution = await claimOutboundArtifact(");
     expect(guardSource).toContain("'session-execution',");
     expect(guardSource).toContain('input.sessionInstanceId,');
-    expect(guardSource).toContain('ownerInstanceId !== input.sessionInstanceId');
+    expect(guardSource).toContain('Legitimate Durable replay should use recorded history');
+    expect(guardSource).toContain('return effectiveSessionExecutionClaim !== undefined;');
     expect(sessionSource).toContain("'sessionReplayGuardActivity'");
     expect(sessionSource).toContain('sessionInstanceId: context.df.instanceId,');
     expect(sessionSource).toContain("duplicateReplaySuppressed: true,");
