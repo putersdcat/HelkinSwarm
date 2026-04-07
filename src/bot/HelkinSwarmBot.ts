@@ -61,7 +61,7 @@ import {
 } from '../auth/pendingLinkChallengeStore.js';
 import { buildSkillLinkSigninCard, buildSkillRelinkSigninCard } from './linkCards.js';
 import { extractMessageReferenceId, extractMessageReferencePreview } from './messageReference.js';
-import { sanitizeQuotedReplyText, type QuotedContext } from './quotedContext.js';
+import { sanitizeQuotedReplyText, stripInlineQuotesFromActivityText, type QuotedContext } from './quotedContext.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { clearOrchestratorStagesForInstanceIds, recordOrchestratorStage } from '../observability/orchestratorStageHealth.js';
 import { clearOboSession } from '../auth/oboSessionStore.js';
@@ -446,7 +446,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     const userId = context.activity.from.aadObjectId;
     const userAlias =
       context.activity.from.name ?? context.activity.from.id ?? 'unknown';
-    let messageText = (context.activity.text ?? '').trim();
+    let messageText = stripInlineQuotesFromActivityText(context.activity.text ?? '').trim();
     const correlationId = crypto.randomUUID();
 
     // Dedup: Bot Connector may retry the same webhook POST within ~15s (#300).

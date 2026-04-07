@@ -2,6 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   sanitizeQuotedReplyText,
+  stripInlineQuotesFromActivityText,
   type QuotedContext,
   type QuoteSource,
 } from '../../src/bot/quotedContext.js';
@@ -82,3 +83,24 @@ describe('QuotedContext', () => {
       'Best matching tool: outlook_search_emails',
     );
   });
+describe('stripInlineQuotesFromActivityText', () => {
+  it('strips blockquotes from HTML effectively', () => {
+    const text = '<blockquote><p>Previous text</p></blockquote><p>New text</p>';
+    expect(stripInlineQuotesFromActivityText(text)).toBe('<p>New text</p>');
+  });
+
+  it('strips <quote> from XML-like formats', () => {
+    const text = '<quote>Old user saying hi</quote> My new answer';
+    expect(stripInlineQuotesFromActivityText(text)).toBe('My new answer');
+  });
+
+  it('strips <attachment> placeholders', () => {
+    const text = '<attachment id=\"123\">old message ref</attachment> Here is my reply';
+    expect(stripInlineQuotesFromActivityText(text)).toBe('Here is my reply');
+  });
+
+  it('deals safely with empty strings', () => {
+    expect(stripInlineQuotesFromActivityText(undefined as any)).toBe('');
+    expect(stripInlineQuotesFromActivityText('')).toBe('');
+  });
+});
