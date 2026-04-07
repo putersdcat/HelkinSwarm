@@ -430,61 +430,50 @@ export class FoundryClient {
     const oboToken = await this.getOboToken();
     headers['Authorization'] = `Bearer ${oboToken}`;
 
-    // Guard both the connection AND the body read with a single AbortController.
-    // fetchWithHardTimeout clears its timer once fetch() returns a Response, leaving
-    // response.json() unguarded.  A model that sends headers immediately but takes
-    // minutes to flush the JSON body would hang indefinitely without this wrapper.
-    const controller = new AbortController();
-    let timeoutTimer: ReturnType<typeof setTimeout> | undefined;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutTimer = setTimeout(() => {
-        controller.abort();
-        const err = new Error(`LLM call timed out after ${timeoutMs}ms (fetch + body read)`);
-        err.name = 'TimeoutError';
-        reject(err);
-      }, timeoutMs);
-    });
+    // Use AbortSignal.timeout() — the platform-native timeout that propagates through
+    // both the initial fetch() connection AND the response body read (response.json()).
+    // The previous AbortController+setTimeout+Promise.race approach was unreliable on
+    // Azure Container Apps because Node.js/undici does not consistently abort an
+    // in-progress body read when a manually-constructed AbortController is aborted
+    // while the socket is still receiving intermittent data (#313, #588).
+    // AbortSignal.timeout() is backed by the native timer in Node.js 17.3+ and
+    // always propagates to the response body reader at the C++ level.
+    const signal = AbortSignal.timeout(timeoutMs);
 
     let raw: RawApiResponse;
     try {
-      raw = await Promise.race([
-        (async () => {
-          const response = await fetch(url, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(body),
-            signal: controller.signal,
-          });
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+        signal,
+      });
 
-          if (!response.ok) {
-            const rawErrorText = await response.text().catch(() => 'unknown');
-            const errorText = sanitizeRemoteErrorText(rawErrorText);
-            const retryAfterMs = response.status === 429
-              ? parseRetryAfterMs(response.headers)
-              : undefined;
-            throw new FoundryError(
-              `Chat completion failed: ${response.status} ${response.statusText} — ${errorText}`,
-              response.status,
-              routing.deploymentName,
-              retryAfterMs,
-            );
-          }
+      if (!response.ok) {
+        const rawErrorText = await response.text().catch(() => 'unknown');
+        const errorText = sanitizeRemoteErrorText(rawErrorText);
+        const retryAfterMs = response.status === 429
+          ? parseRetryAfterMs(response.headers)
+          : undefined;
+        throw new FoundryError(
+          `Chat completion failed: ${response.status} ${response.statusText} — ${errorText}`,
+          response.status,
+          routing.deploymentName,
+          retryAfterMs,
+        );
+      }
 
-          return await response.json() as RawApiResponse;
-        })(),
-        timeoutPromise,
-      ]);
+      raw = await response.json() as RawApiResponse;
     } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') {
+      // AbortSignal.timeout() throws TimeoutError (DOMException name='TimeoutError').
+      // A manually-aborted signal throws AbortError — normalise both to TimeoutError
+      // so isRetryableError() can match consistently.
+      if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
         const te = new Error(`LLM call timed out after ${timeoutMs}ms`);
         te.name = 'TimeoutError';
         throw te;
       }
       throw err;
-    } finally {
-      if (timeoutTimer) {
-        clearTimeout(timeoutTimer);
-      }
     }
 
     return mapApiResponse(raw);
