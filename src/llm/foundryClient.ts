@@ -464,7 +464,25 @@ export class FoundryClient {
         if (!settled) { settled = true; fn(); }
       };
 
-      const req = _requesterImpl(
+      // Wall-clock hard deadline — fires unconditionally even when the socket receives
+      // incremental data (chunked responses, HTTP/2 PING frames, streaming tokens).
+      // This restores the wall-clock guarantee that was provided by Promise.race() +
+      // fetch() before #588, while keeping the OS-level socket teardown from #588.
+      // (#589: req.setTimeout() alone is insufficient for active-socket scenarios.)
+      let wallClockTimer: ReturnType<typeof setTimeout> | undefined;
+
+      // Use let so wallClockTimer and settle can reference req before it is assigned.
+      // eslint-disable-next-line prefer-const
+      let req: ReturnType<typeof _requesterImpl>;
+
+      wallClockTimer = setTimeout(() => {
+        req?.destroy();
+        const te = new Error(`LLM call wall-clock timed out after ${timeoutMs}ms`);
+        te.name = 'TimeoutError';
+        settle(() => reject(te));
+      }, timeoutMs);
+
+      req = _requesterImpl(
         {
           hostname: parsedUrl.hostname,
           port: parsedUrl.port ? Number(parsedUrl.port) : 443,
@@ -480,6 +498,7 @@ export class FoundryClient {
           const chunks: Buffer[] = [];
           res.on('data', (chunk: Buffer) => chunks.push(chunk));
           res.on('end', () => {
+            clearTimeout(wallClockTimer);
             const responseText = Buffer.concat(chunks).toString('utf-8');
             if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
               const errorText = sanitizeRemoteErrorText(responseText);
@@ -503,14 +522,16 @@ export class FoundryClient {
               settle(() => reject(new Error('Failed to parse LLM response JSON')));
             }
           });
-          res.on('error', (err) => settle(() => reject(err)));
+          res.on('error', (err) => { clearTimeout(wallClockTimer); settle(() => reject(err)); });
         },
       );
 
       // OS-level socket timeout: fires when the socket is idle for timeoutMs.
       // req.destroy() closes the TCP socket and releases the libuv handle,
       // stopping the event loop from blocking in the "poll" phase.
+      // Kept alongside wallClockTimer for connection-stall detection.
       req.setTimeout(timeoutMs, () => {
+        clearTimeout(wallClockTimer);
         req.destroy();
         const te = new Error(`LLM call timed out after ${timeoutMs}ms`);
         te.name = 'TimeoutError';
@@ -518,6 +539,7 @@ export class FoundryClient {
       });
 
       req.on('error', (err) => {
+        clearTimeout(wallClockTimer);
         // ECONNRESET / socket hang up from req.destroy() — already rejected above.
         if ((err as NodeJS.ErrnoException).code !== 'ECONNRESET' && !err.message.includes('socket hang up')) {
           settle(() => reject(err));
