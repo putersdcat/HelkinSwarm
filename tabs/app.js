@@ -1299,7 +1299,13 @@
           '</div>' +
           '</div>' +
           '<div class="card"><h2>Registry Results</h2><div id="mcp-registry-results"><p class="empty-state">No registry search yet.</p></div></div>' +
-          '<div class="card"><h2>McpForge Result</h2><div id="mcp-forge-draft-panel"><p class="empty-state">Draft and approval results will appear here.</p></div></div>';
+          '<div class="card"><h2>McpForge Result</h2><div id="mcp-forge-draft-panel"><p class="empty-state">Draft and approval results will appear here.</p></div></div>' +
+          '<div class="card"><h2>Installed MCP \u2014 Update Status <small style="font-weight:normal;color:var(--muted)">(#481)</small></h2>' +
+          '<p>Check for updates on installed MCP-backed skills that have <code>updateCheckEnabled: true</code> in their manifest.</p>' +
+          '<div><button class="cmd-btn cmd-btn-primary" id="mcp-update-check-btn">Check All MCP Updates</button>' +
+          '<span id="mcp-update-check-status" class="muted"></span></div>' +
+          '<div id="mcp-update-check-results" style="margin-top:12px"><p class="empty-state">No update check run yet.</p></div>' +
+          '</div>';
       },
       catalog: function (data) {
         var skills = data.skills || [];
@@ -1405,6 +1411,56 @@
                 });
             });
           }
+
+          var updateCheckBtn = container.querySelector('#mcp-update-check-btn');
+          var updateCheckStatus = container.querySelector('#mcp-update-check-status');
+          var updateCheckResults = container.querySelector('#mcp-update-check-results');
+          if (updateCheckBtn) {
+            updateCheckBtn.addEventListener('click', function () {
+              if (updateCheckStatus) updateCheckStatus.textContent = 'Running update checks...';
+              if (updateCheckResults) updateCheckResults.innerHTML = '<p class="empty-state">Checking...</p>';
+              apiPost('skills/mcp-updates/check-all', {})
+                .then(function (result) {
+                  var results = (result && result.results) || [];
+                  if (updateCheckStatus) updateCheckStatus.textContent = result.checkedCount + ' skill(s) checked.';
+                  if (updateCheckResults) {
+                    updateCheckResults.innerHTML = results.length > 0
+                      ? results.map(renderMcpUpdateResult).join('')
+                      : '<p class="empty-state">No installed MCP skills have updateCheckEnabled: true.</p>';
+                  }
+                })
+                .catch(function (err) {
+                  if (updateCheckStatus) updateCheckStatus.textContent = err.message;
+                  if (updateCheckResults) updateCheckResults.innerHTML = '<p class="error-msg">' + esc(err.message) + '</p>';
+                });
+            });
+          }
+
+
+          var updateCheckBtn = container.querySelector('#mcp-update-check-btn');
+          var updateCheckStatus = container.querySelector('#mcp-update-check-status');
+          var updateCheckResults = container.querySelector('#mcp-update-check-results');
+          if (updateCheckBtn) {
+            updateCheckBtn.addEventListener('click', function () {
+              if (updateCheckStatus) updateCheckStatus.textContent = 'Running update checks...';
+              if (updateCheckResults) updateCheckResults.innerHTML = '<p class="empty-state">Checking...</p>';
+              apiPost('skills/mcp-updates/check-all', {})
+                .then(function (result) {
+                  var results = (result && result.results) || [];
+                  if (updateCheckStatus) updateCheckStatus.textContent = result.checkedCount + ' skill(s) checked.';
+                  if (updateCheckResults) {
+                    updateCheckResults.innerHTML = results.length > 0
+                      ? results.map(renderMcpUpdateResult).join('')
+                      : '<p class="empty-state">No installed MCP skills have updateCheckEnabled: true.</p>';
+                  }
+                })
+                .catch(function (err) {
+                  if (updateCheckStatus) updateCheckStatus.textContent = err.message;
+                  if (updateCheckResults) updateCheckResults.innerHTML = '<p class="error-msg">' + esc(err.message) + '</p>';
+                });
+            });
+          }
+
           return;
         }
 
@@ -1473,6 +1529,7 @@
         configRow('Dependencies', renderInlineTags(s.dependencies)) +
         configRow('Permissions', renderInlineTags(s.requiredPermissions)) +
         configRow('Accounts', renderInlineTags(s.externalAccountsNeeded)) +
+        (s.mcpProvenance ? configRow('MCP Source', renderMcpProvenanceBadge(s.mcpProvenance)) : '') +
         '</div>' : '') +
       '</div>';
   }
@@ -1497,6 +1554,32 @@
       '<span class="inline-tag">' + esc(s.onboardingMethod) + '</span> ' +
       '<span class="inline-tag">' + esc(s.lifecycleRules) + '</span> ' +
       '<span class="inline-tag">' + esc(String(s.maintenanceTaskCount)) + ' maintenance</span>' +
+      '</div>' +
+      '</div>';
+  }
+
+  function renderMcpProvenanceBadge(prov) {
+    if (!prov) return '<span class="muted">None</span>';
+    var src = prov.updateSource || 'manual';
+    var enabled = prov.updateCheckEnabled ? '<span class="badge badge-ok">Auto-check</span>' : '<span class="badge">Manual</span>';
+    var freq = prov.updateCheckEnabled ? (' &middot; ' + esc(prov.updateCheckFrequency || 'weekly')) : '';
+    var id = prov.mcpRegistryId ? (' &middot; id: <code>' + esc(prov.mcpRegistryId) + '</code>') : '';
+    return enabled + ' <span class="inline-tag">' + esc(src) + '</span>' + freq + id;
+  }
+
+  function renderMcpUpdateResult(r) {
+    if (!r) return '<p class="empty-state">No update check result.</p>';
+    var statusCls = r.status === 'up-to-date' ? 'badge-ok' : r.status === 'update-available' ? 'badge-warn' : r.status === 'not-configured' ? '' : 'badge-error';
+    return '<div class="inspection-card skill-update-result" data-domain="' + esc(r.domain) + '">' +
+      '<div class="inspection-head"><strong>' + esc(r.domain) + '</strong> ' +
+      '<span class="badge ' + statusCls + '">' + esc(r.status.replace(/-/g, '\u00a0')) + '</span></div>' +
+      '<div class="config-table">' +
+      configRow('Installed', esc(r.installedVersion || '?')) +
+      configRow('Latest', esc(r.latestVersion || 'unknown')) +
+      configRow('Source', esc(r.source || 'none')) +
+      configRow('Checked', esc(r.checkedAt || '')) +
+      (r.error ? configRow('Error', '<span class="muted">' + esc(r.error) + '</span>') : '') +
+      (r.updateSourceUrl ? configRow('URL', '<a href="' + esc(r.updateSourceUrl) + '" target="_blank">' + esc(r.updateSourceUrl) + '</a>') : '') +
       '</div>' +
       '</div>';
   }

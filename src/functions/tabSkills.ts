@@ -14,12 +14,14 @@ import {
   inspectSkillInstall,
   inspectSkillUninstall,
   loadCapabilities,
+  getAllManifests,
 } from '../capabilities/capabilityLoader.js';
 import { validateTabTokenFromRequest } from '../auth/tabTokenValidator.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { searchMcpRegistryCatalog } from '../mcp/mcpRegistryCatalog.js';
 import { buildMcpForgeDraftBundle } from '../mcp/mcpForgeDraft.js';
 import { approveMcpForgeBundleLocally } from '../mcp/mcpForgeActivation.js';
+import { runAllEnabledUpdateChecks, checkMcpSkillForUpdates } from '../mcp/mcpUpdateChecker.js';
 
 const TAB_CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': 'https://helkinswarmtabsst.z20.web.core.windows.net',
@@ -280,6 +282,79 @@ app.http('tab-skills-mcp-forge-approve', {
     }
 
     const result = await approveMcpForgeBundleLocally(bundlePath);
+    return {
+      status: 200,
+      headers: TAB_CORS_HEADERS,
+      jsonBody: result,
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// MCP Update Status endpoints (#481)
+// ---------------------------------------------------------------------------
+
+app.http('tab-skills-mcp-update-check-all', {
+  methods: ['POST', 'OPTIONS'],
+  authLevel: 'anonymous',
+  route: 'tab/skills/mcp-updates/check-all',
+  handler: async (req: HttpRequest): Promise<HttpResponseInit> => {
+    if (req.method === 'OPTIONS') {
+      return { status: 204, headers: TAB_CORS_HEADERS };
+    }
+
+    const auth = await authenticateOwner(req);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    const results = await runAllEnabledUpdateChecks();
+    return {
+      status: 200,
+      headers: TAB_CORS_HEADERS,
+      jsonBody: { results, checkedCount: results.length },
+    };
+  },
+});
+
+app.http('tab-skills-mcp-update-check-one', {
+  methods: ['POST', 'OPTIONS'],
+  authLevel: 'anonymous',
+  route: 'tab/skills/mcp-updates/check',
+  handler: async (req: HttpRequest): Promise<HttpResponseInit> => {
+    if (req.method === 'OPTIONS') {
+      return { status: 204, headers: TAB_CORS_HEADERS };
+    }
+
+    const auth = await authenticateOwner(req);
+    if (!auth.ok) {
+      return auth.response;
+    }
+
+    const body = await parseJsonBody(req);
+    const domain = typeof body.domain === 'string' ? body.domain.trim() : '';
+    if (!domain) {
+      return { status: 400, headers: TAB_CORS_HEADERS, jsonBody: { error: 'domain required.' } };
+    }
+
+    const manifest = getAllManifests().find((m) => m.domain === domain);
+    if (!manifest) {
+      return { status: 404, headers: TAB_CORS_HEADERS, jsonBody: { error: `Skill '${domain}' not found.` } };
+    }
+
+    if (!manifest.mcpProvenance) {
+      return {
+        status: 200,
+        headers: TAB_CORS_HEADERS,
+        jsonBody: {
+          domain,
+          status: 'not-configured',
+          message: 'This skill has no mcpProvenance metadata in manifest.json.',
+        },
+      };
+    }
+
+    const result = await checkMcpSkillForUpdates(domain, manifest.version, manifest.mcpProvenance);
     return {
       status: 200,
       headers: TAB_CORS_HEADERS,

@@ -39,6 +39,19 @@ export const MaintenanceTask = z.object({
 });
 export type MaintenanceTask = z.infer<typeof MaintenanceTask>;
 
+/** MCP provenance and update-check metadata for MCP-integrated skills (#481). */
+export const McpUpdateSource = z.enum(['github', 'mcp-registry', 'manual']);
+export type McpUpdateSource = z.infer<typeof McpUpdateSource>;
+
+export const McpProvenanceSchema = z.object({
+  mcpRegistryId: z.string().min(1).optional(),
+  updateCheckEnabled: z.boolean().default(false),
+  updateCheckFrequency: z.enum(['daily', 'weekly', 'manual']).default('weekly'),
+  updateSource: McpUpdateSource.optional(),
+  updateSourceUrl: z.string().url().optional(),
+}).strict();
+export type McpProvenance = z.infer<typeof McpProvenanceSchema>;
+
 export const ModelAffinity = z.object({
   discovery: z.enum(['fast', 'reasoning', 'primary']).optional(),
   execution: z.enum(['fast', 'reasoning', 'primary']).optional(),
@@ -142,6 +155,7 @@ export const CapabilityManifestSchema = z.object({
   recommendedEntryTools: z.array(z.string().min(1)).default([]),
   softOnboarding: SoftOnboarding.optional(),
   maintenanceTasks: z.array(MaintenanceTask).optional(),
+  mcpProvenance: McpProvenanceSchema.optional(),
 }).superRefine((manifest, ctx) => {
   const definedGroupIds = new Set((manifest.capabilityGroups ?? []).map((group) => group.id));
 

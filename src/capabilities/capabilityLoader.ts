@@ -5,7 +5,7 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { CapabilityManifestSchema } from './manifestSchema.js';
-import type { CapabilityManifest, MaintenanceTask } from './manifestSchema.js';
+import type { CapabilityManifest, MaintenanceTask, McpProvenance } from './manifestSchema.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { clearSkillDiscoveryIndex, rebuildSkillDiscoveryIndex } from './skillDiscoveryIndex.js';
 import { registerMcpHandlersForManifest } from '../mcp/mcpConnector.js';
@@ -294,6 +294,8 @@ export interface SkillCatalogEntry {
   maintenanceTaskCount: number;
   operationalState: SkillOperationalState;
   operationalSummary: string;
+  /** MCP provenance/update metadata — present only for MCP-integrated skills (#481). */
+  mcpProvenance: McpProvenance | null;
 }
 
 /** Returns rich skill metadata from loaded manifests for the Skills Library tab. */
@@ -321,6 +323,7 @@ export function getSkillCatalog(): SkillCatalogEntry[] {
       maintenanceTaskCount: manifest.maintenanceTasks?.length ?? 0,
       operationalState: assessment.operationalState,
       operationalSummary: assessment.message,
+      mcpProvenance: manifest.mcpProvenance ?? null,
     });
   }
   return catalog.sort((a, b) => a.displayName.localeCompare(b.displayName));
