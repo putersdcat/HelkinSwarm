@@ -540,10 +540,11 @@ export class FoundryClient {
 
       req.on('error', (err) => {
         clearTimeout(wallClockTimer);
-        // ECONNRESET / socket hang up from req.destroy() — already rejected above.
-        if ((err as NodeJS.ErrnoException).code !== 'ECONNRESET' && !err.message.includes('socket hang up')) {
-          settle(() => reject(err));
-        }
+        // settle() idempotency guard prevents double-rejection if we already settled
+        // via wallClockTimer or req.setTimeout (both call settle before req.destroy).
+        // Infrastructure-originated ECONNRESET (arrived before settle) must NOT be
+        // silenced — propagate it so the promise does not hang indefinitely (#589-B).
+        settle(() => reject(err));
       });
 
       req.write(requestBody);
@@ -731,6 +732,15 @@ function isRetryableError(err: unknown): boolean {
   }
   // AbortSignal.timeout() throws a DOMException with name "TimeoutError"
   if (err instanceof Error && err.name === 'TimeoutError') {
+    return true;
+  }
+  // Network-level errors: ECONNRESET, socket hang up, ECONNREFUSED — retryable transient
+  if (err instanceof Error && (
+    (err as NodeJS.ErrnoException).code === 'ECONNRESET'
+    || err.message.includes('socket hang up')
+    || (err as NodeJS.ErrnoException).code === 'ECONNREFUSED'
+    || (err as NodeJS.ErrnoException).code === 'ETIMEDOUT'
+  )) {
     return true;
   }
   // Network failures (fetch rejects on DNS/connection issues)
