@@ -1436,31 +1436,6 @@
             });
           }
 
-
-          var updateCheckBtn = container.querySelector('#mcp-update-check-btn');
-          var updateCheckStatus = container.querySelector('#mcp-update-check-status');
-          var updateCheckResults = container.querySelector('#mcp-update-check-results');
-          if (updateCheckBtn) {
-            updateCheckBtn.addEventListener('click', function () {
-              if (updateCheckStatus) updateCheckStatus.textContent = 'Running update checks...';
-              if (updateCheckResults) updateCheckResults.innerHTML = '<p class="empty-state">Checking...</p>';
-              apiPost('skills/mcp-updates/check-all', {})
-                .then(function (result) {
-                  var results = (result && result.results) || [];
-                  if (updateCheckStatus) updateCheckStatus.textContent = result.checkedCount + ' skill(s) checked.';
-                  if (updateCheckResults) {
-                    updateCheckResults.innerHTML = results.length > 0
-                      ? results.map(renderMcpUpdateResult).join('')
-                      : '<p class="empty-state">No installed MCP skills have updateCheckEnabled: true.</p>';
-                  }
-                })
-                .catch(function (err) {
-                  if (updateCheckStatus) updateCheckStatus.textContent = err.message;
-                  if (updateCheckResults) updateCheckResults.innerHTML = '<p class="error-msg">' + esc(err.message) + '</p>';
-                });
-            });
-          }
-
           return;
         }
 

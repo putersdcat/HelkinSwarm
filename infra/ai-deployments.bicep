@@ -34,9 +34,6 @@ var gpt54Requested = contains(modelQuotaOverrides, 'o4-mini')
 var codexRequested = contains(modelQuotaOverrides, 'gpt-5.1-codex-mini')
   ? int(modelQuotaOverrides['gpt-5.1-codex-mini'])
   : (quotaStrategy == 'minimize' ? 5 : quotaStrategy == 'manual' ? 10 : 10)  // Keep a small reserve; codex is not the preferred interactive fallback (#411)
-var o4MiniRequested = contains(modelQuotaOverrides, 'o4-mini')
-  ? int(modelQuotaOverrides['o4-mini'])
-  : (quotaStrategy == 'minimize' ? 5 : quotaStrategy == 'manual' ? 20 : 20)  // Preserve some reasoning reserve without crowding out the primary GPT-5.4-mini fallback (#411)
 var fwMiniMaxRequested = contains(modelQuotaOverrides, 'FW-MiniMax-M2.5')
   ? int(modelQuotaOverrides['FW-MiniMax-M2.5'])
   : (quotaStrategy == 'minimize' ? 5 : quotaStrategy == 'manual' ? 5 : 5)
@@ -62,11 +59,8 @@ var remainingAfterGpt54Mini = max(0, remainingAfterGrokFast - capGpt54Mini)
 var capCodexMini = min(codexRequested, remainingAfterGpt54Mini)
 var remainingAfterCodexMini = max(0, remainingAfterGpt54Mini - capCodexMini)
 
-var capO4Mini = min(o4MiniRequested, remainingAfterCodexMini)
-var remainingAfterO4Mini = max(0, remainingAfterCodexMini - capO4Mini)
-
-var capFwMiniMax = min(fwMiniMaxRequested, remainingAfterO4Mini)
-var remainingAfterFwMiniMax = max(0, remainingAfterO4Mini - capFwMiniMax)
+var capFwMiniMax = min(fwMiniMaxRequested, remainingAfterCodexMini)
+var remainingAfterFwMiniMax = max(0, remainingAfterCodexMini - capFwMiniMax)
 
 var capFwKimi = min(fwKimiRequested, remainingAfterFwMiniMax)
 var remainingAfterFwKimi = max(0, remainingAfterFwMiniMax - capFwKimi)
@@ -136,22 +130,10 @@ resource aiDeployCodexMini 'Microsoft.CognitiveServices/accounts/deployments@202
   }
 }
 
-resource aiDeployO4Mini 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
-  parent: aiServices
-  name: 'o4-mini'
-  dependsOn: [ aiDeployCodexMini ]
-  sku: { name: 'GlobalStandard', capacity: capO4Mini }
-  properties: {
-    model: { format: 'OpenAI', name: 'o4-mini', version: '2025-04-16' }
-    raiPolicyName: 'Microsoft.DefaultV2'
-    versionUpgradeOption: 'NoAutoUpgrade'
-  }
-}
-
 resource aiDeployFwMiniMax 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
   parent: aiServices
   name: 'FW-MiniMax-M2.5'
-  dependsOn: [ aiDeployO4Mini ]
+  dependsOn: [ aiDeployCodexMini ]
   sku: { name: 'DataZoneStandard', capacity: capFwMiniMax }
   properties: {
     model: { format: 'Fireworks', name: 'FW-MiniMax-M2.5', version: '1' }
