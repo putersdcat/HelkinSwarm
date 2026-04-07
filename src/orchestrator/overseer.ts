@@ -316,12 +316,29 @@ df.app.orchestration('overseer', function* (context) {
         bufferedIngressQueuedEvent = context.df.waitForExternalEvent('BufferedIngressQueued');
 
         if (bufferedIngressSignal.docId) {
-          const claimedBufferedMessage = (yield context.df.callActivity('bufferedIngressActivity', {
-            action: 'claim-buffered-message',
-            userId: state.userId,
-            docId: bufferedIngressSignal.docId,
-            targetInstanceId: context.df.instanceId,
-          } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
+          let claimedBufferedMessage: NewMessageEvent | null = null;
+
+          if (bufferedIngressSignal.event) {
+            const markedDequeued = (yield context.df.callActivity('bufferedIngressActivity', {
+              action: 'mark-buffered-message-dequeued',
+              userId: state.userId,
+              docId: bufferedIngressSignal.docId,
+              targetInstanceId: context.df.instanceId,
+            } satisfies BufferedIngressActivityInput)) as boolean;
+
+            if (markedDequeued) {
+              claimedBufferedMessage = bufferedIngressSignal.event;
+            }
+          }
+
+          if (!claimedBufferedMessage) {
+            claimedBufferedMessage = (yield context.df.callActivity('bufferedIngressActivity', {
+              action: 'claim-buffered-message',
+              userId: state.userId,
+              docId: bufferedIngressSignal.docId,
+              targetInstanceId: context.df.instanceId,
+            } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
+          }
 
           if (claimedBufferedMessage) {
             ingressTimer.cancel();
@@ -479,8 +496,8 @@ function* processTurn(
 
     while (!sessionDone && !timedOut) {
       const raceTasks = spinnerTicks < MAX_SPINNER_TICKS
-        ? [sessionTask, sessionTimer, spinnerTimer, bufferedIngressQueuedEvent]
-        : [sessionTask, sessionTimer, bufferedIngressQueuedEvent];
+        ? [bufferedIngressQueuedEvent, sessionTask, sessionTimer, spinnerTimer]
+        : [bufferedIngressQueuedEvent, sessionTask, sessionTimer];
       const winner = yield context.df.Task.any(raceTasks) as df.Task;
 
       if (winner === sessionTimer) {

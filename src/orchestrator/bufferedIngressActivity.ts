@@ -88,18 +88,14 @@ async function getBufferedNewMessageDocumentById(
   userId: string,
 ): Promise<BufferedNewMessageDocument | undefined> {
   const container = getContainer(SESSIONS_CONTAINER);
-  const { resources } = await container.items
-    .query<BufferedNewMessageDocument>({
-      query: `SELECT TOP 1 * FROM c WHERE c.id = @docId AND c.type = @type AND c.userId = @userId`,
-      parameters: [
-        { name: '@docId', value: docId },
-        { name: '@type', value: BUFFERED_NEW_MESSAGE_TYPE },
-        { name: '@userId', value: userId },
-      ],
-    })
-    .fetchAll();
+  // Bypass eventual consistency index lag by doing a direct point read
+  const { resource } = await container.item(docId, userId).read<BufferedNewMessageDocument>();
+  
+  if (!resource || resource.type !== BUFFERED_NEW_MESSAGE_TYPE) {
+    return undefined;
+  }
 
-  return resources[0] ?? undefined;
+  return resource;
 }
 
 function toNewMessageEvent(doc: BufferedNewMessageDocument): NewMessageEvent {
