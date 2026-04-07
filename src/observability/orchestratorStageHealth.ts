@@ -282,6 +282,45 @@ export async function getActiveTurnStagesForUser(userId: string, nowMs = Date.no
   return entries.filter((entry) => entry.userId === userId);
 }
 
+export async function getOrchestratorStageForCorrelation(
+  correlationId: string,
+  userId: string,
+  nowMs = Date.now(),
+): Promise<ActiveTurnStage | undefined> {
+  const inMemoryEntry = activeTurns.get(correlationId);
+  if (
+    inMemoryEntry
+    && inMemoryEntry.userId === userId
+    && isStageEntryFresh(inMemoryEntry, nowMs)
+    && isVisibleStage(inMemoryEntry)
+  ) {
+    return inMemoryEntry;
+  }
+
+  try {
+    const container = getContainer(SESSIONS_CONTAINER);
+    const { resource } = await withTimeout(
+      container.item(makeStageDocId(correlationId), userId).read<OrchestratorStageDocument>(),
+      STAGE_IO_TIMEOUT_MS,
+    );
+
+    if (!resource || !isStageEntryFresh(resource, nowMs) || !isVisibleStage(resource)) {
+      return undefined;
+    }
+
+    return {
+      correlationId: resource.correlationId,
+      userId: resource.userId,
+      stage: resource.stage,
+      instanceId: resource.instanceId,
+      startedAtMs: resource.startedAtMs,
+      updatedAtMs: resource.updatedAtMs,
+    } satisfies ActiveTurnStage;
+  } catch {
+    return undefined;
+  }
+}
+
 export function resetOrchestratorStageHealth(): void {
   activeTurns.clear();
 }
