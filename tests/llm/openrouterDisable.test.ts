@@ -9,7 +9,7 @@ async function loadModelRouterWithEnv(overrides: Record<string, string | undefin
   process.env['AZURE_AI_FOUNDRY_ENDPOINT'] = 'https://foundry.example.com';
   process.env['LLM_PRIMARY_MODEL'] = 'grok-4-1-fast-non-reasoning';
   process.env['LLM_SECONDARY_MODEL'] = 'grok-4-1-fast-non-reasoning';
-  process.env['LLM_FALLBACK_PRIMARY'] = 'gpt-5.4-mini';
+  process.env['LLM_FALLBACK_PRIMARY'] = 'o4-mini';
 
   for (const [key, value] of Object.entries(overrides)) {
     if (value === undefined) {
@@ -60,7 +60,7 @@ describe('OpenRouter runtime disablement (#286)', () => {
     const modelRouter = await loadModelRouterWithEnv({
       LLM_PRIMARY_MODEL: 'grok-4-1-fast-non-reasoning',
       LLM_SECONDARY_MODEL: 'grok-4-1-fast-non-reasoning',
-      LLM_FALLBACK_PRIMARY: 'gpt-5.4-mini',
+      LLM_FALLBACK_PRIMARY: 'o4-mini',
     });
 
     const chain = modelRouter.getFallbackChain('grok-4-1-fast-non-reasoning');
@@ -69,7 +69,7 @@ describe('OpenRouter runtime disablement (#286)', () => {
     // Primary collapses with secondary → fallback primary appears next.
     // Fallback secondary (default: FW-Kimi-K2.5) trails the chain.
     expect(names[0]).toBe('grok-4-1-fast-non-reasoning');
-    expect(names[1]).toBe('gpt-5.4-mini');
+    expect(names[1]).toBe('o4-mini');
     expect(names.length).toBeGreaterThanOrEqual(2);
   });
 });

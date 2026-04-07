@@ -10,7 +10,6 @@ const MODEL_CONTEXT_LIMITS: Record<string, number> = {
   'grok-4-1-fast-non-reasoning': 128_000,
   'grok-4-1-fast-reasoning': 128_000,
   'o4-mini': 200_000,
-  'gpt-5.4-mini': 128_000,
   'gpt-4o': 128_000,
   'gpt-4o-mini': 128_000,
   'text-embedding-3-large': 8_191,

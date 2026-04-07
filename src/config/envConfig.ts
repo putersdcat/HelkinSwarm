@@ -20,10 +20,10 @@ const EnvConfigSchema = z.object({
   // LLM / AI Foundry
   azureAiFoundryEndpoint: z.string().url('AZURE_AI_FOUNDRY_ENDPOINT must be a valid URL').optional(),
   llmPrimaryModel: z.string().default('grok-4-1-fast-non-reasoning'),
-  llmSecondaryModel: z.string().default('gpt-5.4-mini'),
+  llmSecondaryModel: z.string().default('o4-mini'),
   llmFallbackPrimary: z.string().default('DeepSeek-V3.2'),
   llmFallbackSecondary: z.string().default('FW-Kimi-K2.5'),
-  llmVisionModel: z.string().default('gpt-5.4-mini'),
+  llmVisionModel: z.string().default('o4-mini'),
   llmEmbeddingModel: z.string().default('text-embedding-3-large'),
 
   // Cosmos DB

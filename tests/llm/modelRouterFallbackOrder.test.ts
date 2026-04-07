@@ -19,7 +19,7 @@ async function loadModelRouterWithDefaults() {
   process.env['MICROSOFT_APP_TENANT_ID'] = 'test-tenant-id';
   process.env['AZURE_AI_FOUNDRY_ENDPOINT'] = 'https://foundry.example.com';
   process.env['LLM_PRIMARY_MODEL'] = 'grok-4-1-fast-non-reasoning';
-  process.env['LLM_SECONDARY_MODEL'] = 'gpt-5.4-mini';
+  process.env['LLM_SECONDARY_MODEL'] = 'o4-mini';
   delete process.env['LLM_FALLBACK_PRIMARY'];
   delete process.env['LLM_FALLBACK_SECONDARY'];
 
@@ -42,7 +42,7 @@ describe('modelRouter fallback ordering (#411)', () => {
     vi.resetModules();
   });
 
-  it('prefers gpt-5.4-mini immediately after the primary Grok slot by default', async () => {
+  it('prefers o4-mini immediately after the primary Grok slot by default', async () => {
     const modelRouter = await loadModelRouterWithDefaults();
 
     const names = modelRouter.getFallbackChain('grok-4-1-fast-non-reasoning')
@@ -50,7 +50,7 @@ describe('modelRouter fallback ordering (#411)', () => {
 
     expect(names.slice(0, 4)).toEqual([
       'grok-4-1-fast-non-reasoning',
-      'gpt-5.4-mini',
+      'o4-mini',
       'DeepSeek-V3.2',
       'FW-Kimi-K2.5',
     ]);
@@ -61,13 +61,13 @@ describe('modelRouter fallback ordering (#411)', () => {
 
     const routing = modelRouter.getModelRouting();
 
-    expect(routing.deploymentName).toBe('gpt-5.4-mini');
+    expect(routing.deploymentName).toBe('o4-mini');
     expect(routing.isReasoning).toBe(false);
   });
 
   it('automatically restores ordinary routing to the high-capacity reasoning lane when the impaired default lane is degraded', async () => {
     const modelRouter = await loadModelRouterWithDefaults();
-    await seedDegradedLane('gpt-5.4-mini');
+    await seedDegradedLane('o4-mini');
 
     const routing = modelRouter.getModelRouting();
 
@@ -77,7 +77,7 @@ describe('modelRouter fallback ordering (#411)', () => {
 
   it('automatically restores ordinary routing when the impaired default lane is tracked down by health signals', async () => {
     const modelRouter = await loadModelRouterWithDefaults();
-    await seedTrackedDownLane('gpt-5.4-mini');
+    await seedTrackedDownLane('o4-mini');
 
     const routing = modelRouter.getModelRouting();
 
@@ -87,7 +87,7 @@ describe('modelRouter fallback ordering (#411)', () => {
 
   it('falls back to the primary lane when both the impaired default lane and reasoning lane are unavailable', async () => {
     const modelRouter = await loadModelRouterWithDefaults();
-    await seedDegradedLane('gpt-5.4-mini');
+    await seedDegradedLane('o4-mini');
     await seedDegradedLane('o4-mini');
 
     const routing = modelRouter.getModelRouting();
@@ -95,14 +95,14 @@ describe('modelRouter fallback ordering (#411)', () => {
     expect(routing.deploymentName).toBe('grok-4-1-fast-non-reasoning');
   });
 
-  it('falls from gpt-5.4-mini into tertiary defaults before circling back to Grok primary', async () => {
+  it('falls from o4-mini into tertiary defaults before circling back to Grok primary', async () => {
     const modelRouter = await loadModelRouterWithDefaults();
 
-    const names = modelRouter.getFallbackChain('gpt-5.4-mini')
+    const names = modelRouter.getFallbackChain('o4-mini')
       .map((entry) => entry.deploymentName);
 
     expect(names.slice(0, 4)).toEqual([
-      'gpt-5.4-mini',
+      'o4-mini',
       'DeepSeek-V3.2',
       'FW-Kimi-K2.5',
       'grok-4-1-fast-non-reasoning',

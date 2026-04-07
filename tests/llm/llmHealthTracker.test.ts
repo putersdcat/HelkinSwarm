@@ -14,12 +14,12 @@ describe('llmHealthTracker', () => {
   });
 
   it('is ok by default before any model has failed', () => {
-    registerModels(['grok-4-1-fast-non-reasoning', 'gpt-5.4-mini']);
+    registerModels(['grok-4-1-fast-non-reasoning', 'o4-mini']);
     expect(getLlmAggregateHealth()).toBe('ok');
   });
 
   it('becomes degraded when some but not all models are down', () => {
-    registerModels(['grok-4-1-fast-non-reasoning', 'gpt-5.4-mini']);
+    registerModels(['grok-4-1-fast-non-reasoning', 'o4-mini']);
     reportLlmFailure('grok-4-1-fast-non-reasoning');
     reportLlmFailure('grok-4-1-fast-non-reasoning');
 
@@ -27,11 +27,11 @@ describe('llmHealthTracker', () => {
   });
 
   it('becomes down when all known models have consecutive recent failures', () => {
-    registerModels(['grok-4-1-fast-non-reasoning', 'gpt-5.4-mini']);
+    registerModels(['grok-4-1-fast-non-reasoning', 'o4-mini']);
     reportLlmFailure('grok-4-1-fast-non-reasoning');
     reportLlmFailure('grok-4-1-fast-non-reasoning');
-    reportLlmFailure('gpt-5.4-mini');
-    reportLlmFailure('gpt-5.4-mini');
+    reportLlmFailure('o4-mini');
+    reportLlmFailure('o4-mini');
 
     expect(getLlmAggregateHealth()).toBe('down');
   });

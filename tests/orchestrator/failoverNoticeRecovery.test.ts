@@ -13,7 +13,7 @@ describe('failoverNoticeRecovery', () => {
           durationMs: 0,
           status: 'completed',
           children: [],
-          detail: 'originalModel: o4-mini, fallbackModel: gpt-5.4-mini, reason: HTTP 503',
+          detail: 'originalModel: o4-mini, fallbackModel: o4-mini, reason: HTTP 503',
         },
       ],
     });
@@ -21,7 +21,7 @@ describe('failoverNoticeRecovery', () => {
     expect(steps).toEqual([
       {
         fromModel: 'o4-mini',
-        toModel: 'gpt-5.4-mini',
+        toModel: 'o4-mini',
         reason: 'HTTP 503',
         statusCode: 503,
       },

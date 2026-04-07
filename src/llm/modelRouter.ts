@@ -24,11 +24,11 @@ export interface ModelLane {
 
 const GLOBAL_LANE_DEFAULTS: ModelLane = {
   primary: 'grok-4-1-fast-non-reasoning',
-  secondary: 'gpt-5.4-mini',
+  secondary: 'o4-mini',
   embedding: 'text-embedding-3-large',
   // grok-4-1-fast-reasoning consistently times out (>55s); tracked in #128
   reasoning: 'o4-mini',
-  vision: 'gpt-5.4-mini', // vision-capable fallback
+  vision: 'o4-mini', // vision-capable fallback
 };
 
 const EU_LANE_DEFAULTS: ModelLane = {
@@ -142,7 +142,7 @@ const MODEL_CAPACITY_PROFILES: readonly ModelCapacityProfile[] = [
     impairmentProtocol: 'prefer-simple-work',
   },
   {
-    modelId: 'gpt-5.4-mini',
+    modelId: 'o4-mini',
     capacityLevel: 'low',
     defaultReasoning: false,
     suitableFor: ['simple-sub-session', 'fast-response', 'vision'],
@@ -154,7 +154,7 @@ const MODEL_CAPACITY_PROFILES: readonly ModelCapacityProfile[] = [
 const DIRECT_CHAT_MODEL_OVERRIDES = [
   'grok-4-1-fast-non-reasoning',
   'grok-4-1-fast-reasoning',
-  'gpt-5.4-mini',
+  'o4-mini',
   'o4-mini',
   'DeepSeek-V3.2',
   'FW-MiniMax-M2.5',
@@ -408,7 +408,7 @@ export function getFallbackChain(requestedDeploymentName?: string, options: Fall
 
   if (requested === routing.lane.primary) {
     // When the primary Grok slot is saturated or unhealthy, prefer the explicitly
-    // provisioned secondary slot first. In the global lane this is gpt-5.4-mini,
+    // provisioned secondary slot first. In the global lane this is o4-mini,
     // which is our preferred non-Grok fallback before tertiary models (#411).
     candidates.push(routing.lane.secondary, config.llmFallbackPrimary, config.llmFallbackSecondary);
   } else if (requested === routing.lane.secondary) {

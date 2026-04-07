@@ -8,7 +8,7 @@ import {
 
 describe('needsNewTokenParam', () => {
   it('uses max_completion_tokens for GPT-5 family models', () => {
-    expect(needsNewTokenParam('gpt-5.4-mini')).toBe(true);
+    expect(needsNewTokenParam('o4-mini')).toBe(true);
   });
 
   it('uses max_completion_tokens for GPT-4o family models', () => {
@@ -34,9 +34,9 @@ describe('direct chat model override compatibility', () => {
     expect(getDirectChatModelIncompatibilityReason('gpt-5.1-codex-mini')).toContain('chat completions API');
   });
 
-  it('keeps gpt-5.4-mini available for direct chat override', () => {
-    expect(isDirectChatModelOverrideSupported('gpt-5.4-mini')).toBe(true);
-    expect(getDirectChatModelIncompatibilityReason('gpt-5.4-mini')).toBeUndefined();
+  it('keeps o4-mini available for direct chat override', () => {
+    expect(isDirectChatModelOverrideSupported('o4-mini')).toBe(true);
+    expect(getDirectChatModelIncompatibilityReason('o4-mini')).toBeUndefined();
   });
 
   it('rejects friendly aliases that are not real direct /model deployment names', () => {

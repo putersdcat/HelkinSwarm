@@ -24,7 +24,7 @@ describe('turnTelemetry model override disclosure', () => {
   });
 
   it('accepts version-suffixed actual model names', () => {
-    expect(doesActualModelSatisfyRequestedOverride('gpt-5.4-mini', 'gpt-5.4-mini-2026-03-17')).toBe(true);
+    expect(doesActualModelSatisfyRequestedOverride('o4-mini', 'o4-mini-2026-03-17')).toBe(true);
   });
 
   it('rejects fallback to a different model', () => {
@@ -40,7 +40,7 @@ describe('turnTelemetry model override disclosure', () => {
 
   it('does not build a disclosure when the requested model was honored', () => {
     expect(buildModelOverrideDisclosure('o4-mini', 'o4-mini')).toBe('');
-    expect(buildModelOverrideDisclosure('gpt-5.4-mini', 'gpt-5.4-mini-2026-03-17')).toBe('');
+    expect(buildModelOverrideDisclosure('o4-mini', 'o4-mini-2026-03-17')).toBe('');
   });
 });
 
@@ -52,7 +52,7 @@ describe('estimateCostEur', () => {
   });
 
   it('matches versioned deployment names via prefix', () => {
-    const cost = estimateCostEur('gpt-5.4-mini-2026-03-17', 1_000_000);
+    const cost = estimateCostEur('o4-mini-2026-03-17', 1_000_000);
     expect(cost).toBeCloseTo(1.80, 2);
   });
 
@@ -102,13 +102,13 @@ describe('formatTelemetryFooter', () => {
     const data: TurnTelemetryData = {
       ...baseTelemetry,
       toolCalls: ['outlook_list_messages', 'github_search_repos'],
-      modelSequence: ['grok-4-1-fast-non-reasoning', 'gpt-5.4-mini'],
+      modelSequence: ['grok-4-1-fast-non-reasoning', 'o4-mini'],
     };
     const result = formatTelemetryFooter('verbose', data);
     expect(result).toContain('safe:✓');
     expect(result).toContain('outlook_list_messages');
     expect(result).toContain('github_search_repos');
-    expect(result).toContain('models:grok-4.1f→gpt-5.4-mini');
+    expect(result).toContain('models:grok-4.1f→o4m');
     expect(result).toContain('$');
     expect(result).toContain('corr:abcdef12');
   });
@@ -127,3 +127,4 @@ describe('formatTelemetryFooter', () => {
     expect(result).toContain('plan:compound');
   });
 });
+

@@ -9,8 +9,8 @@ async function loadFollowUpModule() {
   process.env['AZURE_CONTENT_SAFETY_ENDPOINT'] = 'https://content-safety.example.com';
   process.env['AZURE_CONTENT_SAFETY_KEY'] = 'test-key';
   process.env['LLM_PRIMARY_MODEL'] = 'grok-4-1-fast-non-reasoning';
-  process.env['LLM_SECONDARY_MODEL'] = 'gpt-5.4-mini';
-  process.env['LLM_FALLBACK_PRIMARY'] = 'gpt-5.4-mini';
+  process.env['LLM_SECONDARY_MODEL'] = 'o4-mini';
+  process.env['LLM_FALLBACK_PRIMARY'] = 'o4-mini';
   process.env['LLM_FALLBACK_SECONDARY'] = 'FW-Kimi-K2.5';
   return import('../../src/orchestrator/llmFollowUpActivity.js');
 }
@@ -29,7 +29,7 @@ describe('mergeFollowUpResponseEvidence', () => {
         failoverSteps: [],
       },
       {
-        model: 'gpt-5.4-mini',
+        model: 'o4-mini',
         usage: {
           promptTokens: 80,
           completionTokens: 30,
@@ -38,7 +38,7 @@ describe('mergeFollowUpResponseEvidence', () => {
         failoverSteps: [
           {
             fromModel: 'o4-mini',
-            toModel: 'gpt-5.4-mini',
+            toModel: 'o4-mini',
             reason: 'HTTP 503',
             statusCode: 503,
           },
@@ -46,20 +46,20 @@ describe('mergeFollowUpResponseEvidence', () => {
       },
     ]);
 
-    expect(evidence.model).toBe('gpt-5.4-mini');
+    expect(evidence.model).toBe('o4-mini');
     expect(evidence.tokensUsed).toBe(250);
     expect(evidence.promptTokens).toBe(180);
     expect(evidence.failoverSteps).toEqual([
       {
         fromModel: 'o4-mini',
-        toModel: 'gpt-5.4-mini',
+        toModel: 'o4-mini',
         reason: 'HTTP 503',
         statusCode: 503,
       },
     ]);
     expect(evidence.operationalNotices).toEqual([
-      '⚠️ Operational note: o4-mini was temporarily unavailable (HTTP 503); auto-failed over to gpt-5.4-mini and continued your request.',
-      '⚠️ Cognitive state note: this reply completed on gpt-5.4-mini, which is a low-capacity impaired lane for heavy reasoning. Treat it as degraded continuity and retry /heavy later if you need full-capacity reasoning.',
+      '⚠️ Operational note: o4-mini was temporarily unavailable (HTTP 503); auto-failed over to o4-mini and continued your request.',
+      '⚠️ Cognitive state note: this reply completed on o4-mini, which is a low-capacity impaired lane for heavy reasoning. Treat it as degraded continuity and retry /heavy later if you need full-capacity reasoning.',
     ]);
   });
 });

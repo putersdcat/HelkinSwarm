@@ -74,11 +74,11 @@ describe('healthHandler', () => {
   });
 
   it('reports llm=down and unhealthy when all known models are down', async () => {
-    registerModels(['grok-4-1-fast-non-reasoning', 'gpt-5.4-mini']);
+    registerModels(['grok-4-1-fast-non-reasoning', 'o4-mini']);
     reportLlmFailure('grok-4-1-fast-non-reasoning');
     reportLlmFailure('grok-4-1-fast-non-reasoning');
-    reportLlmFailure('gpt-5.4-mini');
-    reportLlmFailure('gpt-5.4-mini');
+    reportLlmFailure('o4-mini');
+    reportLlmFailure('o4-mini');
 
     const response = await healthHandler({} as never, {} as never);
     expect(response.status).toBe(200);

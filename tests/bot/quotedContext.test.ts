@@ -68,7 +68,7 @@ describe('QuotedContext', () => {
 
   it('strips telemetry footers from stored bot replies before they are reused as quoted context', () => {
     const sanitized = sanitizeQuotedReplyText(
-      'I checked the installed skills without executing anything yet. Best matching tool: outlook_search_emails.\n\n[E2E:3062ms|m:gpt-5.4-mini-2026-03-17|pt:3068|ct:42|prompt:1751ms|llm:880ms|tools:103ms|tools:helkin_skill_search|safe:✓|tok:1|corr:fd7105b9]',
+      'I checked the installed skills without executing anything yet. Best matching tool: outlook_search_emails.\n\n[E2E:3062ms|m:o4-mini-2026-03-17|pt:3068|ct:42|prompt:1751ms|llm:880ms|tools:103ms|tools:helkin_skill_search|safe:✓|tok:1|corr:fd7105b9]',
     );
 
     expect(sanitized).toBe(

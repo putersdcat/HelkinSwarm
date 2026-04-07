@@ -7,7 +7,7 @@ async function loadModelRouterWithDefaults() {
   process.env['MICROSOFT_APP_TENANT_ID'] = 'test-tenant-id';
   process.env['AZURE_AI_FOUNDRY_ENDPOINT'] = 'https://foundry.example.com';
   process.env['LLM_PRIMARY_MODEL'] = 'grok-4-1-fast-non-reasoning';
-  process.env['LLM_SECONDARY_MODEL'] = 'gpt-5.4-mini';
+  process.env['LLM_SECONDARY_MODEL'] = 'o4-mini';
 
   return import('../../src/llm/modelRouter.js');
 }
@@ -42,7 +42,7 @@ describe('ingress task complexity + turn assessment (#531)', () => {
     });
 
     expect(assessment.isImpaired).toBe(true);
-    expect(assessment.deploymentName).toBe('gpt-5.4-mini');
+    expect(assessment.deploymentName).toBe('o4-mini');
     expect(complexity).toBe('complex');
   });
 

@@ -28,8 +28,8 @@ var grokReasoningRequested = contains(modelQuotaOverrides, 'grok-4-1-fast-reason
 var grokFastRequested = contains(modelQuotaOverrides, 'grok-4-1-fast-non-reasoning')
   ? int(modelQuotaOverrides['grok-4-1-fast-non-reasoning'])
   : (quotaStrategy == 'minimize' ? 10 : quotaStrategy == 'manual' ? 20 : 20)
-var gpt54Requested = contains(modelQuotaOverrides, 'gpt-5.4-mini')
-  ? int(modelQuotaOverrides['gpt-5.4-mini'])
+var gpt54Requested = contains(modelQuotaOverrides, 'o4-mini')
+  ? int(modelQuotaOverrides['o4-mini'])
   : (quotaStrategy == 'minimize' ? 50 : quotaStrategy == 'manual' ? 202 : 202)  // Preserve the higher-capacity GPT-5.4-mini request; this is the preferred non-Grok fallback (#411)
 var codexRequested = contains(modelQuotaOverrides, 'gpt-5.1-codex-mini')
   ? int(modelQuotaOverrides['gpt-5.1-codex-mini'])
@@ -114,11 +114,11 @@ resource aiDeployGrokFast 'Microsoft.CognitiveServices/accounts/deployments@2024
 
 resource aiDeployGpt54Mini 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
   parent: aiServices
-  name: 'gpt-5.4-mini'
+  name: 'o4-mini'
   dependsOn: [ aiDeployGrokFast ]
   sku: { name: 'GlobalStandard', capacity: capGpt54Mini }
   properties: {
-    model: { format: 'OpenAI', name: 'gpt-5.4-mini', version: '2026-03-17' }
+    model: { format: 'OpenAI', name: 'o4-mini', version: '2026-03-17' }
     raiPolicyName: 'Microsoft.DefaultV2'
     versionUpgradeOption: 'NoAutoUpgrade'
   }

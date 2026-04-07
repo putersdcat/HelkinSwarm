@@ -13,7 +13,7 @@ async function loadFoundryClientModule() {
   process.env['AZURE_FOUNDRY_OBO_TOKEN'] = 'test-obo-token';
   process.env['LLM_PRIMARY_MODEL'] = 'grok-4-1-fast-non-reasoning';
   process.env['LLM_SECONDARY_MODEL'] = 'grok-4-1-fast-non-reasoning';
-  process.env['LLM_FALLBACK_PRIMARY'] = 'gpt-5.4-mini';
+  process.env['LLM_FALLBACK_PRIMARY'] = 'o4-mini';
   process.env['LLM_FALLBACK_SECONDARY'] = 'FW-Kimi-K2.5';
 
   return import('../../src/llm/foundryClient.js');
@@ -69,7 +69,7 @@ function makeRoutingConfig() {
       secondary: 'grok-4-1-fast-non-reasoning',
       embedding: 'text-embedding-3-large',
       reasoning: 'o4-mini',
-      vision: 'gpt-5.4-mini',
+      vision: 'o4-mini',
     },
     laneName: 'global' as const,
     isReasoning: false,
@@ -104,7 +104,7 @@ describe('FoundryClient failover', () => {
 
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(make429Response(10))
-      .mockResolvedValueOnce(makeOkResponse('gpt-5.4-mini'));
+      .mockResolvedValueOnce(makeOkResponse('o4-mini'));
 
     vi.stubGlobal('fetch', fetchMock);
 
@@ -117,19 +117,19 @@ describe('FoundryClient failover', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0]?.[0]).toContain('/deployments/grok-4-1-fast-non-reasoning/chat/completions');
-    expect(fetchMock.mock.calls[1]?.[0]).toContain('/deployments/gpt-5.4-mini/chat/completions');
-    expect(response.model).toBe('gpt-5.4-mini');
+    expect(fetchMock.mock.calls[1]?.[0]).toContain('/deployments/o4-mini/chat/completions');
+    expect(response.model).toBe('o4-mini');
     expect(response.failoverSteps).toEqual([
       {
         fromModel: 'grok-4-1-fast-non-reasoning',
-        toModel: 'gpt-5.4-mini',
+        toModel: 'o4-mini',
         reason: 'HTTP 429',
         statusCode: 429,
       },
     ]);
     expect(buildSuccessfulFailoverNotices(response.failoverSteps)).toEqual([
-      '⚠️ Operational note: grok-4-1-fast-non-reasoning hit a 429 quota/rate limit; auto-failed over to gpt-5.4-mini and continued your request.',
-      '⚠️ Cognitive state note: this reply completed on gpt-5.4-mini, which is a low-capacity impaired lane for heavy reasoning. Treat it as degraded continuity and retry /heavy later if you need full-capacity reasoning.',
+      '⚠️ Operational note: grok-4-1-fast-non-reasoning hit a 429 quota/rate limit; auto-failed over to o4-mini and continued your request.',
+      '⚠️ Cognitive state note: this reply completed on o4-mini, which is a low-capacity impaired lane for heavy reasoning. Treat it as degraded continuity and retry /heavy later if you need full-capacity reasoning.',
     ]);
   });
 
@@ -195,7 +195,7 @@ describe('FoundryClient failover', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[0]?.[0]).toContain('/deployments/o4-mini/chat/completions');
-    expect(fetchMock.mock.calls[1]?.[0]).not.toContain('/deployments/gpt-5.4-mini/chat/completions');
+    expect(fetchMock.mock.calls[1]?.[0]).not.toContain('/deployments/o4-mini/chat/completions');
     expect(response.model).toBe('grok-4-1-fast-non-reasoning');
     expect(response.failoverSteps).toEqual([
       {
@@ -213,7 +213,7 @@ describe('FoundryClient failover', () => {
 
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(make429Response(45))   // 45 seconds retry-after
-      .mockResolvedValueOnce(makeOkResponse('gpt-5.4-mini'));
+      .mockResolvedValueOnce(makeOkResponse('o4-mini'));
 
     vi.stubGlobal('fetch', fetchMock);
 
@@ -236,11 +236,11 @@ describe('FoundryClient failover', () => {
     const circuitBreaker = await import('../../src/llm/modelCircuitBreaker.js');
 
     // Pre-degrade the fallback primary so it's skipped during cascade
-    circuitBreaker.markModelDegraded('gpt-5.4-mini', 'HTTP 429');
+    circuitBreaker.markModelDegraded('o4-mini', 'HTTP 429');
 
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(make503Response())      // primary → 503
-      // gpt-5.4-mini is skipped because it's already degraded
+      // o4-mini is skipped because it's already degraded
       .mockResolvedValueOnce(makeOkResponse('FW-Kimi-K2.5'));
 
     vi.stubGlobal('fetch', fetchMock);
@@ -253,7 +253,7 @@ describe('FoundryClient failover', () => {
     });
 
     // Should only have 2 fetch calls: primary (503) and FW-Kimi-K2.5 (success)
-    // gpt-5.4-mini was skipped entirely
+    // o4-mini was skipped entirely
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(response.model).toBe('FW-Kimi-K2.5');
   });
@@ -266,7 +266,7 @@ describe('FoundryClient failover', () => {
     tracker.reportLlmFailure('grok-4-1-fast-non-reasoning');
 
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(makeOkResponse('gpt-5.4-mini'));
+      .mockResolvedValueOnce(makeOkResponse('o4-mini'));
 
     vi.stubGlobal('fetch', fetchMock);
 
@@ -278,8 +278,8 @@ describe('FoundryClient failover', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0]?.[0]).toContain('/deployments/gpt-5.4-mini/chat/completions');
-    expect(response.model).toBe('gpt-5.4-mini');
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('/deployments/o4-mini/chat/completions');
+    expect(response.model).toBe('o4-mini');
   });
 
   it('converts a hung fetch into a TimeoutError via the hard timeout wrapper (#325)', async () => {
@@ -303,13 +303,13 @@ describe('FoundryClient failover', () => {
 
     tracker.registerModels([
       'grok-4-1-fast-non-reasoning',
-      'gpt-5.4-mini',
+      'o4-mini',
       'FW-Kimi-K2.5',
     ]);
     tracker.reportLlmFailure('grok-4-1-fast-non-reasoning');
     tracker.reportLlmFailure('grok-4-1-fast-non-reasoning');
-    tracker.reportLlmFailure('gpt-5.4-mini');
-    tracker.reportLlmFailure('gpt-5.4-mini');
+    tracker.reportLlmFailure('o4-mini');
+    tracker.reportLlmFailure('o4-mini');
     tracker.reportLlmFailure('FW-Kimi-K2.5');
     tracker.reportLlmFailure('FW-Kimi-K2.5');
 
@@ -336,7 +336,7 @@ describe('FoundryClient failover', () => {
     proof.seedForcedRetryableFailure('FW-Kimi-K2.5', 'proof-failover', 503);
 
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(makeOkResponse('gpt-5.4-mini'));
+      .mockResolvedValueOnce(makeOkResponse('o4-mini'));
 
     vi.stubGlobal('fetch', fetchMock);
 
@@ -353,8 +353,8 @@ describe('FoundryClient failover', () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0]?.[0]).toContain('/deployments/gpt-5.4-mini/chat/completions');
-    expect(response.model).toBe('gpt-5.4-mini');
+    expect(fetchMock.mock.calls[0]?.[0]).toContain('/deployments/o4-mini/chat/completions');
+    expect(response.model).toBe('o4-mini');
     expect(response.failoverSteps).toEqual([
       {
         fromModel: 'o4-mini',
@@ -370,14 +370,14 @@ describe('FoundryClient failover', () => {
       },
       {
         fromModel: 'FW-Kimi-K2.5',
-        toModel: 'gpt-5.4-mini',
+        toModel: 'o4-mini',
         reason: 'HTTP 503',
         statusCode: 503,
       },
     ]);
     expect(buildSuccessfulFailoverNotices(response.failoverSteps)).toEqual([
-      '⚠️ Operational note: o4-mini was temporarily unavailable (HTTP 503); auto-failed over to gpt-5.4-mini and continued your request.',
-      '⚠️ Cognitive state note: this reply completed on gpt-5.4-mini, which is a low-capacity impaired lane for heavy reasoning. Treat it as degraded continuity and retry /heavy later if you need full-capacity reasoning.',
+      '⚠️ Operational note: o4-mini was temporarily unavailable (HTTP 503); auto-failed over to o4-mini and continued your request.',
+      '⚠️ Cognitive state note: this reply completed on o4-mini, which is a low-capacity impaired lane for heavy reasoning. Treat it as degraded continuity and retry /heavy later if you need full-capacity reasoning.',
     ]);
   });
 });

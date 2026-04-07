@@ -1,5 +1,5 @@
 {
-  "model": "gpt-5.4-mini",
+  "model": "o4-mini",
   "version": 1,
   "presentation": "flat_json",
   "maxToolsPerTurn": 0,

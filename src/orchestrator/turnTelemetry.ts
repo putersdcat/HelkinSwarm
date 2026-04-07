@@ -32,7 +32,6 @@ export interface TurnTelemetryData {
 // USD per 1M tokens (blended input/output average). (#254, #260)
 const MODEL_COST_USD_PER_M: Record<string, number> = {
   'gpt-5': 18.00,
-  'gpt-5.4-mini': 1.80,
   'o4-mini': 2.40,
   'o3': 24.00,
   'grok-4-1-fast-non-reasoning': 4.00,

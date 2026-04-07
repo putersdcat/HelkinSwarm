@@ -55,7 +55,7 @@
     "embeddingRequested": "[if(contains(parameters('modelQuotaOverrides'), 'text-embedding-3-large'), int(parameters('modelQuotaOverrides')['text-embedding-3-large']), if(equals(parameters('quotaStrategy'), 'minimize'), 50, if(equals(parameters('quotaStrategy'), 'manual'), 100, 100)))]",
     "grokReasoningRequested": "[if(contains(parameters('modelQuotaOverrides'), 'grok-4-1-fast-reasoning'), int(parameters('modelQuotaOverrides')['grok-4-1-fast-reasoning']), if(equals(parameters('quotaStrategy'), 'minimize'), 10, if(equals(parameters('quotaStrategy'), 'manual'), 20, 20)))]",
     "grokFastRequested": "[if(contains(parameters('modelQuotaOverrides'), 'grok-4-1-fast-non-reasoning'), int(parameters('modelQuotaOverrides')['grok-4-1-fast-non-reasoning']), if(equals(parameters('quotaStrategy'), 'minimize'), 10, if(equals(parameters('quotaStrategy'), 'manual'), 20, 20)))]",
-    "gpt54Requested": "[if(contains(parameters('modelQuotaOverrides'), 'gpt-5.4-mini'), int(parameters('modelQuotaOverrides')['gpt-5.4-mini']), if(equals(parameters('quotaStrategy'), 'minimize'), 50, if(equals(parameters('quotaStrategy'), 'manual'), 202, 202)))]",
+    "gpt54Requested": "[if(contains(parameters('modelQuotaOverrides'), 'o4-mini'), int(parameters('modelQuotaOverrides')['o4-mini']), if(equals(parameters('quotaStrategy'), 'minimize'), 50, if(equals(parameters('quotaStrategy'), 'manual'), 202, 202)))]",
     "codexRequested": "[if(contains(parameters('modelQuotaOverrides'), 'gpt-5.1-codex-mini'), int(parameters('modelQuotaOverrides')['gpt-5.1-codex-mini']), if(equals(parameters('quotaStrategy'), 'minimize'), 5, if(equals(parameters('quotaStrategy'), 'manual'), 10, 10)))]",
     "o4MiniRequested": "[if(contains(parameters('modelQuotaOverrides'), 'o4-mini'), int(parameters('modelQuotaOverrides')['o4-mini']), if(equals(parameters('quotaStrategy'), 'minimize'), 5, if(equals(parameters('quotaStrategy'), 'manual'), 20, 20)))]",
     "fwMiniMaxRequested": "[if(contains(parameters('modelQuotaOverrides'), 'FW-MiniMax-M2.5'), int(parameters('modelQuotaOverrides')['FW-MiniMax-M2.5']), if(equals(parameters('quotaStrategy'), 'minimize'), 5, if(equals(parameters('quotaStrategy'), 'manual'), 5, 5)))]",
@@ -143,7 +143,7 @@
     {
       "type": "Microsoft.CognitiveServices/accounts/deployments",
       "apiVersion": "2024-10-01",
-      "name": "[format('{0}/{1}', parameters('aiServicesName'), 'gpt-5.4-mini')]",
+      "name": "[format('{0}/{1}', parameters('aiServicesName'), 'o4-mini')]",
       "sku": {
         "name": "GlobalStandard",
         "capacity": "[variables('capGpt54Mini')]"
@@ -151,7 +151,7 @@
       "properties": {
         "model": {
           "format": "OpenAI",
-          "name": "gpt-5.4-mini",
+          "name": "o4-mini",
           "version": "2026-03-17"
         },
         "raiPolicyName": "Microsoft.DefaultV2",
@@ -179,7 +179,7 @@
         "versionUpgradeOption": "NoAutoUpgrade"
       },
       "dependsOn": [
-        "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('aiServicesName'), 'gpt-5.4-mini')]"
+        "[resourceId('Microsoft.CognitiveServices/accounts/deployments', parameters('aiServicesName'), 'o4-mini')]"
       ]
     },
     {
