@@ -223,11 +223,9 @@ export async function fetchWithHardTimeout(
 
 export class FoundryClient {
   private routing: ModelRouting;
-  private apiBase: string;
 
   constructor(routing?: ModelRouting) {
     this.routing = routing ?? getModelRouting();
-    this.apiBase = this.routing.apiBase;
   }
 
   /**
@@ -243,9 +241,12 @@ export class FoundryClient {
     const correlationId = options.correlationId ?? crypto.randomUUID();
 
     // Get the full fallback chain for the requested deployment.
-    const chain = getFallbackChain(this.routing.deploymentName, {
-      requestedTaskComplexity: options.requestedTaskComplexity,
-    });
+    // OpenRouter has a separate chain (no Azure deployment names in the fallback list).
+    const chain = this.routing.usesObo === false
+      ? buildOpenRouterFallbackChain(this.routing, getEnvConfig())
+      : getFallbackChain(this.routing.deploymentName, {
+          requestedTaskComplexity: options.requestedTaskComplexity,
+        });
 
     // Register models with the health tracker so it knows the full set (#325).
     registerModels(chain.map(r => r.deploymentName));
@@ -399,11 +400,7 @@ export class FoundryClient {
     timeoutMs: number,
   ): Promise<ChatCompletionResponse> {
     if (routing.usesObo === false) {
-      throw new FoundryError(
-        'OpenRouter / BYOK external LLM routing is currently disabled in this deployment',
-        501,
-        routing.deploymentName,
-      );
+      return this.callOpenRouter(routing, options, correlationId, timeoutMs);
     }
 
     const base = routing.apiBase.replace(/\/+$/, '');
@@ -556,10 +553,13 @@ export class FoundryClient {
 
   /**
    * Get an embeddings vector for the given text.
+   * Embeddings always use Azure AI Foundry — OpenRouter provides no embedding proxy (#501).
    */
   async getEmbedding(text: string): Promise<number[]> {
-    const embeddingModel = this.routing.lane.embedding;
-    const url = `${this.apiBase}/openai/deployments/${embeddingModel}/embeddings?api-version=2024-06-01`;
+    // When in OpenRouter mode, force Azure routing for embeddings.
+    const embeddingRouting = this.routing.usesObo === false ? getModelRouting('azure') : this.routing;
+    const embeddingModel = embeddingRouting.lane.embedding;
+    const url = `${embeddingRouting.apiBase}/openai/deployments/${embeddingModel}/embeddings?api-version=2024-06-01`;
 
     const oboToken = await this.getOboToken();
 
@@ -588,6 +588,133 @@ export class FoundryClient {
   }
 
   /**
+   * Call OpenRouter's unified OpenAI-compatible API (#501).
+   * Uses a direct API key (no OBO token). For Grok 4.1 models, the `reasoning.enabled`
+   * flag in the request body is set based on `routing.isReasoning`.
+   */
+  private async callOpenRouter(
+    routing: ModelRouting,
+    options: Omit<FoundryClientOptions, 'routing'>,
+    correlationId: string,
+    timeoutMs: number,
+  ): Promise<ChatCompletionResponse> {
+    const config = getEnvConfig();
+    if (!config.openrouterApiKey) {
+      throw new FoundryError(
+        'OPENROUTER_API_KEY is not configured — set LLM_PROVIDER=azure or add the key to Key Vault',
+        503,
+        routing.deploymentName,
+      );
+    }
+
+    const url = `${routing.apiBase}/chat/completions`;
+    const parsedUrl = new URL(url);
+
+    const body: Record<string, unknown> = {
+      model: routing.deploymentName,
+      messages: options.messages.map(mapOutgoingMessage),
+      stream: false,
+      max_tokens: options.maxTokens ?? 4096,
+    };
+
+    if (routing.isReasoning) {
+      // Explicit reasoning control for x-ai/grok-4.1-fast on OpenRouter.
+      body.reasoning = { enabled: true };
+    } else {
+      body.temperature = options.temperature ?? 0.7;
+    }
+
+    if (options.tools && options.tools.length > 0) {
+      body.tools = options.tools;
+      body.tool_choice = options.toolChoice ?? 'auto';
+    }
+
+    const requestBody = JSON.stringify(body);
+
+    const raw = await new Promise<RawApiResponse>((resolve, reject) => {
+      let settled = false;
+      const settle = (fn: () => void) => {
+        if (!settled) { settled = true; fn(); }
+      };
+
+      let wallClockTimer: ReturnType<typeof setTimeout> | undefined;
+      // eslint-disable-next-line prefer-const
+      let req: ReturnType<typeof _requesterImpl>;
+
+      wallClockTimer = setTimeout(() => {
+        req?.destroy();
+        const te = new Error(`LLM call wall-clock timed out after ${timeoutMs}ms`);
+        te.name = 'TimeoutError';
+        settle(() => reject(te));
+      }, timeoutMs);
+
+      req = _requesterImpl(
+        {
+          hostname: parsedUrl.hostname,
+          port: parsedUrl.port ? Number(parsedUrl.port) : 443,
+          path: parsedUrl.pathname + parsedUrl.search,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${config.openrouterApiKey}`,
+            'x-correlation-id': correlationId,
+            'Content-Length': Buffer.byteLength(requestBody),
+          },
+          agent: new https.Agent({ keepAlive: false }),
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => {
+            clearTimeout(wallClockTimer);
+            const responseText = Buffer.concat(chunks).toString('utf-8');
+            if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
+              const errorText = sanitizeRemoteErrorText(responseText);
+              const retryAfterRaw = res.headers['retry-after'] ?? res.headers['retry-after-ms'];
+              const retryAfterStr = Array.isArray(retryAfterRaw) ? retryAfterRaw[0] : retryAfterRaw;
+              const retryAfterSecs = retryAfterStr ? Number(retryAfterStr) : NaN;
+              const retryAfterMs = res.statusCode === 429 && Number.isFinite(retryAfterSecs) && retryAfterSecs > 0
+                ? retryAfterSecs * 1_000
+                : undefined;
+              settle(() => reject(new FoundryError(
+                `OpenRouter chat completion failed: ${res.statusCode} ${res.statusMessage ?? ''} — ${errorText}`,
+                res.statusCode ?? 500,
+                routing.deploymentName,
+                retryAfterMs,
+              )));
+              return;
+            }
+            try {
+              settle(() => resolve(JSON.parse(responseText) as RawApiResponse));
+            } catch {
+              settle(() => reject(new Error('Failed to parse OpenRouter LLM response JSON')));
+            }
+          });
+          res.on('error', (err) => { clearTimeout(wallClockTimer); settle(() => reject(err)); });
+        },
+      );
+
+      req.setTimeout(timeoutMs, () => {
+        clearTimeout(wallClockTimer);
+        req.destroy();
+        const te = new Error(`OpenRouter LLM call timed out after ${timeoutMs}ms`);
+        te.name = 'TimeoutError';
+        settle(() => reject(te));
+      });
+
+      req.on('error', (err) => {
+        clearTimeout(wallClockTimer);
+        settle(() => reject(err));
+      });
+
+      req.write(requestBody);
+      req.end();
+    });
+
+    return mapApiResponse(raw);
+  }
+
+  /**
    * Acquire a Managed Identity access token for Azure Cognitive Services.
    * Uses the Container Apps / Azure Functions IMDS endpoint (IDENTITY_ENDPOINT +
    * IDENTITY_HEADER) with a per-process cache keyed on expiry.
@@ -600,6 +727,36 @@ export class FoundryClient {
 
     return getBearerToken('https://cognitiveservices.azure.com/.default');
   }
+}
+
+// ---------------------------------------------------------------------------
+// OpenRouter fallback chain (#501)
+// ---------------------------------------------------------------------------
+
+/**
+ * Builds the ordered fallback chain for OpenRouter calls.
+ * Chain: primary (grok-4.1-fast, reasoning) → fallbackPrimary (minimax) → fallbackSecondary.
+ * All entries share the same apiBase and usesObo=false from the base routing.
+ */
+function buildOpenRouterFallbackChain(
+  routing: ModelRouting,
+  config: ReturnType<typeof getEnvConfig>,
+): ModelRouting[] {
+  const chain: ModelRouting[] = [];
+  const seen = new Set<string>();
+
+  const add = (deploymentName: string | undefined, isReasoning: boolean) => {
+    if (!deploymentName || seen.has(deploymentName)) return;
+    seen.add(deploymentName);
+    chain.push({ ...routing, deploymentName, isReasoning });
+  };
+
+  add(routing.deploymentName, routing.isReasoning);             // x-ai/grok-4.1-fast reasoning
+  add(config.openrouterFallbackPrimary, false);                 // minimax/minimax-m2.7
+  add(config.openrouterFallbackSecondary, false);               // tertiary fallback
+  add(routing.lane.secondary, false);                           // lane secondary (if different)
+
+  return chain;
 }
 
 // ---------------------------------------------------------------------------

@@ -58,10 +58,11 @@ const EnvConfigSchema = z.object({
   // Owner
   ownerUserId: z.string().optional(),
 
-  // OpenRouter / BYOK config (feature currently deferred; retained for future reactivation)
+  // OpenRouter / BYOK config (#501)
   llmProvider: z.enum(['azure', 'openrouter']).default('azure'),
-  openrouterFallbackPrimary: z.string().default('moonshotai/kimi-k2.5'),
-  openrouterFallbackSecondary: z.string().default('moonshotai/kimi-k2.5'),
+  openrouterApiKey: z.string().optional(),
+  openrouterFallbackPrimary: z.string().default('minimax/minimax-m2.7'),
+  openrouterFallbackSecondary: z.string().default('minimax/minimax-m2.7'),
 
   // Web search (Brave Search API) — key from Key Vault (#190)
   braveSearchApiKey: z.string().optional(),
@@ -110,6 +111,7 @@ function loadFromEnv(): EnvConfig {
     entraOboClientSecret: process.env['ENTRA_OBO_CLIENT_SECRET'] || undefined,
     ownerUserId: process.env['OWNER_USER_ID'] || undefined,
     llmProvider: process.env['LLM_PROVIDER'] || undefined,
+    openrouterApiKey: process.env['OPENROUTER_API_KEY'] || undefined,
     openrouterFallbackPrimary: process.env['OPENROUTER_FALLBACK_PRIMARY'] || undefined,
     openrouterFallbackSecondary: process.env['OPENROUTER_FALLBACK_SECONDARY'] || undefined,
     braveSearchApiKey: process.env['BRAVE_SEARCH_API_KEY'] || undefined,

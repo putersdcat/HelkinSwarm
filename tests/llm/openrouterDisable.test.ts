@@ -22,7 +22,7 @@ async function loadModelRouterWithEnv(overrides: Record<string, string | undefin
   return import('../../src/llm/modelRouter.js');
 }
 
-describe('OpenRouter runtime disablement (#286)', () => {
+describe('OpenRouter routing (#286 → #501)', () => {
   afterEach(() => {
     delete process.env['LLM_PROVIDER'];
     delete process.env['OPENROUTER_API_KEY'];
@@ -30,22 +30,24 @@ describe('OpenRouter runtime disablement (#286)', () => {
     vi.resetModules();
   });
 
-  it('ignores explicit openrouter routing override and returns Azure routing', async () => {
+  it('returns OpenRouter routing when explicit openrouter provider is requested', async () => {
     const modelRouter = await loadModelRouterWithEnv();
     const routing = modelRouter.getModelRouting('openrouter');
 
-    expect(routing.laneName).toBe('global');
-    expect(routing.apiBase).toBe('https://foundry.example.com');
-    expect(routing.usesObo).toBe(true);
+    expect(routing.laneName).toBe('openrouter');
+    expect(routing.apiBase).toBe('https://openrouter.ai/api/v1');
+    expect(routing.usesObo).toBe(false);
+    expect(routing.deploymentName).toBe('x-ai/grok-4.1-fast');
   });
 
-  it('does not enter an OpenRouter lane when LLM_PROVIDER=openrouter is set', async () => {
+  it('enters the OpenRouter lane when LLM_PROVIDER=openrouter is set', async () => {
     const modelRouter = await loadModelRouterWithEnv({ LLM_PROVIDER: 'openrouter' });
     const routing = modelRouter.getModelRouting();
 
-    expect(routing.laneName).toBe('global');
-    expect(routing.apiBase).toBe('https://foundry.example.com');
-    expect(routing.deploymentName).toBe('grok-4-1-fast-non-reasoning');
+    expect(routing.laneName).toBe('openrouter');
+    expect(routing.apiBase).toBe('https://openrouter.ai/api/v1');
+    expect(routing.deploymentName).toBe('x-ai/grok-4.1-fast');
+    expect(routing.usesObo).toBe(false);
   });
 
   it('does not append OpenRouter as a last-resort fallback even when OPENROUTER_API_KEY is set', async () => {

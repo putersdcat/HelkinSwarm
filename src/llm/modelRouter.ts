@@ -48,14 +48,14 @@ export interface ModelRouting {
   /** The resolved model lane */
   lane: ModelLane;
   /** Which lane we are using (for telemetry) */
-  laneName: 'global' | 'eu';
+  laneName: 'global' | 'eu' | 'openrouter';
   /** Whether this is a reasoning model */
   isReasoning: boolean;
-  /** Deployment name in Azure AI Foundry */
+  /** Deployment name in Azure AI Foundry (or OpenRouter model ID) */
   deploymentName: string;
   /** API base URL */
   apiBase: string;
-  /** Whether OBO token flow is required */
+  /** Whether OBO token flow is required (false for OpenRouter) */
   usesObo: boolean;
 }
 
@@ -278,15 +278,48 @@ function getAzureRouting(config: ReturnType<typeof getEnvConfig>): ModelRouting 
   };
 }
 
+// ---------------------------------------------------------------------------
+// OpenRouter provider routing (#501)
+// ---------------------------------------------------------------------------
+
+/** Base URL for the OpenRouter unified API (OpenAI-compatible). */
+const OPENROUTER_API_BASE = 'https://openrouter.ai/api/v1';
+
+/**
+ * Returns model routing for OpenRouter.
+ * Primary: x-ai/grok-4.1-fast (reasoning enabled by default).
+ * Fallbacks driven by OPENROUTER_FALLBACK_PRIMARY / SECONDARY env vars.
+ * Embeddings still route to Azure AI Foundry (OpenRouter has no embedding proxy).
+ */
+function getOpenRouterRouting(config: ReturnType<typeof getEnvConfig>): ModelRouting {
+  const primary = 'x-ai/grok-4.1-fast';
+  const secondary = config.openrouterFallbackPrimary;
+
+  const lane: ModelLane = {
+    primary,
+    secondary,
+    embedding: config.llmEmbeddingModel ?? 'text-embedding-3-large',
+    reasoning: primary,
+    vision: primary,
+  };
+
+  return {
+    lane,
+    laneName: 'openrouter',
+    isReasoning: true, // grok-4.1-fast defaults to reasoning mode on OpenRouter
+    deploymentName: primary,
+    apiBase: OPENROUTER_API_BASE,
+    usesObo: false,
+  };
+}
+
 /** Returns the active model routing based on current config + override */
 export function getModelRouting(llmProvider?: 'azure' | 'openrouter'): ModelRouting {
   const config = getEnvConfig();
   const provider = llmProvider ?? config.llmProvider ?? 'azure';
 
   if (provider === 'openrouter') {
-    // OpenRouter / BYOK is intentionally disabled for now (#286).
-    // Callers still flow through the supported Azure routing path.
-    return getAzureRouting(config);
+    return getOpenRouterRouting(config);
   }
 
   return getAzureRouting(config);
