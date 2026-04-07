@@ -153,9 +153,14 @@ function pickBufferedIngressTargetInstanceId(
   activeTurnEntries: ReadonlyArray<{ instanceId?: string; updatedAtMs?: number }>,
   fallbackInstanceId: string,
 ): string {
-  return activeTurnEntries
+  const candidates = activeTurnEntries
     .filter((entry): entry is { instanceId: string; updatedAtMs?: number } => typeof entry.instanceId === 'string')
-    .sort((left, right) => (right.updatedAtMs ?? 0) - (left.updatedAtMs ?? 0))[0]?.instanceId
+    .sort((left, right) => (right.updatedAtMs ?? 0) - (left.updatedAtMs ?? 0));
+  // Prefer the live fresh leader over replay instances.
+  // Replay instances (overseer-*-buffered-*) may be near completion; raising
+  // an external event to a Completed orchestration silently drops it.
+  return candidates.find((e) => !e.instanceId.includes('-buffered-'))?.instanceId
+    ?? candidates[0]?.instanceId
     ?? fallbackInstanceId;
 }
 

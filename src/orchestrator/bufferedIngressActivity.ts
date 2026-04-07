@@ -272,7 +272,10 @@ function selectQueuedBufferedMessageForUser(
   }
 
   return queuedDocs.find((doc) => doc.targetInstanceId === targetInstanceId)
-    ?? queuedDocs.find((doc) => !doc.targetInstanceId);
+    ?? queuedDocs.find((doc) => !doc.targetInstanceId)
+    // Last-resort: rescue followers stranded on a completed replay instance.
+    // Safe: sessionReplayGuardActivity idempotency prevents duplicate replies.
+    ?? queuedDocs.find((doc) => doc.targetInstanceId?.includes('-buffered-'));
 }
 
 export async function dequeueBufferedNewMessageForUser(
