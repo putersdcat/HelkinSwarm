@@ -38,11 +38,6 @@ export async function detectDuplicateSessionReplay(rawInput: SessionReplayGuardI
     }
   }
 
-  // #587: if execution for this same correlation is already claimed, any fresh
-  // run that reaches this activity is a duplicate pre-reply execution attempt.
-  // Legitimate Durable replay should use recorded history and should not invoke
-  // this activity again. So we suppress even when the stored ownerInstanceId
-  // matches the current sessionInstanceId.
   const effectiveSessionExecutionClaim = existingSessionExecutionClaim
     ?? await getOutboundArtifactClaim(
       input.conversationId,
@@ -50,7 +45,7 @@ export async function detectDuplicateSessionReplay(rawInput: SessionReplayGuardI
       input.correlationId,
     );
 
-  return effectiveSessionExecutionClaim !== undefined;
+  return effectiveSessionExecutionClaim?.ownerInstanceId !== input.sessionInstanceId;
 }
 
 df.app.activity('sessionReplayGuardActivity', {
