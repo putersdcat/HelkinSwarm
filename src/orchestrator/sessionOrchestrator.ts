@@ -81,6 +81,48 @@ function* emitOrchestratorTelemetry(
   yield context.df.callActivity('emitOrchestratorTelemetryActivity', input);
 }
 
+/**
+ * Maximum time to wait for a follow-up LLM activity via Durable timer (#588).
+ * Using a Durable-state-machine timer (not JS setTimeout) guarantees this fires
+ * even when the activity worker's event loop is busy or JS timers are suppressed.
+ */
+const FOLLOWUP_DURABLE_TIMEOUT_MS = 100_000; // 100s = 90s LLM budget + 10s overhead
+
+/**
+ * Race llmFollowUpActivity against a Durable timer (#588).
+ * If the timer fires first, the orchestrator receives a synthetic timeout result
+ * and moves on — the abandoned activity completes in the background harmlessly.
+ */
+function* withLlmFollowUpTimeout(
+  context: df.OrchestrationContext,
+  input: LlmFollowUpInput,
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions generator helper
+): Generator<df.Task, LlmResult, any> {
+  const timer = context.df.createTimer(
+    new Date(context.df.currentUtcDateTime.getTime() + FOLLOWUP_DURABLE_TIMEOUT_MS),
+  );
+  const task = context.df.callActivity('llmFollowUpActivity', input);
+  const winner = yield context.df.Task.any([task, timer]) as df.Task;
+  if (winner === timer) {
+    console.error(
+      `[sessionOrchestrator] llmFollowUpActivity timed out after ${FOLLOWUP_DURABLE_TIMEOUT_MS}ms` +
+      ' via Durable timer — JS timers unreliable in this env (#588)',
+    );
+    return {
+      content: '⚡ Response generation timed out. Please try again.',
+      model: 'timeout',
+      tokensUsed: 0,
+      promptTokens: 0,
+      toolCalls: [],
+      finishReason: 'error',
+      operationalNotices: ['llmFollowUpActivity timed out via Durable timer'],
+      failoverSteps: [],
+    };
+  }
+  timer.cancel();
+  return task.result as LlmResult;
+}
+
 const ConfirmationResponseSchema = z.object({
   action: z.enum(['approved', 'denied']),
   correlationId: z.string().min(1),
@@ -971,7 +1013,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             operationalNotices: [],
             failoverSteps: [],
           }
-        : yield context.df.callActivity('llmFollowUpActivity', followUpInput);
+        : yield* withLlmFollowUpTimeout(context, followUpInput);
       rememberTelemetryModel(followUp.model);
       cumulativeTokensUsed += followUp.tokensUsed;
       cumulativePromptTokens += followUp.promptTokens;
@@ -1023,7 +1065,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
               },
             ],
           };
-          followUp = yield context.df.callActivity('llmFollowUpActivity', truncRetryInput);
+          followUp = yield* withLlmFollowUpTimeout(context, truncRetryInput);
           rememberTelemetryModel(followUp.model);
           cumulativeTokensUsed += followUp.tokensUsed;
           cumulativePromptTokens += followUp.promptTokens;
@@ -1326,7 +1368,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             : undefined,
           additionalTurns,
         };
-        followUp = yield context.df.callActivity('llmFollowUpActivity', roundFollowUpInput);
+        followUp = yield* withLlmFollowUpTimeout(context, roundFollowUpInput);
         rememberTelemetryModel(followUp.model);
         cumulativeTokensUsed += followUp.tokensUsed;
         cumulativePromptTokens += followUp.promptTokens;
