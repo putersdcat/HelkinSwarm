@@ -38,7 +38,7 @@ export function getContainerAgeMs(nowMs = Date.now()): number {
 // same type was sent within the dedup window.
 // ---------------------------------------------------------------------------
 
-const DEDUP_WINDOW_MS = 60_000; // 60 seconds
+const DEDUP_WINDOW_MS = 10 * 60_000; // 10 minutes — suppress repeated chatter during a single rolling deploy
 const LIFECYCLE_DOC_ID = 'lifecycle-notices';
 const LIFECYCLE_SCOPE = 'global';
 
@@ -52,6 +52,7 @@ interface LifecycleNoticeDoc {
 async function shouldSendNotice(type: 'startup' | 'shutdown'): Promise<boolean> {
   const container = getContainer('runtimeConfig');
   const field = type === 'startup' ? 'lastStartupAt' : 'lastShutdownAt';
+  let existingDoc: LifecycleNoticeDoc | undefined;
 
   try {
     const { resource } = await container
@@ -59,6 +60,7 @@ async function shouldSendNotice(type: 'startup' | 'shutdown'): Promise<boolean> 
       .read<LifecycleNoticeDoc>();
 
     if (resource) {
+      existingDoc = resource;
       const lastSent = resource[field];
       if (lastSent) {
         const elapsed = Date.now() - new Date(lastSent).getTime();
@@ -76,6 +78,7 @@ async function shouldSendNotice(type: 'startup' | 'shutdown'): Promise<boolean> 
   try {
     const now = new Date().toISOString();
     const doc: LifecycleNoticeDoc = {
+      ...existingDoc,
       id: LIFECYCLE_DOC_ID,
       scope: LIFECYCLE_SCOPE,
       [field]: now,
