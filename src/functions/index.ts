@@ -69,6 +69,7 @@ import '../orchestrator/limbicIngressActivity.js';
 import '../orchestrator/mindSessionGuard.js';
 import '../orchestrator/steeringInjectionActivity.js';
 import '../orchestrator/postReplyBatchActivity.js';
+import '../orchestrator/handoffToFreshOverseerActivity.js';
 import '../orchestrator/skillForgePrototypeActivity.js';
 
 // Capability loader — scan skills/ directory and register tool handlers

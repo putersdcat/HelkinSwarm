@@ -28,6 +28,7 @@ import { MIND_SESSION_GUARD_ENTITY_NAME, MindSessionGuardReleaseInputSchema } fr
 import type { PostReplyBatchInput } from './postReplyBatchActivity.js';
 import type { BufferedIngressActivityInput } from './bufferedIngressActivity.js';
 import type { IngressWindowStageInput } from './ingressWindowStageActivity.js';
+import type { HandoffToFreshOverseerInput } from './handoffToFreshOverseerActivity.js';
 import type { EmitOrchestratorTelemetryInput } from './emitOrchestratorTelemetryActivity.js';
 
 /** Spinner starts after this many ms. Only long turns get spinner updates. */
@@ -153,58 +154,116 @@ df.app.orchestration('overseer', function* (context) {
     conversationId: msg.conversationReference?.conversation?.id ?? 'unknown',
   });
 
-  let nextMessage: NewMessageEvent = msg;
+  // Single-turn pattern (#598): process exactly one message, then either
+  // hand off a buffered follower to a fresh instance or wait in the ingress
+  // window. Never loop — looping grows Durable history unboundedly on Azure
+  // Storage backend, causing each subsequent yield to replay all prior events
+  // and degrading follower pickup from ~10s to 7+ minutes.
+  const processTurnResult = yield* processTurn(context, state, msg);
+  const completedCorrelationId = processTurnResult.completedCorrelationId;
+  if (!completedCorrelationId) {
+    return;
+  }
 
-  while (true) {
-    const processTurnResult = yield* processTurn(context, state, nextMessage);
-    const completedCorrelationId = processTurnResult.completedCorrelationId;
-    if (!completedCorrelationId) {
-      return;
+  // --- Check for buffered messages accumulated during the turn ---
+  let bufferedNewMessage: NewMessageEvent | null = null;
+
+  for (const bufferedIngressSignal of processTurnResult.bufferedIngressSignals) {
+    if (!bufferedIngressSignal.docId) {
+      continue;
     }
 
-    let bufferedNewMessage: NewMessageEvent | null = null;
-
-    for (const bufferedIngressSignal of processTurnResult.bufferedIngressSignals) {
-      if (!bufferedIngressSignal.docId) {
-        continue;
-      }
-
-      if (bufferedIngressSignal.event) {
-        const markedDequeued = (yield context.df.callActivity('bufferedIngressActivity', {
-          action: 'mark-buffered-message-dequeued',
-          userId: state.userId,
-          docId: bufferedIngressSignal.docId,
-          targetInstanceId: context.df.instanceId,
-        } satisfies BufferedIngressActivityInput)) as boolean;
-
-        if (markedDequeued) {
-          bufferedNewMessage = bufferedIngressSignal.event;
-          break;
-        }
-      }
-
-      bufferedNewMessage = (yield context.df.callActivity('bufferedIngressActivity', {
-        action: 'claim-buffered-message',
+    if (bufferedIngressSignal.event) {
+      const markedDequeued = (yield context.df.callActivity('bufferedIngressActivity', {
+        action: 'mark-buffered-message-dequeued',
         userId: state.userId,
         docId: bufferedIngressSignal.docId,
         targetInstanceId: context.df.instanceId,
-      } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
+      } satisfies BufferedIngressActivityInput)) as boolean;
 
-      if (bufferedNewMessage) {
+      if (markedDequeued) {
+        bufferedNewMessage = bufferedIngressSignal.event;
         break;
       }
     }
 
-    if (!bufferedNewMessage) {
-      bufferedNewMessage = (yield context.df.callActivity('bufferedIngressActivity', {
-        action: 'dequeue-new-message',
-        userId: state.userId,
-        targetInstanceId: context.df.instanceId,
-      } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
-    }
+    bufferedNewMessage = (yield context.df.callActivity('bufferedIngressActivity', {
+      action: 'claim-buffered-message',
+      userId: state.userId,
+      docId: bufferedIngressSignal.docId,
+      targetInstanceId: context.df.instanceId,
+    } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
 
     if (bufferedNewMessage) {
-      const drainedCorrelationId = bufferedNewMessage.correlationId ?? crypto.randomUUID();
+      break;
+    }
+  }
+
+  if (!bufferedNewMessage) {
+    bufferedNewMessage = (yield context.df.callActivity('bufferedIngressActivity', {
+      action: 'dequeue-new-message',
+      userId: state.userId,
+      targetInstanceId: context.df.instanceId,
+    } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
+  }
+
+  if (bufferedNewMessage) {
+    const drainedCorrelationId = bufferedNewMessage.correlationId ?? crypto.randomUUID();
+
+    yield context.df.callActivity('ingressWindowStageActivity', {
+      action: 'drain',
+      correlationId: completedCorrelationId,
+      nextCorrelationId: drainedCorrelationId,
+      userId: state.userId,
+      instanceId: context.df.instanceId,
+    } satisfies IngressWindowStageInput);
+
+    // Hand off to a fresh overseer instance — current instance completes cleanly (#598)
+    yield context.df.callActivity('handoffToFreshOverseerActivity', {
+      event: { ...bufferedNewMessage, correlationId: drainedCorrelationId },
+      userId: state.userId,
+      correlationId: drainedCorrelationId,
+    } satisfies HandoffToFreshOverseerInput);
+    return;
+  }
+
+  // --- Ingress window: wait for new messages before completing ---
+  context.df.setCustomStatus({
+    stage: 'awaiting-ingress',
+    correlationId: completedCorrelationId,
+  } satisfies OverseerCustomStatus);
+
+  yield context.df.callActivity('ingressWindowStageActivity', {
+    action: 'open',
+    correlationId: completedCorrelationId,
+    userId: state.userId,
+    instanceId: context.df.instanceId,
+  } satisfies IngressWindowStageInput);
+
+  const ingressDeadline = new Date(context.df.currentUtcDateTime.getTime() + DEDUP_HOLD_MS);
+  const ingressTimer = context.df.createTimer(ingressDeadline);
+  const newMessageEvent = context.df.waitForExternalEvent('NewMessage');
+  const hookFiredEvent = context.df.waitForExternalEvent('HookFired');
+  let bufferedIngressQueuedEvent = context.df.waitForExternalEvent('BufferedIngressQueued');
+  let bufferedPollDeadline = new Date(
+    Math.min(context.df.currentUtcDateTime.getTime() + INGRESS_BUFFER_POLL_MS, ingressDeadline.getTime()),
+  );
+  let bufferedPollTimer = context.df.createTimer(bufferedPollDeadline);
+
+  while (true) {
+    const winner = yield context.df.Task.any([
+      newMessageEvent,
+      hookFiredEvent,
+      bufferedIngressQueuedEvent,
+      ingressTimer,
+      bufferedPollTimer,
+    ]) as df.Task;
+
+    if (winner === newMessageEvent) {
+      ingressTimer.cancel();
+      bufferedPollTimer.cancel();
+      const drainedMessage = newMessageEvent.result as NewMessageEvent;
+      const drainedCorrelationId = drainedMessage.correlationId ?? crypto.randomUUID();
 
       yield context.df.callActivity('ingressWindowStageActivity', {
         action: 'drain',
@@ -214,197 +273,156 @@ df.app.orchestration('overseer', function* (context) {
         instanceId: context.df.instanceId,
       } satisfies IngressWindowStageInput);
 
-      nextMessage = {
-        ...bufferedNewMessage,
+      // Hand off to fresh overseer (#598)
+      yield context.df.callActivity('handoffToFreshOverseerActivity', {
+        event: { ...drainedMessage, correlationId: drainedCorrelationId },
+        userId: state.userId,
+        correlationId: drainedCorrelationId,
+      } satisfies HandoffToFreshOverseerInput);
+      return;
+    }
+
+    if (winner === hookFiredEvent) {
+      ingressTimer.cancel();
+      bufferedPollTimer.cancel();
+      const drainedHook = hookFiredEvent.result as HookFiredEvent;
+      const drainedCorrelationId = drainedHook.correlationId ?? crypto.randomUUID();
+
+      yield context.df.callActivity('ingressWindowStageActivity', {
+        action: 'hook-drain',
+        correlationId: completedCorrelationId,
+        nextCorrelationId: drainedCorrelationId,
+        userId: state.userId,
+        instanceId: context.df.instanceId,
+        hookId: drainedHook.hookId,
+        hookType: drainedHook.hookType,
+        triggerType: drainedHook.triggerType,
+      } satisfies IngressWindowStageInput);
+
+      const hookEvent: NewMessageEvent = {
+        userMessage: drainedHook.originalIntent,
+        userId: state.userId,
+        userAlias: state.userAlias,
         correlationId: drainedCorrelationId,
       };
-      continue;
+
+      // Hand off to fresh overseer (#598)
+      yield context.df.callActivity('handoffToFreshOverseerActivity', {
+        event: hookEvent,
+        userId: state.userId,
+        correlationId: drainedCorrelationId,
+      } satisfies HandoffToFreshOverseerInput);
+      return;
     }
 
-    context.df.setCustomStatus({
-      stage: 'awaiting-ingress',
-      correlationId: completedCorrelationId,
-    } satisfies OverseerCustomStatus);
+    if (winner === ingressTimer) {
+      bufferedPollTimer.cancel();
+      yield context.df.callActivity('ingressWindowStageActivity', {
+        action: 'clear',
+        correlationId: completedCorrelationId,
+        userId: state.userId,
+      } satisfies IngressWindowStageInput);
 
-    yield context.df.callActivity('ingressWindowStageActivity', {
-      action: 'open',
-      correlationId: completedCorrelationId,
-      userId: state.userId,
-      instanceId: context.df.instanceId,
-    } satisfies IngressWindowStageInput);
+      return;
+    }
 
-    const ingressDeadline = new Date(context.df.currentUtcDateTime.getTime() + DEDUP_HOLD_MS);
-    const ingressTimer = context.df.createTimer(ingressDeadline);
-    const newMessageEvent = context.df.waitForExternalEvent('NewMessage');
-    const hookFiredEvent = context.df.waitForExternalEvent('HookFired');
-    let bufferedIngressQueuedEvent = context.df.waitForExternalEvent('BufferedIngressQueued');
-    let bufferedPollDeadline = new Date(
-      Math.min(context.df.currentUtcDateTime.getTime() + INGRESS_BUFFER_POLL_MS, ingressDeadline.getTime()),
-    );
-    let bufferedPollTimer = context.df.createTimer(bufferedPollDeadline);
+    if (winner === bufferedIngressQueuedEvent) {
+      const bufferedIngressSignal = bufferedIngressQueuedEvent.result as BufferedIngressQueuedEvent;
+      bufferedIngressQueuedEvent = context.df.waitForExternalEvent('BufferedIngressQueued');
 
-    while (true) {
-      const winner = yield context.df.Task.any([
-        newMessageEvent,
-        hookFiredEvent,
-        bufferedIngressQueuedEvent,
-        ingressTimer,
-        bufferedPollTimer,
-      ]) as df.Task;
+      if (bufferedIngressSignal.docId) {
+        let claimedBufferedMessage: NewMessageEvent | null = null;
 
-      if (winner === newMessageEvent) {
-        ingressTimer.cancel();
-        bufferedPollTimer.cancel();
-        const drainedMessage = newMessageEvent.result as NewMessageEvent;
-        const drainedCorrelationId = drainedMessage.correlationId ?? crypto.randomUUID();
+        if (bufferedIngressSignal.event) {
+          const markedDequeued = (yield context.df.callActivity('bufferedIngressActivity', {
+            action: 'mark-buffered-message-dequeued',
+            userId: state.userId,
+            docId: bufferedIngressSignal.docId,
+            targetInstanceId: context.df.instanceId,
+          } satisfies BufferedIngressActivityInput)) as boolean;
 
-        yield context.df.callActivity('ingressWindowStageActivity', {
-          action: 'drain',
-          correlationId: completedCorrelationId,
-          nextCorrelationId: drainedCorrelationId,
-          userId: state.userId,
-          instanceId: context.df.instanceId,
-        } satisfies IngressWindowStageInput);
-
-        nextMessage = {
-          ...drainedMessage,
-          correlationId: drainedCorrelationId,
-        };
-        break;
-      }
-
-      if (winner === hookFiredEvent) {
-        ingressTimer.cancel();
-        bufferedPollTimer.cancel();
-        const drainedHook = hookFiredEvent.result as HookFiredEvent;
-        const drainedCorrelationId = drainedHook.correlationId ?? crypto.randomUUID();
-
-        yield context.df.callActivity('ingressWindowStageActivity', {
-          action: 'hook-drain',
-          correlationId: completedCorrelationId,
-          nextCorrelationId: drainedCorrelationId,
-          userId: state.userId,
-          instanceId: context.df.instanceId,
-          hookId: drainedHook.hookId,
-          hookType: drainedHook.hookType,
-          triggerType: drainedHook.triggerType,
-        } satisfies IngressWindowStageInput);
-
-        nextMessage = {
-          userMessage: drainedHook.originalIntent,
-          userId: state.userId,
-          userAlias: state.userAlias,
-          correlationId: drainedCorrelationId,
-        };
-        break;
-      }
-
-      if (winner === ingressTimer) {
-        bufferedPollTimer.cancel();
-        yield context.df.callActivity('ingressWindowStageActivity', {
-          action: 'clear',
-          correlationId: completedCorrelationId,
-          userId: state.userId,
-        } satisfies IngressWindowStageInput);
-
-        return;
-      }
-
-      if (winner === bufferedIngressQueuedEvent) {
-        const bufferedIngressSignal = bufferedIngressQueuedEvent.result as BufferedIngressQueuedEvent;
-        bufferedIngressQueuedEvent = context.df.waitForExternalEvent('BufferedIngressQueued');
-
-        if (bufferedIngressSignal.docId) {
-          let claimedBufferedMessage: NewMessageEvent | null = null;
-
-          if (bufferedIngressSignal.event) {
-            const markedDequeued = (yield context.df.callActivity('bufferedIngressActivity', {
-              action: 'mark-buffered-message-dequeued',
-              userId: state.userId,
-              docId: bufferedIngressSignal.docId,
-              targetInstanceId: context.df.instanceId,
-            } satisfies BufferedIngressActivityInput)) as boolean;
-
-            if (markedDequeued) {
-              claimedBufferedMessage = bufferedIngressSignal.event;
-            }
-          }
-
-          if (!claimedBufferedMessage) {
-            claimedBufferedMessage = (yield context.df.callActivity('bufferedIngressActivity', {
-              action: 'claim-buffered-message',
-              userId: state.userId,
-              docId: bufferedIngressSignal.docId,
-              targetInstanceId: context.df.instanceId,
-            } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
-          }
-
-          if (claimedBufferedMessage) {
-            ingressTimer.cancel();
-            bufferedPollTimer.cancel();
-            const drainedCorrelationId = claimedBufferedMessage.correlationId
-              ?? bufferedIngressSignal.correlationId
-              ?? crypto.randomUUID();
-
-            yield context.df.callActivity('ingressWindowStageActivity', {
-              action: 'drain',
-              correlationId: completedCorrelationId,
-              nextCorrelationId: drainedCorrelationId,
-              userId: state.userId,
-              instanceId: context.df.instanceId,
-            } satisfies IngressWindowStageInput);
-
-            nextMessage = {
-              ...claimedBufferedMessage,
-              correlationId: drainedCorrelationId,
-            };
-            break;
+          if (markedDequeued) {
+            claimedBufferedMessage = bufferedIngressSignal.event;
           }
         }
+
+        if (!claimedBufferedMessage) {
+          claimedBufferedMessage = (yield context.df.callActivity('bufferedIngressActivity', {
+            action: 'claim-buffered-message',
+            userId: state.userId,
+            docId: bufferedIngressSignal.docId,
+            targetInstanceId: context.df.instanceId,
+          } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
+        }
+
+        if (claimedBufferedMessage) {
+          ingressTimer.cancel();
+          bufferedPollTimer.cancel();
+          const drainedCorrelationId = claimedBufferedMessage.correlationId
+            ?? bufferedIngressSignal.correlationId
+            ?? crypto.randomUUID();
+
+          yield context.df.callActivity('ingressWindowStageActivity', {
+            action: 'drain',
+            correlationId: completedCorrelationId,
+            nextCorrelationId: drainedCorrelationId,
+            userId: state.userId,
+            instanceId: context.df.instanceId,
+          } satisfies IngressWindowStageInput);
+
+          // Hand off to fresh overseer (#598)
+          yield context.df.callActivity('handoffToFreshOverseerActivity', {
+            event: { ...claimedBufferedMessage, correlationId: drainedCorrelationId },
+            userId: state.userId,
+            correlationId: drainedCorrelationId,
+          } satisfies HandoffToFreshOverseerInput);
+          return;
+        }
       }
-
-      const bufferedDuringIngressWindow = (yield context.df.callActivity('bufferedIngressActivity', {
-        action: 'dequeue-new-message',
-        userId: state.userId,
-        targetInstanceId: context.df.instanceId,
-      } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
-
-      if (bufferedDuringIngressWindow) {
-        ingressTimer.cancel();
-        const drainedCorrelationId = bufferedDuringIngressWindow.correlationId ?? crypto.randomUUID();
-
-        yield context.df.callActivity('ingressWindowStageActivity', {
-          action: 'drain',
-          correlationId: completedCorrelationId,
-          nextCorrelationId: drainedCorrelationId,
-          userId: state.userId,
-          instanceId: context.df.instanceId,
-        } satisfies IngressWindowStageInput);
-
-        nextMessage = {
-          ...bufferedDuringIngressWindow,
-          correlationId: drainedCorrelationId,
-        };
-        break;
-      }
-
-      if (context.df.currentUtcDateTime.getTime() >= ingressDeadline.getTime()) {
-        ingressTimer.cancel();
-        yield context.df.callActivity('ingressWindowStageActivity', {
-          action: 'clear',
-          correlationId: completedCorrelationId,
-          userId: state.userId,
-        } satisfies IngressWindowStageInput);
-
-        return;
-      }
-
-      bufferedPollDeadline = new Date(
-        Math.min(context.df.currentUtcDateTime.getTime() + INGRESS_BUFFER_POLL_MS, ingressDeadline.getTime()),
-      );
-      bufferedPollTimer = context.df.createTimer(bufferedPollDeadline);
     }
-    continue;
+
+    const bufferedDuringIngressWindow = (yield context.df.callActivity('bufferedIngressActivity', {
+      action: 'dequeue-new-message',
+      userId: state.userId,
+      targetInstanceId: context.df.instanceId,
+    } satisfies BufferedIngressActivityInput)) as NewMessageEvent | null;
+
+    if (bufferedDuringIngressWindow) {
+      ingressTimer.cancel();
+      const drainedCorrelationId = bufferedDuringIngressWindow.correlationId ?? crypto.randomUUID();
+
+      yield context.df.callActivity('ingressWindowStageActivity', {
+        action: 'drain',
+        correlationId: completedCorrelationId,
+        nextCorrelationId: drainedCorrelationId,
+        userId: state.userId,
+        instanceId: context.df.instanceId,
+      } satisfies IngressWindowStageInput);
+
+      // Hand off to fresh overseer (#598)
+      yield context.df.callActivity('handoffToFreshOverseerActivity', {
+        event: { ...bufferedDuringIngressWindow, correlationId: drainedCorrelationId },
+        userId: state.userId,
+        correlationId: drainedCorrelationId,
+      } satisfies HandoffToFreshOverseerInput);
+      return;
+    }
+
+    if (context.df.currentUtcDateTime.getTime() >= ingressDeadline.getTime()) {
+      ingressTimer.cancel();
+      yield context.df.callActivity('ingressWindowStageActivity', {
+        action: 'clear',
+        correlationId: completedCorrelationId,
+        userId: state.userId,
+      } satisfies IngressWindowStageInput);
+
+      return;
+    }
+
+    bufferedPollDeadline = new Date(
+      Math.min(context.df.currentUtcDateTime.getTime() + INGRESS_BUFFER_POLL_MS, ingressDeadline.getTime()),
+    );
+    bufferedPollTimer = context.df.createTimer(bufferedPollDeadline);
   }
 });
 

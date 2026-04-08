@@ -2,17 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 describe('living session ingress window source guards', () => {
-  it('opens an awaiting-ingress stage and drains a second NewMessage in the same overseer instance', () => {
+  it('opens an awaiting-ingress stage and hands off drained messages to a fresh overseer', () => {
     const overseerSource = readFileSync('src/orchestrator/overseer.ts', 'utf8');
     const activitySource = readFileSync('src/orchestrator/ingressWindowStageActivity.ts', 'utf8');
     const bufferedIngressSource = readFileSync('src/orchestrator/bufferedIngressActivity.ts', 'utf8');
+    const handoffSource = readFileSync('src/orchestrator/handoffToFreshOverseerActivity.ts', 'utf8');
 
     expect(overseerSource).toContain("context.df.waitForExternalEvent('NewMessage')");
     expect(overseerSource).toContain("context.df.waitForExternalEvent('BufferedIngressQueued')");
     expect(overseerSource).toContain('const bufferedIngressSignals: BufferedIngressQueuedEvent[] = [];');
     expect(overseerSource).toContain('let bufferedIngressQueuedEvent = context.df.waitForExternalEvent(\'BufferedIngressQueued\');');
-    expect(overseerSource).toContain('? [sessionTask, sessionTimer, spinnerTimer, bufferedIngressQueuedEvent]');
-    expect(overseerSource).toContain(': [sessionTask, sessionTimer, bufferedIngressQueuedEvent];');
+    expect(overseerSource).toContain('? [bufferedIngressQueuedEvent, sessionTask, sessionTimer, spinnerTimer]');
+    expect(overseerSource).toContain(': [bufferedIngressQueuedEvent, sessionTask, sessionTimer];');
+    // Handoff-to-fresh-overseer pattern: drain sites call handoff + return instead of looping
+    expect(overseerSource).toContain("callActivity('handoffToFreshOverseerActivity'");
+    expect(overseerSource).toContain('satisfies HandoffToFreshOverseerInput');
+    expect(handoffSource).toContain('signalMindSessionAcquire');
+    expect(handoffSource).toContain("source: 'overseer-handoff'");
+    expect(handoffSource).toContain("client.startNew('overseer'");
     expect(overseerSource).toContain('bufferedIngressSignals.push(bufferedIngressQueuedEvent.result as BufferedIngressQueuedEvent);');
     expect(overseerSource).toContain('for (const bufferedIngressSignal of processTurnResult.bufferedIngressSignals) {');
     expect(overseerSource).toContain('if (bufferedIngressSignal.event) {');
