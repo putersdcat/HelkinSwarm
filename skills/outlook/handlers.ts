@@ -75,6 +75,8 @@ async function resolveToken(args: Record<string, unknown>): Promise<string> {
   return token;
 }
 
+const GRAPH_FETCH_TIMEOUT_MS = 30_000; // 30s — prevents container-restart hangs (#591)
+
 async function graphFetch<T>(
   token: string,
   path: string,
@@ -82,6 +84,7 @@ async function graphFetch<T>(
   init?: RequestInit,
 ): Promise<T> {
   const response = await fetch(`${GRAPH_BASE}${path}`, {
+    signal: AbortSignal.timeout(GRAPH_FETCH_TIMEOUT_MS),
     ...init,
     headers: {
       'Authorization': `Bearer ${token}`,

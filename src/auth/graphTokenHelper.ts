@@ -34,12 +34,26 @@ export async function getGraphTokenForUser(
       `[graphTokenHelper] Attempting getUserToken: userId=${userId}, channelUserId=${channelUserId}, channelId=${channelId}, connection=${connName}, hasConvRef=${!!conversationReference}`,
     );
 
-    const result = await tokenClient.getUserToken(
-      channelUserId,
-      connName,
-      channelId,
-      '', // magicCode — empty for cached token retrieval
+    // Wrap with timeout — Bot Framework Token Service can hang indefinitely under
+    // certain network conditions causing container restarts (#591).
+    const TOKEN_SERVICE_TIMEOUT_MS = 12_000;
+    const timeoutPromise = new Promise<undefined>((resolve) =>
+      setTimeout(() => {
+        console.error(
+          `[graphTokenHelper] getUserToken timed out after ${TOKEN_SERVICE_TIMEOUT_MS}ms for userId=${userId}`,
+        );
+        resolve(undefined);
+      }, TOKEN_SERVICE_TIMEOUT_MS),
     );
+    const result = await Promise.race([
+      tokenClient.getUserToken(
+        channelUserId,
+        connName,
+        channelId,
+        '', // magicCode — empty for cached token retrieval
+      ),
+      timeoutPromise,
+    ]);
 
     if (!result?.token) {
       console.error(
