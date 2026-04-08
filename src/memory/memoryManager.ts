@@ -51,6 +51,13 @@ export interface RecallResult {
   createdAt: string;
 }
 
+// Hard abort on every Cosmos operation — prevents orphaned background requests
+// from draining the Cosmos connection pool when soft-timeout wrappers (like
+// buildPromptActivity's withSoftTimeout) resolve early but leave the underlying
+// TCP request alive. Each call gets an individual signal so AbortSignal.timeout()
+// actually cancels the network request rather than just ignoring the promise (#591).
+const COSMOS_OP_ABORT_MS = 8_000;
+
 // ---------------------------------------------------------------------------
 // MemoryManager
 // ---------------------------------------------------------------------------
@@ -91,7 +98,7 @@ export class MemoryManager {
       ttl: 31536000, // 365 days
     };
 
-    await container.items.upsert(entry);
+    await container.items.upsert(entry, { abortSignal: AbortSignal.timeout(COSMOS_OP_ABORT_MS) });
     return id;
   }
 
@@ -138,7 +145,7 @@ export class MemoryManager {
         skillId?: string;
         tags: string[];
         createdAt: string;
-      }>(querySpec).fetchAll();
+      }>(querySpec, { abortSignal: AbortSignal.timeout(COSMOS_OP_ABORT_MS) }).fetchAll();
 
       // VectorDistance with cosine returns 0 = identical, higher = more distant.
       // Convert to similarity: 1 - distance. Filter by minScore.
@@ -187,7 +194,7 @@ export class MemoryManager {
         skillId?: string;
         tags: string[];
         createdAt: string;
-      }>(querySpec).fetchAll();
+      }>(querySpec, { abortSignal: AbortSignal.timeout(COSMOS_OP_ABORT_MS) }).fetchAll();
 
       return resources.map((r) => ({ ...r, score: 1.0 }));
     } catch (err) {
@@ -223,7 +230,7 @@ export class MemoryManager {
       vector,
       createdAt: new Date().toISOString(),
       ttl: 31536000,
-    });
+    }, { abortSignal: AbortSignal.timeout(COSMOS_OP_ABORT_MS) });
 
     // Update central catalog
     await this.updateCatalogEntry(skillId).catch(() => { /* non-fatal */ });
@@ -244,7 +251,7 @@ export class MemoryManager {
     };
 
     try {
-      const { resources } = await container.items.query<{ id: string }>(querySpec).fetchAll();
+      const { resources } = await container.items.query<{ id: string }>(querySpec, { abortSignal: AbortSignal.timeout(COSMOS_OP_ABORT_MS) }).fetchAll();
       let deleted = 0;
       for (const doc of resources) {
         await container.item(doc.id, this.userId).delete();
@@ -317,7 +324,7 @@ export class MemoryManager {
         skillId: string;
         entryCount: number;
         lastUpdated: string;
-      }>(querySpec).fetchAll();
+      }>(querySpec, { abortSignal: AbortSignal.timeout(COSMOS_OP_ABORT_MS) }).fetchAll();
       return resources;
     } catch {
       return [];
@@ -340,7 +347,7 @@ export class MemoryManager {
       ],
     };
 
-    const { resources } = await memoryContainer.items.query<number>(countSpec).fetchAll();
+    const { resources } = await memoryContainer.items.query<number>(countSpec, { abortSignal: AbortSignal.timeout(COSMOS_OP_ABORT_MS) }).fetchAll();
     const entryCount = resources[0] ?? 0;
 
     await catalogContainer.items.upsert({
@@ -350,7 +357,7 @@ export class MemoryManager {
       type: 'skill-vault-summary',
       entryCount,
       lastUpdated: new Date().toISOString(),
-    });
+    }, { abortSignal: AbortSignal.timeout(COSMOS_OP_ABORT_MS) });
   }
 
   /**

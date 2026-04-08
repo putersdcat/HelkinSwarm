@@ -173,16 +173,28 @@ df.app.activity('subAgentActivity', {
         let scopedTokenScope: ScopedTokenScope | undefined;
 
         // Mint scoped token for non-read-only tools (#317)
+        // Hard-cap the entire mint() call so Cosmos SDK retry loops (10×requestTimeout)
+        // cannot hold this activity for 100s+ (#591 part 6).
+        const MINT_TIMEOUT_MS = 20_000;
         const tokenScope = mapPrivilegeClassToScopedTokenScope(tool?.privilegeClass);
         if (tokenScope) {
           try {
-            const domain = tool?.handlerModule?.replace('skills/', '') || 'core';
-            const scopedToken = await scopedTokenMinter.mint({
-              toolName: tc.function.name,
-              scope: tokenScope,
-              targetResource: domain,
-              userId: input.userId,
-              correlationId: input.correlationId,
+            let mintTimer: ReturnType<typeof setTimeout> | undefined;
+            const scopedToken = await Promise.race([
+              scopedTokenMinter.mint({
+                toolName: tc.function.name,
+                scope: tokenScope,
+                targetResource: tool?.handlerModule?.replace('skills/', '') || 'core',
+                userId: input.userId,
+                correlationId: input.correlationId,
+              }),
+              new Promise<never>((_, reject) => {
+                mintTimer = setTimeout(() => {
+                  reject(new Error(`scopedTokenMinter.mint timed out after ${MINT_TIMEOUT_MS}ms for ${tc.function.name}`));
+                }, MINT_TIMEOUT_MS);
+              }),
+            ]).finally(() => {
+              if (mintTimer) clearTimeout(mintTimer);
             });
             if (!isPlaceholderScopedToken(scopedToken.token)) {
               parsedArgs['_scopedToken'] = scopedToken.token;
@@ -197,7 +209,20 @@ df.app.activity('subAgentActivity', {
           }
         }
 
-        const handlerResult = await handler(parsedArgs);
+        // Hard-cap the handler execution so any internal hang (network, Cosmos, etc.)
+        // cannot hold this activity indefinitely (#591 part 6).
+        const HANDLER_TIMEOUT_MS = 60_000;
+        let handlerTimer: ReturnType<typeof setTimeout> | undefined;
+        const handlerResult = await Promise.race([
+          handler(parsedArgs),
+          new Promise<never>((_, reject) => {
+            handlerTimer = setTimeout(() => {
+              reject(new Error(`Handler ${tc.function.name} timed out after ${HANDLER_TIMEOUT_MS}ms`));
+            }, HANDLER_TIMEOUT_MS);
+          }),
+        ]).finally(() => {
+          if (handlerTimer) clearTimeout(handlerTimer);
+        });
 
         trackEvent({
           name: 'SubAgentToolExecuted',
