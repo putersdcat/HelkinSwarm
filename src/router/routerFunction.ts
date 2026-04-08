@@ -11,9 +11,9 @@ import {
 } from '@azure/functions';
 import { z } from 'zod';
 import {
+  recordMessagePathAccepted,
   recordMessagePathFailure,
   recordMessagePathStart,
-  recordMessagePathSuccess,
 } from '../observability/messagePathHealth.js';
 import { loadUserMap, type UserMap } from './userMapStore.js';
 import { validateBotFrameworkToken } from './botFrameworkTokenValidator.js';
@@ -137,7 +137,7 @@ app.http('router', {
 
       const responseBody = await response.text();
       if (response.ok) {
-        await recordMessagePathSuccess(turnId);
+        await recordMessagePathAccepted(turnId);
       } else {
         await recordMessagePathFailure(turnId, `Stamp returned ${response.status}`);
       }

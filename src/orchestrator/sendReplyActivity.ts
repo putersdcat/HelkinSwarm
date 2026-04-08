@@ -23,6 +23,10 @@ import { splitReplyIntoChunks } from './replyChunking.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { clearOrchestratorStage, recordSubstage } from '../observability/orchestratorStageHealth.js';
 import {
+  recordMessagePathGlobalFailure,
+  recordMessagePathSuccess,
+} from '../observability/messagePathHealth.js';
+import {
   loadRuntimeAssetReference,
   readRuntimeAssetContent,
   type RuntimeAssetReference,
@@ -374,6 +378,7 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
 
     if (input.correlationId) {
       trackEvent({ name: 'ReplySent', correlationId: input.correlationId, userId: input.userId, properties: { success: 'true', chunks: String(replyChunks.length), attachments: String(assetAttachments.length) } });
+      await recordMessagePathSuccess(input.correlationId);
 
       try {
         await clearOrchestratorStage(input.correlationId, input.userId);
@@ -398,6 +403,7 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
     console.error('[sendReplyActivity] FATAL: Proactive reply to Teams failed:', message);
     if (input.correlationId) {
       trackEvent({ name: 'ReplySent', correlationId: input.correlationId, userId: input.userId, properties: { success: 'false', error: message } });
+      await recordMessagePathGlobalFailure(`reply send failed: ${message}`);
     }
     // Throw so the Durable activity is marked failed and the failure is visible
     // in orchestration history. Let the overseer handle the failure cleanly.

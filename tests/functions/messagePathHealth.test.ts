@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   buildMessagePathSnapshot,
   getMessagePathSnapshot,
+  recordMessagePathAccepted,
   recordMessagePathFailure,
   recordMessagePathGlobalFailure,
   recordMessagePathStart,
@@ -14,13 +15,15 @@ describe('messagePathHealth', () => {
     resetMessagePathHealth();
   });
 
-  it('reports ok after a successful turn', async () => {
+  it('tracks accepted ingress separately from delivered reply success', async () => {
     recordMessagePathStart('turn-1', 1_000);
+    await recordMessagePathAccepted('turn-1', 1_500);
     await recordMessagePathSuccess('turn-1', 2_000);
 
     await expect(getMessagePathSnapshot(2_500)).resolves.toMatchObject({
       status: 'ok',
       pendingTurns: 0,
+      lastAcceptedAt: '1970-01-01T00:00:01.500Z',
       lastSuccessAt: '1970-01-01T00:00:02.000Z',
       lastFailureAt: null,
     });
@@ -69,15 +72,18 @@ describe('messagePathHealth', () => {
         nowMs: 80_000,
         pendingTurns: 0,
         oldestPendingAgeMs: null,
+        localLastAcceptedAtMs: null,
         localLastSuccessAtMs: null,
         localLastFailureAtMs: null,
         localLastFailureReason: null,
+        sharedLastAcceptedAtMs: 65_000,
         sharedLastSuccessAtMs: 70_000,
         sharedLastFailureAtMs: 60_000,
         sharedLastFailureReason: 'older failure',
       }),
     ).toMatchObject({
       status: 'ok',
+      lastAcceptedAt: '1970-01-01T00:01:05.000Z',
       lastSuccessAt: '1970-01-01T00:01:10.000Z',
       lastFailureAt: null,
       lastFailureReason: null,

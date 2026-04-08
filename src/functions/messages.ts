@@ -12,9 +12,9 @@ import type { Activity } from 'botbuilder';
 import { createAdapter } from '../bot/adapter.js';
 import { HelkinSwarmBot } from '../bot/HelkinSwarmBot.js';
 import {
+  recordMessagePathAccepted,
   recordMessagePathFailure,
   recordMessagePathStart,
-  recordMessagePathSuccess,
 } from '../observability/messagePathHealth.js';
 
 app.http('messages', {
@@ -86,7 +86,7 @@ app.http('messages', {
         );
         // Track completion/failure in background — don't await
         void adapterPromise
-          .then(() => recordMessagePathSuccess(turnId))
+          .then(() => recordMessagePathAccepted(turnId))
           .catch((bgErr: unknown) => {
             const msg =
               bgErr instanceof Error ? bgErr.message : String(bgErr);
@@ -97,7 +97,7 @@ app.http('messages', {
       }
 
       if (result.response) {
-        await recordMessagePathSuccess(turnId);
+        await recordMessagePathAccepted(turnId);
         return {
           status: result.response.status,
           body: JSON.stringify(result.response.body),
@@ -105,7 +105,7 @@ app.http('messages', {
         };
       }
 
-      await recordMessagePathSuccess(turnId);
+      await recordMessagePathAccepted(turnId);
       return { status: 200 };
     } catch (err: unknown) {
       clearTimeout(timeoutHandle!);

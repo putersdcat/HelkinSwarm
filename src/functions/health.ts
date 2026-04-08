@@ -52,6 +52,7 @@ interface HealthResponse {
     messagePath: {
       pendingTurns: number;
       oldestPendingAgeMs: number | null;
+      lastAcceptedAt: string | null;
       lastSuccessAt: string | null;
       lastFailureAt: string | null;
       lastFailureReason: string | null;
@@ -104,16 +105,16 @@ export async function healthHandler(
 
   const startupAcceptanceGap =
     containerAgeMs < POST_START_MESSAGE_READINESS_GRACE_MS &&
-    messagePath.lastSuccessAt === null &&
+    messagePath.lastAcceptedAt === null &&
     messagePath.pendingTurns === 0 &&
     pendingAckSnapshot.pendingAcks === 0;
 
-  const lastSuccessAtMs = messagePath.lastSuccessAt
-    ? new Date(messagePath.lastSuccessAt).getTime()
+  const lastAcceptedAtMs = messagePath.lastAcceptedAt
+    ? new Date(messagePath.lastAcceptedAt).getTime()
     : null;
   const idleAcceptanceGap =
-    lastSuccessAtMs !== null &&
-    nowMs - lastSuccessAtMs >= POST_IDLE_MESSAGE_READINESS_GAP_MS &&
+    lastAcceptedAtMs !== null &&
+    nowMs - lastAcceptedAtMs >= POST_IDLE_MESSAGE_READINESS_GAP_MS &&
     messagePath.pendingTurns === 0 &&
     pendingAckSnapshot.pendingAcks === 0;
 
@@ -154,6 +155,7 @@ export async function healthHandler(
       messagePath: {
         pendingTurns: messagePath.pendingTurns,
         oldestPendingAgeMs: messagePath.oldestPendingAgeMs,
+        lastAcceptedAt: messagePath.lastAcceptedAt,
         lastSuccessAt: messagePath.lastSuccessAt,
         lastFailureAt: messagePath.lastFailureAt,
         lastFailureReason: messagePath.lastFailureReason,

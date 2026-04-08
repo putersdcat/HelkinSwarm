@@ -11,6 +11,7 @@ export interface MessagePathSnapshot {
   status: MessagePathStatus;
   pendingTurns: number;
   oldestPendingAgeMs: number | null;
+  lastAcceptedAt: string | null;
   lastSuccessAt: string | null;
   lastFailureAt: string | null;
   lastFailureReason: string | null;
@@ -26,6 +27,7 @@ interface SharedMessagePathEventRecord {
 }
 
 interface SharedMessagePathState {
+  lastAcceptedAtMs: number | null;
   lastSuccessAtMs: number | null;
   lastFailureAtMs: number | null;
   lastFailureReason: string | null;
@@ -33,6 +35,7 @@ interface SharedMessagePathState {
 
 const pendingTurns = new Map<string, PendingTurn>();
 
+let lastAcceptedAtMs: number | null = null;
 let lastSuccessAtMs: number | null = null;
 let lastFailureAtMs: number | null = null;
 let lastFailureReason: string | null = null;
@@ -45,13 +48,24 @@ const SHARED_STATE_CACHE_TTL_MS = 2_000;
 let blobServiceClient: BlobServiceClient | undefined;
 let containerInitPromise: Promise<void> | undefined;
 
-const sharedStateCache: Record<'success' | 'failure', { value?: SharedMessagePathEventRecord; loadedAtMs: number }> = {
+const sharedStateCache: Record<'accepted' | 'success' | 'failure', { value?: SharedMessagePathEventRecord; loadedAtMs: number }> = {
+  accepted: { loadedAtMs: 0 },
   success: { loadedAtMs: 0 },
   failure: { loadedAtMs: 0 },
 };
 
 export function recordMessagePathStart(turnId: string, startedAtMs = Date.now()): void {
   pendingTurns.set(turnId, { startedAtMs });
+}
+
+export async function recordMessagePathAccepted(
+  turnId: string,
+  acceptedAtMs = Date.now(),
+): Promise<void> {
+  pendingTurns.delete(turnId);
+  lastAcceptedAtMs = acceptedAtMs;
+
+  await persistSharedEvent('accepted', { timestampMs: acceptedAtMs });
 }
 
 export async function recordMessagePathSuccess(
@@ -95,13 +109,16 @@ export function buildMessagePathSnapshot(input: {
   nowMs: number;
   pendingTurns: number;
   oldestPendingAgeMs: number | null;
+  localLastAcceptedAtMs: number | null;
   localLastSuccessAtMs: number | null;
   localLastFailureAtMs: number | null;
   localLastFailureReason: string | null;
+  sharedLastAcceptedAtMs: number | null;
   sharedLastSuccessAtMs: number | null;
   sharedLastFailureAtMs: number | null;
   sharedLastFailureReason: string | null;
 }): MessagePathSnapshot {
+  const effectiveLastAcceptedAtMs = maxNullable(input.localLastAcceptedAtMs, input.sharedLastAcceptedAtMs);
   const effectiveLastSuccessAtMs = maxNullable(input.localLastSuccessAtMs, input.sharedLastSuccessAtMs);
   const latestFailureSource =
     (input.sharedLastFailureAtMs ?? Number.NEGATIVE_INFINITY) >=
@@ -137,6 +154,7 @@ export function buildMessagePathSnapshot(input: {
     status,
     pendingTurns: input.pendingTurns,
     oldestPendingAgeMs: input.oldestPendingAgeMs,
+    lastAcceptedAt: effectiveLastAcceptedAtMs === null ? null : new Date(effectiveLastAcceptedAtMs).toISOString(),
     lastSuccessAt: effectiveLastSuccessAtMs === null ? null : new Date(effectiveLastSuccessAtMs).toISOString(),
     lastFailureAt: visibleLastFailureAtMs === null ? null : new Date(visibleLastFailureAtMs).toISOString(),
     lastFailureReason: visibleLastFailureReason,
@@ -158,9 +176,11 @@ export async function getMessagePathSnapshot(nowMs = Date.now()): Promise<Messag
     nowMs,
     pendingTurns: pendingTurns.size,
     oldestPendingAgeMs,
+    localLastAcceptedAtMs: lastAcceptedAtMs,
     localLastSuccessAtMs: lastSuccessAtMs,
     localLastFailureAtMs: lastFailureAtMs,
     localLastFailureReason: lastFailureReason,
+    sharedLastAcceptedAtMs: sharedState.lastAcceptedAtMs,
     sharedLastSuccessAtMs: sharedState.lastSuccessAtMs,
     sharedLastFailureAtMs: sharedState.lastFailureAtMs,
     sharedLastFailureReason: sharedState.lastFailureReason,
@@ -169,9 +189,11 @@ export async function getMessagePathSnapshot(nowMs = Date.now()): Promise<Messag
 
 export function resetMessagePathHealth(): void {
   pendingTurns.clear();
+  lastAcceptedAtMs = null;
   lastSuccessAtMs = null;
   lastFailureAtMs = null;
   lastFailureReason = null;
+  sharedStateCache.accepted = { loadedAtMs: 0 };
   sharedStateCache.success = { loadedAtMs: 0 };
   sharedStateCache.failure = { loadedAtMs: 0 };
 }
@@ -228,7 +250,7 @@ function getScopeKey(): string {
 }
 
 async function persistSharedEvent(
-  kind: 'success' | 'failure',
+  kind: 'accepted' | 'success' | 'failure',
   record: SharedMessagePathEventRecord,
 ): Promise<void> {
   const containerReady = await ensureContainer();
@@ -256,12 +278,14 @@ async function persistSharedEvent(
 }
 
 async function loadSharedState(): Promise<SharedMessagePathState> {
-  const [success, failure] = await Promise.all([
+  const [accepted, success, failure] = await Promise.all([
+    loadSharedEvent('accepted'),
     loadSharedEvent('success'),
     loadSharedEvent('failure'),
   ]);
 
   return {
+    lastAcceptedAtMs: accepted?.timestampMs ?? null,
     lastSuccessAtMs: success?.timestampMs ?? null,
     lastFailureAtMs: failure?.timestampMs ?? null,
     lastFailureReason: failure?.reason ?? null,
@@ -269,7 +293,7 @@ async function loadSharedState(): Promise<SharedMessagePathState> {
 }
 
 async function loadSharedEvent(
-  kind: 'success' | 'failure',
+  kind: 'accepted' | 'success' | 'failure',
 ): Promise<SharedMessagePathEventRecord | undefined> {
   const cached = sharedStateCache[kind];
   const now = Date.now();
