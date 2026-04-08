@@ -10,10 +10,17 @@ import {
   markBufferedNewMessageReplayed,
 } from '../orchestrator/bufferedIngressActivity.js';
 import { signalMindSessionAcquire } from '../orchestrator/mindSessionGuard.js';
-import { getActiveTurnCountForUser } from '../observability/orchestratorStageHealth.js';
+import { getActiveTurnStagesForUser } from '../observability/orchestratorStageHealth.js';
 import { trackEvent } from '../observability/telemetry.js';
 
 const BUFFERED_INGRESS_REPLAY_STALE_MS = parseInt(process.env['BUFFERED_INGRESS_REPLAY_STALE_MS'] ?? '', 10) || 90_000;
+
+/**
+ * An active turn older than this threshold is treated as dead/stuck for rescue
+ * purposes. A legitimate heavy LLM call may take up to ~3 minutes; 4× the stale
+ * follower threshold (default 6 min) gives plenty of headroom before we override.
+ */
+const ACTIVE_TURN_STALE_MS = BUFFERED_INGRESS_REPLAY_STALE_MS * 4;
 
 app.timer('bufferedIngressReplayTimer', {
   schedule: '0 * * * * *',
@@ -30,12 +37,22 @@ app.timer('bufferedIngressReplayTimer', {
     context.log(`[bufferedIngressReplay] Found ${queuedFollowers.length} stale queued follower(s)`);
 
     for (const queuedFollower of queuedFollowers) {
-      const [deliverableOverseerInstanceId, activeTurnCount] = await Promise.all([
+      const nowMs = Date.now();
+      const [deliverableOverseerInstanceId, activeTurnsForUser] = await Promise.all([
         resolveDeliverableOverseerInstanceId(client, queuedFollower.userId),
-        getActiveTurnCountForUser(queuedFollower.userId),
+        getActiveTurnStagesForUser(queuedFollower.userId),
       ]);
 
-      if (activeTurnCount > 0) {
+      // Only skip rescue if there are active turns that are genuinely still in progress.
+      // If every "active" turn is itself older than ACTIVE_TURN_STALE_MS, it is likely
+      // dead or stuck (e.g. a prior rescue instance whose LLM call hung). In that case
+      // we must proceed with rescue to break the deadlock — otherwise the stale
+      // instance permanently blocks all queued followers until its 15-min TTL expires.
+      const genuinelyActiveTurns = activeTurnsForUser.filter(
+        (turn) => nowMs - turn.startedAtMs < ACTIVE_TURN_STALE_MS,
+      );
+
+      if (genuinelyActiveTurns.length > 0) {
         continue;
       }
 

@@ -11,8 +11,11 @@ describe('buffered ingress replay timer wiring', () => {
     expect(timerSource).toContain("app.timer('bufferedIngressReplayTimer'");
     expect(timerSource).toContain('listStaleQueuedBufferedMessages(cutoffIso)');
     expect(timerSource).toContain('resolveDeliverableOverseerInstanceId(client, queuedFollower.userId)');
-    expect(timerSource).toContain('getActiveTurnCountForUser(queuedFollower.userId)');
-    expect(timerSource).toContain('if (activeTurnCount > 0) {');
+    // Age-aware guard: replaces simple activeTurnCount > 0 to break the deadlock where
+    // a stale rescue instance blocks recovery of all subsequent queued followers.
+    expect(timerSource).toContain('getActiveTurnStagesForUser(queuedFollower.userId)');
+    expect(timerSource).toContain('genuinelyActiveTurns.length > 0');
+    expect(timerSource).toContain('ACTIVE_TURN_STALE_MS');
     expect(timerSource).toContain('await client.terminate(');
     expect(timerSource).toContain("source: 'buffered-ingress-auto-force-new'");
     expect(timerSource).toContain("await client.startNew('overseer', { instanceId: replayInstanceId, input: queuedFollower.event });");
