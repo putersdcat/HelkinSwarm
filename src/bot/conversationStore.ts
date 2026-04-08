@@ -107,6 +107,11 @@ export async function saveConversationReference(
  * Retrieve the ConversationReference for a user.
  * Returns null if not found (first-ever message hasn't been saved yet).
  */
+// Hard abort on conversation reference Cosmos queries. Without this, the SDK's
+// TimeoutErrorRetryPolicy retries 10× (10s × 10 = 100s) bypassing outer Promise.race
+// wrappers in graphTokenHelper.ts and elsewhere (#591 part 5).
+const CONVREF_QUERY_ABORT_MS = 8_000;
+
 export async function getConversationReference(
   userId: string,
 ): Promise<Partial<ConversationReference> | null> {
@@ -114,10 +119,13 @@ export async function getConversationReference(
 
   // Cross-partition query by id (id is unique across all partitions)
   const { resources } = await container.items
-    .query<ConvRefDocument>({
-      query: 'SELECT * FROM c WHERE c.id = @id',
-      parameters: [{ name: '@id', value: `convref-${userId}` }],
-    })
+    .query<ConvRefDocument>(
+      {
+        query: 'SELECT * FROM c WHERE c.id = @id',
+        parameters: [{ name: '@id', value: `convref-${userId}` }],
+      },
+      { abortSignal: AbortSignal.timeout(CONVREF_QUERY_ABORT_MS) },
+    )
     .fetchAll();
 
   return resources[0]?.conversationReference ?? null;

@@ -25,41 +25,48 @@ export async function getGraphTokenForUser(
   if (!connName) return undefined;
 
   try {
-    const tokenClient = await createBotUserTokenClient();
-    const conversationReference = await getConversationReference(userId);
-    const channelUserId = conversationReference?.user?.id ?? userId;
-    const channelId = conversationReference?.channelId ?? '';
-
-    console.error(
-      `[graphTokenHelper] Attempting getUserToken: userId=${userId}, channelUserId=${channelUserId}, channelId=${channelId}, connection=${connName}, hasConvRef=${!!conversationReference}`,
-    );
-
-    // Wrap with timeout — Bot Framework Token Service can hang indefinitely under
-    // certain network conditions causing container restarts (#591).
+    // ALL pre-token work (Cosmos convref lookup + BF token client + getUserToken) must
+    // be inside the same Promise.race. getConversationReference() does a Cosmos query
+    // which is subject to the SDK's 10×requestTimeout retry loop (100s hang) if left
+    // outside the race (#591 part 5).
     const TOKEN_SERVICE_TIMEOUT_MS = 12_000;
     const timeoutPromise = new Promise<undefined>((resolve) =>
       setTimeout(() => {
         console.error(
-          `[graphTokenHelper] getUserToken timed out after ${TOKEN_SERVICE_TIMEOUT_MS}ms for userId=${userId}`,
+          `[graphTokenHelper] getGraphTokenForUser timed out after ${TOKEN_SERVICE_TIMEOUT_MS}ms for userId=${userId}`,
         );
         resolve(undefined);
       }, TOKEN_SERVICE_TIMEOUT_MS),
     );
+
     const result = await Promise.race([
-      tokenClient.getUserToken(
-        channelUserId,
-        connName,
-        channelId,
-        '', // magicCode — empty for cached token retrieval
-      ),
+      (async () => {
+        const tokenClient = await createBotUserTokenClient();
+        const conversationReference = await getConversationReference(userId);
+        const channelUserId = conversationReference?.user?.id ?? userId;
+        const channelId = conversationReference?.channelId ?? '';
+
+        console.error(
+          `[graphTokenHelper] Attempting getUserToken: userId=${userId}, channelUserId=${channelUserId}, channelId=${channelId}, connection=${connName}, hasConvRef=${!!conversationReference}`,
+        );
+
+        const tokenResult = await tokenClient.getUserToken(
+          channelUserId,
+          connName,
+          channelId,
+          '', // magicCode — empty for cached token retrieval
+        );
+
+        if (!tokenResult?.token) {
+          console.error(
+            `[graphTokenHelper] getUserToken returned no token for userId=${userId} (channelUserId=${channelUserId}). Token Service may not have a cached token for connection '${connName}'.`,
+          );
+        }
+
+        return tokenResult;
+      })(),
       timeoutPromise,
     ]);
-
-    if (!result?.token) {
-      console.error(
-        `[graphTokenHelper] getUserToken returned no token for userId=${userId} (channelUserId=${channelUserId}). Token Service may not have a cached token for connection '${connName}'.`,
-      );
-    }
 
     return result?.token;
   } catch (err) {
