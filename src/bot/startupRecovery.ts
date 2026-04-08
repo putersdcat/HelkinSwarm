@@ -44,7 +44,7 @@ export async function runStartupRecovery(): Promise<void> {
   // --- Phase 1: Clean up stale pending acks (#191) ---
   try {
     const staleAckStats = await recoverStaleAcks();
-    stats.staleAcks = staleAckStats.recovered + staleAckStats.clearedWithoutReference;
+    stats.staleAcks = staleAckStats.recovered;
   } catch (err) {
     console.warn('[startupRecovery] Stale ack query failed:', err);
   }

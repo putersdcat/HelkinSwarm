@@ -8,12 +8,16 @@ import {
   getConversationReference,
   getStaleAcks,
   clearPendingAckId,
+  hasOutboundArtifactClaim,
 } from './conversationStore.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { trackEvent } from '../observability/telemetry.js';
-import { clearOrchestratorStage } from '../observability/orchestratorStageHealth.js';
+import {
+  clearOrchestratorStage,
+  getOrchestratorStageForCorrelation,
+} from '../observability/orchestratorStageHealth.js';
 
-export const STALE_ACK_THRESHOLD_MS = 5 * 60 * 1000;
+export const STALE_ACK_THRESHOLD_MS = 6 * 60 * 1000;
 
 let adapterInstance: CloudAdapter | undefined;
 
@@ -32,8 +36,12 @@ function getAdapter(): CloudAdapter {
 
 export interface StaleAckRecoveryStats {
   recovered: number;
-  clearedWithoutReference: number;
+  skipped: number;
   failed: number;
+}
+
+function buildStaleAckRecoveryMessage(correlationId: string): string {
+  return `⚠️ This turn appears to have stalled before a final reply was confirmed. Please resend it if you still need a response. \`[corr:${correlationId.slice(0, 8)}]\``;
 }
 
 async function clearRecoveredTurnArtifacts(
@@ -54,15 +62,23 @@ export async function recoverStaleAck(
   userId: string,
   correlationId: string,
   conversationReferenceOverride?: Partial<ConversationReference> | null,
-): Promise<'recovered' | 'cleared-without-reference'> {
+): Promise<'recovered' | 'skipped'> {
+  const [stageForCorrelation, replyClaimExists] = await Promise.all([
+    getOrchestratorStageForCorrelation(correlationId, userId),
+    hasOutboundArtifactClaim(conversationId, 'reply', correlationId),
+  ]);
+
+  if (stageForCorrelation || replyClaimExists) {
+    return 'skipped';
+  }
+
   const adapter = getAdapter();
   const appId = getEnvConfig().microsoftAppId;
   const conversationReference = conversationReferenceOverride
     ?? await getConversationReference(userId);
 
   if (!conversationReference) {
-    await clearRecoveredTurnArtifacts(conversationId, correlationId, userId);
-    return 'cleared-without-reference';
+    return 'skipped';
   }
 
   await adapter.continueConversationAsync(
@@ -72,7 +88,7 @@ export async function recoverStaleAck(
       await turnContext.updateActivity({
         type: ActivityTypes.Message,
         id: ackActivityId,
-        text: '⚠️ This turn was interrupted before a final reply could be delivered. Please resend it if you still need a response.',
+        text: buildStaleAckRecoveryMessage(correlationId),
         textFormat: 'markdown',
       });
     },
@@ -86,7 +102,7 @@ export async function recoverStaleAcks(maxAgeMs = STALE_ACK_THRESHOLD_MS): Promi
   const staleAcks = await getStaleAcks(maxAgeMs);
   const stats: StaleAckRecoveryStats = {
     recovered: 0,
-    clearedWithoutReference: 0,
+    skipped: 0,
     failed: 0,
   };
 
@@ -102,7 +118,7 @@ export async function recoverStaleAcks(maxAgeMs = STALE_ACK_THRESHOLD_MS): Promi
       if (outcome === 'recovered') {
         stats.recovered++;
       } else {
-        stats.clearedWithoutReference++;
+        stats.skipped++;
       }
 
       trackEvent({
@@ -116,11 +132,6 @@ export async function recoverStaleAcks(maxAgeMs = STALE_ACK_THRESHOLD_MS): Promi
       });
     } catch (err) {
       stats.failed++;
-      try {
-        await clearRecoveredTurnArtifacts(ack.conversationId, ack.correlationId, ack.userId);
-      } catch {
-        // Nothing more we can do.
-      }
       console.warn(`[staleAckRecovery] Failed to recover stale ack for userId=${ack.userId}:`, err);
     }
   }

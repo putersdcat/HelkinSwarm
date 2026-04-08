@@ -15,6 +15,10 @@ describe('self awaken timer source guards', () => {
     expect(timerSource).toContain('consciousModelImpaired: consciousLane.isImpaired');
     expect(timerSource).toContain("if (ingressDecision.decision === 'defer') {");
     expect(timerSource).toContain('await deferChronoScheduledWake(wake.id, wake.userId, nextWakeAt, ingressDecision.reason);');
+    expect(timerSource).toContain('const activeSessionRoutable = hasActiveGuard');
+    expect(timerSource).toContain("await client.raiseEvent(effectiveActiveInstanceId, 'NewMessage', event);");
+    expect(timerSource).toContain('await queueBufferedNewMessage(event, wake.userId, effectiveActiveInstanceId);');
+    expect(timerSource).toContain("await client.raiseEvent(effectiveActiveInstanceId, 'BufferedIngressQueued', {");
     expect(timerSource).toContain('await sendReply({');
     expect(timerSource).toContain("name: 'ChronoScheduledWakeDeferred'");
     expect(timerSource).toContain('await markChronoScheduledWakeDispatched(wake.id, wake.userId, correlationId);');

@@ -12,6 +12,7 @@ import {
   markChronoScheduledWakeDispatched,
   saveChronoInterruptionBreadcrumb,
 } from '../orchestrator/chronoBackplane.js';
+import { queueBufferedNewMessage } from '../orchestrator/bufferedIngressActivity.js';
 import { sendReply } from '../orchestrator/sendReplyActivity.js';
 import { resolveActiveOverseerSummary } from '../orchestrator/activeOverseerInstance.js';
 import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';
@@ -25,7 +26,7 @@ import {
   signalMindSessionAcquire,
 } from '../orchestrator/mindSessionGuard.js';
 import type { NewMessageEvent } from '../orchestrator/overseer.js';
-import { getActiveTurnCountForUser } from '../observability/orchestratorStageHealth.js';
+import { getActiveTurnCountForUser, getActiveTurnStagesForUser } from '../observability/orchestratorStageHealth.js';
 import { trackEvent } from '../observability/telemetry.js';
 
 function isStartConflict(error: unknown): boolean {
@@ -63,9 +64,14 @@ app.timer('selfAwakenTimer', {
 
         const guardState = await readMindSessionGuardState(client, wake.userId);
         const activeSummary = await resolveActiveOverseerSummary(client, wake.userId);
-        const activeTurnCount = await getActiveTurnCountForUser(wake.userId);
+        const [activeTurnCount, activeTurnEntries] = await Promise.all([
+          getActiveTurnCountForUser(wake.userId),
+          getActiveTurnStagesForUser(wake.userId),
+        ]);
         const effectiveActiveInstanceId = activeSummary.latestInstanceId;
         const hasActiveGuard = activeSummary.activeCount > 0 && effectiveActiveInstanceId !== undefined;
+        const activeSessionRoutable = hasActiveGuard
+          && activeTurnEntries.some((entry) => entry.stage === 'awaiting-ingress' && entry.instanceId === effectiveActiveInstanceId);
         const interruptionDepth = Math.max(
           guardState?.interruptionDepth ?? 0,
           Math.max(0, activeTurnCount - 1),
@@ -132,6 +138,56 @@ app.timer('selfAwakenTimer', {
               interruptionDepth,
             },
           });
+
+          const event: NewMessageEvent = {
+            userMessage: wake.wakeMessage,
+            conversationReference,
+            userId: wake.userId,
+            userAlias: wake.userId.slice(0, 4),
+            correlationId,
+          };
+
+          if (activeSessionRoutable) {
+            await client.raiseEvent(effectiveActiveInstanceId, 'NewMessage', event);
+            await markChronoScheduledWakeDispatched(wake.id, wake.userId, correlationId);
+
+            trackEvent({
+              name: 'ChronoScheduledWakeTriggered',
+              correlationId,
+              userId: wake.userId,
+              properties: {
+                wakeId: wake.id,
+                wakeAt: wake.wakeAt,
+                decision: ingressDecision.decision,
+                instanceId: effectiveActiveInstanceId,
+                deliveryMode: 'redirected-awaiting-ingress',
+              },
+            });
+            continue;
+          }
+
+          const queuedBufferedMessage = await queueBufferedNewMessage(event, wake.userId, effectiveActiveInstanceId);
+          await client.raiseEvent(effectiveActiveInstanceId, 'BufferedIngressQueued', {
+            docId: queuedBufferedMessage.docId,
+            correlationId: queuedBufferedMessage.correlationId,
+            event,
+          });
+
+          await markChronoScheduledWakeDispatched(wake.id, wake.userId, correlationId);
+
+          trackEvent({
+            name: 'ChronoScheduledWakeTriggered',
+            correlationId,
+            userId: wake.userId,
+            properties: {
+              wakeId: wake.id,
+              wakeAt: wake.wakeAt,
+              decision: ingressDecision.decision,
+              instanceId: effectiveActiveInstanceId,
+              deliveryMode: 'buffered-active-processing',
+            },
+          });
+          continue;
         }
 
         const instanceId = `overseer-${wake.userId}-wake-${wake.id.split(':').at(-1) ?? crypto.randomUUID().slice(0, 8)}`;

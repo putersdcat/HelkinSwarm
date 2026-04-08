@@ -4,6 +4,7 @@ const harness = vi.hoisted(() => ({
   continueConversationAsync: vi.fn(),
   getConversationReference: vi.fn(),
   getPendingAckId: vi.fn(),
+  hasOutboundArtifactClaim: vi.fn(),
   clearPendingAckId: vi.fn(),
   claimOutboundArtifact: vi.fn(),
   releaseOutboundArtifactClaim: vi.fn(),
@@ -12,12 +13,14 @@ const harness = vi.hoisted(() => ({
   readRuntimeAssetContent: vi.fn(),
   loadRuntimeAssetReference: vi.fn(),
   recordSubstage: vi.fn(),
+  clearOrchestratorStage: vi.fn(),
   getCorrelatedSpinnerAck: vi.fn(),
 }));
 
 vi.mock('../../src/bot/conversationStore.js', () => ({
   getConversationReference: harness.getConversationReference,
   getPendingAckId: harness.getPendingAckId,
+  hasOutboundArtifactClaim: harness.hasOutboundArtifactClaim,
   clearPendingAckId: harness.clearPendingAckId,
   claimOutboundArtifact: harness.claimOutboundArtifact,
   releaseOutboundArtifactClaim: harness.releaseOutboundArtifactClaim,
@@ -46,6 +49,7 @@ vi.mock('../../src/config/envConfig.js', () => ({
 
 vi.mock('../../src/observability/orchestratorStageHealth.js', () => ({
   recordSubstage: harness.recordSubstage,
+  clearOrchestratorStage: harness.clearOrchestratorStage,
 }));
 
 vi.mock('botbuilder', () => ({
@@ -61,6 +65,7 @@ vi.mock('botbuilder', () => ({
 function configureCommonHarness(): void {
   harness.getConversationReference.mockResolvedValue({ conversation: { id: 'conv-1' } });
   harness.getPendingAckId.mockResolvedValue('ack-activity-1');
+  harness.hasOutboundArtifactClaim.mockResolvedValue(false);
   harness.clearPendingAckId.mockResolvedValue(undefined);
   harness.claimOutboundArtifact.mockResolvedValue(true);
   harness.releaseOutboundArtifactClaim.mockResolvedValue(undefined);
@@ -69,6 +74,7 @@ function configureCommonHarness(): void {
   harness.readRuntimeAssetContent.mockResolvedValue(null);
   harness.loadRuntimeAssetReference.mockResolvedValue(null);
   harness.recordSubstage.mockImplementation(() => undefined);
+  harness.clearOrchestratorStage.mockResolvedValue(undefined);
   harness.getCorrelatedSpinnerAck.mockReturnValue('⠋ Still thinking... [corr:abc12345]');
 }
 

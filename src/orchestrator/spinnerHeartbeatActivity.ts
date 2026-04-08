@@ -12,6 +12,7 @@ import {
 import {
   getConversationReference,
   getPendingAckId,
+  hasOutboundArtifactClaim,
 } from '../bot/conversationStore.js';
 import { getCorrelatedSpinnerAck } from '../bot/ackVariants.js';
 import { getEnvConfig } from '../config/envConfig.js';
@@ -50,6 +51,11 @@ export async function spinnerHeartbeat(input: SpinnerHeartbeatInput): Promise<Sp
 
   const conversationReference = await getConversationReference(input.userId);
   if (!conversationReference) {
+    return { updated: false };
+  }
+
+  const conversationId = conversationReference.conversation?.id ?? input.userId;
+  if (await hasOutboundArtifactClaim(conversationId, 'reply', input.correlationId)) {
     return { updated: false };
   }
 
