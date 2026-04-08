@@ -28,6 +28,10 @@ import {
 } from './mindSessionGuard.js';
 import type { NewMessageEvent } from './overseer.js';
 import { sendReply } from './sendReplyActivity.js';
+import {
+  saveChronoInterruptionBreadcrumb,
+  saveChronoPausedTask,
+} from './chronoBackplane.js';
 
 export interface PendingIntentReplayDecision {
   replay: boolean;
@@ -197,6 +201,26 @@ export async function replayPendingIntent(
 
         await client.raiseEvent(effectiveActiveInstanceId, 'NewMessage', event);
         await markIntentProcessed(intent.id, intent.userId);
+
+        // Record interruption breadcrumb + paused task for Chrono-Backplane (#494 AC 4)
+        const replayCorrelationId = intent.correlationId ?? intent.id;
+        await saveChronoInterruptionBreadcrumb({
+          userId: intent.userId,
+          interruptedInstanceId: effectiveActiveInstanceId,
+          interruptedCorrelationId: undefined,
+          interruptedSource: 'pending-intent-replay',
+          interruptedByCorrelationId: replayCorrelationId,
+          interruptedByMessage: intent.messageText,
+        });
+        await saveChronoPausedTask({
+          userId: intent.userId,
+          interruptedInstanceId: effectiveActiveInstanceId,
+          interruptedCorrelationId: undefined,
+          interruptedSource: 'pending-intent-replay',
+          pausedByCorrelationId: replayCorrelationId,
+          pausedByMessage: intent.messageText,
+        });
+
         trackEvent({
           name: 'PendingIntentRecovered',
           correlationId: intent.correlationId ?? intent.id,

@@ -90,6 +90,10 @@ import {
   signalMindSessionAcquire,
 } from '../orchestrator/mindSessionGuard.js';
 import { queueBufferedNewMessage } from '../orchestrator/bufferedIngressActivity.js';
+import {
+  saveChronoInterruptionBreadcrumb,
+  saveChronoPausedTask,
+} from '../orchestrator/chronoBackplane.js';
 
 const STALE_ACK_VALIDATION_DELAY_MS = 4_000;
 const MODEL_OVERRIDE_ACK_RECOVERY_DELAY_MS = 45_000;
@@ -1227,6 +1231,25 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
           correlationId: queuedBufferedMessage.correlationId,
           event,
         });
+
+        // Record interruption breadcrumb + paused task for Chrono-Backplane (#494 AC 4)
+        await saveChronoInterruptionBreadcrumb({
+          userId,
+          interruptedInstanceId: effectiveActiveInstanceId,
+          interruptedCorrelationId: undefined,
+          interruptedSource: 'teams-message',
+          interruptedByCorrelationId: eventCorrelationId,
+          interruptedByMessage: userMessage,
+        });
+        await saveChronoPausedTask({
+          userId,
+          interruptedInstanceId: effectiveActiveInstanceId,
+          interruptedCorrelationId: undefined,
+          interruptedSource: 'teams-message',
+          pausedByCorrelationId: eventCorrelationId,
+          pausedByMessage: userMessage,
+        });
+
         return { outcome: 'started' };
       }
 
