@@ -167,36 +167,21 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v5
-        with:
-          version: 10.2.0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install workflow dependencies
-        run: pnpm install --frozen-lockfile
-
+      # ── Change detection runs FIRST (no toolchain needed) ────────────
+      # This allows code-only pushes to skip pnpm/Node/Bicep entirely,
+      # saving ~2-3 minutes per deploy. (#597)
       - name: Detect infrastructure changes
         id: changes
         run: |
-          if [ "${{ env.EARLY_DEV_COST_GUARD }}" = "true" ]; then
-            echo "infraChanged=true" >> "$GITHUB_OUTPUT"
-            echo "ℹ️ EARLY_DEV_COST_GUARD is active — always running Bicep to enforce cost-control invariants."
-            exit 0
-          fi
-
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "infraChanged=true" >> "$GITHUB_OUTPUT"
             echo "ℹ️ Manual dispatch — running full infra deployment."
             exit 0
           fi
 
-          # [skip-infra] in commit message forces code-only deploy
+          # [skip-infra] in commit message forces code-only deploy.
+          # This works even when EARLY_DEV_COST_GUARD is active — the guard
+          # assertion step runs independently of infraChanged. (#597)
           COMMIT_MSG=$(git log -1 --format='%s' "${{ github.sha }}")
           if echo "$COMMIT_MSG" | grep -qi '\[skip-infra\]'; then
             echo "infraChanged=false" >> "$GITHUB_OUTPUT"
@@ -224,12 +209,38 @@ jobs:
             echo "ℹ️ Code-only push detected — skipping Bicep deployment and reusing existing stamp resources."
           fi
 
+          # When EARLY_DEV_COST_GUARD is active, log that guard assertions will
+          # still run. Previously this forced infraChanged=true on every push,
+          # causing unnecessary Bicep deploys on code-only changes. (#579, #597)
+          if [ "${{ env.EARLY_DEV_COST_GUARD }}" = "true" ]; then
+            echo "ℹ️ EARLY_DEV_COST_GUARD is active — guard invariant assertions will run regardless of infraChanged."
+          fi
+
+      # ── Azure Login early so resource query + guard assertions work ──
       - name: Azure Login (OIDC)
         uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # ── Toolchain only needed for Bicep deploys (error analysis script) ──
+      - name: Setup pnpm
+        if: steps.changes.outputs.infraChanged == 'true'
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10.2.0
+
+      - name: Setup Node.js
+        if: steps.changes.outputs.infraChanged == 'true'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install workflow dependencies
+        if: steps.changes.outputs.infraChanged == 'true'
+        run: pnpm install --frozen-lockfile
 
       - name: Create resource group if not exists
         if: steps.changes.outputs.infraChanged == 'true'
@@ -623,7 +634,7 @@ jobs:
           fi
 
       - name: Remove paid observability leftovers in dirty dev mode
-        if: steps.changes.outputs.infraChanged == 'true' && (env.EARLY_DEV_COST_GUARD == 'true' || (github.event.inputs.DIRTY_DEV_MODE || 'false') == 'true')
+        if: (steps.changes.outputs.infraChanged == 'true' || env.EARLY_DEV_COST_GUARD == 'true') && (env.EARLY_DEV_COST_GUARD == 'true' || (github.event.inputs.DIRTY_DEV_MODE || 'false') == 'true')
         run: |
           set +e
           FUNC_NAME="${{ steps.query.outputs.functionAppName }}"
@@ -881,7 +892,9 @@ jobs:
         id: verify
         run: |
           echo "⏳ Waiting for deployment to propagate..."
-          sleep 30
+          # Start probing after 10s instead of 30s. Container Apps image pulls
+          # are fast on warm instances; the old 30s floor wasted time. (#597)
+          sleep 10
 
           HOSTNAME=$(az functionapp show \
             --name ${{ needs.deploy-infra.outputs.function-app-name }} \
@@ -899,10 +912,12 @@ jobs:
           echo "🏥 Function App hostname: $HOSTNAME"
           echo "fqdn=$HOSTNAME" >> "$GITHUB_OUTPUT"
 
-          # Health check with retries. The stamp is only considered ready when the
-          # health endpoint reports overall status=healthy, not merely HTTP 200.
-          MAX_RETRIES=6
+          # Health check with escalating backoff: 10s, 15s, 20s, 30s, 30s, 30s
+          # This probes aggressively early (catches fast deploys) while still
+          # giving slow deploys room to finish. (#597)
+          MAX_RETRIES=8
           RETRY=0
+          DELAYS=(10 15 20 30 30 30 30 30)
           while [ $RETRY -lt $MAX_RETRIES ]; do
             HEALTH_JSON=$(curl -s "https://$HOSTNAME/api/health" 2>/dev/null || echo "")
             HTTP_CODE=$(printf '%s' "$HEALTH_JSON" | jq -r '.status' >/dev/null 2>&1 && echo "200" || echo "000")
@@ -912,9 +927,10 @@ jobs:
               printf '%s' "$HEALTH_JSON" | jq .
               break
             fi
+            DELAY=${DELAYS[$RETRY]:-30}
             RETRY=$((RETRY + 1))
-            echo "⏳ Health check attempt $RETRY/$MAX_RETRIES returned status='${OVERALL_STATUS:-unknown}' — retrying in 30s..."
-            sleep 30
+            echo "⏳ Health check attempt $RETRY/$MAX_RETRIES returned status='${OVERALL_STATUS:-unknown}' — retrying in ${DELAY}s..."
+            sleep $DELAY
           done
 
           if [ "$HTTP_CODE" != "200" ] || [ "$OVERALL_STATUS" != "healthy" ]; then
