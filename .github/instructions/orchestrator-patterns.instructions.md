@@ -58,7 +58,7 @@ Every tool call runs in a **fresh, isolated LLM session** (`subAgentActivity.ts`
 - This prevents prompt injection bleed between tool calls
 
 ## Durable Hooks (0h)
-- Hooks survive `ContinueAsNew` — overseer carries their IDs forward in the summary
+- Hook IDs persist in Cosmos state (loaded at overseer start, saved at overseer end)
 - Hook callbacks raise Durable external events back to the overseer
 - Never poll for hook results — always event-driven
 
