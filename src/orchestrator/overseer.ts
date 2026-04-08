@@ -551,6 +551,14 @@ function* processTurn(
           correlationId: sessionInput.correlationId,
           userId: state.userId,
         } satisfies IngressWindowStageInput);
+        context.df.signalEntity(
+          new df.EntityId(MIND_SESSION_GUARD_ENTITY_NAME, state.userId),
+          'release',
+          MindSessionGuardReleaseInputSchema.parse({
+            instanceId: context.df.instanceId,
+            correlationId: sessionInput.correlationId,
+          }),
+        );
         return {
           completedCorrelationId: undefined,
           bufferedIngressSignals,

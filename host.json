@@ -21,7 +21,9 @@
   "functionTimeout": "00:10:00",
   "extensions": {
     "durableTask": {
-      "maxQueuePollingInterval": "00:00:02"
+      "maxQueuePollingInterval": "00:00:02",
+      "extendedSessionsEnabled": true,
+      "extendedSessionIdleTimeoutInSeconds": 60
     }
   }
 }
