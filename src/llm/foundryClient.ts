@@ -83,6 +83,12 @@ export interface FoundryClientOptions {
   temperature?: number;
   correlationId?: string;
   requestedTaskComplexity?: 'simple' | 'compound' | 'complex';
+  /**
+   * Override the fallback cascade budget for this specific call (#591).
+   * Sub-agents should pass a shorter budget (e.g. 30_000) to fail fast instead
+   * of consuming the full 90s main-orchestrator budget.
+   */
+  maxBudgetMs?: number;
 }
 
 export interface ToolDefinition {
@@ -261,6 +267,7 @@ export class FoundryClient {
     const failoverSteps: LlmFailoverStep[] = [];
     const attemptedModels: string[] = [];
     const budgetStart = Date.now();
+    const effectiveBudgetMs = options.maxBudgetMs ?? FALLBACK_BUDGET_MS;
 
     for (let i = 0; i < chain.length; i++) {
       const routing = chain[i];
@@ -274,7 +281,7 @@ export class FoundryClient {
 
       // Budget accounting: how much time remains for the rest of the cascade?
       const elapsed = Date.now() - budgetStart;
-      const remaining = FALLBACK_BUDGET_MS - elapsed;
+      const remaining = effectiveBudgetMs - elapsed;
       if (remaining <= MIN_PER_MODEL_TIMEOUT_MS) {
         // Budget exhausted — break out and throw.
         break;

@@ -133,6 +133,9 @@ df.app.activity('subAgentActivity', {
     let tokensUsed = 0;
 
     try {
+      // Sub-agents must fail fast — use a shorter budget than the main 90s orchestrator
+      // budget so a slow model doesn't block the conscious thread for 3+ minutes (#591).
+      const SUB_AGENT_LLM_BUDGET_MS = 30_000;
       const response = await client.chatCompletion({
         messages,
         tools: tools.length > 0 ? tools : undefined,
@@ -140,6 +143,7 @@ df.app.activity('subAgentActivity', {
         maxTokens: 1024,
         temperature: 0.1,
         correlationId: input.correlationId,
+        maxBudgetMs: SUB_AGENT_LLM_BUDGET_MS,
       });
 
       tokensUsed = response.usage.totalTokens;

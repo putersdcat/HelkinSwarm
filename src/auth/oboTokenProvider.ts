@@ -134,11 +134,24 @@ export async function acquireCachedTokenForUser(
     );
   }
 
-  const result = await client.acquireTokenSilent({
-    account,
-    scopes: request.scopes.map(normalizeDownstreamScope),
-    correlationId: request.correlationId,
-  });
+  // Wrap with timeout — MSAL acquireTokenSilent calls Entra ID token refresh
+  // endpoint over the network and can hang indefinitely if the endpoint is slow (#591).
+  const MSAL_SILENT_TIMEOUT_MS = 15_000;
+  const msalTimeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => {
+      const err = new Error(`acquireTokenSilent timed out after ${MSAL_SILENT_TIMEOUT_MS}ms for userId=${request.userId}`);
+      err.name = 'TimeoutError';
+      reject(err);
+    }, MSAL_SILENT_TIMEOUT_MS),
+  );
+  const result = await Promise.race([
+    client.acquireTokenSilent({
+      account,
+      scopes: request.scopes.map(normalizeDownstreamScope),
+      correlationId: request.correlationId,
+    }),
+    msalTimeoutPromise,
+  ]);
 
   if (!result) {
     throw new OboError(
