@@ -35,8 +35,17 @@ is not yet at the "episode" that expects this result, the message is classified 
 `llm.lastSuccessAt` shows the LLM call completed. The Durable runtime simply hasn't picked up
 the completion message yet.
 
-**Mitigation**: `extendedSessionsEnabled: true` in host.json keeps orchestrators in memory,
-bypassing the queue-based message matching entirely for active sessions.
+**Mitigation**: On **Node.js** workers, `extendedSessionsEnabled` is **NOT supported** (only
+.NET in-process and isolated workers support it). The Azure Functions runtime will enter a
+`Faulted` state and return 503 on all endpoints if you set it to `true`.
+
+**Available mitigations for Node.js**:
+1. `maxQueuePollingInterval: "00:00:02"` — reduces poll-wait from 30s default to 2s
+2. Minimize sequential yields — batch parallel work into single activities
+3. Use the handoff-to-fresh-overseer pattern to keep history short
+4. Accept that some turns will have 5-30s inter-activity delays on Azure Storage
+5. Consider migrating to the **MSSQL** or **Netherite** backend if latency becomes critical
+   (both support extended sessions and have lower relay latency)
 
 ### Critical host.json Settings
 
@@ -44,9 +53,7 @@ bypassing the queue-based message matching entirely for active sessions.
 {
   "extensions": {
     "durableTask": {
-      "maxQueuePollingInterval": "00:00:02",
-      "extendedSessionsEnabled": true,
-      "extendedSessionIdleTimeoutInSeconds": 60
+      "maxQueuePollingInterval": "00:00:02"
     }
   }
 }
@@ -55,16 +62,17 @@ bypassing the queue-based message matching entirely for active sessions.
 | Setting | Default | Our Value | Why |
 |---------|---------|-----------|-----|
 | `maxQueuePollingInterval` | **30s** | **2s** | Default 30s means each yield waits up to 30s for poll. Catastrophic for multi-yield orchestrators. |
-| `extendedSessionsEnabled` | `false` | `true` | Keeps orchestrators in memory, avoiding out-of-order message delays. Without this, sessions hang for 30–60+ seconds between activity completions. |
-| `extendedSessionIdleTimeoutInSeconds` | 30 | 60 | How long to keep an idle orchestrator session alive in memory. 60s covers the ingress window. |
 
-**WARNING**: Do NOT add other durableTask settings casually. Some settings that seem helpful
-(like `maxConcurrentActivityFunctions` or `controlQueueBufferThreshold`) can cause worse
-problems by starving queue workers or creating partition contention. The three settings above
-are the verified safe set.
+### Settings That Do NOT Work on Node.js
+
+| Setting | Why Not |
+|---------|---------|
+| `extendedSessionsEnabled` | **Only supported on .NET workers.** Setting this to `true` on Node.js causes the runtime to enter `Faulted` state (503 everywhere). We learned this the hard way — see commit `037e110`. |
+| `extendedSessionIdleTimeoutInSeconds` | Companion to `extendedSessionsEnabled` — irrelevant on Node.js. |
 
 ### Settings We Intentionally Do NOT Set
 
+- `extendedSessionsEnabled` — **NOT supported on Node.js workers** (causes Faulted state)
 - `maxConcurrentOrchestratorFunctions` — default is fine, overriding can starve partition processing
 - `controlQueueBufferThreshold` — can cause messages to be deferred unnecessarily
 - `partitionCount` — changing after deployment can orphan existing instances
