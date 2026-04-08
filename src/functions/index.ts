@@ -63,6 +63,7 @@ import '../orchestrator/startupRecoveryActivity.js';
 import '../orchestrator/terminateOrchestrationActivity.js';
 import '../orchestrator/planActivity.js';
 import '../orchestrator/chronoBackplane.js';
+import '../orchestrator/saveChronoPausedTaskActivity.js';
 import '../orchestrator/bufferedIngressActivity.js';
 import '../orchestrator/ingressWindowStageActivity.js';
 import '../orchestrator/limbicIngressActivity.js';

@@ -671,6 +671,17 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     } satisfies SessionResult;
   }
 
+  if (llmResult.shouldPageOut) {
+    yield context.df.callActivity('saveChronoPausedTaskActivity', {
+      userId: input.state.userId,
+      interruptedInstanceId: context.df.instanceId,
+      interruptedCorrelationId: correlationId,
+      interruptedSource: 'mid-turn-llm-impairment',
+      pausedByCorrelationId: correlationId,
+      pausedByMessage: `Mid-turn impairment page-out while working on: ${effectiveTaskMessage}`,
+    });
+  }
+
   // Cumulative token tracking across all LLM calls in this session (#253)
   let cumulativeTokensUsed = llmResult.tokensUsed + planResult.planTokensUsed;
   let cumulativePromptTokens = llmResult.promptTokens;

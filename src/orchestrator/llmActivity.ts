@@ -6,6 +6,7 @@ import {
   buildLlmFailureNotice,
   buildSuccessfulFailoverNotices,
   FoundryClient,
+  shouldPageOutForLlmFailure,
   type LlmFailoverStep,
 } from '../llm/foundryClient.js';
 import {
@@ -33,6 +34,7 @@ export interface LlmResult {
   operationalNotices: string[];
   failoverSteps: LlmFailoverStep[];
   replyAlreadyDelivered?: boolean;
+  shouldPageOut?: boolean;
 }
 
 export interface LlmActivityInput extends PromptResult {
@@ -218,9 +220,11 @@ df.app.activity('llmActivity', {
       };
     } catch (err) {
       const notice = buildLlmFailureNotice(err);
+      const shouldPageOut = shouldPageOutForLlmFailure(err);
       trackEvent({ name: 'LlmCallFailed', correlationId, properties: {
         error: err instanceof Error ? err.message : String(err),
         userNotice: notice,
+        shouldPageOut,
       } });
       console.error(`[llmActivity] LLM call failed: correlationId=${correlationId}`, err);
       // Return a graceful operational notice instead of leaking raw provider errors.
@@ -233,6 +237,7 @@ df.app.activity('llmActivity', {
         finishReason: 'error',
         operationalNotices: [],
         failoverSteps: [],
+        shouldPageOut,
       };
     }
   },

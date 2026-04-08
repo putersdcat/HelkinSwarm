@@ -873,6 +873,26 @@ export function buildLlmFailureNotice(err: unknown): string {
   return '⚠️ Operational note: the model request failed and automatic recovery could not complete just now. Please retry in a minute.';
 }
 
+export function shouldPageOutForLlmFailure(err: unknown): boolean {
+  if (err instanceof FoundryAllModelsDownError) {
+    return true;
+  }
+
+  if (err instanceof FoundryFallbackExhaustedError) {
+    return true;
+  }
+
+  if (err instanceof FoundryError && isRetryableError(err)) {
+    return true;
+  }
+
+  if (err instanceof Error && err.name === 'TimeoutError') {
+    return true;
+  }
+
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 // Model capability detection (#219)
 // ---------------------------------------------------------------------------

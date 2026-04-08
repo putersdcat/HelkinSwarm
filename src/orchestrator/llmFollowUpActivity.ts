@@ -10,6 +10,7 @@ import {
   buildLlmFailureNotice,
   buildSuccessfulFailoverNotices,
   FoundryClient,
+  shouldPageOutForLlmFailure,
   textContent,
 } from '../llm/foundryClient.js';
 import { getDirectChatModelIncompatibilityReason, getModelRouting } from '../llm/modelRouter.js';
@@ -414,6 +415,7 @@ df.app.activity('llmFollowUpActivity', {
         finishReason: 'error',
         operationalNotices: [],
         failoverSteps: [],
+        shouldPageOut: shouldPageOutForLlmFailure(err),
       };
     }
   },
