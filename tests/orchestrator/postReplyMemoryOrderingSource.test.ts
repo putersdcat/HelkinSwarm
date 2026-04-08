@@ -8,7 +8,7 @@ describe('post-reply memory ordering source guards', () => {
 
     expect(sessionSource).not.toContain("yield context.df.callActivity('storeMemoryActivity'");
     expect(overseerSource).toContain("yield* runBestEffortPostReplyActivity(");
-    expect(overseerSource).toContain("'storeMemoryActivity'");
+    expect(overseerSource).toContain("'postReplyBatchActivity'");
     expect(overseerSource).toContain('assistantReply: sessionResult.cleanResponse || sessionResult.response || \'(no response)\',');
     expect(overseerSource).toContain('[overseer] ${label} failed after reply');
   });

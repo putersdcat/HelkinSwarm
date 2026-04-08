@@ -89,7 +89,8 @@ export type TelemetryEventName =
   | 'ClarificationRetryRequested'
   | 'ClarificationResumed'
   | 'ClarificationCancelled'
-  | 'ClarificationExpired';
+  | 'ClarificationExpired'
+  | 'PostReplyBatchCompleted';
 
 // ---------------------------------------------------------------------------
 // Session Tracer — maps events to trace phases for Dev Console (#140)

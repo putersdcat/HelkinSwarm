@@ -19,9 +19,14 @@ describe('post-reply persistence timeout source guards', () => {
     expect(overseerSource).toContain('POST_REPLY_ACTIVITY_TIMEOUT_MS = 15_000');
     expect(overseerSource).toContain('function* runBestEffortPostReplyActivity(');
     expect(overseerSource).toContain("yield* runBestEffortPostReplyActivity(");
-    expect(overseerSource).toContain("'storeMemoryActivity'");
-    expect(overseerSource).toContain("'saveStateActivity'");
-    expect(overseerSource).toContain("'saveChronoContinuityActivity'");
+    expect(overseerSource).toContain("'postReplyBatchActivity'");
     expect(overseerSource).toContain('continuing turn completion');
+
+    // The batch activity itself handles storeMemory + saveState + chrono with internal timeouts
+    const batchSource = readFileSync('src/orchestrator/postReplyBatchActivity.ts', 'utf8');
+    expect(batchSource).toContain('Promise.allSettled');
+    expect(batchSource).toContain('withTimeout');
+    expect(batchSource).toContain('storeConversationTurn');
+    expect(batchSource).toContain('saveChronoContinuity');
   });
 });

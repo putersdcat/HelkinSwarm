@@ -21,12 +21,11 @@ import type { SpinnerHeartbeatInput } from './spinnerHeartbeatActivity.js';
 import type { ReplyDeliveryRecoveryInput, ReplyDeliveryRecoveryResult } from './replyDeliveryRecoveryActivity.js';
 import type { TerminateOrchestrationInput } from './terminateOrchestrationActivity.js';
 import type { PurgeOrchestrationInput } from './terminateOrchestrationActivity.js';
-import type { StoreMemoryInput } from './storeMemoryActivity.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
 import type { RuntimeAssetReference } from '../integrations/runtimeAssetStore.js';
 import { MIND_SESSION_GUARD_ENTITY_NAME, MindSessionGuardReleaseInputSchema } from './mindSessionGuard.js';
-import type { SaveChronoContinuityInput } from './chronoBackplane.js';
+import type { PostReplyBatchInput } from './postReplyBatchActivity.js';
 import type { BufferedIngressActivityInput } from './bufferedIngressActivity.js';
 import type { IngressWindowStageInput } from './ingressWindowStageActivity.js';
 import type { EmitOrchestratorTelemetryInput } from './emitOrchestratorTelemetryActivity.js';
@@ -700,43 +699,21 @@ function* processTurn(
   );
   state.recentHistory = history.slice(-10);
 
+  // Batched post-reply: storeMemory + saveState + saveChronoContinuity in ONE activity call.
+  // Reduces Durable yields from 6+ to 2, cutting buffered ingress turnaround from 3+ min to ~10s.
   yield* runBestEffortPostReplyActivity(
     context,
-    'storeMemoryActivity',
+    'postReplyBatchActivity',
     {
       userId: state.userId,
+      correlationId: sessionInput.correlationId,
       userMessage: event.userMessage,
       assistantReply: sessionResult.cleanResponse || sessionResult.response || '(no response)',
-    } satisfies StoreMemoryInput,
-    state.userId,
-    sessionInput.correlationId,
-    'storeMemoryActivity',
-  );
-
-  yield* runBestEffortPostReplyActivity(
-    context,
-    'saveStateActivity',
-    {
       state,
-      correlationId: sessionInput.correlationId,
-    } satisfies SaveStateInput,
+    } satisfies PostReplyBatchInput,
     state.userId,
     sessionInput.correlationId,
-    'saveStateActivity',
-  );
-
-  yield* runBestEffortPostReplyActivity(
-    context,
-    'saveChronoContinuityActivity',
-    {
-      userId: state.userId,
-      correlationId: sessionInput.correlationId,
-      userMessage: event.userMessage,
-      assistantReply: sessionResult.cleanResponse || sessionResult.response || '(no response)',
-    } satisfies SaveChronoContinuityInput,
-    state.userId,
-    sessionInput.correlationId,
-    'saveChronoContinuityActivity',
+    'postReplyBatchActivity',
   );
 
   context.df.signalEntity(
