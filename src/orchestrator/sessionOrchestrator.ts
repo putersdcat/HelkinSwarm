@@ -89,6 +89,13 @@ function* emitOrchestratorTelemetry(
 const FOLLOWUP_DURABLE_TIMEOUT_MS = 100_000; // 100s = 90s LLM budget + 10s overhead
 
 /**
+ * Maximum time to wait for a sub-agent activity via Durable timer (#591).
+ * Uses Durable timer (not JS setTimeout) because JS timers are unreliable
+ * in Azure Container Apps activity workers (#588).
+ */
+const SUB_AGENT_DURABLE_TIMEOUT_MS = 90_000; // 90s hard Durable cap
+
+/**
  * Race llmFollowUpActivity against a Durable timer (#588).
  * If the timer fires first, the orchestrator receives a synthetic timeout result
  * and moves on — the abandoned activity completes in the background harmlessly.
@@ -121,6 +128,39 @@ function* withLlmFollowUpTimeout(
   }
   timer.cancel();
   return task.result as LlmResult;
+}
+
+/**
+ * Race subAgentActivity against a Durable timer (#591).
+ * If the timer fires first, the orchestrator receives a synthetic timeout result
+ * and moves on — the abandoned activity completes in the background harmlessly.
+ */
+function* withSubAgentTimeout(
+  context: df.OrchestrationContext,
+  input: SubAgentInput,
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions generator helper
+): Generator<df.Task, SubAgentResult, any> {
+  const timer = context.df.createTimer(
+    new Date(context.df.currentUtcDateTime.getTime() + SUB_AGENT_DURABLE_TIMEOUT_MS),
+  );
+  const task = context.df.callActivity('subAgentActivity', input);
+  const winner = yield context.df.Task.any([task, timer]) as df.Task;
+  if (winner === timer) {
+    console.error(
+      `[sessionOrchestrator] subAgentActivity timed out after ${SUB_AGENT_DURABLE_TIMEOUT_MS}ms` +
+      ` via Durable timer — tool: ${input.toolName} (#591)`,
+    );
+    return {
+      success: false,
+      model: 'timeout',
+      output: undefined,
+      error: `subAgentActivity timed out after ${SUB_AGENT_DURABLE_TIMEOUT_MS}ms`,
+      tokensUsed: 0,
+      correlationId: input.correlationId,
+    };
+  }
+  timer.cancel();
+  return task.result as SubAgentResult;
 }
 
 const ConfirmationResponseSchema = z.object({
@@ -837,7 +877,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           preferredModel: executionHint.preferredModel,
           planStepOrder: executionHint.stepOrder,
         };
-        const subResult: SubAgentResult = yield context.df.callActivity('subAgentActivity', subInput);
+        const subResult: SubAgentResult = yield* withSubAgentTimeout(context, subInput);
         subAgentSpawnCount++;
         subAgentResults.push({
           toolCallId: tc.id,
@@ -1281,7 +1321,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             preferredModel: executionHint.preferredModel,
             planStepOrder: executionHint.stepOrder,
           };
-          const subResult: SubAgentResult = yield context.df.callActivity('subAgentActivity', subInput);
+          const subResult: SubAgentResult = yield* withSubAgentTimeout(context, subInput);
           subAgentSpawnCount++;
           roundSubResults.push({
             toolCallId: tc.id,
