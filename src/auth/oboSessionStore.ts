@@ -3,6 +3,11 @@ import { getContainer } from '../memory/cosmosClient.js';
 const CONTAINER_NAME = 'msalTokenCache';
 const DOC_PREFIX = 'obo-session-';
 
+// Hard cap on each Cosmos read/write to bypass the SDK's TimeoutErrorRetryPolicy
+// which retries timed-out requests up to 10 times (10s × 10 = 100s hang).
+// AbortSignal.timeout() forces an immediate abort instead of silent retries (#591 part 4).
+const COSMOS_ABORT_TIMEOUT_MS = 8_000;
+
 export interface OboSessionRecord {
   id: string;
   userId: string;
@@ -24,13 +29,17 @@ function getDocId(userId: string): string {
 export async function loadOboSession(userId: string): Promise<OboSessionRecord | undefined> {
   const container = getContainer(CONTAINER_NAME);
   try {
-    const { resource } = await container.item(getDocId(userId), userId).read<OboSessionRecord>();
+    const { resource } = await container.item(getDocId(userId), userId).read<OboSessionRecord>(
+      { abortSignal: AbortSignal.timeout(COSMOS_ABORT_TIMEOUT_MS) },
+    );
     return resource ?? undefined;
   } catch (err: unknown) {
     if (err && typeof err === 'object' && 'code' in err && (err as { code: number }).code === 404) {
       return undefined;
     }
-    throw err;
+    // Timeout or network failure — treat as cache miss so handler falls through safely
+    console.error('[oboSessionStore] loadOboSession failed (timeout or network):', err);
+    return undefined;
   }
 }
 

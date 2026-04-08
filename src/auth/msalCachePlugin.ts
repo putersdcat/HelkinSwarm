@@ -8,6 +8,10 @@ import { getContainer } from '../memory/cosmosClient.js';
 const CONTAINER_NAME = 'msalTokenCache'; // dedicated container with 24h TTL
 const CACHE_DOC_PREFIX = 'msal-cache-';
 
+// Hard cap on each Cosmos read/write — bypasses the SDK's 10-retry TimeoutErrorRetryPolicy
+// (10s × 10 retries = 100s hang). AbortSignal.timeout() aborts immediately (#591 part 4).
+const COSMOS_ABORT_TIMEOUT_MS = 8_000;
+
 /**
  * Cosmos DB-backed MSAL token cache plugin.
  * Stores encrypted MSAL cache blobs per userId in the userProfiles container.
@@ -20,7 +24,9 @@ export function createCosmosCachePlugin(userId: string): ICachePlugin {
   return {
     async beforeCacheAccess(context: TokenCacheContext): Promise<void> {
       try {
-        const { resource } = await container.item(docId, userId).read<{ cacheBlob: string }>();
+        const { resource } = await container.item(docId, userId).read<{ cacheBlob: string }>(
+          { abortSignal: AbortSignal.timeout(COSMOS_ABORT_TIMEOUT_MS) },
+        );
         if (resource?.cacheBlob) {
           context.tokenCache.deserialize(resource.cacheBlob);
         }
@@ -29,7 +35,8 @@ export function createCosmosCachePlugin(userId: string): ICachePlugin {
         if (err && typeof err === 'object' && 'code' in err && (err as { code: number }).code === 404) {
           return;
         }
-        console.error('[msalCachePlugin] Failed to read cache from Cosmos:', err);
+        // Timeout or network failure — proceed without cached tokens (will re-acquire)
+        console.error('[msalCachePlugin] Failed to read cache from Cosmos (timeout or network):', err);
       }
     },
 
@@ -38,15 +45,19 @@ export function createCosmosCachePlugin(userId: string): ICachePlugin {
 
       try {
         const cacheBlob = context.tokenCache.serialize();
-        await container.items.upsert({
-          id: docId,
-          userId,
-          cacheBlob,
-          type: 'msal-cache',
-          updatedAt: new Date().toISOString(),
-        });
+        await container.items.upsert(
+          {
+            id: docId,
+            userId,
+            cacheBlob,
+            type: 'msal-cache',
+            updatedAt: new Date().toISOString(),
+          },
+          { abortSignal: AbortSignal.timeout(COSMOS_ABORT_TIMEOUT_MS) },
+        );
       } catch (err: unknown) {
-        console.error('[msalCachePlugin] Failed to write cache to Cosmos:', err);
+        // Non-fatal: next request will re-acquire the token — log and continue
+        console.error('[msalCachePlugin] Failed to write cache to Cosmos (timeout or network):', err);
       }
     },
   };
