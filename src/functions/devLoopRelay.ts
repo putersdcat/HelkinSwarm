@@ -35,7 +35,7 @@ import {
 import { saveChronoScheduledWake } from '../orchestrator/chronoBackplane.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { getTraceTree, findTraceTreeByShortCorrelation } from '../observability/sessionTracer.js';
-import { clearModelDegraded, markModelDegraded } from '../llm/modelCircuitBreaker.js';
+import { clearModelDegraded, markModelDegraded, persistSharedDegradedModels } from '../llm/modelCircuitBreaker.js';
 import { clearForcedRetryableFailure, seedForcedRetryableFailure } from '../llm/modelFailoverProof.js';
 import { registerModels, reportLlmFailure, reportLlmSuccess } from '../llm/llmHealthTracker.js';
 
@@ -711,6 +711,8 @@ app.http('devloopModelDegradation', {
         }
       }
 
+      await persistSharedDegradedModels();
+
       trackEvent({
         name: 'DevLoopRelayPush',
         correlationId: `model-degradation-seed-${Date.now()}`,
@@ -744,6 +746,8 @@ app.http('devloopModelDegradation', {
       clearForcedRetryableFailure(deploymentName);
       reportLlmSuccess(deploymentName);
     }
+
+    await persistSharedDegradedModels();
 
     trackEvent({
       name: 'DevLoopRelayPush',

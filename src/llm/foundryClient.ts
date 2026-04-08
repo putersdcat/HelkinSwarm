@@ -6,7 +6,7 @@ import * as https from 'node:https';
 import { getFallbackChain, getModelCapacityProfile, getModelRouting, type ModelRouting } from './modelRouter.js';
 import { getBearerToken } from '../auth/identity.js';
 import { getEnvConfig } from '../config/envConfig.js';
-import { isModelDegraded, markModelDegraded, clearModelDegraded } from './modelCircuitBreaker.js';
+import { isModelDegraded, markModelDegraded, clearModelDegraded, syncSharedDegradedModels } from './modelCircuitBreaker.js';
 import { consumeForcedRetryableFailure } from './modelFailoverProof.js';
 import { reportLlmSuccess, reportLlmFailure, registerModels, isAllModelsDown, isModelTrackedDown } from './llmHealthTracker.js';
 import { trackEvent } from '../observability/telemetry.js';
@@ -245,6 +245,7 @@ export class FoundryClient {
    */
   async chatCompletion(options: Omit<FoundryClientOptions, 'routing'>): Promise<ChatCompletionResponse> {
     const correlationId = options.correlationId ?? crypto.randomUUID();
+    await syncSharedDegradedModels();
 
     // Get the full fallback chain for the requested deployment.
     // OpenRouter has a separate chain (no Azure deployment names in the fallback list).
