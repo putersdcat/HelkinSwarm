@@ -245,7 +245,7 @@ app.http('tab-traces', {
 
     try {
       const { getMessagesByCorrelation } = await import('../devloop/relayStore.js');
-      const { getTraceTree, listRecentTraces } = await import('../observability/sessionTracer.js');
+      const { listRecentTraces, loadTraceTreeWithFallback } = await import('../observability/sessionTracer.js');
 
       // If no corr param, return recent traces list with optional time range (#269)
       if (!corr || corr.length < 3) {
@@ -263,7 +263,7 @@ app.http('tab-traces', {
       }
 
       const messages = await getMessagesByCorrelation(corr);
-      const traceTree = getTraceTree(corr);
+      const { traceTree } = await loadTraceTreeWithFallback(corr);
 
       return {
         status: 200,

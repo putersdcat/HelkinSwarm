@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   findTraceTreeByShortCorrelation,
   getTraceTree,
+  loadTraceTreeWithFallback,
   recordTracePhase,
 } from '../../src/observability/sessionTracer.js';
 
@@ -23,5 +24,29 @@ describe('sessionTracer short correlation lookup', () => {
     expect(findTraceTreeByShortCorrelation('f4f9fd48')?.correlationId).toBe(correlationId);
     expect(findTraceTreeByShortCorrelation('corr:f4f9fd48')?.correlationId).toBe(correlationId);
     expect(findTraceTreeByShortCorrelation('[corr:f4f9fd48]')?.correlationId).toBe(correlationId);
+  });
+
+  it('returns in-memory exact and short-prefix lookups before persisted fallback is needed', async () => {
+    const correlationId = 'a1b2c3d4-1111-2222-3333-444444444444';
+
+    recordTracePhase({
+      correlationId,
+      userId: 'u1',
+      phaseId: 'phase-2',
+      name: 'ToolExecuted',
+      type: 'tool-dispatch',
+      durationMs: 12,
+      status: 'completed',
+    });
+
+    await expect(loadTraceTreeWithFallback(correlationId)).resolves.toMatchObject({
+      lookupMode: 'exact',
+      traceTree: expect.objectContaining({ correlationId }),
+    });
+
+    await expect(loadTraceTreeWithFallback('a1b2c3d4')).resolves.toMatchObject({
+      lookupMode: 'short-prefix',
+      traceTree: expect.objectContaining({ correlationId }),
+    });
   });
 });

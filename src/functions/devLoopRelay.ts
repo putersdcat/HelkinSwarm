@@ -34,7 +34,7 @@ import {
 } from '../observability/orchestratorStageHealth.js';
 import { saveChronoScheduledWake } from '../orchestrator/chronoBackplane.js';
 import { trackEvent } from '../observability/telemetry.js';
-import { getTraceTree, findTraceTreeByShortCorrelation } from '../observability/sessionTracer.js';
+import { loadTraceTreeWithFallback } from '../observability/sessionTracer.js';
 import { clearModelDegraded, markModelDegraded, persistSharedDegradedModels } from '../llm/modelCircuitBreaker.js';
 import { clearForcedRetryableFailure, seedForcedRetryableFailure } from '../llm/modelFailoverProof.js';
 import { registerModels, reportLlmFailure, reportLlmSuccess } from '../llm/llmHealthTracker.js';
@@ -409,14 +409,7 @@ app.http('devloopSessionBundle', {
     }
 
     const messages = await getMessagesByCorrelation(correlationTag);
-    const exactTraceTree = getTraceTree(correlationTag);
-    const shortTraceTree = exactTraceTree ?? findTraceTreeByShortCorrelation(correlationTag);
-    const traceTree = shortTraceTree ?? null;
-    const traceLookupMode = exactTraceTree
-      ? 'exact'
-      : shortTraceTree
-        ? 'short-prefix'
-        : 'miss';
+    const { traceTree, lookupMode: traceLookupMode } = await loadTraceTreeWithFallback(correlationTag);
 
     trackEvent({
       name: 'DevLoopRelayPoll',

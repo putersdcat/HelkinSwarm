@@ -2,8 +2,11 @@
 // a causal trace tree for the Dev Console Session Tracer panel.
 // Spec ref: ADDENDA-03 (Tab Infrastructure), Issue #140
 //
-// This is an in-memory ring buffer — traces are ephemeral and lost on restart.
-// For durable tracing, App Insights / OpenTelemetry is the source of truth.
+// Primary storage is an in-memory ring buffer for speed. A best-effort blob
+// persistence fallback keeps recent traces retrievable on dirty-dev stamps that
+// intentionally lack full paid observability.
+
+import { BlobServiceClient, RestError } from '@azure/storage-blob';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -47,6 +50,11 @@ export interface TraceTree {
   phases: TracePhase[];
 }
 
+export interface TraceLookupResult {
+  traceTree: TraceTree | null;
+  lookupMode: 'exact' | 'short-prefix' | 'persisted-exact' | 'persisted-short-prefix' | 'miss';
+}
+
 // ---------------------------------------------------------------------------
 // In-memory trace store (ring buffer — bounded at MAX_TRACES)
 // ---------------------------------------------------------------------------
@@ -54,6 +62,15 @@ export interface TraceTree {
 const MAX_TRACES = 200;
 const traceMap = new Map<string, TraceTree>();
 const traceOrder: string[] = [];
+const TRACE_STORAGE_CONTAINER = 'helkinswarm-devloop';
+const TRACE_STORAGE_CACHE_TTL_MS = 5_000;
+
+let blobServiceClient: BlobServiceClient | undefined;
+let containerInitPromise: Promise<void> | undefined;
+
+const persistedExactTraceCache = new Map<string, { value?: TraceTree; loadedAtMs: number }>();
+const persistedShortTraceCache = new Map<string, { value?: TraceTree; loadedAtMs: number }>();
+const pendingPersistOperations = new Map<string, Promise<void>>();
 
 function evictOldest(): void {
   while (traceOrder.length > MAX_TRACES) {
@@ -77,6 +94,137 @@ function getOrCreateTrace(correlationId: string, userId?: string): TraceTree {
     evictOldest();
   }
   return tree;
+}
+
+function normalizeShortCorrelation(shortCorrelation: string): string {
+  return shortCorrelation
+    .trim()
+    .replace(/^\[?corr:/i, '')
+    .replace(/\]?$/u, '')
+    .toLowerCase();
+}
+
+function getTraceBlobServiceClient(): BlobServiceClient | undefined {
+  if (blobServiceClient) {
+    return blobServiceClient;
+  }
+
+  const connectionString = process.env['AzureWebJobsStorage'] ?? process.env['AZUREWEBJOBSSTORAGE'];
+  if (!connectionString) {
+    return undefined;
+  }
+
+  blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
+  return blobServiceClient;
+}
+
+async function ensureTraceContainer(): Promise<boolean> {
+  const serviceClient = getTraceBlobServiceClient();
+  if (!serviceClient) {
+    return false;
+  }
+
+  if (!containerInitPromise) {
+    containerInitPromise = serviceClient
+      .getContainerClient(TRACE_STORAGE_CONTAINER)
+      .createIfNotExists()
+      .then(() => undefined)
+      .catch((error: unknown) => {
+        console.warn('[sessionTracer] Failed to initialize persisted trace container:', error);
+        containerInitPromise = undefined;
+      });
+  }
+
+  await containerInitPromise;
+  return true;
+}
+
+function getScopeKey(): string {
+  const raw =
+    process.env['WEBSITE_SITE_NAME'] ??
+    process.env['WEBSITE_HOSTNAME'] ??
+    process.env['HOSTNAME'] ??
+    'local-dev';
+
+  return raw.toLowerCase().replace(/[^a-z0-9-]+/g, '-');
+}
+
+function buildExactTraceBlobName(correlationId: string): string {
+  return `session-traces/${getScopeKey()}/${correlationId}.json`;
+}
+
+function buildShortTraceBlobName(shortCorrelation: string): string {
+  return `session-traces-short/${getScopeKey()}/${normalizeShortCorrelation(shortCorrelation)}.json`;
+}
+
+async function persistTraceSnapshot(tree: TraceTree): Promise<void> {
+  const containerReady = await ensureTraceContainer();
+  if (!containerReady) {
+    return;
+  }
+
+  const serialized = JSON.stringify(tree);
+  const shortCorrelation = tree.correlationId.slice(0, 8).toLowerCase();
+
+  try {
+    const containerClient = getTraceBlobServiceClient()!.getContainerClient(TRACE_STORAGE_CONTAINER);
+    await Promise.all([
+      containerClient.getBlockBlobClient(buildExactTraceBlobName(tree.correlationId)).upload(
+        serialized,
+        Buffer.byteLength(serialized),
+        { blobHTTPHeaders: { blobContentType: 'application/json' } },
+      ),
+      containerClient.getBlockBlobClient(buildShortTraceBlobName(shortCorrelation)).upload(
+        serialized,
+        Buffer.byteLength(serialized),
+        { blobHTTPHeaders: { blobContentType: 'application/json' } },
+      ),
+    ]);
+
+    const loadedAtMs = Date.now();
+    persistedExactTraceCache.set(tree.correlationId, { value: tree, loadedAtMs });
+    persistedShortTraceCache.set(shortCorrelation, { value: tree, loadedAtMs });
+  } catch (error: unknown) {
+    console.warn('[sessionTracer] Failed to persist trace snapshot:', error);
+  }
+}
+
+function scheduleTracePersistence(tree: TraceTree): void {
+  const correlationId = tree.correlationId;
+  const previous = pendingPersistOperations.get(correlationId) ?? Promise.resolve();
+  const next = previous
+    .catch(() => undefined)
+    .then(async () => persistTraceSnapshot(tree));
+
+  pendingPersistOperations.set(correlationId, next);
+  void next.finally(() => {
+    if (pendingPersistOperations.get(correlationId) === next) {
+      pendingPersistOperations.delete(correlationId);
+    }
+  });
+}
+
+async function loadPersistedTraceFromBlob(blobName: string): Promise<TraceTree | undefined> {
+  const containerReady = await ensureTraceContainer();
+  if (!containerReady) {
+    return undefined;
+  }
+
+  try {
+    const blobClient = getTraceBlobServiceClient()!
+      .getContainerClient(TRACE_STORAGE_CONTAINER)
+      .getBlockBlobClient(blobName);
+    const response = await blobClient.download();
+    const content = await streamToString(response.readableStreamBody);
+    return JSON.parse(content) as TraceTree;
+  } catch (error: unknown) {
+    if (error instanceof RestError && error.statusCode === 404) {
+      return undefined;
+    }
+
+    console.warn('[sessionTracer] Failed to load persisted trace snapshot:', error);
+    return undefined;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -129,6 +277,7 @@ export function recordTracePhase(input: RecordPhaseInput): void {
 
   // Recompute total duration
   tree.totalMs = computeTotalMs(tree.phases);
+  scheduleTracePersistence(tree);
 }
 
 /**
@@ -152,6 +301,7 @@ export function completeTracePhase(
   }
 
   tree.totalMs = computeTotalMs(tree.phases);
+  scheduleTracePersistence(tree);
 }
 
 // ---------------------------------------------------------------------------
@@ -171,11 +321,7 @@ export function getTraceTree(correlationId: string): TraceTree | undefined {
  * the full UUID correlationId in-memory.
  */
 export function findTraceTreeByShortCorrelation(shortCorrelation: string): TraceTree | undefined {
-  const normalized = shortCorrelation
-    .trim()
-    .replace(/^\[?corr:/i, '')
-    .replace(/\]?$/u, '')
-    .toLowerCase();
+  const normalized = normalizeShortCorrelation(shortCorrelation);
 
   if (normalized.length === 0) {
     return undefined;
@@ -189,6 +335,59 @@ export function findTraceTreeByShortCorrelation(shortCorrelation: string): Trace
   }
 
   return undefined;
+}
+
+export async function loadPersistedTraceTree(correlationId: string): Promise<TraceTree | undefined> {
+  const cached = persistedExactTraceCache.get(correlationId);
+  const now = Date.now();
+  if (cached && now - cached.loadedAtMs < TRACE_STORAGE_CACHE_TTL_MS) {
+    return cached.value;
+  }
+
+  const loaded = await loadPersistedTraceFromBlob(buildExactTraceBlobName(correlationId));
+  persistedExactTraceCache.set(correlationId, { value: loaded, loadedAtMs: now });
+  return loaded;
+}
+
+export async function loadPersistedTraceTreeByShortCorrelation(shortCorrelation: string): Promise<TraceTree | undefined> {
+  const normalized = normalizeShortCorrelation(shortCorrelation);
+  if (normalized.length === 0) {
+    return undefined;
+  }
+
+  const cached = persistedShortTraceCache.get(normalized);
+  const now = Date.now();
+  if (cached && now - cached.loadedAtMs < TRACE_STORAGE_CACHE_TTL_MS) {
+    return cached.value;
+  }
+
+  const loaded = await loadPersistedTraceFromBlob(buildShortTraceBlobName(normalized));
+  persistedShortTraceCache.set(normalized, { value: loaded, loadedAtMs: now });
+  return loaded;
+}
+
+export async function loadTraceTreeWithFallback(correlationOrShortTag: string): Promise<TraceLookupResult> {
+  const exactTraceTree = getTraceTree(correlationOrShortTag);
+  if (exactTraceTree) {
+    return { traceTree: exactTraceTree, lookupMode: 'exact' };
+  }
+
+  const shortTraceTree = findTraceTreeByShortCorrelation(correlationOrShortTag);
+  if (shortTraceTree) {
+    return { traceTree: shortTraceTree, lookupMode: 'short-prefix' };
+  }
+
+  const persistedExactTraceTree = await loadPersistedTraceTree(correlationOrShortTag);
+  if (persistedExactTraceTree) {
+    return { traceTree: persistedExactTraceTree, lookupMode: 'persisted-exact' };
+  }
+
+  const persistedShortTraceTree = await loadPersistedTraceTreeByShortCorrelation(correlationOrShortTag);
+  if (persistedShortTraceTree) {
+    return { traceTree: persistedShortTraceTree, lookupMode: 'persisted-short-prefix' };
+  }
+
+  return { traceTree: null, lookupMode: 'miss' };
 }
 
 export interface TraceListFilter {
@@ -223,6 +422,20 @@ export function listRecentTraces(limitOrFilter: number | TraceListFilter = 20): 
     }
   }
   return results;
+}
+
+async function streamToString(
+  stream: NodeJS.ReadableStream | undefined,
+): Promise<string> {
+  if (!stream) {
+    return '';
+  }
+
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
+  }
+  return Buffer.concat(chunks).toString('utf-8');
 }
 
 // ---------------------------------------------------------------------------
