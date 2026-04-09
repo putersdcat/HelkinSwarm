@@ -239,6 +239,7 @@ function buildTraceDetail(event: TelemetryEvent): string {
   if (p['totalTokens']) parts.push(`tokens: ${p['totalTokens']}`);
   if (p['promptTokens']) parts.push(`prompt: ${p['promptTokens']}`);
   if (p['completionTokens']) parts.push(`completion: ${p['completionTokens']}`);
+  if (p['providerCost'] !== undefined) parts.push(`cost: ${p['providerCost']}${p['providerCostUnit'] ?? ''}`);
   if (p['result']) parts.push(`result: ${p['result']}`);
   if (p['skillDomain']) parts.push(`skill: ${p['skillDomain']}`);
   if (p['method']) parts.push(`method: ${p['method']}`);

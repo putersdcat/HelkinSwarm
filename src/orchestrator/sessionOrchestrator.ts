@@ -722,6 +722,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // Cumulative token tracking across all LLM calls in this session (#253)
   let cumulativeTokensUsed = llmResult.tokensUsed + planResult.planTokensUsed;
   let cumulativePromptTokens = llmResult.promptTokens;
+  let cumulativeProviderCost = (llmResult.providerCost ?? 0) + (planResult.planProviderCost ?? 0);
+  let cumulativeProviderCostUnit: 'credits' | undefined = llmResult.providerCostUnit ?? planResult.planProviderCostUnit;
+  const cumulativeProviderCostDetails: Record<string, number> = { ...(planResult.planProviderCostDetails ?? {}) };
+  for (const [key, value] of Object.entries(llmResult.providerCostDetails ?? {})) {
+    cumulativeProviderCostDetails[key] = (cumulativeProviderCostDetails[key] ?? 0) + value;
+  }
   let telemetryModel = llmResult.model;
   const telemetryModelSequence: string[] = [llmResult.model];
   const rememberTelemetryModel = (model: string): void => {
@@ -732,6 +738,23 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   };
   const operationalNotices = new Set<string>();
   rememberOperationalEvidence(operationalNotices, llmResult);
+
+  const accumulateProviderCost = (
+    amount: number | undefined,
+    unit: 'credits' | undefined,
+    details: Record<string, number> | undefined,
+  ): void => {
+    if (amount !== undefined) {
+      cumulativeProviderCost += amount;
+      cumulativeProviderCostUnit = unit ?? cumulativeProviderCostUnit ?? 'credits';
+    }
+
+    if (details) {
+      for (const [key, value] of Object.entries(details)) {
+        cumulativeProviderCostDetails[key] = (cumulativeProviderCostDetails[key] ?? 0) + value;
+      }
+    }
+  };
 
   // Counters for telemetry footer (#321)
   let subAgentSpawnCount = 0;
@@ -1140,6 +1163,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       rememberTelemetryModel(followUp.model);
       cumulativeTokensUsed += followUp.tokensUsed;
       cumulativePromptTokens += followUp.promptTokens;
+      accumulateProviderCost(followUp.providerCost, followUp.providerCostUnit, followUp.providerCostDetails);
       rememberOperationalEvidence(operationalNotices, followUp);
 
       // Multi-round loop: if the follow-up LLM requests more tool calls,
@@ -1192,6 +1216,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           rememberTelemetryModel(followUp.model);
           cumulativeTokensUsed += followUp.tokensUsed;
           cumulativePromptTokens += followUp.promptTokens;
+          accumulateProviderCost(followUp.providerCost, followUp.providerCostUnit, followUp.providerCostDetails);
           rememberOperationalEvidence(operationalNotices, followUp);
           break; // Truncation retry is terminal — don't loop further
         }
@@ -1288,6 +1313,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             rememberTelemetryModel(followUp.model);
             cumulativeTokensUsed += followUp.tokensUsed;
             cumulativePromptTokens += followUp.promptTokens;
+            accumulateProviderCost(followUp.providerCost, followUp.providerCostUnit, followUp.providerCostDetails);
             rememberOperationalEvidence(operationalNotices, followUp);
           }
           break;
@@ -1534,6 +1560,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         rememberTelemetryModel(followUp.model);
         cumulativeTokensUsed += followUp.tokensUsed;
         cumulativePromptTokens += followUp.promptTokens;
+        accumulateProviderCost(followUp.providerCost, followUp.providerCostUnit, followUp.providerCostDetails);
         rememberOperationalEvidence(operationalNotices, followUp);
       }
 
@@ -1584,6 +1611,11 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       modelSequence: telemetryModelSequence,
       promptTokens: cumulativePromptTokens,
       completionTokens: cumulativeTokensUsed - cumulativePromptTokens,
+      providerCost: cumulativeProviderCostUnit ? cumulativeProviderCost : undefined,
+      providerCostUnit: cumulativeProviderCostUnit,
+      providerCostDetails: Object.keys(cumulativeProviderCostDetails).length > 0
+        ? cumulativeProviderCostDetails
+        : undefined,
       spans,
       toolCalls: toolNames,
       safetyPassed,

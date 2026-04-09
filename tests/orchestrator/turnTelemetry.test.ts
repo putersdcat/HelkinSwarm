@@ -130,5 +130,21 @@ describe('formatTelemetryFooter', () => {
     expect(result).toContain('tok:1');
     expect(result).toContain('plan:compound');
   });
+
+  it('prefers exact provider-reported OpenRouter credits over model-cost estimation when present', () => {
+    const result = formatTelemetryFooter('verbose', {
+      ...baseTelemetry,
+      model: 'x-ai/grok-4.1-fast',
+      providerCost: 0.95,
+      providerCostUnit: 'credits',
+      providerCostDetails: {
+        upstream_inference_cost: 19,
+      },
+    });
+
+    expect(result).toContain('0.9500cr');
+    expect(result).toContain('up:19.0000cr');
+    expect(result).not.toContain('$?');
+  });
 });
 

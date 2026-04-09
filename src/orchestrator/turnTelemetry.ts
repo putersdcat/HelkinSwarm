@@ -29,6 +29,10 @@ export interface TurnTelemetryData {
   subAgentCount?: number;
   /** Number of scoped tokens successfully minted across execution paths this turn (#321). */
   scopedTokenMintCount?: number;
+  /** Exact provider-reported turn cost when available (e.g. OpenRouter usage.cost). */
+  providerCost?: number;
+  providerCostUnit?: 'credits';
+  providerCostDetails?: Record<string, number>;
 }
 
 // USD per 1M tokens (blended input/output average). (#254, #260)
@@ -78,6 +82,23 @@ export function estimateCostUsd(model: string, totalTokens: number): number | un
 
 /** @deprecated Use estimateCostUsd instead */
 export const estimateCostEur = estimateCostUsd;
+
+function formatProviderCost(amount: number, unit: 'credits'): string {
+  switch (unit) {
+    case 'credits':
+      return `${amount.toFixed(4)}cr`;
+  }
+}
+
+function resolveTelemetryCostDisplay(data: TurnTelemetryData): string {
+  if (data.providerCost !== undefined && data.providerCostUnit) {
+    return formatProviderCost(data.providerCost, data.providerCostUnit);
+  }
+
+  const totalTokens = data.promptTokens + data.completionTokens;
+  const cost = estimateCostUsd(data.model, totalTokens);
+  return cost !== undefined ? `$${cost.toFixed(4)}` : '$?';
+}
 
 /**
  * Format uptime since container startup as compact human-readable string.
@@ -163,9 +184,7 @@ export function formatTelemetryFooter(
   }
 
   const shortModel = abbreviateModel(data.model);
-  const totalTokens = data.promptTokens + data.completionTokens;
-  const cost = estimateCostUsd(data.model, totalTokens);
-  const costStr = cost !== undefined ? `$${cost.toFixed(4)}` : '$?';
+  const costStr = resolveTelemetryCostDisplay(data);
   const moneyEmoji = getMoneyEmoji(data.correlationId);
   const uptime = formatUptime();
   const timestamp = formatTelemetryTimestamp(data.timestampIso);
@@ -215,6 +234,9 @@ export function formatTelemetryFooter(
   if (data.scopedTokenMintCount) parts.push(`tok:${data.scopedTokenMintCount}`);
   if (data.planComplexity && data.planComplexity !== 'simple') parts.push(`plan:${data.planComplexity}`);
   if (timestamp) parts.push(`ts:${timestamp}`);
+  if (data.providerCostUnit === 'credits' && data.providerCostDetails?.['upstream_inference_cost'] !== undefined) {
+    parts.push(`up:${formatProviderCost(data.providerCostDetails['upstream_inference_cost'], 'credits')}`);
+  }
   parts.push(`${moneyEmoji}${costStr}`);
   parts.push(`🕐${uptime}`);
   parts.push(`corr:${shortCorr}`);

@@ -60,8 +60,29 @@ export interface FollowUpResponseEvidence {
   model: string;
   tokensUsed: number;
   promptTokens: number;
+  providerCost?: number;
+  providerCostUnit?: 'credits';
+  providerCostDetails?: Record<string, number>;
   operationalNotices: string[];
   failoverSteps: LlmFailoverStep[];
+}
+
+function mergeProviderCostDetails(
+  responses: ReadonlyArray<Pick<ChatCompletionResponse, 'usage'>>,
+): Record<string, number> | undefined {
+  const totals = new Map<string, number>();
+
+  for (const response of responses) {
+    for (const [key, value] of Object.entries(response.usage.providerCostDetails ?? {})) {
+      totals.set(key, (totals.get(key) ?? 0) + value);
+    }
+  }
+
+  if (totals.size === 0) {
+    return undefined;
+  }
+
+  return Object.fromEntries(totals.entries());
 }
 
 const FOLLOW_UP_EXECUTION_PROMPT =
@@ -175,10 +196,18 @@ export function mergeFollowUpResponseEvidence(
   const operationalNotices = new Set<string>();
   let tokensUsed = 0;
   let promptTokens = 0;
+  let providerCost = 0;
+  let hasProviderCost = false;
+  let providerCostUnit: 'credits' | undefined;
 
   for (const response of responses) {
     tokensUsed += response.usage.totalTokens;
     promptTokens += response.usage.promptTokens;
+    if (response.usage.providerCost !== undefined) {
+      providerCost += response.usage.providerCost;
+      hasProviderCost = true;
+      providerCostUnit = response.usage.providerCostUnit ?? providerCostUnit ?? 'credits';
+    }
     for (const notice of buildSuccessfulFailoverNotices(response.failoverSteps)) {
       operationalNotices.add(notice);
     }
@@ -188,6 +217,9 @@ export function mergeFollowUpResponseEvidence(
     model: lastResponse.model,
     tokensUsed,
     promptTokens,
+    providerCost: hasProviderCost ? providerCost : undefined,
+    providerCostUnit: hasProviderCost ? (providerCostUnit ?? 'credits') : undefined,
+    providerCostDetails: mergeProviderCostDetails(responses),
     operationalNotices: [...operationalNotices],
     failoverSteps: lastResponse.failoverSteps ?? [],
   };
@@ -216,6 +248,9 @@ df.app.activity('llmFollowUpActivity', {
           model: input.modelOverride,
           tokensUsed: 0,
           promptTokens: 0,
+          providerCost: undefined,
+          providerCostUnit: undefined,
+          providerCostDetails: undefined,
           toolCalls: [],
           finishReason: 'error',
           operationalNotices: [],
@@ -362,6 +397,9 @@ df.app.activity('llmFollowUpActivity', {
             model: evidence.model,
             tokensUsed: evidence.tokensUsed,
             promptTokens: evidence.promptTokens,
+            providerCost: evidence.providerCost,
+            providerCostUnit: evidence.providerCostUnit,
+            providerCostDetails: evidence.providerCostDetails,
             toolCalls: [],
             finishReason: 'stop',
             operationalNotices: evidence.operationalNotices,
@@ -375,6 +413,9 @@ df.app.activity('llmFollowUpActivity', {
           model: evidence.model,
           tokensUsed: evidence.tokensUsed,
           promptTokens: evidence.promptTokens,
+          providerCost: evidence.providerCost,
+          providerCostUnit: evidence.providerCostUnit,
+          providerCostDetails: evidence.providerCostDetails,
           toolCalls: effectiveRetryToolCalls,
           finishReason: choice.finishReason,
           operationalNotices: evidence.operationalNotices,
@@ -412,6 +453,9 @@ df.app.activity('llmFollowUpActivity', {
         model: evidence.model,
         tokensUsed: evidence.tokensUsed,
         promptTokens: evidence.promptTokens,
+        providerCost: evidence.providerCost,
+        providerCostUnit: evidence.providerCostUnit,
+        providerCostDetails: evidence.providerCostDetails,
         toolCalls: [],
         finishReason: choice.finishReason,
         operationalNotices: evidence.operationalNotices,
@@ -423,6 +467,9 @@ df.app.activity('llmFollowUpActivity', {
         model: routing.deploymentName,
         tokensUsed: 0,
         promptTokens: 0,
+        providerCost: undefined,
+        providerCostUnit: undefined,
+        providerCostDetails: undefined,
         toolCalls: [],
         finishReason: 'error',
         operationalNotices: [],

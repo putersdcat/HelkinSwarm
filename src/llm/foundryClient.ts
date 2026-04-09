@@ -56,6 +56,9 @@ export interface ChatCompletionUsage {
   promptTokens: number;
   completionTokens: number;
   totalTokens: number;
+  providerCost?: number;
+  providerCostUnit?: 'credits';
+  providerCostDetails?: Record<string, number>;
 }
 
 export interface ChatCompletionResponse {
@@ -962,6 +965,8 @@ interface RawApiUsage {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  cost?: number;
+  cost_details?: Record<string, number>;
 }
 
 interface RawApiResponse {
@@ -1000,6 +1005,14 @@ function mapOutgoingMessage(msg: ChatMessage): Record<string, unknown> {
  * Map the raw snake_case API response to our camelCase TypeScript types.
  */
 function mapApiResponse(raw: RawApiResponse): ChatCompletionResponse {
+  const providerCost = typeof raw.usage.cost === 'number' ? raw.usage.cost : undefined;
+  const providerCostDetails = raw.usage.cost_details && typeof raw.usage.cost_details === 'object'
+    ? Object.fromEntries(
+        Object.entries(raw.usage.cost_details)
+          .filter((entry): entry is [string, number] => typeof entry[1] === 'number'),
+      )
+    : undefined;
+
   return {
     id: raw.id,
     model: raw.model,
@@ -1008,6 +1021,11 @@ function mapApiResponse(raw: RawApiResponse): ChatCompletionResponse {
       promptTokens: raw.usage.prompt_tokens,
       completionTokens: raw.usage.completion_tokens,
       totalTokens: raw.usage.total_tokens,
+      providerCost,
+      providerCostUnit: providerCost !== undefined ? 'credits' : undefined,
+      providerCostDetails: providerCostDetails && Object.keys(providerCostDetails).length > 0
+        ? providerCostDetails
+        : undefined,
     },
     choices: raw.choices.map((c) => ({
       index: c.index,

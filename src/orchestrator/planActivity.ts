@@ -32,6 +32,10 @@ export interface PlanResult {
   steps: PlanStep[] | null;
   /** Token count used by the planning LLM call (0 for simple). */
   planTokensUsed: number;
+  /** Exact provider-reported cost for the planning call when available (OpenRouter). */
+  planProviderCost?: number;
+  planProviderCostUnit?: 'credits';
+  planProviderCostDetails?: Record<string, number>;
   /** Serializable plan artifact for telemetry. */
   planArtifact: string;
 }
@@ -99,7 +103,13 @@ async function generatePlan(
   complexity: RequestComplexity,
   toolNames: string[],
   correlationId: string,
-): Promise<{ steps: PlanStep[]; tokensUsed: number }> {
+): Promise<{
+  steps: PlanStep[];
+  tokensUsed: number;
+  providerCost?: number;
+  providerCostUnit?: 'credits';
+  providerCostDetails?: Record<string, number>;
+}> {
   const fastModel = getModelForTask('fast');
   const routing = getModelRouting();
   // Override to fast model
@@ -120,11 +130,16 @@ async function generatePlan(
 
   const content = textContent(response.choices[0]?.message?.content);
   const tokensUsed = (response.usage?.totalTokens ?? 0);
+  const providerCost = response.usage?.providerCost;
+  const providerCostUnit = response.usage?.providerCostUnit;
+  const providerCostDetails = response.usage?.providerCostDetails;
 
   try {
     // Extract JSON array from response (strip any markdown fencing)
     const jsonMatch = content.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) return { steps: [], tokensUsed };
+    if (!jsonMatch) {
+      return { steps: [], tokensUsed, providerCost, providerCostUnit, providerCostDetails };
+    }
 
     const raw = JSON.parse(jsonMatch[0]) as unknown[];
     const steps: PlanStep[] = raw.map((item, idx) => {
@@ -139,10 +154,10 @@ async function generatePlan(
         dependsOn: Array.isArray(s.dependsOn) ? s.dependsOn.filter((n): n is number => typeof n === 'number') : undefined,
       };
     });
-    return { steps, tokensUsed };
+    return { steps, tokensUsed, providerCost, providerCostUnit, providerCostDetails };
   } catch {
     trackEvent({ name: 'PlanParseError', correlationId, properties: { snippet: content.slice(0, 200) } });
-    return { steps: [], tokensUsed };
+    return { steps: [], tokensUsed, providerCost, providerCostUnit, providerCostDetails };
   }
 }
 
@@ -167,12 +182,15 @@ export async function plan(input: PlanInput): Promise<PlanResult> {
       complexity,
       steps: null,
       planTokensUsed: 0,
+      planProviderCost: undefined,
+      planProviderCostUnit: undefined,
+      planProviderCostDetails: undefined,
       planArtifact: JSON.stringify({ complexity, steps: null }),
     };
   }
 
   // Compound / Complex: generate plan with fast model
-  const { steps, tokensUsed } = await generatePlan(
+  const { steps, tokensUsed, providerCost, providerCostUnit, providerCostDetails } = await generatePlan(
     userMessage,
     complexity,
     availableToolNames,
@@ -199,6 +217,12 @@ export async function plan(input: PlanInput): Promise<PlanResult> {
       complexity,
       stepCount: steps.length,
       tokensUsed,
+      ...(providerCost !== undefined
+        ? {
+            providerCost,
+            providerCostUnit: providerCostUnit ?? 'credits',
+          }
+        : {}),
       models: [...new Set(steps.map(s => s.model))].join(','),
     },
   });
@@ -207,6 +231,9 @@ export async function plan(input: PlanInput): Promise<PlanResult> {
     complexity,
     steps: steps.length > 0 ? steps : null,
     planTokensUsed: tokensUsed,
+    planProviderCost: providerCost,
+    planProviderCostUnit: providerCostUnit,
+    planProviderCostDetails: providerCostDetails,
     planArtifact: JSON.stringify({ complexity, steps }),
   };
   return result;

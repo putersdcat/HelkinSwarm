@@ -29,6 +29,9 @@ export interface LlmResult {
   tokensUsed: number;
   /** Prompt tokens sent TO the model (context pressure metric). Fix: #137 */
   promptTokens: number;
+  providerCost?: number;
+  providerCostUnit?: 'credits';
+  providerCostDetails?: Record<string, number>;
   toolCalls: Array<{ id: string; name: string; arguments: string }>;
   finishReason: string;
   operationalNotices: string[];
@@ -205,6 +208,14 @@ df.app.activity('llmActivity', {
         contentLen: (choice.message.content ?? '').length,
         toolCallCount: toolCalls.length,
         tokensUsed: response.usage.totalTokens,
+        promptTokens: response.usage.promptTokens,
+        completionTokens: response.usage.completionTokens,
+        ...(response.usage.providerCost !== undefined
+          ? {
+              providerCost: response.usage.providerCost,
+              providerCostUnit: response.usage.providerCostUnit ?? 'credits',
+            }
+          : {}),
       } });
       console.log(`[llmActivity] LLM responded: model=${response.model} finishReason=${choice.finishReason} contentLen=${(choice.message.content ?? '').length} toolCalls=${toolCalls.length} tokensUsed=${response.usage.totalTokens}`);
 
@@ -213,6 +224,9 @@ df.app.activity('llmActivity', {
         model: response.model,
         tokensUsed: response.usage.totalTokens,
         promptTokens: response.usage.promptTokens,
+        providerCost: response.usage.providerCost,
+        providerCostUnit: response.usage.providerCostUnit,
+        providerCostDetails: response.usage.providerCostDetails,
         toolCalls,
         finishReason: choice.finishReason,
         operationalNotices: buildSuccessfulFailoverNotices(response.failoverSteps),
