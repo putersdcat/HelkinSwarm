@@ -54,6 +54,14 @@ export interface LlmFollowUpInput {
       error?: string;
     }>;
   }>;
+  modelProfileTelemetry?: {
+    phase: 'initial' | 'followup';
+    model: string;
+    transformed: boolean;
+    toolCountBefore: number;
+    toolCountAfter: number;
+    excludedTools: string;
+  };
 }
 
 export interface FollowUpResponseEvidence {
@@ -229,6 +237,21 @@ df.app.activity('llmFollowUpActivity', {
   handler: async (input: LlmFollowUpInput): Promise<LlmResult> => {
     const routing = getModelRouting();
     const correlationId = input.correlationId ?? crypto.randomUUID();
+
+    if (input.modelProfileTelemetry) {
+      trackEvent({
+        name: 'ModelProfileApplied',
+        correlationId,
+        properties: {
+          phase: input.modelProfileTelemetry.phase,
+          model: input.modelProfileTelemetry.model,
+          transformed: input.modelProfileTelemetry.transformed,
+          toolCountBefore: input.modelProfileTelemetry.toolCountBefore,
+          toolCountAfter: input.modelProfileTelemetry.toolCountAfter,
+          excludedTools: input.modelProfileTelemetry.excludedTools,
+        },
+      });
+    }
 
     // Use reasoning model for /heavy, fast model for /light, else default (#185)
     let deploymentName: string;

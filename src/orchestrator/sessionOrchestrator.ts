@@ -1694,6 +1694,16 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           additionalTurns,
         };
         followUp = yield* withLlmFollowUpTimeout(context, roundFollowUpInput);
+          modelProfileTelemetry: initialToolSurface.profileModel
+            ? {
+                phase: 'followup',
+                model: initialToolSurface.profileModel ?? initialToolSurfaceModelId,
+                transformed: initialToolSurface.wasTransformed,
+                toolCountBefore: toolRegistry.toFunctionSchemas().length,
+                toolCountAfter: allToolSchemas.length,
+                excludedTools: initialToolSurface.excluded.join(','),
+              }
+            : undefined,
         rememberTelemetryModel(followUp.model);
         cumulativeTokensUsed += followUp.tokensUsed;
         cumulativePromptTokens += followUp.promptTokens;
