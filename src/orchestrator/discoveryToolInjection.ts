@@ -100,6 +100,29 @@ function collapseWhitespace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+function containsEmailAddress(value: string): boolean {
+  return /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(value);
+}
+
+function hasMailboxMessageContext(normalizedMessage: string): boolean {
+  if (/(outlook|mailbox|email|emails|mail|attachment|attachments|messageid|message id)/.test(normalizedMessage)) {
+    return true;
+  }
+
+  return /\bmessages?\b/.test(normalizedMessage)
+    && /(latest|recent|inbox|subject|sender|from\b|attachment|attachments|mailbox|outlook|email|mail)/.test(normalizedMessage);
+}
+
+function hasOutlookReplyIntent(normalizedMessage: string): boolean {
+  return /\b(reply|respond)\b/.test(normalizedMessage)
+    && hasMailboxMessageContext(normalizedMessage);
+}
+
+function hasOutlookSendIntent(normalizedMessage: string): boolean {
+  return /\b(send|compose|draft|forward|email|mail)\b/.test(normalizedMessage)
+    && (hasMailboxMessageContext(normalizedMessage) || containsEmailAddress(normalizedMessage));
+}
+
 export function parseExactReplyInstruction(userMessage: string): string | null {
   const cleaned = stripValidationNoise(userMessage);
   const match = cleaned.match(/^(?:reply|respond|say)\s+with\s+exactly:\s*(.+)$/is);
@@ -782,9 +805,13 @@ export function shouldForceDiscoveryToolSearch(userMessage: string): boolean {
   const normalized = userMessage.toLowerCase();
   const mentionsToolName = /\b[a-z]+_[a-z0-9_]+\b/.test(normalized);
   const mentionsAttachmentIntent = /(attachment|inline image|content id|cid|messageid)/.test(normalized);
+  const hasExternalActionIntent = hasOutlookSendIntent(normalized)
+    || hasOutlookReplyIntent(normalized)
+    || /(calendar|meeting|schedule|github|repo|issue|pull request|weather|web search|search the web)/.test(normalized);
+
   return mentionsToolName
     || mentionsAttachmentIntent
-    || /(send|reply|email|mail|calendar|meeting|schedule|github|repo|issue|pull request|weather|web search|search the web)/.test(normalized);
+    || hasExternalActionIntent;
 }
 
 export function getForcedInitialToolChoice(
@@ -862,11 +889,11 @@ export function getForcedDiscoveryFollowUpToolChoice(
     return { type: 'function', function: { name: 'outlook_download_attachment' } };
   }
 
-  if (/(send|email|mail)/.test(normalized) && toolNames.has('outlook_send_email')) {
+  if (hasOutlookSendIntent(normalized) && toolNames.has('outlook_send_email')) {
     return { type: 'function', function: { name: 'outlook_send_email' } };
   }
 
-  if (/(reply|respond)/.test(normalized) && toolNames.has('outlook_reply_to_latest_email')) {
+  if (hasOutlookReplyIntent(normalized) && toolNames.has('outlook_reply_to_latest_email')) {
     return { type: 'function', function: { name: 'outlook_reply_to_latest_email' } };
   }
 

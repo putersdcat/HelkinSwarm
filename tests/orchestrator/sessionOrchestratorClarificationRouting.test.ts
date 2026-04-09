@@ -16,14 +16,16 @@ describe('sessionOrchestrator clarification routing', () => {
     expect(source).toContain('?? synthesizeExactToolCall(effectiveTaskMessage, allToolSchemas)');
     expect(source).toContain('?? synthesizeDeterministicReadOnlyInitialToolCall(effectiveTaskMessage, allToolSchemas);');
     expect(source).toContain('const deterministicExactToolResponse = buildDeterministicExactToolResponse(');
-    expect(source).toContain('toolChoice: getForcedInitialToolChoice(effectiveTaskMessage, initialToolSchemas) ?? \'auto\'');
+    expect(source).toContain('const forcedInitialToolChoice = getForcedInitialToolChoice(effectiveTaskMessage, initialToolSchemas) ?? \'auto\';');
+    expect(source).toContain('toolChoice: forcedInitialToolChoice,');
     expect(source).toContain('if (isExplicitReadOnlyDiscoveryRequest) {');
     expect(source).toContain('const followUpToolSchemas = selectiveFollowUpSchemas ?? allToolSchemas;');
     expect(source).toContain('const deterministicFollowUpToolCall = synthesizeExactToolCall(');
     expect(source).toContain(') ?? synthesizeDeterministicFollowUpToolCall(');
     expect(source).toContain('effectiveTaskMessage,');
     expect(source).toContain('followUpToolSchemas,');
-    expect(source).toContain('getForcedDiscoveryFollowUpToolChoice(effectiveTaskMessage, selectiveFollowUpSchemas)');
+    expect(source).toContain('const forcedFollowUpToolChoice = getForcedDiscoveryFollowUpToolChoice(');
+    expect(source).toContain('toolChoice: forcedFollowUpToolChoice,');
     expect(source).toContain('buildDiscoveryDeadEndResponse(effectiveTaskMessage)');
     expect(source).toContain('userContext: effectiveTaskMessage,');
     expect(source).toContain('originalQuery: effectiveTaskMessage,');

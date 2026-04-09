@@ -336,9 +336,11 @@ describe('discoveryToolInjection', () => {
     const { shouldForceDiscoveryToolSearch } = await import('../../src/orchestrator/discoveryToolInjection.js');
 
     expect(shouldForceDiscoveryToolSearch('Send an email to Eric')).toBe(true);
+    expect(shouldForceDiscoveryToolSearch('Reply to the latest email from Eric')).toBe(true);
     expect(shouldForceDiscoveryToolSearch('Create a calendar event for tomorrow')).toBe(true);
     expect(shouldForceDiscoveryToolSearch('Use the exact tool outlook_list_attachments for this messageId')).toBe(true);
     expect(shouldForceDiscoveryToolSearch('Download the attachment with content ID cid:hero-image from this message')).toBe(true);
+    expect(shouldForceDiscoveryToolSearch('What is 2+2? Reply in one short sentence only.')).toBe(false);
     expect(shouldForceDiscoveryToolSearch('hello there')).toBe(false);
   });
 
@@ -405,6 +407,46 @@ describe('discoveryToolInjection', () => {
     ]);
 
     expect(choice).toEqual({ type: 'function', function: { name: 'outlook_send_email' } });
+  });
+
+  it('does not force Outlook reply for generic response-formatting prompts that only use the English word reply', async () => {
+    const { getForcedDiscoveryFollowUpToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const choice = getForcedDiscoveryFollowUpToolChoice(
+      'What is 2+2? Reply in one short sentence only.',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_reply_to_latest_email',
+            description: 'reply to the latest email',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(choice).toBeNull();
+  });
+
+  it('still forces Outlook reply when the prompt clearly refers to mailbox/email context', async () => {
+    const { getForcedDiscoveryFollowUpToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const choice = getForcedDiscoveryFollowUpToolChoice(
+      'Reply to the latest email from Eric with a short thank-you note.',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_reply_to_latest_email',
+            description: 'reply to the latest email',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(choice).toEqual({ type: 'function', function: { name: 'outlook_reply_to_latest_email' } });
   });
 
   it('forces an explicit core tool on the initial turn instead of falling back to helkin_skill_search', async () => {
