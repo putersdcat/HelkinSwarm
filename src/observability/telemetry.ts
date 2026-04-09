@@ -62,6 +62,7 @@ export type TelemetryEventName =
   | 'InterruptionBreadcrumbRead'
   | 'SteeringInjectionApplied'
   | 'StaleAckRecovered'
+  | 'StaleAckRecoveryMessageEdited'
   | 'StateLoaded'
   | 'StateSaved'
   | 'SkillLifecycleAction'
@@ -150,6 +151,7 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   LimbicDecision: 'orchestrator',
   SteeringInjectionApplied: 'orchestrator',
   PolicyOverrideApplied: 'orchestrator',
+  StaleAckRecoveryMessageEdited: 'reply-send',
   ClarificationRequested: 'orchestrator',
   ClarificationRetryRequested: 'orchestrator',
   ClarificationResumed: 'orchestrator',

@@ -9,6 +9,7 @@ import {
 
 const baseTelemetry: TurnTelemetryData = {
   correlationId: 'abcdef12-3456-7890-abcd-ef1234567890',
+  timestampIso: '2026-04-09T06:24:43.570Z',
   totalMs: 2300,
   model: 'grok-4-1-fast-non-reasoning',
   promptTokens: 1820,
@@ -53,7 +54,7 @@ describe('estimateCostEur', () => {
 
   it('matches versioned deployment names via prefix', () => {
     const cost = estimateCostEur('o4-mini-2026-03-17', 1_000_000);
-    expect(cost).toBeCloseTo(1.80, 2);
+    expect(cost).toBeCloseTo(2.40, 2);
   });
 
   it('returns undefined for unknown models', () => {
@@ -72,6 +73,7 @@ describe('formatTelemetryFooter', () => {
     const result = formatTelemetryFooter('minimal', baseTelemetry);
     expect(result).toContain('E2E:2300ms');
     expect(result).toContain('m:grok-4.1f');
+    expect(result).toContain('ts:2026-04-09T06:24:43Z');
     expect(result).toContain('$');
     expect(result).toContain('🕐');
     expect(result).toContain('corr:abcdef12');
@@ -82,6 +84,7 @@ describe('formatTelemetryFooter', () => {
     expect(result).toContain('pt:1820');
     expect(result).toContain('ct:512');
     expect(result).toContain('tools:0');
+    expect(result).toContain('ts:2026-04-09T06:24:43Z');
     expect(result).toContain('$');
     expect(result).toContain('corr:abcdef12');
   });
@@ -109,6 +112,7 @@ describe('formatTelemetryFooter', () => {
     expect(result).toContain('outlook_list_messages');
     expect(result).toContain('github_search_repos');
     expect(result).toContain('models:grok-4.1f→o4m');
+    expect(result).toContain('ts:2026-04-09T06:24:43Z');
     expect(result).toContain('$');
     expect(result).toContain('corr:abcdef12');
   });

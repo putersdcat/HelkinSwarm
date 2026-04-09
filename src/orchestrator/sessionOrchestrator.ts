@@ -1467,6 +1467,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
     const telemetryData: TurnTelemetryData = {
       correlationId,
+      timestampIso: new Date(turnEndTime).toISOString(),
       totalMs: turnEndTime - turnStartTime,
       model: telemetryModel,
       modelSequence: telemetryModelSequence,

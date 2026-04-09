@@ -16,6 +16,7 @@ import {
   clearOrchestratorStage,
   getOrchestratorStageForCorrelation,
 } from '../observability/orchestratorStageHealth.js';
+import { formatTelemetryTimestamp } from '../orchestrator/turnTelemetry.js';
 
 export const STALE_ACK_THRESHOLD_MS = 6 * 60 * 1000;
 
@@ -40,8 +41,10 @@ export interface StaleAckRecoveryStats {
   failed: number;
 }
 
-function buildStaleAckRecoveryMessage(correlationId: string): string {
-  return `⚠️ This turn appears to have stalled before a final reply was confirmed. Please resend it if you still need a response. \`[corr:${correlationId.slice(0, 8)}]\``;
+function buildStaleAckRecoveryMessage(correlationId: string, recoveredAtIso = new Date().toISOString()): string {
+  const shortCorrelationId = correlationId.slice(0, 8);
+  const timestamp = formatTelemetryTimestamp(recoveredAtIso) ?? recoveredAtIso;
+  return `⚠️ The initial ack placeholder aged out before a final reply was confirmed. This turn may still complete later; if no real reply arrives, resend it. \`[path:stale-ack-recovery|ts:${timestamp}|corr:${shortCorrelationId}]\``;
 }
 
 async function clearRecoveredTurnArtifacts(
@@ -63,6 +66,7 @@ export async function recoverStaleAck(
   correlationId: string,
   conversationReferenceOverride?: Partial<ConversationReference> | null,
 ): Promise<'recovered' | 'skipped'> {
+  const recoveredAtIso = new Date().toISOString();
   const [stageForCorrelation, replyClaimExists] = await Promise.all([
     getOrchestratorStageForCorrelation(correlationId, userId),
     hasOutboundArtifactClaim(conversationId, 'reply', correlationId),
@@ -88,11 +92,22 @@ export async function recoverStaleAck(
       await turnContext.updateActivity({
         type: ActivityTypes.Message,
         id: ackActivityId,
-        text: buildStaleAckRecoveryMessage(correlationId),
+        text: buildStaleAckRecoveryMessage(correlationId, recoveredAtIso),
         textFormat: 'markdown',
       });
     },
   );
+
+  trackEvent({
+    name: 'StaleAckRecoveryMessageEdited',
+    correlationId,
+    userId,
+    properties: {
+      conversationId,
+      ackActivityId,
+      recoveredAt: recoveredAtIso,
+    },
+  });
 
   await clearRecoveredTurnArtifacts(conversationId, correlationId, userId);
   return 'recovered';

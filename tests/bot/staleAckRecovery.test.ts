@@ -92,7 +92,18 @@ describe('staleAckRecovery', () => {
     const updateActivity = vi.fn(async () => undefined);
     await callback?.({ updateActivity });
     expect(updateActivity).toHaveBeenCalledWith(expect.objectContaining({
-      text: expect.stringContaining('[corr:corr-1]'.replace('corr-1', 'corr-1'.slice(0, 8))),
+      text: expect.stringContaining('This turn may still complete later'),
+    }));
+    expect(updateActivity).toHaveBeenCalledWith(expect.objectContaining({
+      text: expect.stringContaining('[path:stale-ack-recovery|ts:'),
+    }));
+    expect(updateActivity).toHaveBeenCalledWith(expect.objectContaining({
+      text: expect.stringContaining('corr:corr-1'),
+    }));
+    expect(harness.trackEvent).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'StaleAckRecoveryMessageEdited',
+      correlationId: 'corr-1',
+      userId: 'user-1',
     }));
   });
 

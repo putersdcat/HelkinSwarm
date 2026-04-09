@@ -13,6 +13,8 @@ export interface TelemetrySpan {
 
 export interface TurnTelemetryData {
   correlationId: string;
+  /** Absolute UTC timestamp for when the footer was generated/sent. */
+  timestampIso?: string;
   totalMs: number;
   model: string;
   modelSequence?: string[];
@@ -92,6 +94,23 @@ export function formatUptime(nowMs?: number): string {
 }
 
 /**
+ * Format an ISO timestamp for compact footer/debug display.
+ * Drops milliseconds but preserves full UTC date + time ordering.
+ */
+export function formatTelemetryTimestamp(timestampIso: string | undefined): string | undefined {
+  if (!timestampIso) {
+    return undefined;
+  }
+
+  const parsed = new Date(timestampIso);
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined;
+  }
+
+  return parsed.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+/**
  * Returns true when the actual model satisfies the user's direct `/model` request.
  * Azure model identifiers often include a version/date suffix, so prefix matches count.
  */
@@ -149,9 +168,11 @@ export function formatTelemetryFooter(
   const costStr = cost !== undefined ? `$${cost.toFixed(4)}` : '$?';
   const moneyEmoji = getMoneyEmoji(data.correlationId);
   const uptime = formatUptime();
+  const timestamp = formatTelemetryTimestamp(data.timestampIso);
 
   if (mode === 'minimal') {
-    const line = `[E2E:${data.totalMs}ms|m:${shortModel}|${moneyEmoji}${costStr}|🕐${uptime}|corr:${shortCorr}]`;
+    const timePart = timestamp ? `|ts:${timestamp}` : '';
+    const line = `[E2E:${data.totalMs}ms|m:${shortModel}${timePart}|${moneyEmoji}${costStr}|🕐${uptime}|corr:${shortCorr}]`;
     return '\n\n---\n`' + line + '`';
   }
 
@@ -160,6 +181,7 @@ export function formatTelemetryFooter(
       data.subAgentCount ? `sa:${data.subAgentCount}` : '',
       data.scopedTokenMintCount ? `tok:${data.scopedTokenMintCount}` : '',
       data.planComplexity && data.planComplexity !== 'simple' ? `plan:${data.planComplexity}` : '',
+      timestamp ? `ts:${timestamp}` : '',
     ].filter(Boolean).join('|');
     const extra = extraParts ? `|${extraParts}` : '';
     const line = `[E2E:${data.totalMs}ms|m:${shortModel}|pt:${data.promptTokens}|ct:${data.completionTokens}|tools:${data.toolCalls.length}${extra}|${moneyEmoji}${costStr}|🕐${uptime}|corr:${shortCorr}]`;
@@ -192,6 +214,7 @@ export function formatTelemetryFooter(
   if (data.subAgentCount) parts.push(`sa:${data.subAgentCount}`);
   if (data.scopedTokenMintCount) parts.push(`tok:${data.scopedTokenMintCount}`);
   if (data.planComplexity && data.planComplexity !== 'simple') parts.push(`plan:${data.planComplexity}`);
+  if (timestamp) parts.push(`ts:${timestamp}`);
   parts.push(`${moneyEmoji}${costStr}`);
   parts.push(`🕐${uptime}`);
   parts.push(`corr:${shortCorr}`);
