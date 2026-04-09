@@ -58,7 +58,7 @@ We will introduce **OpenRouter** as a first-class, drop-in model provider alongs
 
 ### Safety Note
 
-When `MODEL_PROVIDER=openrouter` we lose Azure’s native prompt shields. This is an accepted temporary tradeoff for quota stability. The rest of the four-eyes safety pipeline (schema validation, minimization, spot-check, human confirmation) remains fully in effect.
+When `MODEL_PROVIDER=openrouter` we lose Azure’s native prompt shields. This is an accepted temporary tradeoff for quota stability and the current direct-provider cutover intentionally does **not** route OpenRouter calls through an Azure prompt-shield hop. The rest of the four-eyes safety pipeline (schema validation, minimization, spot-check, human confirmation) remains fully in effect.
 
 ### Acceptance Criteria
 

@@ -5,6 +5,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { VerificationInput, SpotCheckPolicy, VerifiedSet } from '../../src/orchestrator/verificationPipeline.js';
 
+const promptShieldHarness = vi.hoisted(() => ({
+  check: vi.fn(async () => ({
+    clean: true,
+    categories: {
+      hate: false,
+      violence: false,
+      sexual: false,
+      selfHarm: false,
+      jailbreak: false,
+    },
+  })),
+}));
+
 // ---------------------------------------------------------------------------
 // Mocks — we mock heavy dependencies so we're testing spot-check logic only
 // ---------------------------------------------------------------------------
@@ -22,7 +35,7 @@ vi.mock('../../src/config/safetyConfig.js', () => ({
 
 vi.mock('../../src/llm/promptShields.js', () => ({
   promptShields: {
-    check: async () => ({ clean: true, categories: {} }),
+    check: promptShieldHarness.check,
   },
 }));
 
@@ -310,6 +323,30 @@ describe('spot-check verification', () => {
       expect(spotStep?.spotCheckDetails).toHaveProperty('mismatchedIds');
       expect(spotStep?.spotCheckDetails).toHaveProperty('verifierUsed');
       expect(spotStep?.spotCheckDetails).toHaveProperty('totalIds');
+    });
+  });
+
+  describe('prompt shield result messaging', () => {
+    it('surfaces provider-bypassed prompt shields as an explicit pass-through detail', async () => {
+      const { runVerificationPipeline } = await import('../../src/orchestrator/verificationPipeline.js');
+      const mockedPromptShields = await import('../../src/llm/promptShields.js');
+      vi.mocked(mockedPromptShields.promptShields.check).mockResolvedValueOnce({
+        clean: true,
+        mode: 'provider-bypassed',
+        categories: {
+          hate: false,
+          violence: false,
+          sexual: false,
+          selfHarm: false,
+          jailbreak: false,
+        },
+        correlationId: 'test-corr-001',
+      });
+
+      const result = await runVerificationPipeline(makeInput());
+      const shieldStep = result.steps.find((s) => s.step === 'prompt-shields');
+      expect(shieldStep?.passed).toBe(true);
+      expect(shieldStep?.details).toContain('bypassed for direct OpenRouter provider mode');
     });
   });
 

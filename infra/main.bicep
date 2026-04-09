@@ -26,9 +26,9 @@ param location string = 'eastus2'
 @description('EU Data Residency toggle. false = GlobalStandard (frontier), true = DataZoneStandard (EU)')
 param euResidencyMode bool = false
 
-@description('LLM provider. azure = AI Foundry, openrouter = BYOK proxy')
+@description('LLM provider. azure = AI Foundry, openrouter = BYOK proxy. OpenRouter is the current stamped default for quota relief; azure remains a reversible rollback lane.')
 @allowed([ 'azure', 'openrouter' ])
-param llmProvider string = 'azure'
+param llmProvider string = 'openrouter'
 
 @description('Object ID of the owner/operator (for Key Vault admin role)')
 param userPrincipalId string
@@ -84,10 +84,10 @@ param llmCodingSecondaryModel string = 'FW-Kimi-K2.5'
 param llmEmbeddingModel string = 'text-embedding-3-large'
 
 @description('OpenRouter fallback primary model (used when llmProvider=openrouter).')
-param openrouterFallbackPrimary string = 'moonshotai/kimi-k2.5'
+param openrouterFallbackPrimary string = 'minimax/minimax-m2.7'
 
 @description('OpenRouter fallback secondary model (used when llmProvider=openrouter).')
-param openrouterFallbackSecondary string = 'moonshotai/kimi-k2.5'
+param openrouterFallbackSecondary string = 'minimax/minimax-m2.7'
 
 @description('Dev telemetry mode appended to bot replies. off|minimal|standard|verbose (#174)')
 @allowed(['off', 'minimal', 'standard', 'verbose'])

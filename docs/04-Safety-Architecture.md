@@ -47,10 +47,10 @@ It enforces, in strict order:
 1. Schema validation  
 2. Data minimization  
 3. Spot-check verification (the “second pair of eyes”)  
-4. Prompt Shields (Azure Content Safety)  
+4. Prompt Shields (Azure Content Safety) for the Azure provider lane; direct OpenRouter mode currently bypasses this step as an explicit temporary tradeoff under `#501` / `0zb`  
 5. Risk-tiered human confirmation via Adaptive Card
 
-All steps are mandatory. Failure at any step aborts the turn and notifies the user.
+For the Azure provider lane, all steps are mandatory. For the current direct OpenRouter lane, the prompt-shields hop is intentionally bypassed and this tradeoff must be surfaced explicitly in runtime/docs/telemetry rather than hidden.
 
 ### Stamp-Local Policy Precedence
 

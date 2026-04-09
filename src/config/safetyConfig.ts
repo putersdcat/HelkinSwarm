@@ -35,6 +35,16 @@ function fromEnv(key: string, fallback: string): string {
   return process.env[key] ?? fallback;
 }
 
+function fromEnvOptionalString(key: string): string | undefined {
+  const value = process.env[key];
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
 function fromEnvBool(key: string, fallback: boolean): boolean {
   const val = process.env[key]?.toLowerCase();
   if (val === 'true') return true;
@@ -50,8 +60,8 @@ function fromEnvInt(key: string, fallback: number): number {
 export const safetyConfig: SafetyConfig = SafetyConfigSchema.parse({
   safetyMode: fromEnv('SAFETY_MODE', 'confirmation-gated'),
   euResidencyMode: fromEnvBool('EU_RESIDENCY_MODE', false),
-  contentSafetyEndpoint: fromEnv('AZURE_CONTENT_SAFETY_ENDPOINT', ''),
-  contentSafetyKey: fromEnv('AZURE_CONTENT_SAFETY_KEY', ''),
+  contentSafetyEndpoint: fromEnvOptionalString('AZURE_CONTENT_SAFETY_ENDPOINT'),
+  contentSafetyKey: fromEnvOptionalString('AZURE_CONTENT_SAFETY_KEY'),
   spotCheckSampleSize: fromEnvInt('SPOT_CHECK_SAMPLE_SIZE', 5),
   spotCheckVerifyAllThreshold: fromEnvInt('SPOT_CHECK_VERIFY_ALL_THRESHOLD', 10),
   confirmationTimeoutSeconds: fromEnvInt('CONFIRMATION_TIMEOUT_SECONDS', 300),

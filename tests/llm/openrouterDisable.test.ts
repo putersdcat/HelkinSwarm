@@ -22,7 +22,7 @@ async function loadModelRouterWithEnv(overrides: Record<string, string | undefin
   return import('../../src/llm/modelRouter.js');
 }
 
-describe('OpenRouter routing (#286 → #501)', () => {
+describe('OpenRouter routing (#501)', () => {
   afterEach(() => {
     delete process.env['LLM_PROVIDER'];
     delete process.env['OPENROUTER_API_KEY'];

@@ -105,6 +105,7 @@ const EVENT_TO_PHASE_TYPE: Partial<Record<TelemetryEventName, TracePhaseType>> =
   LlmFallbackChainCompleted: 'llm-call',
   ToolExecuted: 'tool-dispatch',
   SubAgentToolExecuted: 'subagent',
+  PromptShieldResult: 'verification',
   VerificationPipelineResult: 'verification',
   HumanConfirmationRequested: 'confirmation',
   HumanConfirmationReceived: 'confirmation',

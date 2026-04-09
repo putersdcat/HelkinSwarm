@@ -51,6 +51,14 @@ on:
         required: false
         type: boolean
         default: false
+      LLM_PROVIDER:
+        description: "Runtime LLM provider. openrouter is the current default cutover lane; azure remains available for instant rollback."
+        required: false
+        type: choice
+        default: openrouter
+        options:
+          - openrouter
+          - azure
       CREATE_OAUTH_CONNECTION:
         description: "Create/update the GraphOAuth Bot Service connection. Use on first deploy or when OAuth scopes change."
         required: false
@@ -341,6 +349,7 @@ jobs:
             cicdPrincipalId="${CICD_PRINCIPAL_ID}"
             alertEmail="${{ vars.ALERT_EMAIL }}"
             euResidencyMode=${{ github.event.inputs.EU_RESIDENCY_MODE || 'false' }}
+            llmProvider=${{ github.event.inputs.LLM_PROVIDER || 'openrouter' }}
             routerBotId="${{ vars.BOT_APP_ID }}"
             routerUamiId="${{ vars.ROUTER_UAMI_ID }}"
             createOAuthConnection=${OAUTH_UPDATE_SHOULD_RUN}
@@ -1032,6 +1041,7 @@ jobs:
           | **ACR** | \`${{ needs.deploy-infra.outputs.acr-login-server }}\` |
           | **Image Tag** | \`${{ github.sha }}\` |
           | **EU Residency** | \`${{ github.event.inputs.EU_RESIDENCY_MODE }}\` |
+          | **LLM Provider** | \`${{ github.event.inputs.LLM_PROVIDER || 'openrouter' }}\` |
           | **Early Dev Cost Guard** | \`${{ env.EARLY_DEV_COST_GUARD }}\` |
           | **Early Dev Monthly Budget (USD)** | \`${{ env.EARLY_DEV_MONTHLY_BUDGET_USD }}\` |
           | **Low Cost Dev Mode** | \`${{ github.event.inputs.LOW_COST_DEV_MODE || 'false' }}\` |

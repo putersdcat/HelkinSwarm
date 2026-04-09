@@ -5,7 +5,7 @@
 **Feature Specification**  
 **Version:** 1.0 (Unchained Edition)  
 **Date:** March 2026  
-**Status:** Deferred future-state guidance only — OpenRouter / BYOK is not active in the current runtime as of 2026-03-26
+**Status:** Historical / supplementary design guidance. The current OpenRouter reintroduction effort is governed primarily by `docs/0zb-OpenRouter-Model-Provider-Integration.md` and backlog issue `#501`.
 
 ### 1. Overview
 
@@ -13,9 +13,9 @@ HelkinSwarm’s LLM layer is designed to be **provider-agnostic** from the begin
 
 This spec defines:
 - **Long-term vision** for full external LLM support.
-- **Deferred historical plan** for an MVP narrow implementation focused on OpenRouter via BYOK, routed through the existing Azure model router and safety pipeline.
+- A **historical MVP narrowing** focused on OpenRouter via BYOK, routed through the existing model router and safety pipeline.
 
-> **Current repo policy:** OpenRouter / BYOK external LLM routing is intentionally disabled for now. Azure AI Foundry remains the only active runtime provider path until this feature is explicitly revived in a future issue.
+> **Current repo note:** This document is no longer the authoritative switch-status statement. Use `0zb` + `#501` + the current runtime/config code for the live OpenRouter posture. This file is retained as design context and long-horizon BYOK guidance.
 
 ### 2. Long-Term Vision
 

@@ -6,7 +6,7 @@
       "value": false
     },
     "llmProvider": {
-      "value": "azure"
+      "value": "openrouter"
     },
     "alertEmail": {
       "value": ""

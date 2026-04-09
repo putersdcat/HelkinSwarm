@@ -522,6 +522,33 @@ async function runPromptShields(output: unknown, correlationId: string): Promise
 
   const result: ShieldResult = await promptShields.check(text, correlationId);
 
+  if (result.mode === 'provider-bypassed') {
+    return {
+      step: 'prompt-shields',
+      passed: true,
+      details: 'Prompt Shields bypassed for direct OpenRouter provider mode',
+      latencyMs: Date.now() - start,
+    };
+  }
+
+  if (result.mode === 'not-configured') {
+    return {
+      step: 'prompt-shields',
+      passed: true,
+      details: 'Prompt Shields not configured — fail-open pass-through',
+      latencyMs: Date.now() - start,
+    };
+  }
+
+  if (result.mode === 'fail-open-error') {
+    return {
+      step: 'prompt-shields',
+      passed: true,
+      details: 'Prompt Shields unavailable — fail-open pass-through',
+      latencyMs: Date.now() - start,
+    };
+  }
+
   if (!result.clean) {
     const triggered = Object.entries(result.categories)
       .filter(([, v]) => v)

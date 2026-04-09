@@ -63,6 +63,11 @@ app.http('tab-dashboard', {
     const routing = getModelRouting();
     const consciousLane = getConsciousLaneAssessment(routing);
     const maintenance = await getMaintenanceMode();
+    const promptShieldMode = env.llmProvider === 'openrouter'
+      ? 'provider-bypassed'
+      : env.azureContentSafetyEndpoint
+        ? 'azure-content-safety'
+        : 'not-configured';
 
     // Get orchestration instances
     const statuses = await client.getStatusAll();
@@ -87,7 +92,17 @@ app.http('tab-dashboard', {
         maintenanceMode: maintenance,
         safetyMode: env.safetyMode,
         euResidencyMode: env.euResidencyMode,
+        promptShields: {
+          mode: promptShieldMode,
+          enforced: promptShieldMode === 'azure-content-safety',
+          note: promptShieldMode === 'provider-bypassed'
+            ? 'Direct OpenRouter mode bypasses Azure Prompt Shields by accepted temporary tradeoff.'
+            : promptShieldMode === 'not-configured'
+              ? 'Azure Prompt Shields are not configured in this stamp.'
+              : 'Azure Prompt Shields are active.',
+        },
         model: {
+          provider: env.llmProvider,
           laneName: routing.laneName,
           activeDeployment: routing.deploymentName,
           primary: routing.lane.primary,
