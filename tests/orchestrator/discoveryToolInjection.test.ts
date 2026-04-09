@@ -519,6 +519,34 @@ describe('discoveryToolInjection', () => {
     expect(choice).toEqual({ type: 'function', function: { name: 'outlook_search_emails' } });
   });
 
+  it('prefers outlook_list_emails for recent mailbox listing intents instead of falling through to outlook_send_email', async () => {
+    const { getForcedDiscoveryFollowUpToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const choice = getForcedDiscoveryFollowUpToolChoice(
+      'Please list my most recent 5 emails, return only bullet points of the subject lines.',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_list_emails',
+            description: 'list recent emails',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_send_email',
+            description: 'send email',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(choice).toEqual({ type: 'function', function: { name: 'outlook_list_emails' } });
+  });
+
   it('keeps explicit read-only discovery prompts pinned to helkin_skill_search on follow-up', async () => {
     const { getForcedDiscoveryFollowUpToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
 
@@ -969,6 +997,31 @@ describe('discoveryToolInjection', () => {
       arguments: {
         query: 'hasAttachment:true',
         folder: 'inbox',
+        top: 5,
+      },
+    });
+  });
+
+  it('synthesizes a deterministic mailbox list follow-up call for recent email listing prompts', async () => {
+    const { synthesizeDeterministicFollowUpToolCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const call = synthesizeDeterministicFollowUpToolCall(
+      'Please list my most recent 5 emails, return only bullet points of the subject lines.',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_list_emails',
+            description: 'list recent emails',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(call).toEqual({
+      name: 'outlook_list_emails',
+      arguments: {
         top: 5,
       },
     });

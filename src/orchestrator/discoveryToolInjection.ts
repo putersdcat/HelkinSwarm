@@ -634,11 +634,56 @@ function parseMailboxTopCount(normalizedMessage: string): number | undefined {
     return Number(topMatch[1]);
   }
 
+  const recentCountMatch = normalizedMessage.match(/\b(?:most\s+recent|latest|newest|recent)\s+(\d{1,2})\s+(?:emails?|messages?)\b/i)
+    ?? normalizedMessage.match(/\b(\d{1,2})\s+(?:most\s+recent|latest|newest|recent)\s+(?:emails?|messages?)\b/i)
+    ?? normalizedMessage.match(/\b(\d{1,2})\s+(?:emails?|messages?)\b/i);
+  if (recentCountMatch?.[1]) {
+    return Number(recentCountMatch[1]);
+  }
+
   if (/\b(latest|most recent|newest)\b/i.test(normalizedMessage)) {
     return 1;
   }
 
   return undefined;
+}
+
+function parseDeterministicOutlookListIntent(userMessage: string): DeterministicFollowUpToolCall | null {
+  const cleanedMessage = stripValidationNoise(userMessage);
+  const normalizedMessage = cleanedMessage.toLowerCase();
+
+  const mentionsMailbox = /(outlook|mailbox|email|emails|message|messages|mail)\b/.test(normalizedMessage);
+  const looksLikeListIntent = /\b(list|show|display)\b/.test(normalizedMessage)
+    || /\b(most\s+recent|latest|newest|recent|unread)\b/.test(normalizedMessage);
+
+  if (!mentionsMailbox || !looksLikeListIntent) {
+    return null;
+  }
+
+  if (/(send|compose|draft|reply|respond)\b/.test(normalizedMessage)) {
+    return null;
+  }
+
+  if (/(search|find|lookup|look up)\b/.test(normalizedMessage)) {
+    return null;
+  }
+
+  if ((/\b(read|open)\b/.test(normalizedMessage) && /\b(email|message)\b/.test(normalizedMessage)) || /\bmessageid\b/.test(normalizedMessage)) {
+    return null;
+  }
+
+  const folder = parseMailboxFolderMention(cleanedMessage);
+  const top = parseMailboxTopCount(cleanedMessage) ?? 10;
+  const filter = /\bunread\b/.test(normalizedMessage) ? 'isRead eq false' : undefined;
+
+  return {
+    name: 'outlook_list_emails',
+    arguments: {
+      top,
+      ...(folder ? { folder } : {}),
+      ...(filter ? { filter } : {}),
+    },
+  };
 }
 
 function parseDeterministicOutlookSearchIntent(userMessage: string): DeterministicFollowUpToolCall | null {
@@ -795,6 +840,16 @@ export function getForcedDiscoveryFollowUpToolChoice(
     return { type: 'function', function: { name: 'outlook_search_emails' } };
   }
 
+  if (parseDeterministicOutlookListIntent(userMessage)) {
+    if (toolNames.has('outlook_list_emails')) {
+      return { type: 'function', function: { name: 'outlook_list_emails' } };
+    }
+
+    if (toolNames.has('outlook_search_emails')) {
+      return { type: 'function', function: { name: 'outlook_search_emails' } };
+    }
+  }
+
   if (/(read|open|show).*(email|message|mail)/.test(normalized) && toolNames.has('outlook_read_email')) {
     return { type: 'function', function: { name: 'outlook_read_email' } };
   }
@@ -838,6 +893,13 @@ export function synthesizeDeterministicFollowUpToolCall(
     const mailboxSearchIntent = parseDeterministicOutlookSearchIntent(userMessage);
     if (mailboxSearchIntent) {
       return mailboxSearchIntent;
+    }
+  }
+
+  if (toolNames.has('outlook_list_emails')) {
+    const mailboxListIntent = parseDeterministicOutlookListIntent(userMessage);
+    if (mailboxListIntent) {
+      return mailboxListIntent;
     }
   }
 
