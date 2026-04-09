@@ -13,7 +13,10 @@ import { ModelProfileSchema, type ModelProfile } from './modelProfileSchema.js';
 
 const profileCache = new Map<string, ModelProfile | null>();
 
-/** Root of the profiles directory — relative to repo root */
+/** Root of the profiles directory — relative to repo root.
+ * Model IDs may contain provider prefixes (for example `x-ai/grok-4.1-fast`),
+ * so join(PROFILES_DIR, modelId, 'profile.json') intentionally resolves nested directories.
+ */
 const PROFILES_DIR = resolve(join(import.meta.dirname ?? __dirname, '..', '..', 'model-profiles'));
 
 // ---------------------------------------------------------------------------
