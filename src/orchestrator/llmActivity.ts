@@ -20,6 +20,7 @@ import type { PromptResult } from './buildPromptActivity.js';
 import type { ChatCompletionResponse, ChatMessage, ContentPart } from '../llm/foundryClient.js';
 import { textContent } from '../llm/foundryClient.js';
 import { hasOutboundArtifactClaim } from '../bot/conversationStore.js';
+import { parseBooleanEnv } from '../config/booleanEnv.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { recordSubstage } from '../observability/orchestratorStageHealth.js';
 
@@ -51,7 +52,7 @@ export interface LlmActivityInput extends PromptResult {
 }
 
 // DIAGNOSTIC (#327): Skip LLM entirely when fast-path is active
-const LLM_FAST_PATH = !!(process.env['LLM_FAST_PATH'] ?? '');
+const LLM_FAST_PATH = parseBooleanEnv(process.env['LLM_FAST_PATH']);
 
 df.app.activity('llmActivity', {
   handler: async (input: LlmActivityInput): Promise<LlmResult> => {

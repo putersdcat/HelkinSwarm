@@ -18,6 +18,7 @@ import {
   saveSentMessageText,
 } from '../bot/conversationStore.js';
 import { cacheSentMessage } from '../bot/sentMessageCache.js';
+import { parseBooleanEnv } from '../config/booleanEnv.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { splitReplyIntoChunks } from './replyChunking.js';
 import { trackEvent } from '../observability/telemetry.js';
@@ -125,7 +126,7 @@ function getAdapter(): CloudAdapter {
 }
 
 // DIAGNOSTIC (#327): Skip Cosmos reads when fast-path is active
-const SENDREPLY_FAST_PATH = !!(process.env['SENDREPLY_FAST_PATH'] ?? '');
+const SENDREPLY_FAST_PATH = parseBooleanEnv(process.env['SENDREPLY_FAST_PATH']);
 
 function buildDataUrl(contentType: string, bytes: Buffer): string {
   return `data:${contentType};base64,${bytes.toString('base64')}`;

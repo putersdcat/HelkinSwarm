@@ -225,9 +225,11 @@ export function formatTelemetryFooter(
   }
 
   // Tool call details
-  if (data.toolCalls.length > 0) {
-    parts.push(`tools:${data.toolCalls.join(',')}`);
-  }
+  parts.push(
+    data.toolCalls.length > 0
+      ? `tools:${data.toolCalls.join(',')}`
+      : 'tools:0',
+  );
 
   parts.push(`safe:${data.safetyPassed ? '✓' : '✗'}`);
   if (data.subAgentCount) parts.push(`sa:${data.subAgentCount}`);

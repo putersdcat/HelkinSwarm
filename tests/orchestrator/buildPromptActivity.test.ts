@@ -139,4 +139,39 @@ describe('buildPrompt soft timeouts', () => {
     expect(prompt.systemPrompt).toContain('Skipped attachment `big.zip`');
     expect(prompt.systemPrompt).not.toContain('JVBER');
   });
+
+  it('injects autobiographical grounding with runtime date/time and recent user requests', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-04-09T13:30:00.000Z'));
+
+    const mod = await loadBuildPromptModule({
+      getUserProfile: async () => ({
+        onboardedAt: '2026-04-01T00:00:00.000Z',
+        timezone: 'UTC',
+      }),
+    });
+
+    const prompt = await mod.buildPrompt({
+      state: {
+        userId: 'user-4',
+        userAlias: 'user-4',
+        conversationId: 'conv-4',
+        turnCount: 2,
+        accumulatedTokens: 42,
+        euResidencyMode: false,
+        recentHistory: [
+          { role: 'user', content: 'Hey buddy' },
+          { role: 'assistant', content: 'Hello.' },
+          { role: 'user', content: 'What is your purpose?' },
+          { role: 'assistant', content: 'To help.' },
+        ],
+      },
+      userMessage: 'what were my last two requests?',
+      correlationId: 'corr-autobio',
+    });
+
+    expect(prompt.systemPrompt).toContain('Immediate autobiographical grounding:');
+    expect(prompt.systemPrompt).toContain('Current runtime date: Thursday, April 9, 2026 (UTC)');
+    expect(prompt.systemPrompt).toContain('Most recent prior user requests: "Hey buddy"; "What is your purpose?"');
+  });
 });

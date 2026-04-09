@@ -131,6 +131,11 @@ describe('formatTelemetryFooter', () => {
     expect(result).toContain('plan:compound');
   });
 
+  it('verbose mode still shows an explicit zero-tool indicator when no tools were called', () => {
+    const result = formatTelemetryFooter('verbose', baseTelemetry);
+    expect(result).toContain('tools:0');
+  });
+
   it('prefers exact provider-reported OpenRouter credits over model-cost estimation when present', () => {
     const result = formatTelemetryFooter('verbose', {
       ...baseTelemetry,

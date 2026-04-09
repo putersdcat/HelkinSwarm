@@ -17,7 +17,9 @@ import type { QuotedContext } from '../bot/quotedContext.js';
 import { hasOutboundArtifactClaim } from '../bot/conversationStore.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { recordOrchestratorStage, recordSubstage } from '../observability/orchestratorStageHealth.js';
+import { parseBooleanEnv } from '../config/booleanEnv.js';
 import { getDiscoveryFirstToolDefinitions } from './discoveryToolInjection.js';
+import { buildAutobiographicalPromptFragment } from './autobiographicalReflex.js';
 import { buildInboundAttachmentPromptBlock } from '../bot/inboundAttachmentIngestion.js';
 import type { RuntimeAssetReference } from '../integrations/runtimeAssetStore.js';
 
@@ -116,6 +118,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   // Load user profile for preferences injection or onboarding detection
   let preferencesFragment = '';
   let onboardingInstructions = '';
+  let userTimezone: string | undefined;
   try {
     recordSubstage(correlationId, 'build-prompt:user-profile', state.userId);
     mark('pre-profile');
@@ -123,6 +126,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
     mark('post-profile');
     if (profile?.onboardedAt) {
       preferencesFragment = profileToPromptFragment(profile);
+      userTimezone = profile.timezone;
     } else {
       onboardingInstructions = [
         'This is a new user who has not yet been onboarded.',
@@ -214,6 +218,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
     persona,
     modelIdentity,
     buildPriorsPromptFragment(),
+    buildAutobiographicalPromptFragment(state.recentHistory ?? [], new Date(), userTimezone),
     input.steeringContext ?? '',
     devLoopBlock,
     !isDevLoop && preferencesFragment ? `User preferences: ${preferencesFragment}` : '',
@@ -275,7 +280,7 @@ const ACTIVITY_HARD_TIMEOUT_MS = 25_000;
 // DIAGNOSTIC MODE (#327): bypass all async I/O to isolate the hang.
 // If the turn completes with this, the hang is in buildPrompt internals.
 // If not, the hang is in Durable Functions infrastructure.
-const DIAGNOSTIC_FAST_PATH = !!(process.env['BUILDPROMPT_FAST_PATH'] ?? '');
+const DIAGNOSTIC_FAST_PATH = parseBooleanEnv(process.env['BUILDPROMPT_FAST_PATH']);
 
 df.app.activity('buildPromptActivity', {
   handler: async (input: BuildPromptInput): Promise<PromptResult> => {

@@ -39,6 +39,52 @@
       "requiresSubAgent": false
     },
     {
+      "name": "helkin_current_datetime",
+      "description": "Returns the current runtime date/time grounded from the host clock, using the user's saved timezone when available or an explicitly requested timezone override.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "timezone": {
+            "type": "string",
+            "description": "Optional IANA timezone override such as 'Europe/Amsterdam' or 'US/Eastern'."
+          }
+        },
+        "required": []
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
+    },
+    {
+      "name": "helkin_recent_requests",
+      "description": "Returns the user's most recent requests from active overseer session history stored in Cosmos-backed state.",
+      "risk": "low",
+      "dataSensitivity": "mixed",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "number",
+            "description": "Optional number of recent user requests to return (default: 2, max: 10)."
+          }
+        },
+        "required": []
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
+    },
+    {
       "name": "helkin_skill_search",
       "description": "Discovery-only capability browser for installed skills and tools. Supports help, search, describe_group, describe_skill, describe_tool, list_domains, and list_groups. Use this to narrow the skill/tool universe before selecting execution tools.",
       "risk": "low",
@@ -407,6 +453,8 @@
   "shortDescription": "System health, skill management, cost monitoring, and user preferences",
   "discoveryHints": [
     "system health",
+    "current date and time",
+    "recent requests",
     "skill discovery",
     "skill management",
     "preferences",
@@ -414,10 +462,14 @@
   ],
   "orchestratorUseCases": [
     "discover which skill or tool should handle a broader user request",
+    "ground the current date/time from runtime context instead of guessing",
+    "recall the user's most recent requests from active session memory",
     "inspect current runtime state or user role",
     "manage installed skills and stored preferences"
   ],
   "recommendedEntryTools": [
+    "helkin_current_datetime",
+    "helkin_recent_requests",
     "helkin_skill_search",
     "helkin_health_check",
     "helkin_list_skills"

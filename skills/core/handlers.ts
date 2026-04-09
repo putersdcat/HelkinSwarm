@@ -4,6 +4,64 @@
 
 import type { ToolHandler } from '../../src/capabilities/capabilityLoader.js';
 
+function resolveTimeZone(timezone: string | undefined): string {
+  if (!timezone) {
+    return 'UTC';
+  }
+
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: timezone }).format(new Date('2026-04-09T00:00:00.000Z'));
+    return timezone;
+  } catch {
+    return 'UTC';
+  }
+}
+
+function formatDateTimeSnapshot(now: Date, timezone: string): {
+  timezone: string;
+  isoUtc: string;
+  date: string;
+  time: string;
+  weekday: string;
+} {
+  const date = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(now);
+
+  const time = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
+  }).format(now);
+
+  const weekday = new Intl.DateTimeFormat('en-US', {
+    timeZone: timezone,
+    weekday: 'long',
+  }).format(now);
+
+  return {
+    timezone,
+    isoUtc: now.toISOString(),
+    date,
+    time,
+    weekday,
+  };
+}
+
+function getRecentUserRequests(recentHistory: Array<{ role: 'user' | 'assistant'; content: string }> | undefined, count: number): string[] {
+  return (recentHistory ?? [])
+    .filter((turn) => turn.role === 'user')
+    .map((turn) => turn.content.trim())
+    .filter((content) => content.length > 0)
+    .slice(-count);
+}
+
 export const helkin_health_check: ToolHandler = async (_args) => {
   const euMode = process.env['EU_RESIDENCY_MODE'] === 'true';
   const safetyMode = process.env['SAFETY_MODE'] ?? 'confirmation-gated';
@@ -63,6 +121,48 @@ export const helkin_list_skills: ToolHandler = async () => {
   return {
     totalTools: tools.length,
     domains: Object.fromEntries(domains),
+  };
+};
+
+export const helkin_current_datetime: ToolHandler = async (args) => {
+  const { getUserProfile } = await import('../../src/memory/userProfile.js');
+
+  const userId = typeof args['userId'] === 'string' ? args['userId'] : undefined;
+  const profile = userId ? await getUserProfile(userId) : undefined;
+  const requestedTimezone = typeof args['timezone'] === 'string' ? args['timezone'] : undefined;
+  const timezone = resolveTimeZone(requestedTimezone ?? profile?.timezone);
+  const snapshot = formatDateTimeSnapshot(new Date(), timezone);
+
+  return {
+    status: 'success',
+    ...snapshot,
+    message: `Today is ${snapshot.date}. The current time is ${snapshot.time}.`,
+  };
+};
+
+export const helkin_recent_requests: ToolHandler = async (args) => {
+  const { loadState } = await import('../../src/orchestrator/stateManager.js');
+
+  const userId = typeof args['userId'] === 'string' ? args['userId'] : undefined;
+  if (!userId) {
+    return { status: 'error', message: 'userId is required to inspect recent requests.' };
+  }
+
+  const state = await loadState(userId);
+  const requestedCount = typeof args['count'] === 'number' ? args['count'] : Number(args['count'] ?? 2);
+  const count = Number.isFinite(requestedCount)
+    ? Math.min(10, Math.max(1, Math.trunc(requestedCount)))
+    : 2;
+  const requests = getRecentUserRequests(state?.recentHistory, count);
+
+  return {
+    status: 'success',
+    count: requests.length,
+    requestedCount: count,
+    requests,
+    message: requests.length > 0
+      ? `Most recent user requests: ${requests.map((request) => `"${request}"`).join('; ')}`
+      : 'No recent user requests are available in active session history.',
   };
 };
 
