@@ -1689,11 +1689,6 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           correlationId,
           modelOverride: effectiveFollowUpModelOverride,
           enableRetry: allowMoreFollowUpTools,
-          tools: allowMoreFollowUpTools ? (selectiveFollowUpSchemas ?? allToolSchemas) : undefined,
-          toolChoice: allowMoreFollowUpTools ? forcedFollowUpToolChoice : undefined,
-          additionalTurns,
-        };
-        followUp = yield* withLlmFollowUpTimeout(context, roundFollowUpInput);
           modelProfileTelemetry: initialToolSurface.profileModel
             ? {
                 phase: 'followup',
@@ -1704,6 +1699,11 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
                 excludedTools: initialToolSurface.excluded.join(','),
               }
             : undefined,
+          tools: allowMoreFollowUpTools ? (selectiveFollowUpSchemas ?? allToolSchemas) : undefined,
+          toolChoice: allowMoreFollowUpTools ? forcedFollowUpToolChoice : undefined,
+          additionalTurns,
+        };
+        followUp = yield* withLlmFollowUpTimeout(context, roundFollowUpInput);
         rememberTelemetryModel(followUp.model);
         cumulativeTokensUsed += followUp.tokensUsed;
         cumulativePromptTokens += followUp.promptTokens;
