@@ -1,7 +1,6 @@
 import * as df from 'durable-functions';
 import { z } from 'zod';
 import { claimOutboundArtifact, getOutboundArtifactClaim, hasOutboundArtifactClaim } from '../bot/conversationStore.js';
-import { getOrchestratorStageForCorrelation } from '../observability/orchestratorStageHealth.js';
 
 const SessionReplayGuardInputSchema = z.object({
   conversationId: z.string().min(1),
@@ -11,20 +10,6 @@ const SessionReplayGuardInputSchema = z.object({
 });
 
 export type SessionReplayGuardInput = z.infer<typeof SessionReplayGuardInputSchema>;
-
-const SAME_OWNER_ACTIVE_STAGE_WINDOW_MS = 45_000;
-
-function shouldSuppressSameOwnerReentryForActiveStage(
-  stage: { stage: string; startedAtMs: number; updatedAtMs: number },
-  nowMs: number,
-): boolean {
-  if (stage.stage === 'awaiting-ingress' || stage.stage === 'cleared') {
-    return false;
-  }
-
-  const freshnessAnchor = Math.max(stage.startedAtMs, stage.updatedAtMs);
-  return nowMs - freshnessAnchor <= SAME_OWNER_ACTIVE_STAGE_WINDOW_MS;
-}
 
 export async function detectDuplicateSessionReplay(rawInput: SessionReplayGuardInput): Promise<boolean> {
   const input = SessionReplayGuardInputSchema.parse(rawInput);
@@ -68,16 +53,7 @@ export async function detectDuplicateSessionReplay(rawInput: SessionReplayGuardI
     return true;
   }
 
-  const stageForCorrelation = await getOrchestratorStageForCorrelation(
-    input.correlationId,
-    input.userId,
-  );
-
-  if (!stageForCorrelation) {
-    return false;
-  }
-
-  return shouldSuppressSameOwnerReentryForActiveStage(stageForCorrelation, Date.now());
+  return false;
 }
 
 df.app.activity('sessionReplayGuardActivity', {

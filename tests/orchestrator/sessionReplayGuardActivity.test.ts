@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const hasOutboundArtifactClaimMock = vi.fn();
 const getOutboundArtifactClaimMock = vi.fn();
 const claimOutboundArtifactMock = vi.fn();
-const getOrchestratorStageForCorrelationMock = vi.fn();
 
 vi.mock('../../src/bot/conversationStore.js', () => ({
   hasOutboundArtifactClaim: hasOutboundArtifactClaimMock,
@@ -11,16 +10,11 @@ vi.mock('../../src/bot/conversationStore.js', () => ({
   claimOutboundArtifact: claimOutboundArtifactMock,
 }));
 
-vi.mock('../../src/observability/orchestratorStageHealth.js', () => ({
-  getOrchestratorStageForCorrelation: getOrchestratorStageForCorrelationMock,
-}));
-
 describe('detectDuplicateSessionReplay', () => {
   beforeEach(() => {
     hasOutboundArtifactClaimMock.mockReset();
     getOutboundArtifactClaimMock.mockReset();
     claimOutboundArtifactMock.mockReset();
-    getOrchestratorStageForCorrelationMock.mockReset();
   });
 
   it('returns false when a new session-execution claim is acquired', async () => {
@@ -56,35 +50,9 @@ describe('detectDuplicateSessionReplay', () => {
     expect(duplicate).toBe(true);
   });
 
-  it('suppresses same-owner reentry only while the active stage is fresh', async () => {
+  it('does not suppress same-owner reentry for the claimed execution instance', async () => {
     hasOutboundArtifactClaimMock.mockResolvedValue(false);
     getOutboundArtifactClaimMock.mockResolvedValue({ ownerInstanceId: 'session-1' });
-    getOrchestratorStageForCorrelationMock.mockResolvedValue({
-      stage: 'llm',
-      startedAtMs: Date.now() - 5_000,
-      updatedAtMs: Date.now() - 1_000,
-    });
-
-    const { detectDuplicateSessionReplay } = await import('../../src/orchestrator/sessionReplayGuardActivity.js');
-
-    const duplicate = await detectDuplicateSessionReplay({
-      conversationId: 'conv-1',
-      correlationId: 'corr-1',
-      userId: 'user-1',
-      sessionInstanceId: 'session-1',
-    });
-
-    expect(duplicate).toBe(true);
-  });
-
-  it('does not suppress same-owner reentry when stage is stale', async () => {
-    hasOutboundArtifactClaimMock.mockResolvedValue(false);
-    getOutboundArtifactClaimMock.mockResolvedValue({ ownerInstanceId: 'session-1' });
-    getOrchestratorStageForCorrelationMock.mockResolvedValue({
-      stage: 'llm',
-      startedAtMs: Date.now() - 120_000,
-      updatedAtMs: Date.now() - 120_000,
-    });
 
     const { detectDuplicateSessionReplay } = await import('../../src/orchestrator/sessionReplayGuardActivity.js');
 
