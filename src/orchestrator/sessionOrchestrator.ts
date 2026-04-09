@@ -191,6 +191,8 @@ function isMatchingConfirmationResponse(
 export interface SessionInput {
   state: OverseerState;
   userMessage: string;
+  /** Fresh ingress-side snapshot of prior human turns, excluding the current message. */
+  recentUserRequestsSnapshot?: string[];
   skillForgeRequest?: {
     idea: string;
   };
@@ -497,9 +499,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     } satisfies SessionResult;
   }
 
+  const autobiographicalRecallHistory = (input.recentUserRequestsSnapshot?.length ?? 0) > 0
+    ? input.recentUserRequestsSnapshot!.map((content) => ({ role: 'user' as const, content }))
+    : input.state.recentHistory ?? [];
   const autobiographicalRecallResponse = buildRecentRequestRecallResponse(
     userMessageForLlm,
-    input.state.recentHistory ?? [],
+    autobiographicalRecallHistory,
   );
 
   if (autobiographicalRecallResponse) {

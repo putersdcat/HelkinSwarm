@@ -19,7 +19,8 @@ import {
 import type { DurableClient } from 'durable-functions';
 import { OrchestrationRuntimeStatus } from 'durable-functions';
 import type { NewMessageEvent } from '../orchestrator/overseer.js';
-import { clearPendingAckId, getPendingAckId, getStoredSentMessage, saveConversationReference, savePendingAckId } from './conversationStore.js';
+import { clearPendingAckId, getPendingAckId, getStoredSentMessage, savePendingAckId } from './conversationStore.js';
+import { saveConversationReferenceWithRecentUserMessage } from './conversationStore.js';
 import { getSentMessage } from './sentMessageCache.js';
 import {
   getMaintenanceMode,
@@ -1139,13 +1140,18 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     const conversationReference = TurnContextClass.getConversationReference(
       context.activity,
     );
-    await saveConversationReference(userId, conversationReference);
+    const recentUserRequestsSnapshot = await saveConversationReferenceWithRecentUserMessage(
+      userId,
+      conversationReference,
+      userMessage,
+    );
 
     const event: NewMessageEvent = {
       userMessage,
       conversationReference,
       userId,
       userAlias,
+      ...(recentUserRequestsSnapshot.length > 0 ? { recentUserRequestsSnapshot } : {}),
       ...(skillForgeRequest !== undefined ? { skillForgeRequest } : {}),
       correlationId: eventCorrelationId,
       ...(modelOverride !== undefined ? { modelOverride } : {}),

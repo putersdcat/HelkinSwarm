@@ -54,6 +54,8 @@ export interface NewMessageEvent {
   conversationReference?: Partial<ConversationReference>;
   userId: string;
   userAlias: string;
+  /** Fresh ingress-side snapshot of prior human turns, excluding the current message. */
+  recentUserRequestsSnapshot?: string[];
   skillForgeRequest?: {
     idea: string;
   };
@@ -453,6 +455,7 @@ function* processTurn(
   const sessionInput: SessionInput = {
     state,
     userMessage: event.userMessage,
+    recentUserRequestsSnapshot: event.recentUserRequestsSnapshot,
     ...(event.skillForgeRequest ? { skillForgeRequest: event.skillForgeRequest } : {}),
     conversationReference: event.conversationReference,
     correlationId,

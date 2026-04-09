@@ -7,6 +7,7 @@ import { getContainer } from '../memory/cosmosClient.js';
 
 const CONTAINER_NAME = 'conversationReferences';
 const SENT_MESSAGE_TTL_SECONDS = 7 * 24 * 60 * 60;
+const MAX_RECENT_USER_MESSAGES = 10;
 
 interface ConvRefDocument {
   /** Document id — 'convref-{userId}' */
@@ -15,6 +16,7 @@ interface ConvRefDocument {
   conversationId: string;
   userId: string;
   conversationReference: Partial<ConversationReference>;
+  recentUserMessages?: string[];
   updatedAt: string;
 }
 
@@ -86,21 +88,80 @@ export function makeSentMessageDocumentId(activityId: string): string {
   return `sentmsg-${activityId}`;
 }
 
+function normalizeRecentUserMessage(message: string): string {
+  return message.replace(/\s+/g, ' ').trim();
+}
+
+export function buildRecentUserMessageRing(previous: string[], nextMessage: string): string[] {
+  const normalizedNext = normalizeRecentUserMessage(nextMessage);
+  const normalizedPrevious = previous
+    .map((message) => normalizeRecentUserMessage(message))
+    .filter((message) => message.length > 0);
+
+  if (normalizedNext.length === 0) {
+    return normalizedPrevious.slice(-MAX_RECENT_USER_MESSAGES);
+  }
+
+  return [...normalizedPrevious, normalizedNext].slice(-MAX_RECENT_USER_MESSAGES);
+}
+
+async function loadConversationReferenceDocument(userId: string): Promise<ConvRefDocument | null> {
+  const container = getContainer(CONTAINER_NAME);
+  const { resources } = await container.items
+    .query<ConvRefDocument>(
+      {
+        query: 'SELECT * FROM c WHERE c.id = @id',
+        parameters: [{ name: '@id', value: `convref-${userId}` }],
+      },
+      { abortSignal: AbortSignal.timeout(CONVREF_QUERY_ABORT_MS) },
+    )
+    .fetchAll();
+
+  return resources[0] ?? null;
+}
+
 /** Upsert the ConversationReference for a user. Called on every inbound message. */
 export async function saveConversationReference(
   userId: string,
   conversationReference: Partial<ConversationReference>,
 ): Promise<void> {
   const conversationId = conversationReference.conversation?.id ?? userId;
+  const existing = await loadConversationReferenceDocument(userId);
   const doc: ConvRefDocument = {
     id: `convref-${userId}`,
     conversationId,
     userId,
     conversationReference,
+    recentUserMessages: existing?.recentUserMessages ?? [],
     updatedAt: new Date().toISOString(),
   };
   const container = getContainer(CONTAINER_NAME);
   await container.items.upsert(doc);
+}
+
+/**
+ * Persist the conversation reference and append the current inbound human message.
+ * Returns the recent user-message snapshot from before the current message was added.
+ */
+export async function saveConversationReferenceWithRecentUserMessage(
+  userId: string,
+  conversationReference: Partial<ConversationReference>,
+  recentUserMessage: string,
+): Promise<string[]> {
+  const conversationId = conversationReference.conversation?.id ?? userId;
+  const existing = await loadConversationReferenceDocument(userId);
+  const previousMessages = existing?.recentUserMessages ?? [];
+  const doc: ConvRefDocument = {
+    id: `convref-${userId}`,
+    conversationId,
+    userId,
+    conversationReference,
+    recentUserMessages: buildRecentUserMessageRing(previousMessages, recentUserMessage),
+    updatedAt: new Date().toISOString(),
+  };
+  const container = getContainer(CONTAINER_NAME);
+  await container.items.upsert(doc);
+  return previousMessages.slice(-MAX_RECENT_USER_MESSAGES);
 }
 
 /**
@@ -115,20 +176,13 @@ const CONVREF_QUERY_ABORT_MS = 8_000;
 export async function getConversationReference(
   userId: string,
 ): Promise<Partial<ConversationReference> | null> {
-  const container = getContainer(CONTAINER_NAME);
+  const document = await loadConversationReferenceDocument(userId);
+  return document?.conversationReference ?? null;
+}
 
-  // Cross-partition query by id (id is unique across all partitions)
-  const { resources } = await container.items
-    .query<ConvRefDocument>(
-      {
-        query: 'SELECT * FROM c WHERE c.id = @id',
-        parameters: [{ name: '@id', value: `convref-${userId}` }],
-      },
-      { abortSignal: AbortSignal.timeout(CONVREF_QUERY_ABORT_MS) },
-    )
-    .fetchAll();
-
-  return resources[0]?.conversationReference ?? null;
+export async function getRecentUserMessages(userId: string): Promise<string[]> {
+  const document = await loadConversationReferenceDocument(userId);
+  return document?.recentUserMessages ?? [];
 }
 
 /** Persist a bot-sent message so quoted replies can recover full text after restarts/deploys. */
