@@ -15,7 +15,9 @@
     "Compact tool descriptions reduce prompt bloat without changing the allowed tool surface"
   ],
   "excludeTools": [],
-  "boostTools": [],
+  "boostTools": [
+    "outlook_list_emails"
+  ],
   "meta": {
     "updatedAt": "2026-04-09T00:00:00Z",
     "updatedBy": "manual"
