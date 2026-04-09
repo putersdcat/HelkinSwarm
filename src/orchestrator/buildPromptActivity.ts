@@ -28,6 +28,8 @@ export interface BuildPromptInput {
   userMessage: string;
   steeringContext?: string;
   conversationId?: string;
+  /** Precomputed tool-summary definitions aligned with the actual model-specific tool surface (#610). */
+  toolSummaryDefinitions?: Array<{ name: string; description: string }>;
   /** Structured runtime asset references extracted from inbound Teams attachments (#416) */
   runtimeAssets?: RuntimeAssetReference[];
   /** Prompt-safe notes about inbound attachment ingestion outcomes (#416) */
@@ -145,7 +147,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   // Build tool summary for the system prompt — safety-filtered (#210)
   mark('pre-tools');
   recordSubstage(correlationId, 'build-prompt:tool-summary', state.userId);
-  const tools = getDiscoveryFirstToolDefinitions();
+  const tools = input.toolSummaryDefinitions ?? getDiscoveryFirstToolDefinitions();
   mark('post-tools');
   const toolSummary = tools.length > 0
     ? `Initial tool surface: ${tools.map((t) => `${t.name} (${t.description})`).join('; ')}. Use helkin_skill_search first when you need non-core skills or a narrower tool subset.`

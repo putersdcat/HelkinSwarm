@@ -1,5 +1,5 @@
 // Tool registry — unit tests for declarative gating (#247, #315, #316)
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 
 vi.mock('../../src/config/safetyConfig.js', () => ({
   safetyConfig: { safetyMode: 'confirmation-gated' },
@@ -8,6 +8,10 @@ vi.mock('../../src/config/safetyConfig.js', () => ({
 }));
 
 import { ToolRegistry, ToolDefinitionSchema } from '../../src/tools/toolRegistry.js';
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe('ToolDefinitionSchema.requiresConfirmation', () => {
   it('defaults to false when not provided', () => {
@@ -110,5 +114,50 @@ describe('ToolRegistry', () => {
     });
     const def = registry.get('some_list_tool');
     expect(def?.requiresConfirmation).toBe(false);
+  });
+
+  it('applies model profiles to the emitted function schemas when enabled (#610)', () => {
+    vi.stubEnv('MODEL_PROFILES_ENABLED', 'true');
+
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'outlook_list_emails',
+      description: 'List the latest emails from Outlook. Includes sender, subject, and received time.',
+      risk: 'low',
+      dataSensitivity: 'pii',
+      requiresSubAgent: true,
+    });
+    registry.register({
+      name: 'helkin_skill_search',
+      description: 'Search the installed skills and return matching tools. Use this for discovery-first routing.',
+      risk: 'low',
+      dataSensitivity: 'non-pii',
+    });
+
+    const profiled = registry.toFunctionSchemasForModel('x-ai/grok-4.1-fast');
+
+    expect(profiled.profileModel).toBe('x-ai/grok-4.1-fast');
+    expect(profiled.wasTransformed).toBe(true);
+    expect(profiled.tools[0]?.function.description).toBe('List the latest emails from Outlook.');
+    expect(profiled.tools[1]?.function.description).toBe('Search the installed skills and return matching tools.');
+  });
+
+  it('can disable model profile application via env guard (#610)', () => {
+    vi.stubEnv('MODEL_PROFILES_ENABLED', 'false');
+
+    const registry = new ToolRegistry();
+    registry.register({
+      name: 'outlook_list_emails',
+      description: 'List the latest emails from Outlook. Includes sender, subject, and received time.',
+      risk: 'low',
+      dataSensitivity: 'pii',
+      requiresSubAgent: true,
+    });
+
+    const profiled = registry.toFunctionSchemasForModel('x-ai/grok-4.1-fast');
+
+    expect(profiled.profileModel).toBeNull();
+    expect(profiled.wasTransformed).toBe(false);
+    expect(profiled.tools[0]?.function.description).toContain('Includes sender, subject, and received time.');
   });
 });

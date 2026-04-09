@@ -1,0 +1,23 @@
+{
+  "model": "minimax/minimax-m2.7",
+  "version": 1,
+  "presentation": "flat_json",
+  "maxToolsPerTurn": 0,
+  "schemaInjection": {
+    "includeJsonSchema": true,
+    "includeExamples": true,
+    "compact": true
+  },
+  "preferredNaming": "snake_case",
+  "examples": [],
+  "knownLimitations": [
+    "Fast fallback lane benefits from shorter tool descriptions and lower context noise",
+    "Compact tool descriptions reduce prompt bloat without changing the allowed tool surface"
+  ],
+  "excludeTools": [],
+  "boostTools": [],
+  "meta": {
+    "updatedAt": "2026-04-09T00:00:00Z",
+    "updatedBy": "manual"
+  }
+}

@@ -3,6 +3,8 @@
 
 import { z } from 'zod';
 import { isReadOnly } from '../config/safetyConfig.js';
+import { applyProfile, type ApplyProfileResult, type ToolDefinition as ProfileToolDefinition } from '../llm/profileApplicator.js';
+import { loadModelProfile } from '../llm/profileLoader.js';
 
 // ---------------------------------------------------------------------------
 // Types — re-export from manifestSchema for backward compatibility
@@ -36,6 +38,62 @@ export const ToolDefinitionSchema = z.object({
 
 export type ToolDefinition = z.infer<typeof ToolDefinitionSchema>;
 export type ToolDefinitionInput = z.input<typeof ToolDefinitionSchema>;
+
+export interface ProfiledFunctionSchemaResult extends ApplyProfileResult {
+  profileModel: string | null;
+}
+
+function areModelProfilesEnabled(): boolean {
+  const raw = process.env['MODEL_PROFILES_ENABLED'];
+  if (raw === undefined) {
+    return true;
+  }
+
+  return /^(1|true|yes|on)$/i.test(raw.trim());
+}
+
+function toFunctionSchemasFromTools(
+  tools: ReadonlyArray<ToolDefinition>,
+): ProfileToolDefinition[] {
+  return tools.map((tool) => ({
+    type: 'function' as const,
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.inputSchema ?? { type: 'object', properties: {} },
+    },
+  }));
+}
+
+export function applyModelProfileToFunctionSchemas(
+  tools: ProfileToolDefinition[],
+  modelId: string | undefined,
+): ProfiledFunctionSchemaResult {
+  if (!modelId || !areModelProfilesEnabled()) {
+    return {
+      tools,
+      excluded: [],
+      wasTransformed: false,
+      profileModel: null,
+    } satisfies ProfiledFunctionSchemaResult;
+  }
+
+  const profile = loadModelProfile(modelId);
+  if (!profile) {
+    return {
+      tools,
+      excluded: [],
+      wasTransformed: false,
+      profileModel: null,
+    } satisfies ProfiledFunctionSchemaResult;
+  }
+
+  const applied = applyProfile(tools, profile);
+  return {
+    ...applied,
+    profileModel: profile.model,
+  } satisfies ProfiledFunctionSchemaResult;
+}
 
 // ---------------------------------------------------------------------------
 // Registry
@@ -109,14 +167,15 @@ export class ToolRegistry {
     type: 'function';
     function: { name: string; description: string; parameters: Record<string, unknown> };
   }> {
-    return this.getSafetyFiltered().map((tool) => ({
-      type: 'function' as const,
-      function: {
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.inputSchema ?? { type: 'object', properties: {} },
-      },
-    }));
+    return toFunctionSchemasFromTools(this.getSafetyFiltered());
+  }
+
+  /**
+   * Convert to OpenAI-compatible function schemas and apply the active model profile.
+   * Safety filtering always happens first; profiles can only reduce/reorder/compact that surface.
+   */
+  toFunctionSchemasForModel(modelId: string | undefined): ProfiledFunctionSchemaResult {
+    return applyModelProfileToFunctionSchemas(this.toFunctionSchemas(), modelId);
   }
 
   /**

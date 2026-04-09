@@ -1,0 +1,23 @@
+{
+  "model": "x-ai/grok-4.1-fast",
+  "version": 1,
+  "presentation": "flat_json",
+  "maxToolsPerTurn": 0,
+  "schemaInjection": {
+    "includeJsonSchema": true,
+    "includeExamples": true,
+    "compact": true
+  },
+  "preferredNaming": "snake_case",
+  "examples": [],
+  "knownLimitations": [
+    "OpenRouter reasoning frontage can over-attend to verbose tool descriptions",
+    "Compact tool descriptions reduce prompt bloat without changing the allowed tool surface"
+  ],
+  "excludeTools": [],
+  "boostTools": [],
+  "meta": {
+    "updatedAt": "2026-04-09T00:00:00Z",
+    "updatedBy": "manual"
+  }
+}

@@ -167,8 +167,9 @@ df.app.activity('llmActivity', {
       };
     });
 
-    // Get OpenAI-compatible function schemas from tool registry
-    const tools = input.tools ?? toolRegistry.toFunctionSchemas();
+    // Get OpenAI-compatible function schemas from tool registry.
+    // If the caller did not precompute a tool surface, apply the active model profile here.
+    const tools = input.tools ?? toolRegistry.toFunctionSchemasForModel(deploymentName).tools;
   const requestedTaskComplexity = classifyRequestedTaskComplexity({
     userMessage: validMessages
     .slice()

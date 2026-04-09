@@ -48,6 +48,7 @@ export function applyProfile(
 
   let filtered = [...tools];
   const excluded: string[] = [];
+  let transformed = false;
 
   // 1. Exclude tools the profile says perform poorly with this model
   if (profile.excludeTools.length > 0) {
@@ -55,6 +56,7 @@ export function applyProfile(
     filtered = filtered.filter(t => {
       if (excludeSet.has(t.function.name)) {
         excluded.push(t.function.name);
+        transformed = true;
         return false;
       }
       return true;
@@ -66,7 +68,11 @@ export function applyProfile(
     const boostSet = new Set(profile.boostTools);
     const boosted = filtered.filter(t => boostSet.has(t.function.name));
     const rest = filtered.filter(t => !boostSet.has(t.function.name));
-    filtered = [...boosted, ...rest];
+    const reordered = [...boosted, ...rest];
+    if (reordered.some((tool, index) => tool.function.name !== filtered[index]?.function.name)) {
+      transformed = true;
+    }
+    filtered = reordered;
   }
 
   // 3. Max tools per turn — truncate if needed
@@ -74,6 +80,7 @@ export function applyProfile(
     const dropped = filtered.slice(profile.maxToolsPerTurn);
     excluded.push(...dropped.map(t => t.function.name));
     filtered = filtered.slice(0, profile.maxToolsPerTurn);
+    transformed = true;
   }
 
   // 4. Compact mode — strip descriptions to save context window
@@ -85,11 +92,12 @@ export function applyProfile(
         description: t.function.description.split('.')[0] + '.',
       },
     }));
+    transformed = true;
   }
 
   return {
     tools: filtered,
     excluded,
-    wasTransformed: true,
+    wasTransformed: transformed,
   };
 }

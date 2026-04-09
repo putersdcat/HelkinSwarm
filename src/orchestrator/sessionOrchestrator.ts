@@ -20,6 +20,7 @@ import type { SubAgentInput, SubAgentResult } from './subAgentActivity.js';
 import type { ExecutorInput, ExecutorResult } from './executorActivity.js';
 import { signExecutorPayload, hashPayload } from './executorActivity.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
+import { applyModelProfileToFunctionSchemas } from '../tools/toolRegistry.js';
 import { buildSuccessfulFailoverNotices } from '../llm/foundryClient.js';
 import { recoverOperationalNoticesFromTrace } from './failoverNoticeRecovery.js';
 import type { PlanInput, PlanResult } from './planActivity.js';
@@ -30,6 +31,7 @@ import type { QuotedContext } from '../bot/quotedContext.js';
 import { buildModelOverrideDisclosure, formatTelemetryFooter } from './turnTelemetry.js';
 import type { TurnTelemetryData, TelemetrySpan } from './turnTelemetry.js';
 import type { RuntimeAssetReference } from '../integrations/runtimeAssetStore.js';
+import { getModelForTask, getModelRouting } from '../llm/modelRouter.js';
 import {
   canExecuteInMultiRound,
   getHighestMultiRoundRisk,
@@ -581,6 +583,52 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     effectiveTaskMessage = readOnlyDiscoveryQuery;
   }
 
+  const resolveToolSurfaceModelId = (modelOverride: string | undefined): string => {
+    const routing = getModelRouting();
+    const hasImages = (input.imageUrls?.length ?? 0) > 0;
+
+    if (modelOverride === 'secondary') {
+      return routing.lane.secondary;
+    }
+
+    if (modelOverride === 'primary') {
+      return routing.lane.reasoning ?? routing.lane.primary;
+    }
+
+    if (modelOverride) {
+      return modelOverride;
+    }
+
+    if (hasImages) {
+      return getModelForTask('vision');
+    }
+
+    return routing.deploymentName;
+  };
+
+  const initialToolSurfaceModelId = resolveToolSurfaceModelId(resolvedModelOverride);
+  const initialToolSurface = toolRegistry.toFunctionSchemasForModel(initialToolSurfaceModelId);
+  const allToolSchemas = initialToolSurface.tools;
+  const initialToolSummaryDefinitions = allToolSchemas.map((tool) => ({
+    name: tool.function.name,
+    description: tool.function.description,
+  }));
+
+  if (initialToolSurface.wasTransformed) {
+    yield* emitOrchestratorTelemetry(context, {
+      name: 'ModelProfileApplied',
+      correlationId,
+      userId: input.state.userId,
+      properties: {
+        phase: 'initial',
+        model: initialToolSurface.profileModel ?? initialToolSurfaceModelId,
+        toolCountBefore: toolRegistry.toFunctionSchemas().length,
+        toolCountAfter: allToolSchemas.length,
+        excludedTools: initialToolSurface.excluded.join(','),
+      },
+    });
+  }
+
   if (persistClarificationClearBeforeLongRunningWork) {
     const preConfirmationState: OverseerState = {
       ...input.state,
@@ -609,6 +657,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     userMessage: userMessageForLlm,
     steeringContext: steeringInjection.injectionBlock,
     conversationId: turnConversationId,
+    toolSummaryDefinitions: initialToolSummaryDefinitions,
     runtimeAssets: input.runtimeAssets,
     attachmentNotices: input.attachmentNotices,
     devLoopContext: input.devLoopContext,
@@ -677,7 +726,6 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
   // 2. Call LLM (global frontier model via Foundry client)
   spanStart = context.df.currentUtcDateTime.getTime();
-  const allToolSchemas = toolRegistry.toFunctionSchemas();
   const deterministicInitialToolCall = synthesizeRuntimeAssetInlineEmailToolCall(
     effectiveTaskMessage,
     input.runtimeAssets,
@@ -1125,7 +1173,26 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       const selectiveFollowUpSchemas = deriveSelectiveFollowUpToolSchemas(toolResults?.results ?? []);
       const discoveryFollowUpModelOverride = getDiscoveryFollowUpModelOverride(toolResults?.results ?? []);
       const effectiveFollowUpModelOverride = resolvedModelOverride ?? discoveryFollowUpModelOverride;
-      const followUpToolSchemas = selectiveFollowUpSchemas ?? allToolSchemas;
+      const followUpToolSurfaceModelId = resolveToolSurfaceModelId(effectiveFollowUpModelOverride);
+      const followUpToolSurface = applyModelProfileToFunctionSchemas(
+        selectiveFollowUpSchemas ?? allToolSchemas,
+        followUpToolSurfaceModelId,
+      );
+      const followUpToolSchemas = followUpToolSurface.tools;
+      if (followUpToolSurface.wasTransformed) {
+        yield* emitOrchestratorTelemetry(context, {
+          name: 'ModelProfileApplied',
+          correlationId,
+          userId: input.state.userId,
+          properties: {
+            phase: 'followup',
+            model: followUpToolSurface.profileModel ?? followUpToolSurfaceModelId,
+            toolCountBefore: (selectiveFollowUpSchemas ?? allToolSchemas).length,
+            toolCountAfter: followUpToolSchemas.length,
+            excludedTools: followUpToolSurface.excluded.join(','),
+          },
+        });
+      }
       const deterministicFollowUpToolCall = synthesizeExactToolCall(
         effectiveTaskMessage,
         followUpToolSchemas,
