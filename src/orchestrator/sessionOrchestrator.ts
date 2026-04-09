@@ -70,6 +70,7 @@ import {
   synthesizeExactToolCall,
   synthesizeDeterministicFollowUpToolCall,
 } from './discoveryToolInjection.js';
+import { buildRecentRequestRecallResponse } from './autobiographicalReflex.js';
 import {
   detectClarificationRequest,
   resolveClarificationAnswer,
@@ -488,6 +489,58 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       tokensUsed: 0,
       promptTokens: 0,
       model: 'clarification-loop',
+      toolCalls: [],
+      toolResults: null,
+      replySent: replyResult.success,
+      safetyPassed: true,
+      pendingClarification: pendingClarificationUpdate,
+    } satisfies SessionResult;
+  }
+
+  const autobiographicalRecallResponse = buildRecentRequestRecallResponse(
+    userMessageForLlm,
+    input.state.recentHistory ?? [],
+  );
+
+  if (autobiographicalRecallResponse) {
+    let replyMessage = autobiographicalRecallResponse;
+    const telemetryMode = 'verbose' as const;
+    replyMessage += formatTelemetryFooter(telemetryMode, {
+      correlationId,
+      timestampIso: context.df.currentUtcDateTime.toISOString(),
+      totalMs: context.df.currentUtcDateTime.getTime() - turnStartTime,
+      model: 'autobiographical-recall',
+      promptTokens: 0,
+      completionTokens: 0,
+      spans,
+      toolCalls: [],
+      safetyPassed: true,
+      planComplexity: 'simple',
+    });
+
+    if (input.devLoopContext?.isDevLoop) {
+      const tag = input.devLoopContext.correlationTag ? ` ${input.devLoopContext.correlationTag}` : '';
+      const replyPrefix = input.devLoopContext.prefix === 'DEVQUERY' ? 'HELKIN-REPLY' : 'SWARM';
+      replyMessage = `${replyPrefix}: ${replyMessage}${tag} OVER`;
+    }
+
+    const replyInput: SendReplyInput = {
+      userId: input.state.userId,
+      message: replyMessage,
+      correlationId,
+      conversationReference: input.conversationReference,
+    };
+    const replyResult: SendReplyResult = yield context.df.callActivity(
+      'sendReplyActivity',
+      replyInput,
+    );
+
+    return {
+      response: autobiographicalRecallResponse,
+      cleanResponse: autobiographicalRecallResponse,
+      tokensUsed: 0,
+      promptTokens: 0,
+      model: 'autobiographical-recall',
       toolCalls: [],
       toolResults: null,
       replySent: replyResult.success,
