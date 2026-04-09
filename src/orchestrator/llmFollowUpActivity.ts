@@ -17,6 +17,7 @@ import { getDirectChatModelIncompatibilityReason, getModelRouting } from '../llm
 import type { ChatMessage, ChatCompletionResponse, LlmFailoverStep, ToolDefinition } from '../llm/foundryClient.js';
 import type { LlmResult } from './llmActivity.js';
 import { synthesizeDeterministicFollowUpToolCall, synthesizeExactToolCall } from './discoveryToolInjection.js';
+import { trackEvent } from '../observability/telemetry.js';
 
 export interface LlmFollowUpInput {
   /** Original conversation messages (system + user). */
@@ -334,6 +335,17 @@ df.app.activity('llmFollowUpActivity', {
         ? synthesizeExactToolCall(latestUserMessage, retryTools)
           ?? synthesizeDeterministicFollowUpToolCall(latestUserMessage, retryTools)
         : null;
+      if (synthesizedToolCall) {
+        trackEvent({
+          name: 'PolicyOverrideApplied',
+          correlationId,
+          properties: {
+            authority: 'discovery-deterministic-followup-tool-call',
+            toolName: synthesizedToolCall.name,
+            source: 'llmFollowUpActivity',
+          },
+        });
+      }
       const effectiveRetryToolCalls = synthesizedToolCall
         ? [{
             id: crypto.randomUUID(),

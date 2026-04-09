@@ -510,6 +510,15 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   const isExplicitReadOnlyDiscoveryRequest = isReadOnlyDiscoveryRequest(effectiveTaskMessage);
   if (isExplicitReadOnlyDiscoveryRequest) {
     const readOnlyDiscoveryQuery = buildReadOnlyDiscoveryQuery(effectiveTaskMessage);
+    yield* emitOrchestratorTelemetry(context, {
+      name: 'PolicyOverrideApplied',
+      correlationId,
+      userId: input.state.userId,
+      properties: {
+        authority: 'discovery-readonly-query-rewrite',
+        source: 'sessionOrchestrator',
+      },
+    });
     userMessageForLlm = readOnlyDiscoveryQuery;
     effectiveTaskMessage = readOnlyDiscoveryQuery;
   }
@@ -617,9 +626,34 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   )
     ?? synthesizeExactToolCall(effectiveTaskMessage, allToolSchemas)
     ?? synthesizeDeterministicReadOnlyInitialToolCall(effectiveTaskMessage, allToolSchemas);
+  if (deterministicInitialToolCall) {
+    yield* emitOrchestratorTelemetry(context, {
+      name: 'PolicyOverrideApplied',
+      correlationId,
+      userId: input.state.userId,
+      properties: {
+        authority: 'discovery-deterministic-initial-tool-call',
+        toolName: deterministicInitialToolCall.name,
+        source: 'sessionOrchestrator',
+      },
+    });
+  }
   const initialToolSchemas = deterministicInitialToolCall
     ? getDiscoveryFirstToolSchemas()
     : deriveContextAwareInitialToolSchemas(effectiveTaskMessage, allToolSchemas);
+  const forcedInitialToolChoice = getForcedInitialToolChoice(effectiveTaskMessage, initialToolSchemas) ?? 'auto';
+  if (forcedInitialToolChoice !== 'auto') {
+    yield* emitOrchestratorTelemetry(context, {
+      name: 'PolicyOverrideApplied',
+      correlationId,
+      userId: input.state.userId,
+      properties: {
+        authority: 'discovery-forced-initial-tool-choice',
+        toolName: forcedInitialToolChoice.function.name,
+        source: 'sessionOrchestrator',
+      },
+    });
+  }
   const llmInput: LlmActivityInput = {
     ...promptWithPlan,
     correlationId,
@@ -628,7 +662,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     modelOverride: resolvedModelOverride,
     imageUrls: input.imageUrls,
     tools: initialToolSchemas,
-    toolChoice: getForcedInitialToolChoice(effectiveTaskMessage, initialToolSchemas) ?? 'auto',
+    toolChoice: forcedInitialToolChoice,
   };
 
   const llmResult: LlmResult = deterministicInitialToolCall
@@ -1018,6 +1052,22 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         effectiveTaskMessage,
         followUpToolSchemas,
       );
+      if (deterministicFollowUpToolCall) {
+        yield* emitOrchestratorTelemetry(context, {
+          name: 'PolicyOverrideApplied',
+          correlationId,
+          userId: input.state.userId,
+          properties: {
+            authority: 'discovery-deterministic-followup-tool-call',
+            toolName: deterministicFollowUpToolCall.name,
+            source: 'sessionOrchestrator',
+          },
+        });
+      }
+      const forcedFollowUpToolChoice = getForcedDiscoveryFollowUpToolChoice(
+        effectiveTaskMessage,
+        selectiveFollowUpSchemas,
+      ) ?? undefined;
       if (selectiveFollowUpSchemas) {
         yield* emitOrchestratorTelemetry(context, {
           name: 'DiscoveryToolSubsetSelected',
@@ -1026,6 +1076,18 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           properties: {
             toolCount: selectiveFollowUpSchemas.length,
             selectedTools: selectiveFollowUpSchemas.map((tool) => tool.function.name).join(','),
+          },
+        });
+      }
+      if (forcedFollowUpToolChoice) {
+        yield* emitOrchestratorTelemetry(context, {
+          name: 'PolicyOverrideApplied',
+          correlationId,
+          userId: input.state.userId,
+          properties: {
+            authority: 'discovery-forced-followup-tool-choice',
+            toolName: forcedFollowUpToolChoice.function.name,
+            source: 'sessionOrchestrator',
           },
         });
       }
@@ -1056,7 +1118,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         modelOverride: effectiveFollowUpModelOverride,
         enableRetry: true,
         tools: selectiveFollowUpSchemas ?? allToolSchemas,
-        toolChoice: getForcedDiscoveryFollowUpToolChoice(effectiveTaskMessage, selectiveFollowUpSchemas) ?? undefined,
+        toolChoice: forcedFollowUpToolChoice,
       };
       spanStart = context.df.currentUtcDateTime.getTime();
       let followUp: LlmResult = deterministicFollowUpToolCall
@@ -1465,9 +1527,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           modelOverride: effectiveFollowUpModelOverride,
           enableRetry: allowMoreFollowUpTools,
           tools: allowMoreFollowUpTools ? (selectiveFollowUpSchemas ?? allToolSchemas) : undefined,
-          toolChoice: allowMoreFollowUpTools
-            ? (getForcedDiscoveryFollowUpToolChoice(effectiveTaskMessage, selectiveFollowUpSchemas) ?? undefined)
-            : undefined,
+          toolChoice: allowMoreFollowUpTools ? forcedFollowUpToolChoice : undefined,
           additionalTurns,
         };
         followUp = yield* withLlmFollowUpTimeout(context, roundFollowUpInput);
