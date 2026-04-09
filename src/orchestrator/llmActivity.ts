@@ -47,6 +47,13 @@ export interface LlmActivityInput extends PromptResult {
   conversationId?: string;
   modelOverride?: string;
   imageUrls?: string[];
+  modelProfileTelemetry?: {
+    phase: 'initial' | 'followup';
+    model: string;
+    toolCountBefore: number;
+    toolCountAfter: number;
+    excludedTools: string;
+  };
   tools?: Array<{ type: 'function'; function: { name: string; description: string; parameters: Record<string, unknown> } }>;
   toolChoice?: 'auto' | 'none' | { type: 'function'; function: { name: string } };
 }
@@ -180,6 +187,21 @@ df.app.activity('llmActivity', {
     hasQuotedContext: false,
     hasDevLoopContext: false,
   });
+
+    if (input.modelProfileTelemetry) {
+      trackEvent({
+        name: 'ModelProfileApplied',
+        correlationId,
+        userId: input.userId,
+        properties: {
+          phase: input.modelProfileTelemetry.phase,
+          model: input.modelProfileTelemetry.model,
+          toolCountBefore: input.modelProfileTelemetry.toolCountBefore,
+          toolCountAfter: input.modelProfileTelemetry.toolCountAfter,
+          excludedTools: input.modelProfileTelemetry.excludedTools,
+        },
+      });
+    }
 
     trackEvent({ name: 'LlmCallStarted', correlationId, properties: { deployment: deploymentName, toolCount: tools.length } });
     console.log(`[llmActivity] correlationId=${correlationId} deployment=${deploymentName} toolCount=${tools.length} toolNames=${tools.map(t => t.function.name).join(',')}`);

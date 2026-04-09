@@ -767,6 +767,15 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     conversationId: turnConversationId,
     modelOverride: resolvedModelOverride,
     imageUrls: input.imageUrls,
+    modelProfileTelemetry: initialToolSurface.wasTransformed
+      ? {
+          phase: 'initial',
+          model: initialToolSurface.profileModel ?? initialToolSurfaceModelId,
+          toolCountBefore: toolRegistry.toFunctionSchemas().length,
+          toolCountAfter: allToolSchemas.length,
+          excludedTools: initialToolSurface.excluded.join(','),
+        }
+      : undefined,
     tools: initialToolSchemas,
     toolChoice: forcedInitialToolChoice,
   };
