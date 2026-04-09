@@ -392,6 +392,18 @@ describe('discoveryToolInjection', () => {
     });
   });
 
+  it('strips synthetic proof/probe prefixes before downstream routing uses the message text (#617)', async () => {
+    const { stripValidationNoise } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    expect(
+      stripValidationNoise('/light 616 conclusive proof secondary: use Outlook to list my latest 3 emails from my inbox and summarize them briefly.'),
+    ).toBe('use Outlook to list my latest 3 emails from my inbox and summarize them briefly.');
+
+    expect(
+      stripValidationNoise('596 deploy-restart probe primary: check my latest 3 emails and summarize them briefly.'),
+    ).toBe('check my latest 3 emails and summarize them briefly.');
+  });
+
   it('forces the concrete follow-up action tool when discovery surfaced it', async () => {
     const { getForcedDiscoveryFollowUpToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
 

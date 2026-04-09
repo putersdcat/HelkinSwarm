@@ -81,9 +81,10 @@ function extractEmailAddresses(raw: string): string[] {
     .filter((value): value is string => !!value);
 }
 
-function stripValidationNoise(userMessage: string): string {
+export function stripValidationNoise(userMessage: string): string {
   return userMessage
     .replace(/^\/(?:heavy|light)\s+/i, '')
+    .replace(/^\s*\d+\s+(?:(?:final|conclusive|profile|trace|deploy-restart)\s+)*(?:proof|probe)\s+(?:primary|secondary)\s*:\s*/i, '')
     .replace(/\bthis is issue\s+\d+.*$/i, '')
     .trim();
 }

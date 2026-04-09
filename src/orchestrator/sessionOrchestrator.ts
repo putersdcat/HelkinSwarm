@@ -71,6 +71,7 @@ import {
   synthesizeDeterministicReadOnlyInitialToolCall,
   synthesizeExactToolCall,
   synthesizeDeterministicFollowUpToolCall,
+  stripValidationNoise,
 } from './discoveryToolInjection.js';
 import { buildRecentRequestRecallResponse } from './autobiographicalReflex.js';
 import {
@@ -316,6 +317,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   let userMessageForLlm = input.devLoopContext?.isDevLoop
     ? input.devLoopContext.body
     : canonicalizedMessage;
+  userMessageForLlm = stripValidationNoise(userMessageForLlm);
 
   const rawUserMessageForRouting = input.devLoopContext?.isDevLoop
     ? input.devLoopContext.body
