@@ -12,6 +12,12 @@ export interface GuardedToolResultLike {
   toolCallId: string;
   toolName: string;
   success: boolean;
+  result?: unknown;
+  error?: string;
+  requiresExecutor?: boolean;
+  scopedTokenMinted?: boolean;
+  scopedTokenMethod?: 'obo' | 'placeholder';
+  scopedTokenScope?: 'read' | 'write' | 'delete' | 'admin';
 }
 
 function stableSerialize(value: unknown): string {
@@ -96,6 +102,10 @@ export function isMutatingTool(tool: GuardedToolLike | undefined): boolean {
   return !!tool && tool.privilegeClass !== undefined && tool.privilegeClass !== 'read-only';
 }
 
+export function isReplayableReadOnlyTool(tool: GuardedToolLike | undefined): boolean {
+  return !!tool && tool.privilegeClass === 'read-only';
+}
+
 export function buildToolCallFingerprint(name: string, rawArguments: string): string {
   try {
     return `${name}:${stableSerialize(normalizeToolArguments(name, JSON.parse(rawArguments) as unknown))}`;
@@ -124,6 +134,33 @@ export function buildDuplicateSuppressedToolResult(call: GuardedToolCall): {
   };
 }
 
+export function buildDuplicateReplayedToolResult(
+  call: GuardedToolCall,
+  previousResult: GuardedToolResultLike,
+): {
+  toolCallId: string;
+  toolName: string;
+  success: boolean;
+  result?: unknown;
+  error?: string;
+  requiresExecutor: boolean;
+  scopedTokenMinted?: boolean;
+  scopedTokenMethod?: 'obo' | 'placeholder';
+  scopedTokenScope?: 'read' | 'write' | 'delete' | 'admin';
+} {
+  return {
+    toolCallId: call.id,
+    toolName: call.name,
+    success: previousResult.success,
+    ...(previousResult.result !== undefined ? { result: previousResult.result } : {}),
+    ...(previousResult.error !== undefined ? { error: previousResult.error } : {}),
+    requiresExecutor: previousResult.requiresExecutor ?? false,
+    ...(previousResult.scopedTokenMinted !== undefined ? { scopedTokenMinted: previousResult.scopedTokenMinted } : {}),
+    ...(previousResult.scopedTokenMethod !== undefined ? { scopedTokenMethod: previousResult.scopedTokenMethod } : {}),
+    ...(previousResult.scopedTokenScope !== undefined ? { scopedTokenScope: previousResult.scopedTokenScope } : {}),
+  };
+}
+
 export function recordSuccessfulMutatingFingerprints(
   calls: readonly GuardedToolCall[],
   results: readonly GuardedToolResultLike[],
@@ -147,5 +184,31 @@ export function recordSuccessfulMutatingFingerprints(
     }
 
     target.add(buildToolCallFingerprint(call.name, call.arguments));
+  }
+}
+
+export function recordSuccessfulReplayableReadOnlyResults(
+  calls: readonly GuardedToolCall[],
+  results: readonly GuardedToolResultLike[],
+  resolveTool: (toolName: string) => GuardedToolLike | undefined,
+  target: Map<string, GuardedToolResultLike>,
+): void {
+  const callsById = new Map(calls.map((call) => [call.id, call]));
+
+  for (const result of results) {
+    if (!result.success) {
+      continue;
+    }
+
+    const call = callsById.get(result.toolCallId);
+    if (!call) {
+      continue;
+    }
+
+    if (!isReplayableReadOnlyTool(resolveTool(call.name))) {
+      continue;
+    }
+
+    target.set(buildToolCallFingerprint(call.name, call.arguments), result);
   }
 }

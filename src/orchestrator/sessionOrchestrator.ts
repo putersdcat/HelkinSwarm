@@ -42,9 +42,12 @@ import {
   sortToolCallsByPlan,
 } from './planExecutionHints.js';
 import {
+  buildDuplicateReplayedToolResult,
   buildDuplicateSuppressedToolResult,
   buildToolCallFingerprint,
   isMutatingTool,
+  isReplayableReadOnlyTool,
+  recordSuccessfulReplayableReadOnlyResults,
   recordSuccessfulMutatingFingerprints,
 } from './toolCallGuards.js';
 import {
@@ -708,6 +711,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
     let completedPlanStepOrders: number[] = [];
     const successfulMutatingFingerprints = new Set<string>();
+    const successfulReplayableReadOnlyResults = new Map<string, ToolDispatchResult['results'][number]>();
 
     // Compute adaptive tool budget (#139)
     const domains = new Set(
@@ -739,19 +743,19 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       ? initialPlanBatch.selectedCalls
       : toolCallsForDispatch;
 
-    const initialSeenMutatingFingerprints = new Set<string>();
+    const initialSeenToolFingerprints = new Set<string>();
     const filteredInitialToolCalls = gatedToolCallsForDispatch.filter((call) => {
-      const tool = toolRegistry.get(call.name);
-      if (!isMutatingTool(tool)) {
-        return true;
-      }
-
       const fingerprint = buildToolCallFingerprint(call.name, call.arguments);
-      if (successfulMutatingFingerprints.has(fingerprint) || initialSeenMutatingFingerprints.has(fingerprint)) {
+      if (initialSeenToolFingerprints.has(fingerprint)) {
         return false;
       }
 
-      initialSeenMutatingFingerprints.add(fingerprint);
+      const tool = toolRegistry.get(call.name);
+      if (isMutatingTool(tool) && successfulMutatingFingerprints.has(fingerprint)) {
+        return false;
+      }
+
+      initialSeenToolFingerprints.add(fingerprint);
       return true;
     });
 
@@ -973,6 +977,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         (toolName) => toolRegistry.get(toolName),
         successfulMutatingFingerprints,
       );
+      recordSuccessfulReplayableReadOnlyResults(
+        filteredInitialToolCalls,
+        mergedResults,
+        (toolName) => toolRegistry.get(toolName),
+        successfulReplayableReadOnlyResults,
+      );
       completedPlanStepOrders = collectCompletedPlanStepOrders(
         mergedResults.map((result) => ({ toolName: result.toolName, success: result.success })),
         planResult.steps,
@@ -1163,25 +1173,60 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           })
           .map((call) => buildDuplicateSuppressedToolResult(call));
 
+        const replayedRoundResults = roundCallsForDispatch.flatMap((call) => {
+          const tool = toolRegistry.get(call.name);
+          if (!isReplayableReadOnlyTool(tool)) {
+            return [];
+          }
+
+          const fingerprint = buildToolCallFingerprint(call.name, call.arguments);
+          const priorResult = successfulReplayableReadOnlyResults.get(fingerprint);
+          return priorResult ? [buildDuplicateReplayedToolResult(call, priorResult)] : [];
+        });
+
         const filteredRoundCallsForDispatch = roundCallsForDispatch.filter((call) => {
           const tool = toolRegistry.get(call.name);
+          const fingerprint = buildToolCallFingerprint(call.name, call.arguments);
+
+          if (isReplayableReadOnlyTool(tool) && successfulReplayableReadOnlyResults.has(fingerprint)) {
+            return false;
+          }
+
           if (!isMutatingTool(tool)) {
             return true;
           }
 
-          const fingerprint = buildToolCallFingerprint(call.name, call.arguments);
           return !successfulMutatingFingerprints.has(fingerprint);
         });
 
         if (filteredRoundCallsForDispatch.length === 0) {
-          if (suppressedRoundResults.length > 0) {
+          const skippedRoundResults = [...suppressedRoundResults, ...replayedRoundResults];
+          if (skippedRoundResults.length > 0) {
             additionalTurns.push({
               assistantContent: followUp.content,
               assistantToolCalls: roundCallsForDispatch,
-              toolResults: suppressedRoundResults,
+              toolResults: skippedRoundResults,
             });
-            toolResults.results.push(...suppressedRoundResults);
-            toolResults.totalCalls += suppressedRoundResults.length;
+            toolResults.results.push(...skippedRoundResults);
+            toolResults.totalCalls += skippedRoundResults.length;
+
+            const forcedTextFollowUpInput: LlmFollowUpInput = {
+              originalMessages: promptWithPlan.messages,
+              assistantToolCallMessage: {
+                content: llmResult.content,
+                toolCalls: filteredInitialToolCalls,
+              },
+              toolResults: toolResults?.results.slice(0, initialResultCount) ?? [],
+              correlationId,
+              modelOverride: effectiveFollowUpModelOverride,
+              enableRetry: false,
+              additionalTurns,
+            };
+            followUp = yield* withLlmFollowUpTimeout(context, forcedTextFollowUpInput);
+            rememberTelemetryModel(followUp.model);
+            cumulativeTokensUsed += followUp.tokensUsed;
+            cumulativePromptTokens += followUp.promptTokens;
+            rememberOperationalEvidence(operationalNotices, followUp);
           }
           break;
         }
@@ -1393,6 +1438,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           roundResults.results,
           (toolName) => toolRegistry.get(toolName),
           successfulMutatingFingerprints,
+        );
+        recordSuccessfulReplayableReadOnlyResults(
+          filteredRoundCallsForDispatch,
+          roundResults.results,
+          (toolName) => toolRegistry.get(toolName),
+          successfulReplayableReadOnlyResults,
         );
 
         const shouldForceFinalTextResponse = highestRoundRisk === 'high'

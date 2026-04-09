@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildDuplicateReplayedToolResult,
   buildToolCallFingerprint,
+  isReplayableReadOnlyTool,
+  recordSuccessfulReplayableReadOnlyResults,
   isMutatingTool,
   recordSuccessfulMutatingFingerprints,
 } from '../../src/orchestrator/toolCallGuards.js';
@@ -32,6 +35,12 @@ describe('toolCallGuards', () => {
     expect(isMutatingTool(undefined)).toBe(false);
   });
 
+  it('treats read-only tools as replayable within the same turn', () => {
+    expect(isReplayableReadOnlyTool({ privilegeClass: 'read-only' })).toBe(true);
+    expect(isReplayableReadOnlyTool({ privilegeClass: 'create' })).toBe(false);
+    expect(isReplayableReadOnlyTool(undefined)).toBe(false);
+  });
+
   it('records successful mutating tool fingerprints only for successful non-read-only calls', () => {
     const target = new Set<string>();
 
@@ -55,5 +64,49 @@ describe('toolCallGuards', () => {
     expect(target.size).toBe(1);
     expect(Array.from(target)[0]).toContain('outlook_send_email');
     expect(Array.from(target)[0]).toContain('Hello');
+  });
+
+  it('records successful replayable read-only results and skips mutating ones', () => {
+    const target = new Map<string, { toolCallId: string; toolName: string; success: boolean; result?: unknown }>();
+
+    recordSuccessfulReplayableReadOnlyResults(
+      [
+        { id: '1', name: 'outlook_list_emails', arguments: '{"top":5,"filter":"isRead eq false"}' },
+        { id: '2', name: 'outlook_send_email', arguments: '{"subject":"Hello"}' },
+      ],
+      [
+        { toolCallId: '1', toolName: 'outlook_list_emails', success: true, result: [{ id: 'm1', subject: 'Hello' }] },
+        { toolCallId: '2', toolName: 'outlook_send_email', success: true, result: { success: true } },
+      ],
+      (toolName) => toolName === 'outlook_list_emails'
+        ? { privilegeClass: 'read-only' }
+        : { privilegeClass: 'create' },
+      target,
+    );
+
+    expect(target.size).toBe(1);
+    expect(Array.from(target.keys())[0]).toContain('outlook_list_emails');
+    expect(target.values().next().value?.result).toEqual([{ id: 'm1', subject: 'Hello' }]);
+  });
+
+  it('replays the previous successful read-only result for a duplicate call', () => {
+    const replayed = buildDuplicateReplayedToolResult(
+      { id: '2', name: 'outlook_list_emails', arguments: '{"top":5}' },
+      {
+        toolCallId: '1',
+        toolName: 'outlook_list_emails',
+        success: true,
+        result: [{ id: 'm1', subject: 'Hello' }],
+        requiresExecutor: false,
+      },
+    );
+
+    expect(replayed).toEqual({
+      toolCallId: '2',
+      toolName: 'outlook_list_emails',
+      success: true,
+      result: [{ id: 'm1', subject: 'Hello' }],
+      requiresExecutor: false,
+    });
   });
 });

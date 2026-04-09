@@ -11,9 +11,11 @@ import { scopedTokenMinter } from '../auth/scopedTokenMinter.js';
 import type { ScopedTokenScope } from '../auth/scopedTokenMinter.js';
 import { mapPrivilegeClassToScopedTokenScope } from '../auth/tokenScopeMapping.js';
 import {
+  buildDuplicateReplayedToolResult,
   buildDuplicateSuppressedToolResult,
   buildToolCallFingerprint,
   isMutatingTool,
+  isReplayableReadOnlyTool,
 } from './toolCallGuards.js';
 import {
   CONSCIOUS_THREAD_EXECUTION_KIND,
@@ -47,14 +49,23 @@ df.app.activity('toolDispatchActivity', {
   handler: async (input: ToolDispatchInput): Promise<ToolDispatchResult> => {
     const results: ToolDispatchResult['results'] = [];
     const successfulMutatingFingerprints = new Set<string>();
+    const successfulReplayableReadOnlyResults = new Map<string, ToolDispatchResult['results'][number]>();
 
     for (const call of input.toolCalls) {
       const tool = toolRegistry.get(call.name);
+      const fingerprint = tool ? buildToolCallFingerprint(call.name, call.arguments) : undefined;
 
-      if (tool && isMutatingTool(tool)) {
-        const fingerprint = buildToolCallFingerprint(call.name, call.arguments);
+      if (tool && fingerprint && isMutatingTool(tool)) {
         if (successfulMutatingFingerprints.has(fingerprint)) {
           results.push(buildDuplicateSuppressedToolResult(call));
+          continue;
+        }
+      }
+
+      if (tool && fingerprint && isReplayableReadOnlyTool(tool)) {
+        const previousResult = successfulReplayableReadOnlyResults.get(fingerprint);
+        if (previousResult) {
+          results.push(buildDuplicateReplayedToolResult(call, previousResult));
           continue;
         }
       }
@@ -179,8 +190,11 @@ df.app.activity('toolDispatchActivity', {
           scopedTokenMethod,
           scopedTokenScope,
         });
-        if (isMutatingTool(tool)) {
-          successfulMutatingFingerprints.add(buildToolCallFingerprint(call.name, call.arguments));
+        if (fingerprint && isMutatingTool(tool)) {
+          successfulMutatingFingerprints.add(fingerprint);
+        }
+        if (fingerprint && isReplayableReadOnlyTool(tool)) {
+          successfulReplayableReadOnlyResults.set(fingerprint, results[results.length - 1]!);
         }
       } catch (err) {
         trackEvent({ name: 'ToolExecuted', correlationId: input.correlationId, userId: input.userId, properties: {
