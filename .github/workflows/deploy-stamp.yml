@@ -809,11 +809,35 @@ jobs:
 
       - name: Build and push Docker image
         run: |
+          set -euo pipefail
           IMAGE=${{ needs.deploy-infra.outputs.acr-login-server }}/helkinswarm:${{ github.sha }}
           IMAGE_LATEST=${{ needs.deploy-infra.outputs.acr-login-server }}/helkinswarm:latest
-          docker build -t $IMAGE -t $IMAGE_LATEST .
-          docker push $IMAGE
-          docker push $IMAGE_LATEST
+
+          max_attempts=3
+          attempt=1
+          retry_delays=(15 30)
+
+          while [ "$attempt" -le "$max_attempts" ]; do
+            echo "🐳 Build/push attempt ${attempt}/${max_attempts}"
+
+            if docker build -t "$IMAGE" -t "$IMAGE_LATEST" . \
+              && docker push "$IMAGE" \
+              && docker push "$IMAGE_LATEST"; then
+              echo "✅ Docker image build/push succeeded on attempt ${attempt}"
+              break
+            fi
+
+            if [ "$attempt" -eq "$max_attempts" ]; then
+              echo "❌ Docker image build/push failed after ${max_attempts} attempts"
+              exit 1
+            fi
+
+            delay_index=$((attempt - 1))
+            delay=${retry_delays[$delay_index]:-45}
+            echo "⚠️ Docker build/push failed on attempt ${attempt}; retrying in ${delay}s to ride out transient registry/base-image failures..."
+            sleep "$delay"
+            attempt=$((attempt + 1))
+          done
 
   # ─────────────────────────────────────────────────────────────────────────
   # 4. Deploy to Container Apps
