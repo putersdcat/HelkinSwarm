@@ -50,6 +50,7 @@ export interface LlmActivityInput extends PromptResult {
   modelProfileTelemetry?: {
     phase: 'initial' | 'followup';
     model: string;
+    transformed: boolean;
     toolCountBefore: number;
     toolCountAfter: number;
     excludedTools: string;
@@ -196,6 +197,7 @@ df.app.activity('llmActivity', {
         properties: {
           phase: input.modelProfileTelemetry.phase,
           model: input.modelProfileTelemetry.model,
+          transformed: input.modelProfileTelemetry.transformed,
           toolCountBefore: input.modelProfileTelemetry.toolCountBefore,
           toolCountAfter: input.modelProfileTelemetry.toolCountAfter,
           excludedTools: input.modelProfileTelemetry.excludedTools,

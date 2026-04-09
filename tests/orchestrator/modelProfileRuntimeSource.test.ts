@@ -12,13 +12,14 @@ describe('model profile runtime wiring source guards', () => {
     expect(sessionSource).toContain("name: 'ModelProfileApplied'");
     expect(sessionSource).toContain('toolSummaryDefinitions: initialToolSummaryDefinitions');
     expect(sessionSource).toContain('applyModelProfileToFunctionSchemas(');
-    expect(sessionSource).toContain('modelProfileTelemetry: initialToolSurface.wasTransformed');
+    expect(sessionSource).toContain('modelProfileTelemetry: initialToolSurface.profileModel');
 
     expect(promptSource).toContain('toolSummaryDefinitions?: Array<{ name: string; description: string }>');
     expect(promptSource).toContain('const tools = input.toolSummaryDefinitions ?? getDiscoveryFirstToolDefinitions();');
 
     expect(llmSource).toContain("toolRegistry.toFunctionSchemasForModel(deploymentName).tools");
     expect(llmSource).toContain("name: 'ModelProfileApplied'");
+    expect(llmSource).toContain('transformed: input.modelProfileTelemetry.transformed');
 
     expect(registrySource).toContain('function areModelProfilesEnabled(): boolean {');
     expect(registrySource).toContain("const raw = process.env['MODEL_PROFILES_ENABLED'];");

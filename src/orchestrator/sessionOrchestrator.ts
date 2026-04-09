@@ -767,10 +767,11 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     conversationId: turnConversationId,
     modelOverride: resolvedModelOverride,
     imageUrls: input.imageUrls,
-    modelProfileTelemetry: initialToolSurface.wasTransformed
+    modelProfileTelemetry: initialToolSurface.profileModel
       ? {
           phase: 'initial',
           model: initialToolSurface.profileModel ?? initialToolSurfaceModelId,
+          transformed: initialToolSurface.wasTransformed,
           toolCountBefore: toolRegistry.toFunctionSchemas().length,
           toolCountAfter: allToolSchemas.length,
           excludedTools: initialToolSurface.excluded.join(','),
