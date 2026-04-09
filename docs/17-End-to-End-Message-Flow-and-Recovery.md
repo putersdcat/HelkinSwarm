@@ -195,6 +195,29 @@ That means at least one of these is true:
 - proactive delivery or cleanup timing is drifting relative to the recovery watchdog
 - the end-to-end path is split across router + stamp + background execution in a way the current warning text does not acknowledge
 
+## Timing details that explain misleading screenshots
+
+### Stale-ack watchdog timing
+
+Confirmed in source:
+
+- `src/bot/staleAckRecovery.ts` sets `STALE_ACK_THRESHOLD_MS = 6 * 60 * 1000`
+- `src/functions/staleAckRecoveryTimer.ts` runs on schedule `0 */5 * * * *` (every 5 minutes)
+
+So a stale-ack warning is **not** expected to appear immediately after the original user message.
+It appears later when the watchdog wakes up and decides the original ack doc is old enough.
+
+### Teams edited-message timestamp behavior
+
+The stale-ack path edits the **original ack message** in place rather than sending a new message.
+
+Important consequence:
+
+- Teams keeps showing the original message timestamp for the edited ack row
+- so a warning that was edited in much later can still visually look like an `08:25` message in the chat transcript
+
+That is why screenshot-only analysis can be very misleading unless the message also carries an explicit recovery timestamp.
+
 ## Current debugging anchors
 
 ### User-visible anchors
