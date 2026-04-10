@@ -749,12 +749,12 @@ resource oauthConnection 'Microsoft.BotService/botServices/connections@2022-09-1
     serviceProviderId: '30dd229c-58e3-4a48-bdfd-91ec48eb906c'
     clientId: delegatedAuthClientId
     clientSecret: delegatedAuthClientSecret
-    scopes: 'User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Files.ReadWrite offline_access'
+    scopes: 'User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Files.ReadWrite People.Read offline_access'
     parameters: [
       { key: 'tenantID', value: subscription().tenantId }
       { key: 'clientId', value: delegatedAuthClientId }
       { key: 'clientSecret', value: delegatedAuthClientSecret }
-      { key: 'scopes', value: 'User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Files.ReadWrite offline_access' }
+      { key: 'scopes', value: 'User.Read Mail.ReadWrite Mail.Send Calendars.ReadWrite Files.ReadWrite People.Read offline_access' }
     ]
   }
 }
