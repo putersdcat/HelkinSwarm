@@ -768,23 +768,36 @@ export function deriveContextAwareInitialToolSchemas(
   allToolSchemas: ToolDefinition[],
 ): ToolDefinition[] {
   const coreOnlySchemas = allToolSchemas.filter((tool) => isCoreTool(tool.function.name));
-  if (!isExecutionProofPrompt(userMessage)) {
-    return coreOnlySchemas;
-  }
-
   const allToolNames = new Set(allToolSchemas.map((tool) => tool.function.name));
   const expandedNames = new Set(coreOnlySchemas.map((tool) => tool.function.name));
   const explicitToolName = findExplicitToolNameMention(userMessage.toLowerCase(), allToolNames);
+  const hasProofExpansion = isExecutionProofPrompt(userMessage);
+
+  if (parseDeterministicOutlookListIntent(userMessage) && allToolNames.has('outlook_list_emails')) {
+    expandedNames.add('outlook_list_emails');
+  }
+
+  if (parseDeterministicOutlookSearchIntent(userMessage) && allToolNames.has('outlook_search_emails')) {
+    expandedNames.add('outlook_search_emails');
+  }
+
+  if (/(read|open|show).*(email|message|mail)/i.test(userMessage) && allToolNames.has('outlook_read_email')) {
+    expandedNames.add('outlook_read_email');
+  }
+
+  if (!hasProofExpansion && expandedNames.size === coreOnlySchemas.length) {
+    return coreOnlySchemas;
+  }
 
   if (explicitToolName && !isCoreTool(explicitToolName)) {
     expandedNames.add(explicitToolName);
   }
 
-  if (/(outlook|mailbox|email|attachments?)/i.test(userMessage) && allToolNames.has('outlook_search_emails')) {
+  if (hasProofExpansion && /(outlook|mailbox|email|attachments?)/i.test(userMessage) && allToolNames.has('outlook_search_emails')) {
     expandedNames.add('outlook_search_emails');
   }
 
-  if (/(graphenterprise|microsoft graph enterprise mcp)/i.test(userMessage) && allToolNames.has('graphenterprise_list_properties')) {
+  if (hasProofExpansion && /(graphenterprise|microsoft graph enterprise mcp)/i.test(userMessage) && allToolNames.has('graphenterprise_list_properties')) {
     expandedNames.add('graphenterprise_list_properties');
   }
 
@@ -837,6 +850,24 @@ export function getForcedInitialToolChoice(
   const explicitToolName = findExplicitToolNameMention(normalized, toolNames);
   if (explicitToolName) {
     return { type: 'function', function: { name: explicitToolName } };
+  }
+
+  if (/(search|find|lookup|look up)/.test(normalized) && toolNames.has('outlook_search_emails')) {
+    return { type: 'function', function: { name: 'outlook_search_emails' } };
+  }
+
+  if (parseDeterministicOutlookListIntent(userMessage)) {
+    if (toolNames.has('outlook_list_emails')) {
+      return { type: 'function', function: { name: 'outlook_list_emails' } };
+    }
+
+    if (toolNames.has('outlook_search_emails')) {
+      return { type: 'function', function: { name: 'outlook_search_emails' } };
+    }
+  }
+
+  if (/(read|open|show).*(email|message|mail)/.test(normalized) && toolNames.has('outlook_read_email')) {
+    return { type: 'function', function: { name: 'outlook_read_email' } };
   }
 
   return shouldForceDiscoveryToolSearch(userMessage) && toolNames.has('helkin_skill_search')

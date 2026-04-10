@@ -249,6 +249,46 @@ describe('discoveryToolInjection', () => {
     ]);
   });
 
+  it('widens the initial tool surface for direct unread mailbox listing intents even without proof-style wording', async () => {
+    const { deriveContextAwareInitialToolSchemas } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const initial = deriveContextAwareInitialToolSchemas(
+      'what are my last 5 unread emails list the subject line only',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'helkin_skill_search',
+            description: 'discover tools',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'helkin_health_check',
+            description: 'health',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_list_emails',
+            description: 'list recent emails',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(initial.map((tool) => tool.function.name)).toEqual([
+      'helkin_skill_search',
+      'helkin_health_check',
+      'outlook_list_emails',
+    ]);
+  });
+
   it('widens the initial tool surface for proof-style Outlook follow-ups so the surfaced mailbox tool can execute immediately', async () => {
     const { deriveContextAwareInitialToolSchemas } = await import('../../src/orchestrator/discoveryToolInjection.js');
 
@@ -513,6 +553,34 @@ describe('discoveryToolInjection', () => {
     );
 
     expect(choice).toEqual({ type: 'function', function: { name: 'helkin_skill_search' } });
+  });
+
+  it('prefers outlook_list_emails on the initial turn for clear unread mailbox listing intents instead of helkin_skill_search', async () => {
+    const { getForcedInitialToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const choice = getForcedInitialToolChoice(
+      'what are my last 5 unread emails list the subject line only',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'helkin_skill_search',
+            description: 'discover tools',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_list_emails',
+            description: 'list recent emails',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    expect(choice).toEqual({ type: 'function', function: { name: 'outlook_list_emails' } });
   });
 
   it('prefers an explicit tool-name mention over the generic email-send fallback', async () => {
