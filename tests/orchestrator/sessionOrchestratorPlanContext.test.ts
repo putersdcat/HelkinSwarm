@@ -22,8 +22,11 @@ describe('sessionOrchestrator plan context preservation', () => {
     const source = readFileSync('src/orchestrator/sessionOrchestrator.ts', 'utf8');
 
     expect(source).toContain('const followUpToolSchemas = followUpToolSurface.tools;');
+    // After #622: synthesizeDeterministicFollowUpToolCall is called via rawDeterministicFollowUp
+    // with a guard to suppress it if the same tool already succeeded this turn.
+    expect(source).toContain('const rawDeterministicFollowUp = synthesizeDeterministicFollowUpToolCall(');
     expect(source).toContain('const deterministicFollowUpToolCall = synthesizeExactToolCall(');
-    expect(source).toContain(') ?? synthesizeDeterministicFollowUpToolCall(');
+    expect(source).toContain('alreadySucceededToolNames.has(rawDeterministicFollowUp.name)');
     expect(source).toContain("let followUp: LlmResult = deterministicFollowUpToolCall");
     expect(source).toContain("finishReason: 'tool_calls'");
   });

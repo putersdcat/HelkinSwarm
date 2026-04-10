@@ -1215,13 +1215,24 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           },
         });
       }
-      const deterministicFollowUpToolCall = synthesizeExactToolCall(
-        effectiveTaskMessage,
-        followUpToolSchemas,
-      ) ?? synthesizeDeterministicFollowUpToolCall(
+      // Suppress deterministic follow-up synthesis if the same tool already
+      // succeeded in the initial dispatch. We have the data; re-calling it
+      // wastes tokens and latency without providing new information (#622).
+      const alreadySucceededToolNames = new Set(
+        (toolResults?.results ?? [])
+          .filter((r) => r.success)
+          .map((r) => r.toolName),
+      );
+      const rawDeterministicFollowUp = synthesizeDeterministicFollowUpToolCall(
         effectiveTaskMessage,
         followUpToolSchemas,
       );
+      const deterministicFollowUpToolCall = synthesizeExactToolCall(
+        effectiveTaskMessage,
+        followUpToolSchemas,
+      ) ?? (rawDeterministicFollowUp && !alreadySucceededToolNames.has(rawDeterministicFollowUp.name)
+        ? rawDeterministicFollowUp
+        : null);
       if (deterministicFollowUpToolCall) {
         yield* emitOrchestratorTelemetry(context, {
           name: 'PolicyOverrideApplied',
@@ -1234,10 +1245,15 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           },
         });
       }
-      const forcedFollowUpToolChoice = getForcedDiscoveryFollowUpToolChoice(
+      const rawForcedFollowUpToolChoice = getForcedDiscoveryFollowUpToolChoice(
         effectiveTaskMessage,
         selectiveFollowUpSchemas,
-      ) ?? undefined;
+      );
+      // Same guard: don't force a follow-up tool that already succeeded (#622).
+      const forcedFollowUpToolChoice = (
+        rawForcedFollowUpToolChoice &&
+        !alreadySucceededToolNames.has(rawForcedFollowUpToolChoice.function.name)
+      ) ? rawForcedFollowUpToolChoice : undefined;
       if (selectiveFollowUpSchemas) {
         yield* emitOrchestratorTelemetry(context, {
           name: 'DiscoveryToolSubsetSelected',

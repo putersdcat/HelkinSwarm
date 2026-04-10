@@ -21,10 +21,13 @@ describe('sessionOrchestrator clarification routing', () => {
     expect(source).toContain('if (isExplicitReadOnlyDiscoveryRequest) {');
     expect(source).toContain('const followUpToolSchemas = followUpToolSurface.tools;');
     expect(source).toContain('const deterministicFollowUpToolCall = synthesizeExactToolCall(');
-    expect(source).toContain(') ?? synthesizeDeterministicFollowUpToolCall(');
+    // After #622: synthesizeDeterministicFollowUpToolCall and getForcedDiscoveryFollowUpToolChoice
+    // are both guarded to skip re-calling a tool that already succeeded this turn.
+    expect(source).toContain('const rawDeterministicFollowUp = synthesizeDeterministicFollowUpToolCall(');
     expect(source).toContain('effectiveTaskMessage,');
     expect(source).toContain('followUpToolSchemas,');
-    expect(source).toContain('const forcedFollowUpToolChoice = getForcedDiscoveryFollowUpToolChoice(');
+    expect(source).toContain('const rawForcedFollowUpToolChoice = getForcedDiscoveryFollowUpToolChoice(');
+    expect(source).toContain('alreadySucceededToolNames.has(rawForcedFollowUpToolChoice.function.name)');
     expect(source).toContain('toolChoice: forcedFollowUpToolChoice,');
     expect(source).toContain('buildDiscoveryDeadEndResponse(effectiveTaskMessage)');
     expect(source).toContain('userContext: effectiveTaskMessage,');
