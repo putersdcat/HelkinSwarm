@@ -1,0 +1,172 @@
+{
+  "domain": "docs",
+  "version": "1.0",
+  "shortName": "docs",
+  "displayName": "Document Storage",
+  "shortDescription": "AI-native lightweight document storage — save, retrieve, search, and delete working documents backed by Azure Blob + Cosmos DB",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/docs.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials",
+  "licenseAvoidant": true,
+  "discoveryHints": [
+    "save document",
+    "store document",
+    "save file",
+    "working document",
+    "research notes",
+    "draft",
+    "retrieve document",
+    "list documents",
+    "search documents",
+    "delete document"
+  ],
+  "orchestratorUseCases": [
+    "save research notes, drafts, and working documents during long-running tasks",
+    "retrieve previously saved documents by ID or keyword search",
+    "list all stored documents for the user",
+    "delete documents that are no longer needed"
+  ],
+  "recommendedEntryTools": [
+    "docs_list"
+  ],
+  "tools": [
+    {
+      "name": "docs_save",
+      "description": "Saves a new document to the user's document store. The document content should be Markdown. Returns a document ID that can be used to retrieve it later. Use this during research tasks to checkpoint work, save drafts, or store results.",
+      "risk": "medium",
+      "dataSensitivity": "mixed",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "create",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "discoveryTerms": ["save", "store", "create document", "write document", "checkpoint", "draft"],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "A short descriptive title for the document (max 255 chars)"
+          },
+          "content": {
+            "type": "string",
+            "description": "The document body in Markdown format"
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional list of tags for categorization (e.g. ['research', 'draft', 'project-x'])"
+          }
+        },
+        "required": ["title", "content"]
+      }
+    },
+    {
+      "name": "docs_get",
+      "description": "Retrieves the full content of a document by its ID. Returns the title, tags, and Markdown body.",
+      "risk": "low",
+      "dataSensitivity": "mixed",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "discoveryTerms": ["get document", "retrieve document", "read document", "open document"],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "docId": {
+            "type": "string",
+            "description": "The UUID of the document to retrieve"
+          }
+        },
+        "required": ["docId"]
+      }
+    },
+    {
+      "name": "docs_list",
+      "description": "Lists document metadata (id, title, tags, size, dates) for all documents stored by the user. Optionally filter by tag. Does not return document content — use docs_get to retrieve content.",
+      "risk": "low",
+      "dataSensitivity": "mixed",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "discoveryTerms": ["list documents", "show documents", "what documents", "my documents"],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string",
+            "description": "Optional tag to filter by (exact match)"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of results (default 20, max 100)"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "docs_search",
+      "description": "Searches documents by keyword — matches against title and the first 500 characters of content. Returns matching document metadata. Use docs_get to read the full content of a result.",
+      "risk": "low",
+      "dataSensitivity": "mixed",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "discoveryTerms": ["search documents", "find document", "look for document", "keyword search"],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Keyword or phrase to search for in document titles and content summaries"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of results (default 10, max 50)"
+          }
+        },
+        "required": ["query"]
+      }
+    },
+    {
+      "name": "docs_delete",
+      "description": "Permanently deletes a document and its content from blob storage. This cannot be undone. Only use when the user explicitly asks to delete a document.",
+      "risk": "high",
+      "dataSensitivity": "mixed",
+      "allowedModelLane": "any",
+      "requiresConfirmation": true,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "delete",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "discoveryTerms": ["delete document", "remove document", "discard document"],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "docId": {
+            "type": "string",
+            "description": "The UUID of the document to delete"
+          }
+        },
+        "required": ["docId"]
+      }
+    }
+  ]
+}

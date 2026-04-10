@@ -516,6 +516,20 @@ resource containerMsalTokenCache 'Microsoft.DocumentDB/databaseAccounts/sqlDatab
   }
 }
 
+// docs container — AI-native document storage skill (#244)
+// Partition key /userId, no TTL (documents are permanent until explicitly deleted by the user)
+resource containerDocs 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: cosmosDatabase
+  name: 'docs'
+  properties: {
+    resource: {
+      id: 'docs'
+      partitionKey: { paths: [ '/userId' ], kind: 'Hash' }
+      defaultTtl: -1
+    }
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  8. AZURE AI SERVICES — Foundry (spec 03, 06)
 //     SKU is always S0 at the account level.
@@ -653,6 +667,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         // ── Stamp identity ──
         { name: 'USER_ALIAS', value: userAlias }
         { name: 'USER_VAULT_KEY_VAULT_URI', value: 'https://${uvName}${environment().suffixes.keyvaultDns}/' }
+        { name: 'DOCS_STORAGE_ACCOUNT_NAME', value: storageAccount.name }
         { name: 'DIRTY_DEV_MODE', value: string(effectiveDirtyDevMode) }
         { name: 'EARLY_DEV_COST_GUARD', value: string(earlyDevCostGuard) }
 
