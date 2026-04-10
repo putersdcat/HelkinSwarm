@@ -65,7 +65,7 @@ function isCoreTool(name: string): boolean {
 }
 
 function shouldRetainCoreToolInActionableFollowUp(name: string): boolean {
-  return isCoreTool(name) && name !== 'helkin_skill_search';
+  return name === 'helkin_health_check' || name === 'helkin_current_datetime';
 }
 
 function isNonChatRecoverableSkillState(state: string | undefined): boolean {
@@ -968,9 +968,9 @@ export function deriveSelectiveFollowUpToolSchemas(
 
   for (const tool of discoveryResult.result.tools ?? []) {
     const skill = tool.domain ? getDiscoverySkill(tool.domain) : undefined;
-    if (tool.name && !isNonChatRecoverableSkillState(skill?.operationalState)) {
+    if (tool.name && !isCoreTool(tool.name) && !isNonChatRecoverableSkillState(skill?.operationalState)) {
       selectedNames.add(tool.name);
-    } else if (tool.name && isNonChatRecoverableSkillState(skill?.operationalState)) {
+    } else if (tool.name && !isCoreTool(tool.name) && isNonChatRecoverableSkillState(skill?.operationalState)) {
       suppressedNonChatRecoverableSkill = true;
     }
   }
@@ -983,12 +983,16 @@ export function deriveSelectiveFollowUpToolSchemas(
     }
 
     for (const toolName of group.toolNames ?? []) {
-      selectedNames.add(toolName);
+      if (!isCoreTool(toolName)) {
+        selectedNames.add(toolName);
+      }
     }
     if (group.id) {
       const manifestGroup = getDiscoveryCapabilityGroup(group.id);
       for (const toolName of manifestGroup?.toolNames ?? []) {
-        selectedNames.add(toolName);
+        if (!isCoreTool(toolName)) {
+          selectedNames.add(toolName);
+        }
       }
     }
   }
@@ -999,7 +1003,9 @@ export function deriveSelectiveFollowUpToolSchemas(
     }
 
     for (const toolName of skill.recommendedEntryTools ?? []) {
-      selectedNames.add(toolName);
+      if (!isCoreTool(toolName)) {
+        selectedNames.add(toolName);
+      }
     }
   }
 

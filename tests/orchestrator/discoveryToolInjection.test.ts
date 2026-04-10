@@ -687,6 +687,29 @@ describe('discoveryToolInjection', () => {
     ]);
   });
 
+  it('does not re-admit surfaced core tools like helkin_recent_requests into actionable follow-up subsets', async () => {
+    const { deriveSelectiveFollowUpToolSchemas } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const tools = deriveSelectiveFollowUpToolSchemas([
+      {
+        toolName: 'helkin_skill_search',
+        success: true,
+        result: {
+          tools: [
+            { name: 'helkin_recent_requests' },
+            { name: 'outlook_search_emails' },
+          ],
+          skills: [],
+        },
+      },
+    ]);
+
+    expect(tools?.map((tool) => tool.function.name)).toEqual([
+      'helkin_health_check',
+      'outlook_search_emails',
+    ]);
+  });
+
   it('keeps non-chat-recoverable skills out of the post-discovery execution subset', async () => {
     const { deriveSelectiveFollowUpToolSchemas } = await import('../../src/orchestrator/discoveryToolInjection.js');
 
