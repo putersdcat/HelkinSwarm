@@ -695,6 +695,64 @@ describe('discoveryToolInjection', () => {
     expect(choice).toEqual({ type: 'function', function: { name: 'helkin_skill_search' } });
   });
 
+  it('does not force outlook_search_emails for web search requests that contain "search" but no mailbox context', async () => {
+    const { getForcedDiscoveryFollowUpToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const choice = getForcedDiscoveryFollowUpToolChoice(
+      'search the web for HelkinSwarm AI personal copilot Teams bot',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'web_search',
+            description: 'search the web',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_search_emails',
+            description: 'search emails',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    // Should NOT force Outlook — no mailbox/email context in the user message
+    expect(choice).toBeNull();
+  });
+
+  it('does not force outlook_search_emails for Entra directory "find people" requests', async () => {
+    const { getForcedDiscoveryFollowUpToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const choice = getForcedDiscoveryFollowUpToolChoice(
+      'find people who work with me in Entra - anyone named Anderson or in Human IT',
+      [
+        {
+          type: 'function',
+          function: {
+            name: 'entra_find_people',
+            description: 'find people in the organization directory',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+        {
+          type: 'function',
+          function: {
+            name: 'outlook_search_emails',
+            description: 'search emails',
+            parameters: { type: 'object', properties: {}, required: [] },
+          },
+        },
+      ],
+    );
+
+    // Should NOT force Outlook — "find people in Entra" has no mailbox/email context
+    expect(choice).toBeNull();
+  });
+
   it('forces calendar creation when discovery surfaced the event-creation tool', async () => {
     const { getForcedDiscoveryFollowUpToolChoice } = await import('../../src/orchestrator/discoveryToolInjection.js');
 

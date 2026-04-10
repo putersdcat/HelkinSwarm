@@ -852,7 +852,10 @@ export function getForcedInitialToolChoice(
     return { type: 'function', function: { name: explicitToolName } };
   }
 
-  if (/(search|find|lookup|look up)/.test(normalized) && toolNames.has('outlook_search_emails')) {
+  // Only force Outlook search when the request actually has mailbox/email context.
+  // Without this guard, "search the web" and "find people in Entra" would both
+  // be hijacked to outlook_search_emails simply because they contain "search" or "find".
+  if (/(search|find|lookup|look up)/.test(normalized) && hasMailboxMessageContext(normalized) && toolNames.has('outlook_search_emails')) {
     return { type: 'function', function: { name: 'outlook_search_emails' } };
   }
 
@@ -899,7 +902,10 @@ export function getForcedDiscoveryFollowUpToolChoice(
     return { type: 'function', function: { name: explicitToolName } };
   }
 
-  if (/(search|find|lookup|look up)/.test(normalized) && toolNames.has('outlook_search_emails')) {
+  // Only force Outlook search when the request actually has mailbox/email context.
+  // Without this guard, "search the web" and "find people in Entra" would both
+  // be hijacked to outlook_search_emails simply because they contain "search" or "find".
+  if (/(search|find|lookup|look up)/.test(normalized) && hasMailboxMessageContext(normalized) && toolNames.has('outlook_search_emails')) {
     return { type: 'function', function: { name: 'outlook_search_emails' } };
   }
 
