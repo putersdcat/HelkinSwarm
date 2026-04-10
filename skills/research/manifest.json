@@ -72,9 +72,6 @@
   "deploymentScenario": "personal-user-centric",
   "onboardingMethod": "automatic-agentic",
   "lifecycleRules": "keep-credentials",
-  "externalAccountsNeeded": [
-    "Brave Search API key (shared with web skill)"
-  ],
   "discoveryHints": [
     "deep research",
     "thorough investigation",
