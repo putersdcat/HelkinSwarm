@@ -51,8 +51,8 @@
       "requiresConfirmation": false,
       "requiresExecutor": false,
       "requiresSubAgent": false,
-      "privilegeClass": "write",
-      "externalAutomationCapabilities": ["OneDrive file creation"],
+      "privilegeClass": "create",
+      "externalAutomationCapabilities": [{"type": "storage", "action": "file-create"}],
       "longTermMemorySchema": [],
       "discoveryTerms": [
         "convert to word",
