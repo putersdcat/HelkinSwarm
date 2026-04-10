@@ -1,0 +1,71 @@
+{
+  "domain": "translate",
+  "version": "1.0",
+  "shortName": "translate",
+  "displayName": "Language Translation",
+  "shortDescription": "Translate text between languages using AI. Supports final-output translation for reports, messages, and research deliverables.",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/translate.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "stateless",
+  "licenseAvoidant": true,
+  "discoveryHints": [
+    "translate",
+    "translation",
+    "language",
+    "French",
+    "Spanish",
+    "German",
+    "Japanese",
+    "Chinese",
+    "translate text",
+    "convert language"
+  ],
+  "orchestratorUseCases": [
+    "translate a document or research output into a target language for delivery",
+    "translate a message or report into French, Spanish, German, Japanese, or any other language",
+    "translate Teams messages or emails before sending",
+    "perform in-context translation during research tasks"
+  ],
+  "recommendedEntryTools": [
+    "translate_text"
+  ],
+  "tools": [
+    {
+      "name": "translate_text",
+      "description": "Translates text into the specified target language using AI. Supports any language pair. Preserves Markdown formatting by default. Ideal for translating reports, notes, messages, or research outputs as a final step.",
+      "risk": "low",
+      "dataSensitivity": "mixed",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "discoveryTerms": ["translate", "translation", "into French", "into Spanish", "into German", "into Japanese", "into Chinese", "convert language", "translate text", "language translation", "translate to"],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The text to translate (Markdown supported, max 20000 characters)"
+          },
+          "targetLanguage": {
+            "type": "string",
+            "description": "Target language name (e.g. 'French', 'Spanish', 'Japanese', 'Simplified Chinese')"
+          },
+          "sourceLanguage": {
+            "type": "string",
+            "description": "Optional source language name. If omitted, the language is auto-detected."
+          },
+          "preserveFormatting": {
+            "type": "boolean",
+            "description": "Whether to preserve Markdown formatting in the output (default: true)"
+          }
+        },
+        "required": ["text", "targetLanguage"]
+      }
+    }
+  ]
+}
