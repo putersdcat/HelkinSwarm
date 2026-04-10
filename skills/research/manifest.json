@@ -1,0 +1,92 @@
+{
+  "domain": "research",
+  "version": "1.0",
+  "tools": [
+    {
+      "name": "deep_research",
+      "description": "Conduct multi-angle deep research on a topic by running several focused web searches and compiling a comprehensive source collection. Returns a structured set of sources, summaries, and key findings organized by research angle. Best used when the user asks for a thorough investigation, background research, or wants to understand a topic in depth — not for simple one-shot lookups.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": "string",
+            "description": "The research question or topic to investigate thoroughly"
+          },
+          "sourcesPerAngle": {
+            "type": "number",
+            "description": "Number of web results to fetch per search angle (1–8, default: 5)"
+          },
+          "angles": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Optional: explicit search queries to use as research angles. If omitted, angles are derived automatically from the question (up to 3)."
+          }
+        },
+        "required": ["question"]
+      },
+      "aliases": [
+        "research",
+        "deep dive",
+        "extended research",
+        "investigate",
+        "look into in depth"
+      ],
+      "discoveryTerms": [
+        "deep research",
+        "thorough investigation",
+        "comprehensive research",
+        "multi-source research",
+        "background research"
+      ],
+      "useWhen": [
+        "the user wants a thorough, multi-source investigation of a topic",
+        "the user asks to 'research', 'deep dive', or 'dig into' something in depth",
+        "a single web search would not give sufficient breadth or coverage"
+      ],
+      "avoidWhen": [
+        "the user only needs a quick one-shot lookup — use web_search instead",
+        "the user is asking about a simple factual question"
+      ],
+      "typicalInputs": [
+        "research the current state of AI reasoning models",
+        "deep dive into Azure Durable Functions best practices",
+        "investigate the competitive landscape for TypeScript ORMs",
+        "research what's happening with SpaceX Starship development"
+      ],
+      "returnsSummaryShape": "structured multi-angle research with sources, titles, snippets, and findings organized by research angle",
+      "privilegeClass": "read-only",
+      "requiresSubAgent": true
+    }
+  ],
+  "shortName": "research",
+  "displayName": "Deep Research",
+  "shortDescription": "Multi-angle web research — fans out across several search queries to gather comprehensive source material on a topic",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/research.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials",
+  "externalAccountsNeeded": [
+    "Brave Search API key (shared with web skill)"
+  ],
+  "discoveryHints": [
+    "deep research",
+    "thorough investigation",
+    "research question",
+    "multi-source research",
+    "background research",
+    "investigate topic"
+  ],
+  "orchestratorUseCases": [
+    "conduct thorough multi-source research on a topic the user wants to understand in depth"
+  ],
+  "recommendedEntryTools": [
+    "deep_research"
+  ]
+}
