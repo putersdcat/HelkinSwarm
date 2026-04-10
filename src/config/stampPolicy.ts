@@ -21,6 +21,7 @@ let cachedStampPolicy: StampPolicy | undefined;
 
 function buildEnvBackedPolicy(): StampPolicy {
   const allowOutlookSendBypass = process.env['STAMP_POLICY_ALLOW_OUTLOOK_SEND_WITHOUT_CONFIRMATION']?.toLowerCase() === 'true';
+  const allowVaultWriteBypass = process.env['STAMP_POLICY_ALLOW_VAULT_WRITE_WITHOUT_CONFIRMATION']?.toLowerCase() === 'true';
   const rules: ConfirmationBypassRule[] = [];
 
   if (allowOutlookSendBypass) {
@@ -30,6 +31,23 @@ function buildEnvBackedPolicy(): StampPolicy {
       enabled: true,
       reason: 'Primary developer stamp override for Outlook send confirmation.',
     });
+  }
+
+  if (allowVaultWriteBypass) {
+    rules.push(
+      {
+        toolName: 'vault_store_secret',
+        requiredAuthority: 'policy-override-high-risk',
+        enabled: true,
+        reason: 'Primary developer stamp override for vault write confirmation.',
+      },
+      {
+        toolName: 'vault_delete_secret',
+        requiredAuthority: 'policy-override-high-risk',
+        enabled: true,
+        reason: 'Primary developer stamp override for vault delete confirmation.',
+      },
+    );
   }
 
   return { confirmationBypass: rules };

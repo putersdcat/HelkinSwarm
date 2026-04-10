@@ -34,4 +34,36 @@ describe('stampPolicy confirmation bypass', () => {
       authority: 'policy-override-high-risk',
     });
   });
+
+  it('allows vault write bypass for owner when env flag is set', async () => {
+    process.env['STAMP_POLICY_ALLOW_VAULT_WRITE_WITHOUT_CONFIRMATION'] = 'true';
+    const { resetStampPolicyForTests, getConfirmationBypassRule } = await import('../../src/config/stampPolicy.js');
+    resetStampPolicyForTests();
+
+    await expect(getConfirmationBypassRule('owner-user', ['vault_store_secret'])).resolves.toMatchObject({
+      applies: true,
+      authority: 'policy-override-high-risk',
+    });
+  });
+
+  it('allows vault delete bypass for owner when env flag is set', async () => {
+    process.env['STAMP_POLICY_ALLOW_VAULT_WRITE_WITHOUT_CONFIRMATION'] = 'true';
+    const { resetStampPolicyForTests, getConfirmationBypassRule } = await import('../../src/config/stampPolicy.js');
+    resetStampPolicyForTests();
+
+    await expect(getConfirmationBypassRule('owner-user', ['vault_delete_secret'])).resolves.toMatchObject({
+      applies: true,
+      authority: 'policy-override-high-risk',
+    });
+  });
+
+  it('denies vault write bypass to guests even when env flag is set', async () => {
+    process.env['STAMP_POLICY_ALLOW_VAULT_WRITE_WITHOUT_CONFIRMATION'] = 'true';
+    const { resetStampPolicyForTests, getConfirmationBypassRule } = await import('../../src/config/stampPolicy.js');
+    resetStampPolicyForTests();
+
+    await expect(getConfirmationBypassRule('guest-user', ['vault_store_secret'])).resolves.toMatchObject({
+      applies: false,
+    });
+  });
 });

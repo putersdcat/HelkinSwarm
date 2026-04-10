@@ -324,6 +324,7 @@ jobs:
           MODEL_QUOTA_OVERRIDES_JSON='${{ github.event.inputs.MODEL_QUOTA_OVERRIDES_JSON || '' }}'
           DEVELOPER_ALLOWED_IP_CIDRS='${{ github.event.inputs.DEVELOPER_ALLOWED_IP_CIDRS || '' }}'
           STAMP_POLICY_OUTLOOK_SEND_BYPASS="${{ (github.event.inputs.USER_ALIAS || vars.USER_ALIAS) == vars.USER_ALIAS && 'true' || 'false' }}"
+          STAMP_POLICY_VAULT_WRITE_BYPASS="${{ (github.event.inputs.USER_ALIAS || vars.USER_ALIAS) == vars.USER_ALIAS && 'true' || 'false' }}"
 
           echo "ℹ️ CICD principal object id: ${CICD_PRINCIPAL_ID}"
 
@@ -360,6 +361,7 @@ jobs:
             earlyDevMonthlyBudgetUsd=${{ env.EARLY_DEV_MONTHLY_BUDGET_USD }}
             developerAllowedIpCidrs="${DEVELOPER_ALLOWED_IP_CIDRS:-[]}"
             stampPolicyAllowOutlookSendWithoutConfirmation=${STAMP_POLICY_OUTLOOK_SEND_BYPASS}
+            stampPolicyAllowVaultWriteWithoutConfirmation=${STAMP_POLICY_VAULT_WRITE_BYPASS}
           )
 
           DEPLOY_CMD+=(--output json)

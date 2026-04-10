@@ -112,6 +112,9 @@ param earlyDevBudgetStartDate string = utcNow('yyyy-MM-01T00:00:00Z')
 @description('Enable the stamp-local Outlook send confirmation bypass policy for the primary developer stamp only.')
 param stampPolicyAllowOutlookSendWithoutConfirmation bool = false
 
+@description('Enable the stamp-local vault write confirmation bypass policy for the primary developer stamp only.')
+param stampPolicyAllowVaultWriteWithoutConfirmation bool = false
+
 
 // ─── Variables ──────────────────────────────────────────────────────────────
 
@@ -692,6 +695,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'MAINTENANCE_MODE', value: 'false' }
         { name: 'LIVING_MIND_COMPAT_MODE', value: 'false' }
         { name: 'STAMP_POLICY_ALLOW_OUTLOOK_SEND_WITHOUT_CONFIRMATION', value: string(stampPolicyAllowOutlookSendWithoutConfirmation) }
+        { name: 'STAMP_POLICY_ALLOW_VAULT_WRITE_WITHOUT_CONFIRMATION', value: string(stampPolicyAllowVaultWriteWithoutConfirmation) }
 
         // ── Dev telemetry (spec 0n, #174) ──
         { name: 'DEV_TELEMETRY_MODE', value: effectiveTelemetryMode }
