@@ -1,0 +1,85 @@
+{
+  "domain": "docformat",
+  "version": "1.0",
+  "shortName": "docformat",
+  "displayName": "Document Format Converter",
+  "shortDescription": "Convert Markdown documents into DOCX format and save them directly to the user's OneDrive. Ideal for turning research outputs and reports into shareable Word documents.",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/docs.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "post-install-link",
+  "lifecycleRules": "keep-credentials",
+  "licenseAvoidant": true,
+  "linkConfig": {
+    "connectionName": "GraphOAuth",
+    "displayName": "Microsoft Account",
+    "description": "Sign in to grant HelkinSwarm access to save documents to your OneDrive"
+  },
+  "externalAccountsNeeded": [
+    {
+      "description": "Microsoft OneDrive (work or school account)",
+      "satisfiedBy": "oauth-link"
+    }
+  ],
+  "discoveryHints": [
+    "convert to word",
+    "export to docx",
+    "save as word document",
+    "markdown to word",
+    "generate word document",
+    "convert markdown",
+    "document format",
+    "word document",
+    "docx",
+    "export document"
+  ],
+  "orchestratorUseCases": [
+    "convert a Markdown report or research output into a Word (.docx) document saved to the user's OneDrive",
+    "export a draft or meeting notes from Markdown to Word format for sharing",
+    "produce a polished Word document from a Markdown-formatted research deliverable",
+    "save a formatted document to OneDrive HelkinSwarm folder for download"
+  ],
+  "recommendedEntryTools": [
+    "docformat_to_docx"
+  ],
+  "tools": [
+    {
+      "name": "docformat_to_docx",
+      "description": "Converts Markdown text to a Word (.docx) document and saves it to the user's OneDrive under a HelkinSwarm folder. Supports headings, bold, italic, inline code, code blocks, and unordered/ordered lists. Returns a download link after saving. Requires the user's linked Microsoft account (Files.ReadWrite scope).",
+      "risk": "medium",
+      "dataSensitivity": "mixed",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "write",
+      "externalAutomationCapabilities": ["OneDrive file creation"],
+      "longTermMemorySchema": [],
+      "discoveryTerms": [
+        "convert to word",
+        "export to docx",
+        "save as word",
+        "markdown to word",
+        "word document",
+        "docx",
+        "convert markdown",
+        "export document",
+        "save document as word",
+        "generate docx"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "markdown": {
+            "type": "string",
+            "description": "The Markdown content to convert (max 200 000 characters)"
+          },
+          "filename": {
+            "type": "string",
+            "description": "The filename to use, without extension (e.g. 'Q2-Research-Report'). Defaults to 'document'."
+          }
+        },
+        "required": ["markdown"]
+      }
+    }
+  ]
+}

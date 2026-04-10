@@ -32,8 +32,10 @@
     "applicationinsights": "^3.14.0",
     "botbuilder": "^4.23.3",
     "botframework-connector": "^4.23.3",
+    "docx": "9.6.1",
     "durable-functions": "^3.3.0",
     "jose": "^6.2.2",
+    "marked": "18.0.0",
     "zod": "^3.24.0"
   },
   "devDependencies": {
