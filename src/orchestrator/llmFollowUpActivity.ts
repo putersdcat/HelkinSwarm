@@ -389,7 +389,7 @@ df.app.activity('llmFollowUpActivity', {
       ];
 
       const latestUserMessage = getLatestUserMessage(input.originalMessages);
-      const synthesizedToolCall = retryToolCalls.length === 0 && retryTools
+      const synthesizedToolCall = retryToolCalls.length === 0 && retryTools && (!llmContent || !llmContent.trim())
         ? synthesizeExactToolCall(latestUserMessage, retryTools)
           ?? synthesizeDeterministicFollowUpToolCall(latestUserMessage, retryTools)
         : null;

@@ -25,6 +25,12 @@ describe('llmFollowUpActivity execution prompt', () => {
     expect(source).not.toContain('if (!llmContent && retryToolCalls.length > 0 && retryTools)');
   });
 
+  it('only synthesizes deterministic follow-up tool calls when the model did not already return text', () => {
+    const source = readFileSync('src/orchestrator/llmFollowUpActivity.ts', 'utf8');
+
+    expect(source).toContain("retryToolCalls.length === 0 && retryTools && (!llmContent || !llmContent.trim())");
+  });
+
   it('returns an honest blocker instead of a raw discovery dump for inline-image email requests', () => {
     return loadFollowUpModule().then(({ buildFallbackToolResultContent }) => {
       const content = buildFallbackToolResultContent(
