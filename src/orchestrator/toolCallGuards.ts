@@ -81,6 +81,24 @@ function normalizeToolArguments(name: string, value: unknown): unknown {
 
   const record = value as Record<string, unknown>;
 
+  if (name === 'outlook_list_emails') {
+    const top = typeof record['top'] === 'number' && Number.isFinite(record['top'])
+      ? Math.min(Math.max(Math.trunc(record['top']), 1), 50)
+      : 10;
+    const folder = typeof record['folder'] === 'string' && record['folder'].trim().length > 0
+      ? record['folder'].trim().toLowerCase()
+      : 'inbox';
+    const filter = typeof record['filter'] === 'string' && record['filter'].trim().length > 0
+      ? record['filter'].trim().replace(/\s+/g, ' ').toLowerCase()
+      : undefined;
+
+    return {
+      top,
+      folder,
+      ...(filter ? { filter } : {}),
+    };
+  }
+
   if (name === 'outlook_send_email') {
     return {
       to: normalizeStringArray(record['to']),

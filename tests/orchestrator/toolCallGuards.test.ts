@@ -29,6 +29,19 @@ describe('toolCallGuards', () => {
     expect(minimal).toBe(explicitDefaults);
   });
 
+  it('normalizes outlook_list_emails defaults and filter formatting when fingerprinting semantically identical reads', () => {
+    const minimal = buildToolCallFingerprint(
+      'outlook_list_emails',
+      '{"top":5,"filter":"isRead eq false"}',
+    );
+    const explicitDefaults = buildToolCallFingerprint(
+      'outlook_list_emails',
+      '{"filter":"  isRead   eq   false  ","folder":"Inbox","top":5}',
+    );
+
+    expect(minimal).toBe(explicitDefaults);
+  });
+
   it('treats non-read-only tools as mutating', () => {
     expect(isMutatingTool({ privilegeClass: 'create' })).toBe(true);
     expect(isMutatingTool({ privilegeClass: 'read-only' })).toBe(false);
