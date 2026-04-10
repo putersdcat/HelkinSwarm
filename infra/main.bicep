@@ -120,6 +120,7 @@ var uamiName      = 'helkinswarm-id-${userAlias}'
 var lawName       = 'helkinswarm-law-${userAlias}'
 var appInsName    = 'helkinswarm-appi-${userAlias}'
 var kvName        = 'helkinswarm-kv-${userAlias}'       // 20 chars max for alias a7f2 ✓
+var uvName        = 'helkinswarm-uv-${userAlias}'       // user vault — max 19 chars ✓ (#178)
 var acrName       = 'helkinswarmacr${userAlias}'         // globally unique, stamped per user
 var stName        = 'helkinswarmst${userAlias}'          // globally unique, alphanumeric only
 var cosmosName    = 'helkinswarm-cosmos-${userAlias}'    // globally unique
@@ -148,6 +149,7 @@ var appLogsDestination      = effectiveDirtyDevMode ? 'azure-monitor' : 'log-ana
 var earlyDevBudgetName      = 'helkinswarm-earlydev-budget-${userAlias}'
 
 var roleKvSecretsUser           = '4633458b-17de-408a-b874-0445c86b69e6'
+var roleKvSecretsOfficer        = 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'  // Get/List/Set/Delete (#178)
 var roleKvAdmin                 = '00482a5a-887f-4fb3-b363-3b7fe8e74483'
 var roleAcrPull                 = '7f951dda-4ed3-4680-a7ca-43fe172d538d'
 var roleCognitiveServicesUser   = 'a97b65f3-24c7-4388-baec-2e87135dc908'
@@ -247,6 +249,25 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
     enableSoftDelete: true
     softDeleteRetentionInDays: 90
     enablePurgeProtection: true  // #201 — prevent permanent secret destruction by agents
+    sku: { family: 'A', name: 'standard' }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  5a. USER VAULT KEY VAULT (#178 — user-facing secrets: API keys, PATs)
+//      UAMI has Secrets Officer (full CRUD for vault skill, confirmation-gated).
+//      Owner has Administrator. CICD has no access — agent-managed only.
+// ═══════════════════════════════════════════════════════════════════════════
+
+resource userVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
+  name: uvName
+  location: location
+  properties: {
+    tenantId: subscription().tenantId
+    enableRbacAuthorization: true
+    enableSoftDelete: true
+    softDeleteRetentionInDays: 90
+    enablePurgeProtection: true
     sku: { family: 'A', name: 'standard' }
   }
 }
@@ -631,6 +652,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
 
         // ── Stamp identity ──
         { name: 'USER_ALIAS', value: userAlias }
+        { name: 'USER_VAULT_KEY_VAULT_URI', value: 'https://${uvName}${environment().suffixes.keyvaultDns}/' }
         { name: 'DIRTY_DEV_MODE', value: string(effectiveDirtyDevMode) }
         { name: 'EARLY_DEV_COST_GUARD', value: string(earlyDevCostGuard) }
 
@@ -804,6 +826,28 @@ resource roleKvCicd 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (c
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleKvSecretsUser)
     principalId: cicdPrincipalId
     principalType: 'ServicePrincipal'
+  }
+}
+
+// ── UAMI → User Vault Secrets Officer (vault skill: full CRUD, confirmation-gated) ── (#178)
+resource roleUvUami 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(uami.id, userVault.id, roleKvSecretsOfficer)
+  scope: userVault
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleKvSecretsOfficer)
+    principalId: uami.properties.principalId
+    principalType: 'ServicePrincipal'
+  }
+}
+
+// ── Owner → User Vault Administrator ── (#178)
+resource roleUvUser 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(userPrincipalId, userVault.id, roleKvAdmin)
+  scope: userVault
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', roleKvAdmin)
+    principalId: userPrincipalId
+    principalType: 'User'
   }
 }
 

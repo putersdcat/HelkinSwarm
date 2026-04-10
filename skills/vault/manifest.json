@@ -1,0 +1,121 @@
+{
+  "domain": "vault",
+  "version": "1.0",
+  "tools": [
+    {
+      "name": "vault_list_secrets",
+      "description": "Lists the names of secrets stored in the user vault. Returns names only — never reveals secret values. Use this to discover what credentials or API keys have been stored.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
+    },
+    {
+      "name": "vault_get_secret",
+      "description": "Retrieves a secret value from the user vault by name. Only use when the user explicitly requests a credential or the agent needs to pass it directly to another system. Never log or echo secret values to the user unless specifically asked.",
+      "risk": "medium",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the secret to retrieve (e.g. 'BraveSearchApiKey', 'GitHubPat')"
+          }
+        },
+        "required": ["name"]
+      },
+      "privilegeClass": "sensitive-read",
+      "requiresSubAgent": false
+    },
+    {
+      "name": "vault_store_secret",
+      "description": "Stores or updates a secret in the user vault. Use this to save API keys, PATs, or other credentials the user wants the agent to hold securely. Always requires explicit user consent before storing.",
+      "risk": "medium",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": true,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Secret name (alphanumeric and hyphens only, e.g. 'BraveSearchApiKey')"
+          },
+          "value": {
+            "type": "string",
+            "description": "The secret value to store securely"
+          }
+        },
+        "required": ["name", "value"]
+      },
+      "privilegeClass": "write",
+      "requiresSubAgent": false
+    },
+    {
+      "name": "vault_delete_secret",
+      "description": "Soft-deletes a secret from the user vault. The secret enters a 90-day recovery window before permanent destruction. Use only when the user explicitly wants to remove a stored credential.",
+      "risk": "destructive",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": true,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the secret to delete"
+          }
+        },
+        "required": ["name"]
+      },
+      "privilegeClass": "destructive",
+      "requiresSubAgent": false
+    }
+  ],
+  "shortName": "vault",
+  "displayName": "Password Manager",
+  "shortDescription": "Secure user vault for API keys, PATs, and other credentials — backed by Azure Key Vault",
+  "discoveryHints": [
+    "password",
+    "secret",
+    "api key",
+    "credentials",
+    "vault",
+    "store key",
+    "save token"
+  ],
+  "orchestratorUseCases": [
+    "store and retrieve user API keys and credentials securely",
+    "manage skill-specific secrets like Brave Search API key or GitHub PAT",
+    "provide a user-controlled credentials store for third-party integrations"
+  ],
+  "recommendedEntryTools": [
+    "vault_list_secrets"
+  ],
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/vault.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials"
+}
