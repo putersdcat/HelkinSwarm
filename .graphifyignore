@@ -8,6 +8,9 @@ extensions/
 visualAssets/rawIcons/
 visualAssets/sourceImages/
 
+# Vendored minified SDKs — AST produces hundreds of noise nodes
+tabs/vendor/
+
 # Compiled outputs (already in .gitignore but belt-and-suspenders)
 dist/
 dist-mcp/
