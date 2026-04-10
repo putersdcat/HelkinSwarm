@@ -7,7 +7,7 @@
   "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/translate.png",
   "deploymentScenario": "personal-user-centric",
   "onboardingMethod": "automatic-agentic",
-  "lifecycleRules": "stateless",
+  "lifecycleRules": "keep-credentials",
   "licenseAvoidant": true,
   "discoveryHints": [
     "translate",
