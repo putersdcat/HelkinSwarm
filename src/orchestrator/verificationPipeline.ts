@@ -158,7 +158,13 @@ export async function runVerificationPipeline(input: VerificationInput): Promise
     }
 
     const toolNames = input.toolName.split(',').map((name) => name.trim()).filter(Boolean);
-    const policyBypass = await getConfirmationBypassRule(input.userId, toolNames);
+    // Only check bypass for tools that actually require confirmation — read-only tools
+    // in a mixed batch should not block the bypass from applying (#346).
+    const confirmationRequiredToolNames = toolNames.filter(
+      (name) => toolRegistry.get(name)?.requiresConfirmation === true,
+    );
+    const bypassCheckNames = confirmationRequiredToolNames.length > 0 ? confirmationRequiredToolNames : toolNames;
+    const policyBypass = await getConfirmationBypassRule(input.userId, bypassCheckNames);
 
     // Per-tool opt-out or explicit stamp policy exception (#302, #346).
     if (input.skipConfirmation || policyBypass.applies) {
