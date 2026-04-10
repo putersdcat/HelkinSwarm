@@ -11,7 +11,10 @@
   "dependencies": [],
   "requiredPermissions": [],
   "externalAccountsNeeded": [
-    "Azure access through Azure CLI login, managed identity, or equivalent Azure Identity credential context"
+    {
+      "description": "Azure access through Azure CLI login, managed identity, or equivalent Azure Identity credential context",
+      "satisfiedBy": "oauth-link"
+    }
   ],
   "capabilityGroups": [
     {

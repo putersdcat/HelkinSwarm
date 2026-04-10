@@ -16,8 +16,18 @@ export type AllowedModelLane = z.infer<typeof AllowedModelLane>;
 export const DeploymentScenario = z.enum(['personal-user-centric', 'enterprise-commercial']);
 export type DeploymentScenario = z.infer<typeof DeploymentScenario>;
 
-export const OnboardingMethod = z.enum(['automatic-agentic', 'post-install-link', 'both']);
+export const OnboardingMethod = z.enum(['automatic-agentic', 'post-install-link', 'both', 'operator/backend-config-required']);
 export type OnboardingMethod = z.infer<typeof OnboardingMethod>;
+
+/** Structured external account dependency (#624). envVarName enables preflight env-var resolution. */
+export const ExternalAccountEntry = z.object({
+  description: z.string().min(1),
+  envVarName: z.string().min(1).optional(),
+  kvSecretName: z.string().min(1).optional(),
+  howToObtain: z.string().optional(),
+  satisfiedBy: z.enum(['operator-kv', 'user-vault', 'bicep-provisioned', 'oauth-link']).optional(),
+}).strict();
+export type ExternalAccountEntry = z.infer<typeof ExternalAccountEntry>;
 
 export const LifecycleRules = z.enum(['keep-credentials', 'close-external-account', 'ask-user']);
 export type LifecycleRules = z.infer<typeof LifecycleRules>;
@@ -147,7 +157,7 @@ export const CapabilityManifestSchema = z.object({
   lifecycleRules: LifecycleRules,
   dependencies: z.array(z.string()).optional(),
   requiredPermissions: z.array(z.string()).optional(),
-  externalAccountsNeeded: z.array(z.string()).optional(),
+  externalAccountsNeeded: z.array(ExternalAccountEntry).optional(),
   capabilityGroups: z.array(CapabilityGroup).default([]),
   discoveryHints: z.array(z.string().min(1)).default([]),
   orchestratorUseCases: z.array(z.string().min(1)).default([]),
@@ -156,6 +166,12 @@ export const CapabilityManifestSchema = z.object({
   softOnboarding: SoftOnboarding.optional(),
   maintenanceTasks: z.array(MaintenanceTask).optional(),
   mcpProvenance: McpProvenanceSchema.optional(),
+  // v2.1 fields (#624) — virtual employee taxonomy + budgeting metadata
+  virtualEmployeeCompatible: z.boolean().optional(),
+  requiresOrchestratorApproval: z.boolean().optional(),
+  licenseAvoidant: z.boolean().optional(),
+  supportsBudgeting: z.boolean().optional(),
+  costModel: z.record(z.unknown()).optional(),
 }).superRefine((manifest, ctx) => {
   const definedGroupIds = new Set((manifest.capabilityGroups ?? []).map((group) => group.id));
 

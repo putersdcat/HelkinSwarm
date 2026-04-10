@@ -73,7 +73,12 @@
   "onboardingMethod": "automatic-agentic",
   "lifecycleRules": "keep-credentials",
   "externalAccountsNeeded": [
-    "Brave Search API key"
+    {
+      "description": "Brave Search API key",
+      "envVarName": "BRAVE_SEARCH_API_KEY",
+      "howToObtain": "Free tier available at https://api.search.brave.com/; key must be stored in stamp Key Vault as BRAVE_SEARCH_API_KEY",
+      "satisfiedBy": "operator-kv"
+    }
   ],
   "maintenanceTasks": [
     {

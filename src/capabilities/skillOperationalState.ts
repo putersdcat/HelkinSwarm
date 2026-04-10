@@ -1,4 +1,4 @@
-import type { CapabilityManifest } from './manifestSchema.js';
+import type { CapabilityManifest, ExternalAccountEntry } from './manifestSchema.js';
 
 export type SkillOperationalState =
   | 'operational'
@@ -10,7 +10,7 @@ export interface SkillOperationalAssessment {
   operationalState: SkillOperationalState;
   dependencies: string[];
   missingDependencies: string[];
-  externalAccountsNeeded: string[];
+  externalAccountsNeeded: ExternalAccountEntry[];
   requiredPermissions: string[];
   onboardingMethod: string;
   steps: string[];
@@ -31,6 +31,11 @@ export function assessSkillOperationalState(
   const onboardingMethod = manifest.onboardingMethod;
   const softOnboarding = manifest.softOnboarding;
 
+  // Preflight: only count accounts that are not already satisfied by a present env var (#624)
+  const unsatisfiedExternalAccounts = externalAccounts.filter(
+    (entry) => !entry.envVarName || !process.env[entry.envVarName],
+  );
+
   if (missingDeps.length > 0) {
     return {
       operationalState: 'blocked',
@@ -50,7 +55,7 @@ export function assessSkillOperationalState(
     || Boolean(softOnboarding);
   const hasOperatorOrTenantPrerequisites =
     onboardingMethod === 'automatic-agentic'
-    && (externalAccounts.length > 0 || requiredPermissions.length > 0);
+    && (unsatisfiedExternalAccounts.length > 0 || requiredPermissions.length > 0);
 
   const operationalState: SkillOperationalState = hasOperatorOrTenantPrerequisites
     ? 'operator-setup-required'
@@ -66,8 +71,8 @@ export function assessSkillOperationalState(
     steps.push('Automatic onboarding can continue once the prerequisites below are satisfied.');
   }
 
-  if (externalAccounts.length > 0) {
-    steps.push(`Create external account(s): ${externalAccounts.join(', ')}`);
+  if (unsatisfiedExternalAccounts.length > 0) {
+    steps.push(`Create external account(s): ${unsatisfiedExternalAccounts.map((e) => e.description).join(', ')}`);
   }
   if (requiredPermissions.length > 0) {
     steps.push(`Grant permissions: ${requiredPermissions.join(', ')}`);

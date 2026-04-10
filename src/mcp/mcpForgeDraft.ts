@@ -316,7 +316,7 @@ function buildManifestDraft(
     lifecycleRules: evaluation.lifecycleRules,
     dependencies: evaluation.dependencies,
     requiredPermissions: evaluation.requiredPermissions,
-    externalAccountsNeeded: evaluation.externalAccountsNeeded,
+    externalAccountsNeeded: evaluation.externalAccountsNeeded.map((entry) => ({ description: entry })),
     discoveryHints: dedupe(evaluation.discoveryHints),
     orchestratorUseCases: dedupe(evaluation.orchestratorUseCases),
     recommendedEntryTools: [placeholderToolName],

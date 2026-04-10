@@ -5,7 +5,7 @@
 import { readFile, readdir, stat } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { CapabilityManifestSchema } from './manifestSchema.js';
-import type { CapabilityManifest, MaintenanceTask, McpProvenance } from './manifestSchema.js';
+import type { CapabilityManifest, ExternalAccountEntry, MaintenanceTask, McpProvenance } from './manifestSchema.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { clearSkillDiscoveryIndex, rebuildSkillDiscoveryIndex } from './skillDiscoveryIndex.js';
 import { registerMcpHandlersForManifest } from '../mcp/mcpConnector.js';
@@ -290,7 +290,7 @@ export interface SkillCatalogEntry {
   linkRequired: boolean;
   dependencies: string[];
   requiredPermissions: string[];
-  externalAccountsNeeded: string[];
+  externalAccountsNeeded: ExternalAccountEntry[];
   maintenanceTaskCount: number;
   operationalState: SkillOperationalState;
   operationalSummary: string;
@@ -336,7 +336,7 @@ export interface SkillInstallInspection {
   onboardingMethod?: string;
   dependencies?: string[];
   missingDependencies?: string[];
-  externalAccountsNeeded?: string[];
+  externalAccountsNeeded?: ExternalAccountEntry[];
   requiredPermissions?: string[];
   steps?: string[];
   message: string;
@@ -347,7 +347,7 @@ export interface SkillUninstallInspection {
   skillId: string;
   lifecycleRules?: string;
   blockingDependents?: string[];
-  externalAccountsToClose?: string[];
+  externalAccountsToClose?: ExternalAccountEntry[];
   nextStep?: string;
   message: string;
 }
@@ -420,7 +420,7 @@ export function inspectSkillUninstall(skillId: string): SkillUninstallInspection
       skillId,
       lifecycleRules,
       externalAccountsToClose: externalAccounts,
-      message: `Skill '${skillId}' uses external account(s): ${externalAccounts.join(', ')}. Close those accounts manually before uninstalling, then remove stored memories.`,
+      message: `Skill '${skillId}' uses external account(s): ${externalAccounts.map((e) => e.description).join(', ')}. Close those accounts manually before uninstalling, then remove stored memories.`,
     };
   }
 

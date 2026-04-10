@@ -19,7 +19,10 @@
     "api://e8c77dc2-69b3-43f4-bc51-3213c9d915b4/MCP.Reports.Read.All"
   ],
   "externalAccountsNeeded": [
-    "Microsoft Entra work or school account in the target tenant"
+    {
+      "description": "Microsoft Entra work or school account in the target tenant",
+      "satisfiedBy": "oauth-link"
+    }
   ],
   "capabilityGroups": [
     {
