@@ -107,7 +107,7 @@ const KvSecretListItemSchema = z.object({
 
 const KvSecretListResponseSchema = z.object({
   value: z.array(KvSecretListItemSchema),
-  nextLink: z.string().optional(),
+  nextLink: z.string().nullish(),
 });
 
 const KvSecretValueSchema = z.object({
