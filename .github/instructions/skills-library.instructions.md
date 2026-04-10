@@ -105,6 +105,7 @@ Tools that should **NOT** use sub-agents:
 - ✅ Declare all external account requirements upfront
 - ✅ Include `lifecycleRules` even for read-only skills (declare `"keep-credentials"`)
 - ✅ Add idempotency guards for externally visible create/update/delete side-effects near the real emit point
+- ✅ When picking an icon for a new skill, choose from `visualAssets/rawIcons/` — see the registry file `visualAssets/rawIcons/ICON_REGISTRY.md` to see which files are already claimed, then record your choice there
 
 ## Never
 - ❌ Do NOT ship a skill without a manifest
@@ -113,3 +114,15 @@ Tools that should **NOT** use sub-agents:
 - ❌ Do NOT import between skill domains (`skills/outlook/` cannot import from `skills/github/`)
 - ❌ Do NOT allow silent failures on missing credentials — surface actionable errors
 - ❌ Do NOT trust the model alone to avoid duplicate external side-effects
+- ❌ Do NOT add `externalAccountsNeeded` fields that require a third-party account when an Azure-native equivalent exists — prefer Azure resources deployable via Bicep (e.g. use Azure Bing Search v7 instead of Brave Search, see #623)
+- ❌ Do NOT use third-party search APIs (Brave, SerpAPI, etc.) for web search — use `skills/web/` which calls Azure Bing Search v7 directly
+
+## Key Vault Architecture (two-KV model)
+
+Stamps have two Key Vaults:
+- **Operator KV** (`kv-helkinswarm-{alias}`): application-level secrets, infra credentials, Azure resource keys (e.g. Bing Search key). Provisioned by Bicep / CICD. Skills read from this via `process.env`.
+- **User Vault KV** (`kv-helkinswarm-user-{alias}`): user-facing secrets (API keys the owner manually provides, credentials for third-party SaaS skills, GitHub PATs, etc.). The `vault` skill (#178) provides read/write access to this KV. Skills that need user-managed secrets declare `externalAccountsNeeded` AND a `dependencies: ["vault"]` to signal they need the vault skill to onboard them.
+
+When a skill needs a secret that is **auto-provisioned by Bicep** (Azure-native resource), do NOT list it in `externalAccountsNeeded` — it will be there automatically.
+
+When a skill needs a secret that a **human or the agent must supply manually**, list it in `externalAccountsNeeded` and declare `dependencies: ["vault"]` so the system can guide the user to store the key via the vault skill.

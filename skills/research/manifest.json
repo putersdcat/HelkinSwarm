@@ -72,6 +72,9 @@
   "deploymentScenario": "personal-user-centric",
   "onboardingMethod": "automatic-agentic",
   "lifecycleRules": "keep-credentials",
+  "externalAccountsNeeded": [
+    "Brave Search API key — free tier available at https://api.search.brave.com/; key must be stored in stamp Key Vault as BRAVE_SEARCH_API_KEY"
+  ],
   "discoveryHints": [
     "deep research",
     "thorough investigation",
