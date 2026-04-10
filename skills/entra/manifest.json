@@ -27,8 +27,14 @@
     "who am I",
     "user lookup",
     "find user",
+    "find person",
+    "find people",
+    "people in organization",
+    "colleague lookup",
     "active directory",
-    "azure ad"
+    "azure ad",
+    "AAD",
+    "org directory"
   ],
   "orchestratorUseCases": [
     "look up the current user's own Entra ID profile: name, email, job title, department, phone",
@@ -84,16 +90,32 @@
       "longTermMemorySchema": [],
       "discoveryTerms": [
         "find user",
-        "look up colleague",
         "find person",
+        "find people",
+        "look up colleague",
+        "find colleague",
         "search directory",
+        "people api",
+        "directory people",
+        "graph people",
         "who is",
         "user lookup",
         "find employee",
         "search people",
+        "people in organization",
+        "people in org",
         "org chart",
         "colleague email",
         "colleague phone"
+      ],
+      "useWhen": [
+        "user asks to find a person in the organization directory",
+        "user mentions Entra, AAD, or Active Directory person lookup",
+        "user wants to look up a colleague by name or email"
+      ],
+      "avoidWhen": [
+        "searching for emails or email messages — use outlook_search_emails instead",
+        "finding email content in mailbox"
       ],
       "inputSchema": {
         "type": "object",
