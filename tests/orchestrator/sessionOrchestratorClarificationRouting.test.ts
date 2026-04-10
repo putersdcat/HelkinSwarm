@@ -9,7 +9,7 @@ describe('sessionOrchestrator clarification routing', () => {
     expect(source).toContain('const isExplicitReadOnlyDiscoveryRequest = isReadOnlyDiscoveryRequest(effectiveTaskMessage);');
     expect(source).toContain('const readOnlyDiscoveryQuery = buildReadOnlyDiscoveryQuery(effectiveTaskMessage);');
     expect(source).toContain('effectiveTaskMessage = readOnlyDiscoveryQuery;');
-    expect(source).toContain('const allToolSchemas = toolRegistry.toFunctionSchemas();');
+    expect(source).toContain('const allToolSchemas = initialToolSurface.tools;');
     expect(source).toContain('const initialToolSchemas = deterministicInitialToolCall');
     expect(source).toContain('deriveContextAwareInitialToolSchemas(effectiveTaskMessage, allToolSchemas);');
     expect(source).toContain('synthesizeRuntimeAssetInlineEmailToolCall(');
@@ -19,7 +19,7 @@ describe('sessionOrchestrator clarification routing', () => {
     expect(source).toContain('const forcedInitialToolChoice = getForcedInitialToolChoice(effectiveTaskMessage, initialToolSchemas) ?? \'auto\';');
     expect(source).toContain('toolChoice: forcedInitialToolChoice,');
     expect(source).toContain('if (isExplicitReadOnlyDiscoveryRequest) {');
-    expect(source).toContain('const followUpToolSchemas = selectiveFollowUpSchemas ?? allToolSchemas;');
+    expect(source).toContain('const followUpToolSchemas = followUpToolSurface.tools;');
     expect(source).toContain('const deterministicFollowUpToolCall = synthesizeExactToolCall(');
     expect(source).toContain(') ?? synthesizeDeterministicFollowUpToolCall(');
     expect(source).toContain('effectiveTaskMessage,');

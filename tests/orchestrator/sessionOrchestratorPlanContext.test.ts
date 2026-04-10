@@ -21,7 +21,7 @@ describe('sessionOrchestrator plan context preservation', () => {
   it('can bypass the first follow-up model call when discovery already identified an explicit send tool', () => {
     const source = readFileSync('src/orchestrator/sessionOrchestrator.ts', 'utf8');
 
-    expect(source).toContain('const followUpToolSchemas = selectiveFollowUpSchemas ?? allToolSchemas;');
+    expect(source).toContain('const followUpToolSchemas = followUpToolSurface.tools;');
     expect(source).toContain('const deterministicFollowUpToolCall = synthesizeExactToolCall(');
     expect(source).toContain(') ?? synthesizeDeterministicFollowUpToolCall(');
     expect(source).toContain("let followUp: LlmResult = deterministicFollowUpToolCall");

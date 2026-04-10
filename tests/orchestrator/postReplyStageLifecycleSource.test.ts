@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 describe('post-reply stage lifecycle source guards', () => {
-  it('keeps active-processing stage ownership in the overseer instead of clearing it inside sendReply', () => {
+  it('clears the orchestrator stage inside sendReply after successful delivery and keeps overseer ingress ownership', () => {
     const overseerSource = readFileSync('src/orchestrator/overseer.ts', 'utf8');
     const sendReplySource = readFileSync('src/orchestrator/sendReplyActivity.ts', 'utf8');
 
-    expect(sendReplySource).not.toContain('await clearOrchestratorStage(correlationId, input.userId);');
-    expect(sendReplySource).not.toContain("import { clearOrchestratorStage, recordSubstage } from '../observability/orchestratorStageHealth.js';");
-    expect(sendReplySource).toContain("import { recordSubstage } from '../observability/orchestratorStageHealth.js';");
+    expect(sendReplySource).toContain("import { clearOrchestratorStage, recordSubstage } from '../observability/orchestratorStageHealth.js';");
+    expect(sendReplySource).toContain('await clearOrchestratorStage(input.correlationId, input.userId);');
+    expect(sendReplySource).toContain('Stage clear timed out/failed after visible reply delivery');
 
     expect(overseerSource).toContain("yield context.df.callActivity('ingressWindowStageActivity', {");
     expect(overseerSource).toContain("action: 'clear',");

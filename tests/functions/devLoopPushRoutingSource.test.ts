@@ -6,7 +6,7 @@ describe('devloop push routing proof surface', () => {
     const source = readFileSync('src/functions/devLoopRelay.ts', 'utf8');
 
     expect(source).toContain('deliveredToOverseer,');
-    expect(source).toContain('instanceId: activeOverseerInstanceId ?? null,');
+    expect(source).toContain('instanceId: deliveredInstanceId ?? null,');
   });
 
   it('routes real DEVQUERY/DEVLOOP pushes through NewMessage instead of the dead DevLoopMessage event', () => {

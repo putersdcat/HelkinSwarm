@@ -33,7 +33,7 @@ describe('ingress task complexity + turn assessment (#531)', () => {
     expect(complexity).toBe('complex');
   });
 
-  it('classifies heavy planning prompts as complex on the default impaired lane', async () => {
+  it('classifies heavy planning prompts as complex on the default lane', async () => {
     const modelRouter = await loadModelRouterWithDefaults();
 
     const assessment = modelRouter.getConsciousLaneAssessmentForTurn();
@@ -41,7 +41,7 @@ describe('ingress task complexity + turn assessment (#531)', () => {
       userMessage: 'Please produce a detailed architecture migration plan with step-by-step reasoning.',
     });
 
-    expect(assessment.isImpaired).toBe(true);
+    expect(assessment.isImpaired).toBe(false);
     expect(assessment.deploymentName).toBe('o4-mini');
     expect(complexity).toBe('complex');
   });

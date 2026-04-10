@@ -19,25 +19,25 @@ describe('modelRouter capacity profiles (#530)', () => {
     vi.resetModules();
   });
 
-  it('classifies o4-mini as a low-capacity impaired lane with defer-heavy-work protocol', async () => {
+  it('classifies o4-mini as a high-capacity reasoning lane with full-capability protocol', async () => {
     const modelRouter = await loadModelRouterWithDefaults();
 
     const profile = modelRouter.getModelCapacityProfile('o4-mini-2026-03-17');
 
-    expect(profile.capacityLevel).toBe('low');
-    expect(profile.impairmentProtocol).toBe('defer-heavy-work');
-    expect(profile.unsuitableFor).toContain('orchestration');
+    expect(profile.capacityLevel).toBe('high');
+    expect(profile.impairmentProtocol).toBe('full-capability');
+    expect(profile.defaultReasoning).toBe(true);
   });
 
-  it('surfaces the default global conscious lane as impaired when routing lands on o4-mini', async () => {
+  it('surfaces the default global conscious lane as full-capability when routing lands on o4-mini', async () => {
     const modelRouter = await loadModelRouterWithDefaults();
 
     const assessment = modelRouter.getConsciousLaneAssessment();
 
     expect(assessment.deploymentName).toBe('o4-mini');
-    expect(assessment.capacityProfile.capacityLevel).toBe('low');
-    expect(assessment.isImpaired).toBe(true);
-    expect(assessment.summary).toContain('low-capacity impaired state');
+    expect(assessment.capacityProfile.capacityLevel).toBe('high');
+    expect(assessment.isImpaired).toBe(false);
+    expect(assessment.summary).toContain('high capacity');
   });
 
   it('keeps o4-mini as a high-capacity full-capability reasoning lane', async () => {

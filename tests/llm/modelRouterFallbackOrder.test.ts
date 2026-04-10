@@ -56,13 +56,13 @@ describe('modelRouter fallback ordering (#411)', () => {
     ]);
   });
 
-  it('routes unlabeled global prompts through the fast secondary lane during active development', async () => {
+  it('routes unlabeled global prompts through the reasoning secondary lane during active development', async () => {
     const modelRouter = await loadModelRouterWithDefaults();
 
     const routing = modelRouter.getModelRouting();
 
     expect(routing.deploymentName).toBe('o4-mini');
-    expect(routing.isReasoning).toBe(false);
+    expect(routing.isReasoning).toBe(true);
   });
 
   it('automatically restores ordinary routing to the high-capacity reasoning lane when the impaired default lane is degraded', async () => {
@@ -85,14 +85,14 @@ describe('modelRouter fallback ordering (#411)', () => {
     expect(routing.isReasoning).toBe(true);
   });
 
-  it('falls back to the primary lane when both the impaired default lane and reasoning lane are unavailable', async () => {
+  it('keeps routing on o4-mini even when both circuit-breaker slots are degraded since it is high-capacity', async () => {
     const modelRouter = await loadModelRouterWithDefaults();
     await seedDegradedLane('o4-mini');
     await seedDegradedLane('o4-mini');
 
     const routing = modelRouter.getModelRouting();
 
-    expect(routing.deploymentName).toBe('grok-4-1-fast-non-reasoning');
+    expect(routing.deploymentName).toBe('o4-mini');
   });
 
   it('falls from o4-mini into tertiary defaults before circling back to Grok primary', async () => {
