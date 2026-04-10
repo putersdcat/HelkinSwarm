@@ -1,0 +1,114 @@
+{
+  "domain": "entra",
+  "version": "1.0",
+  "shortName": "entra",
+  "displayName": "Entra ID Directory",
+  "shortDescription": "Look up user profiles and directory information from Microsoft Entra ID (Azure Active Directory) using delegated Graph access.",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/core.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "post-install-link",
+  "lifecycleRules": "keep-credentials",
+  "linkConfig": {
+    "connectionName": "GraphOAuth",
+    "displayName": "Microsoft Account",
+    "description": "Sign in to grant HelkinSwarm access to your Entra ID directory profile"
+  },
+  "externalAccountsNeeded": [
+    {
+      "description": "Microsoft Entra work or school account",
+      "satisfiedBy": "oauth-link"
+    }
+  ],
+  "discoveryHints": [
+    "entra",
+    "directory",
+    "user profile",
+    "my profile",
+    "who am I",
+    "user lookup",
+    "find user",
+    "active directory",
+    "azure ad"
+  ],
+  "orchestratorUseCases": [
+    "look up the current user's own Entra ID profile: name, email, job title, department, phone",
+    "find out who the current user's manager is",
+    "look up a colleague by email address or display name",
+    "retrieve canonical user profile fields for directory-style tasks",
+    "find people in the organization the user interacts with frequently"
+  ],
+  "recommendedEntryTools": [
+    "entra_get_my_profile"
+  ],
+  "tools": [
+    {
+      "name": "entra_get_my_profile",
+      "description": "Retrieve the current user's own Entra ID profile. Returns display name, email (UPN), job title, department, office location, mobile phone, and manager name when available. Requires the user's linked Microsoft account.",
+      "risk": "low",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "discoveryTerms": [
+        "my profile",
+        "who am I",
+        "my name",
+        "my job title",
+        "my department",
+        "my email",
+        "my phone",
+        "user profile",
+        "entra profile"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "entra_find_people",
+      "description": "Search for people in your organization by name or email. Returns matching colleagues from your Entra directory with profile info (display name, job title, email, department). Uses the People API which ranks by your interaction history — most relevant colleagues appear first. Requires People.Read delegated scope.",
+      "risk": "low",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "discoveryTerms": [
+        "find user",
+        "look up colleague",
+        "find person",
+        "search directory",
+        "who is",
+        "user lookup",
+        "find employee",
+        "search people",
+        "org chart",
+        "colleague email",
+        "colleague phone"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Name or email address fragment to search for. E.g. 'John Smith' or 'jsmith@contoso.com'"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of results to return. Default: 5, max: 20."
+          }
+        },
+        "required": ["query"]
+      }
+    }
+  ]
+}
