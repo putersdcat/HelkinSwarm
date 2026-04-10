@@ -1191,6 +1191,16 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         followUpToolSurfaceModelId,
       );
       const followUpToolSchemas = followUpToolSurface.tools;
+      const followUpModelProfileTelemetry = followUpToolSurface.profileModel
+        ? {
+            phase: 'followup' as const,
+            model: followUpToolSurface.profileModel ?? followUpToolSurfaceModelId,
+            transformed: followUpToolSurface.wasTransformed,
+            toolCountBefore: (selectiveFollowUpSchemas ?? allToolSchemas).length,
+            toolCountAfter: followUpToolSchemas.length,
+            excludedTools: followUpToolSurface.excluded.join(','),
+          }
+        : undefined;
       if (followUpToolSurface.wasTransformed) {
         yield* emitOrchestratorTelemetry(context, {
           name: 'ModelProfileApplied',
@@ -1277,6 +1287,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         correlationId,
         modelOverride: effectiveFollowUpModelOverride,
         enableRetry: true,
+        modelProfileTelemetry: followUpModelProfileTelemetry,
         tools: selectiveFollowUpSchemas ?? allToolSchemas,
         toolChoice: forcedFollowUpToolChoice,
       };
@@ -1335,6 +1346,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             correlationId,
             modelOverride: effectiveFollowUpModelOverride,
             enableRetry: false,
+            modelProfileTelemetry: followUpModelProfileTelemetry,
             additionalTurns: [
               ...additionalTurns,
               {
@@ -1444,6 +1456,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
               correlationId,
               modelOverride: effectiveFollowUpModelOverride,
               enableRetry: false,
+              modelProfileTelemetry: followUpModelProfileTelemetry,
               additionalTurns,
             };
             followUp = yield* withLlmFollowUpTimeout(context, forcedTextFollowUpInput);
@@ -1689,16 +1702,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           correlationId,
           modelOverride: effectiveFollowUpModelOverride,
           enableRetry: allowMoreFollowUpTools,
-          modelProfileTelemetry: initialToolSurface.profileModel
-            ? {
-                phase: 'followup',
-                model: initialToolSurface.profileModel ?? initialToolSurfaceModelId,
-                transformed: initialToolSurface.wasTransformed,
-                toolCountBefore: toolRegistry.toFunctionSchemas().length,
-                toolCountAfter: allToolSchemas.length,
-                excludedTools: initialToolSurface.excluded.join(','),
-              }
-            : undefined,
+          modelProfileTelemetry: followUpModelProfileTelemetry,
           tools: allowMoreFollowUpTools ? (selectiveFollowUpSchemas ?? allToolSchemas) : undefined,
           toolChoice: allowMoreFollowUpTools ? forcedFollowUpToolChoice : undefined,
           additionalTurns,

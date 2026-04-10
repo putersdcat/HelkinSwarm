@@ -12,8 +12,8 @@ describe('model profile runtime wiring source guards', () => {
     expect(sessionSource).toContain("name: 'ModelProfileApplied'");
     expect(sessionSource).toContain('toolSummaryDefinitions: initialToolSummaryDefinitions');
     expect(sessionSource).toContain('applyModelProfileToFunctionSchemas(');
-    expect(sessionSource).toContain('modelProfileTelemetry: initialToolSurface.profileModel');
-    expect(sessionSource).toContain('modelProfileTelemetry: initialToolSurface.profileModel');
+    expect(sessionSource).toContain('const followUpModelProfileTelemetry = followUpToolSurface.profileModel');
+    expect(sessionSource).toContain('modelProfileTelemetry: followUpModelProfileTelemetry');
 
     expect(promptSource).toContain('toolSummaryDefinitions?: Array<{ name: string; description: string }>');
     expect(promptSource).toContain('const tools = input.toolSummaryDefinitions ?? getDiscoveryFirstToolDefinitions();');
