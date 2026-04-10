@@ -33,20 +33,24 @@
   "tools": [
     {
       "name": "docs_save",
-      "description": "Saves a new document to the user's document store. The document content should be Markdown. Returns a document ID that can be used to retrieve it later. Use this during research tasks to checkpoint work, save drafts, or store results.",
+      "description": "Saves a new document or updates an existing document in the user's personal document store. The document content should be Markdown. On create, returns a new document ID. To update, pass the existing docId — the content and title will be overwritten and updatedAt refreshed. Use this during research tasks to checkpoint work, save drafts, or revise saved documents.",
       "risk": "medium",
       "dataSensitivity": "mixed",
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
       "requiresSubAgent": false,
-      "privilegeClass": "create",
+      "privilegeClass": "read-write",
       "externalAutomationCapabilities": [],
       "longTermMemorySchema": [],
-      "discoveryTerms": ["save", "store", "create document", "write document", "checkpoint", "draft"],
+      "discoveryTerms": ["save", "store", "create document", "update document", "edit document", "write document", "checkpoint", "draft", "overwrite document"],
       "inputSchema": {
         "type": "object",
         "properties": {
+          "docId": {
+            "type": "string",
+            "description": "Optional UUID of an existing document to update. If omitted, a new document is created."
+          },
           "title": {
             "type": "string",
             "description": "A short descriptive title for the document (max 255 chars)"
@@ -58,7 +62,7 @@
           "tags": {
             "type": "array",
             "items": { "type": "string" },
-            "description": "Optional list of tags for categorization (e.g. ['research', 'draft', 'project-x'])"
+            "description": "Optional list of tags for categorization (e.g. ['research', 'draft', 'project-x']). On update, omitting tags preserves existing tags."
           }
         },
         "required": ["title", "content"]
@@ -128,7 +132,7 @@
       "privilegeClass": "read-only",
       "externalAutomationCapabilities": [],
       "longTermMemorySchema": [],
-      "discoveryTerms": ["search documents", "find document", "look for document", "keyword search"],
+      "discoveryTerms": ["search documents", "find document", "look for document", "keyword search", "search my saved documents", "find my notes", "find saved documents", "search stored documents"],
       "inputSchema": {
         "type": "object",
         "properties": {

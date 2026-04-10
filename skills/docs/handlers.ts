@@ -118,6 +118,7 @@ const DocMetaSchema = z.object({
 });
 
 const DocsSaveArgsSchema = z.object({
+  docId: z.string().uuid().optional(),  // if provided → update existing document
   title: z.string().min(1).max(255),
   content: z.string().min(1),
   tags: z.union([z.array(z.string()), z.undefined()]).optional(),
@@ -152,22 +153,51 @@ const DocsDeleteArgsSchema = z.object({
 // ---------------------------------------------------------------------------
 
 export const docs_save: ToolHandler = async (args) => {
-  const { title, content, tags, userId } = DocsSaveArgsSchema.parse(args);
+  const { docId: existingDocId, title, content, tags, userId } = DocsSaveArgsSchema.parse(args);
 
-  const docId = randomUUID();
   const now = new Date().toISOString();
-  const blobPath = `${userId}/${docId}.md`;
   const sizeBytes = Buffer.byteLength(content, 'utf8');
   const summary = content.slice(0, 500).replace(/[\n\r]+/g, ' ').trim();
-
-  // 1. Upload blob
   const containerClient = await getBlobContainerClient();
+
+  if (existingDocId) {
+    // ── UPDATE PATH ────────────────────────────────────────────────────────
+    const { resource: rawMeta } = await getDocsContainer().item(existingDocId, userId).read<DocMeta>();
+    if (!rawMeta) {
+      return `Document not found: ${existingDocId}. Omit docId to create a new document.`;
+    }
+    const existingMeta = DocMetaSchema.parse(rawMeta);
+
+    // Overwrite blob (upload replaces in place)
+    const blobClient = containerClient.getBlockBlobClient(existingMeta.blobPath);
+    await blobClient.upload(content, sizeBytes, {
+      blobHTTPHeaders: { blobContentType: 'text/markdown; charset=utf-8' },
+    });
+
+    // Upsert Cosmos metadata — preserve createdAt, keep old tags if none supplied
+    const updatedMeta: DocMeta = {
+      ...existingMeta,
+      title,
+      tags: tags ?? existingMeta.tags,
+      summary,
+      sizeBytes,
+      updatedAt: now,
+    };
+    await getDocsContainer().items.upsert<DocMeta>(updatedMeta);
+
+    const tagLine = updatedMeta.tags.length > 0 ? ` [${updatedMeta.tags.join(', ')}]` : '';
+    return `Document updated: "${title}"${tagLine}\nID: ${existingDocId}\nSize: ${sizeBytes} bytes`;
+  }
+
+  // ── CREATE PATH ──────────────────────────────────────────────────────────
+  const docId = randomUUID();
+  const blobPath = `${userId}/${docId}.md`;
+
   const blobClient = containerClient.getBlockBlobClient(blobPath);
   await blobClient.upload(content, sizeBytes, {
     blobHTTPHeaders: { blobContentType: 'text/markdown; charset=utf-8' },
   });
 
-  // 2. Upsert Cosmos metadata
   const meta: DocMeta = {
     id: docId,
     userId,
