@@ -22,7 +22,7 @@ describe('skill operational state assessment', () => {
     const byDomain = Object.fromEntries(catalog.map((entry) => [entry.domain, entry]));
 
     expect(byDomain['graphenterprise']?.operationalState).toBe('operator-setup-required');
-    expect(byDomain['web']?.operationalState).toBe('operator-setup-required');
+    expect(byDomain['web']?.operationalState).toBe('operational'); // Brave key is optional — DuckDuckGo fallback makes it operational
     expect(byDomain['outlook']?.operationalState).toBe('action-required');
     expect(byDomain['microsoftlearn']?.operationalState).toBe('operational');
 

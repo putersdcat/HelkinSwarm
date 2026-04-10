@@ -74,10 +74,11 @@
   "lifecycleRules": "keep-credentials",
   "externalAccountsNeeded": [
     {
-      "description": "Brave Search API key",
+      "description": "Brave Search API key (optional — skill falls back to DuckDuckGo when absent; research quality is lower without it)",
       "envVarName": "BRAVE_SEARCH_API_KEY",
-      "howToObtain": "Free tier available at https://api.search.brave.com/; key must be stored in stamp Key Vault as BRAVE_SEARCH_API_KEY",
-      "satisfiedBy": "operator-kv"
+      "howToObtain": "Free tier at https://api.search.brave.com/; store key in stamp Key Vault as BraveSearchApiKey for full-quality multi-angle research",
+      "satisfiedBy": "operator-kv",
+      "required": false
     }
   ],
   "discoveryHints": [

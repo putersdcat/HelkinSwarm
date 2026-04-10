@@ -26,6 +26,8 @@ export const ExternalAccountEntry = z.object({
   kvSecretName: z.string().min(1).optional(),
   howToObtain: z.string().optional(),
   satisfiedBy: z.enum(['operator-kv', 'user-vault', 'bicep-provisioned', 'oauth-link']).optional(),
+  /** When false, the skill degrades gracefully without this account — it remains operational (#623). */
+  required: z.boolean().optional(),
 }).strict();
 export type ExternalAccountEntry = z.infer<typeof ExternalAccountEntry>;
 

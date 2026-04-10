@@ -55,7 +55,7 @@
   ],
   "shortName": "web",
   "displayName": "Web Search",
-  "shortDescription": "Perform internet searches via Brave Search API",
+  "shortDescription": "Search the web via Brave Search API (when key is configured) or DuckDuckGo Instant Answer (zero-credential fallback)",
   "discoveryHints": [
     "web search",
     "fresh public information",
@@ -74,10 +74,11 @@
   "lifecycleRules": "keep-credentials",
   "externalAccountsNeeded": [
     {
-      "description": "Brave Search API key",
+      "description": "Brave Search API key (optional — skill falls back to DuckDuckGo Instant Answer when absent)",
       "envVarName": "BRAVE_SEARCH_API_KEY",
-      "howToObtain": "Free tier available at https://api.search.brave.com/; key must be stored in stamp Key Vault as BRAVE_SEARCH_API_KEY",
-      "satisfiedBy": "operator-kv"
+      "howToObtain": "Free tier at https://api.search.brave.com/; store key in stamp Key Vault as BraveSearchApiKey for full-quality results",
+      "satisfiedBy": "operator-kv",
+      "required": false
     }
   ],
   "maintenanceTasks": [

@@ -31,9 +31,10 @@ export function assessSkillOperationalState(
   const onboardingMethod = manifest.onboardingMethod;
   const softOnboarding = manifest.softOnboarding;
 
-  // Preflight: only count accounts that are not already satisfied by a present env var (#624)
+  // Preflight: only count accounts that are not already satisfied by a present env var (#624).
+  // Accounts with required:false are optional upgrades — the skill degrades gracefully without them.
   const unsatisfiedExternalAccounts = externalAccounts.filter(
-    (entry) => !entry.envVarName || !process.env[entry.envVarName],
+    (entry) => entry.required !== false && (!entry.envVarName || !process.env[entry.envVarName]),
   );
 
   if (missingDeps.length > 0) {

@@ -32,6 +32,74 @@ const BraveSearchResponseSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// DuckDuckGo Instant Answer — zero-key fallback (mirrors skills/web/handlers.ts)
+// ---------------------------------------------------------------------------
+
+const DdgTopicItemSchema = z.object({
+  Text: z.string().optional(),
+  FirstURL: z.string().optional(),
+});
+
+const DdgResponseSchema = z.object({
+  Abstract: z.string().optional(),
+  AbstractSource: z.string().optional(),
+  AbstractURL: z.string().optional(),
+  Heading: z.string().optional(),
+  RelatedTopics: z.array(
+    z.union([
+      DdgTopicItemSchema,
+      z.object({ Name: z.string(), Topics: z.array(DdgTopicItemSchema).optional() }),
+    ]),
+  ).optional(),
+});
+
+async function ddgFlatSearch(query: string, count: number): Promise<WebResult[]> {
+  const params = new URLSearchParams({
+    q: query,
+    format: 'json',
+    no_html: '1',
+    skip_disambig: '1',
+  });
+
+  const response = await fetch(
+    `https://api.duckduckgo.com/?${params}`,
+    {
+      method: 'GET',
+      headers: { 'Accept': 'application/json', 'User-Agent': 'HelkinSwarm/1.0' },
+      signal: AbortSignal.timeout(8_000),
+    },
+  );
+
+  if (!response.ok) {
+    return []; // silent fallback — research angle just returns no results
+  }
+
+  const data: unknown = await response.json();
+  const parsed = DdgResponseSchema.parse(data);
+  const results: WebResult[] = [];
+
+  if (parsed.Abstract && parsed.AbstractURL) {
+    const source = parsed.AbstractSource ? ` (${parsed.AbstractSource})` : '';
+    results.push({
+      title: `${parsed.Heading ?? query}${source}`,
+      url: parsed.AbstractURL,
+      description: parsed.Abstract.substring(0, 300),
+    });
+  }
+
+  for (const topic of parsed.RelatedTopics ?? []) {
+    if (results.length >= count) break;
+    if ('Name' in topic) continue;
+    if (!topic.FirstURL || !topic.Text) continue;
+    const titleEnd = topic.Text.indexOf(' - ');
+    const title = titleEnd > 0 ? topic.Text.substring(0, titleEnd).trim() : topic.Text.substring(0, 60);
+    results.push({ title, url: topic.FirstURL, description: topic.Text.substring(0, 200) });
+  }
+
+  return results.slice(0, count);
+}
+
+// ---------------------------------------------------------------------------
 // Input schema
 // ---------------------------------------------------------------------------
 
@@ -60,10 +128,9 @@ interface WebResult {
 async function braveSearch(opts: SearchOptions): Promise<WebResult[]> {
   const apiKey = process.env['BRAVE_SEARCH_API_KEY'];
   if (!apiKey || apiKey === 'not-configured') {
-    throw new Error(
-      'Deep research not configured — BRAVE_SEARCH_API_KEY not set. ' +
-      'Sign up at https://api.search.brave.com/ and store the key in Key Vault.',
-    );
+    // Brave Search key not configured — use DuckDuckGo Instant Answer as fallback.
+    // Results are more limited but the tool remains functional without any API key.
+    return ddgFlatSearch(opts.query, opts.count);
   }
 
   const params = new URLSearchParams({
