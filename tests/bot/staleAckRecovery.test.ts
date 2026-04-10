@@ -6,6 +6,7 @@ const harness = vi.hoisted(() => ({
   getStaleAcks: vi.fn(),
   clearPendingAckId: vi.fn(),
   hasOutboundArtifactClaim: vi.fn(),
+  getQueuedBufferedReplayCandidateByCorrelation: vi.fn(),
   clearOrchestratorStage: vi.fn(),
   getOrchestratorStageForCorrelation: vi.fn(),
   trackEvent: vi.fn(),
@@ -21,6 +22,10 @@ vi.mock('../../src/bot/conversationStore.js', () => ({
 vi.mock('../../src/observability/orchestratorStageHealth.js', () => ({
   clearOrchestratorStage: harness.clearOrchestratorStage,
   getOrchestratorStageForCorrelation: harness.getOrchestratorStageForCorrelation,
+}));
+
+vi.mock('../../src/orchestrator/bufferedIngressActivity.js', () => ({
+  getQueuedBufferedReplayCandidateByCorrelation: harness.getQueuedBufferedReplayCandidateByCorrelation,
 }));
 
 vi.mock('../../src/observability/telemetry.js', () => ({
@@ -51,6 +56,7 @@ async function loadModule() {
   harness.getStaleAcks.mockReset();
   harness.clearPendingAckId.mockReset();
   harness.hasOutboundArtifactClaim.mockReset();
+  harness.getQueuedBufferedReplayCandidateByCorrelation.mockReset();
   harness.clearOrchestratorStage.mockReset();
   harness.getOrchestratorStageForCorrelation.mockReset();
   harness.trackEvent.mockReset();
@@ -59,6 +65,7 @@ async function loadModule() {
   harness.clearOrchestratorStage.mockResolvedValue(undefined);
   harness.getStaleAcks.mockResolvedValue([]);
   harness.hasOutboundArtifactClaim.mockResolvedValue(false);
+  harness.getQueuedBufferedReplayCandidateByCorrelation.mockResolvedValue(undefined);
   harness.getOrchestratorStageForCorrelation.mockResolvedValue(undefined);
   harness.continueConversationAsync.mockImplementation(async (_appId, conversationReference, callback) => {
     const updateActivity = vi.fn(async () => undefined);
@@ -140,6 +147,33 @@ describe('staleAckRecovery', () => {
       'user-claim',
       'corr-claim',
       { conversation: { id: 'conv-claim' } },
+    );
+
+    expect(outcome).toBe('skipped');
+    expect(harness.continueConversationAsync).not.toHaveBeenCalled();
+    expect(harness.clearPendingAckId).not.toHaveBeenCalled();
+    expect(harness.clearOrchestratorStage).not.toHaveBeenCalled();
+  });
+
+  it('skips recovery when the same correlation is still queued in buffered ingress', async () => {
+    const { recoverStaleAck } = await loadModule();
+    harness.getQueuedBufferedReplayCandidateByCorrelation.mockResolvedValue({
+      docId: 'buffered-new-message-corr-buffered',
+      userId: 'user-buffered',
+      correlationId: 'corr-buffered',
+      event: {
+        userId: 'user-buffered',
+        userAlias: 'Eric',
+        userMessage: 'follow the leader once it drains',
+        correlationId: 'corr-buffered',
+      },
+    });
+
+    const outcome = await recoverStaleAck(
+      'conv-buffered',
+      'ack-buffered',
+      'user-buffered',
+      'corr-buffered',
     );
 
     expect(outcome).toBe('skipped');

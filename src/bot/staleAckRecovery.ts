@@ -17,6 +17,7 @@ import {
   getOrchestratorStageForCorrelation,
 } from '../observability/orchestratorStageHealth.js';
 import { formatTelemetryTimestamp } from '../orchestrator/turnTelemetry.js';
+import { getQueuedBufferedReplayCandidateByCorrelation } from '../orchestrator/bufferedIngressActivity.js';
 
 export const STALE_ACK_THRESHOLD_MS = 6 * 60 * 1000;
 
@@ -67,12 +68,13 @@ export async function recoverStaleAck(
   conversationReferenceOverride?: Partial<ConversationReference> | null,
 ): Promise<'recovered' | 'skipped'> {
   const recoveredAtIso = new Date().toISOString();
-  const [stageForCorrelation, replyClaimExists] = await Promise.all([
+  const [stageForCorrelation, replyClaimExists, queuedBufferedMessage] = await Promise.all([
     getOrchestratorStageForCorrelation(correlationId, userId),
     hasOutboundArtifactClaim(conversationId, 'reply', correlationId),
+    getQueuedBufferedReplayCandidateByCorrelation(userId, correlationId),
   ]);
 
-  if (stageForCorrelation || replyClaimExists) {
+  if (stageForCorrelation || replyClaimExists || queuedBufferedMessage) {
     return 'skipped';
   }
 
