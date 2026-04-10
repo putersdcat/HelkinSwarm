@@ -14,6 +14,7 @@ on:
     paths:
       - 'src/**'
       - 'skills/**'
+      - 'model-profiles/**'
       - 'infra/*.bicep'
       - 'infra/*.parameters.json'
       - 'Dockerfile'

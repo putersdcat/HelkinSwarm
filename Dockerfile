@@ -45,4 +45,8 @@ COPY skills/ ./skills/
 COPY src/persona/ ./src/persona/
 COPY visualAssets/ ./visualAssets/
 
+# Copy model profiles — needed at runtime by profileLoader (#618)
+# Resolves to dist/model-profiles/ to match join(import.meta.dirname, '..', '..', 'model-profiles')
+COPY model-profiles/ ./dist/model-profiles/
+
 EXPOSE 80
