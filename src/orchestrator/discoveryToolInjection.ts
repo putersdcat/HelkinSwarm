@@ -64,6 +64,10 @@ function isCoreTool(name: string): boolean {
   return name.startsWith('helkin_');
 }
 
+function shouldRetainCoreToolInActionableFollowUp(name: string): boolean {
+  return isCoreTool(name) && name !== 'helkin_skill_search';
+}
+
 function isNonChatRecoverableSkillState(state: string | undefined): boolean {
   return state === 'operator-setup-required' || state === 'blocked';
 }
@@ -1006,7 +1010,7 @@ export function deriveSelectiveFollowUpToolSchemas(
   }
 
   return toolRegistry.toFunctionSchemas().filter((tool) =>
-    isCoreTool(tool.function.name) || selectedNames.has(tool.function.name),
+    shouldRetainCoreToolInActionableFollowUp(tool.function.name) || selectedNames.has(tool.function.name),
   );
 }
 

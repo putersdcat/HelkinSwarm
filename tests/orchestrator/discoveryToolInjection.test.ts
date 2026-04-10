@@ -304,7 +304,6 @@ describe('discoveryToolInjection', () => {
     ]);
 
     expect(tools?.map((tool) => tool.function.name)).toEqual([
-      'helkin_skill_search',
       'helkin_health_check',
       'outlook_search_emails',
     ]);
@@ -326,7 +325,6 @@ describe('discoveryToolInjection', () => {
     ]);
 
     expect(tools?.map((tool) => tool.function.name)).toEqual([
-      'helkin_skill_search',
       'helkin_health_check',
       'outlook_search_emails',
     ]);
@@ -664,9 +662,28 @@ describe('discoveryToolInjection', () => {
     ]);
 
     expect(tools?.map((tool) => tool.function.name)).toEqual([
-      'helkin_skill_search',
       'helkin_health_check',
       'outlook_create_calendar_event',
+    ]);
+  });
+
+  it('drops helkin_skill_search from actionable follow-up subsets once discovery has already surfaced runnable tools', async () => {
+    const { deriveSelectiveFollowUpToolSchemas } = await import('../../src/orchestrator/discoveryToolInjection.js');
+
+    const tools = deriveSelectiveFollowUpToolSchemas([
+      {
+        toolName: 'helkin_skill_search',
+        success: true,
+        result: {
+          tools: [{ name: 'outlook_search_emails' }],
+          skills: [],
+        },
+      },
+    ]);
+
+    expect(tools?.map((tool) => tool.function.name)).toEqual([
+      'helkin_health_check',
+      'outlook_search_emails',
     ]);
   });
 
