@@ -290,7 +290,7 @@ async function uploadToOneDrive(
   filename: string,
   buffer: Buffer,
 ): Promise<OneDriveItem> {
-  const encodedPath = encodeURIComponent(`${ONEDRIVE_FOLDER}/${filename}`);
+  const encodedPath = `${encodeURIComponent(ONEDRIVE_FOLDER)}/${encodeURIComponent(filename)}`;
   const url = `${GRAPH_BASE}/me/drive/root:/${encodedPath}:/content`;
 
   const response = await fetch(url, {
