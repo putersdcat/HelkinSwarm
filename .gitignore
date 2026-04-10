@@ -47,14 +47,11 @@ appid.txt
 # pnpm lockfile is committed, but store is local
 .pnpm-store/
 
-# Archival research (v0 analysis, local only)
+# Archival research — v0 lineage analysis (isolated, never to poison v2)
 ArchivalResearch/
 
 # Compiled ARM templates (generated from Bicep)
 infra/main.json
-
-# Archival research — v0 lineage analysis (isolated, never to poison v2)
-ArchivalResearch/
 # MCP Teams Test Harness — local auth cache and discovered chat settings
 .local/
 .vscode/mcp-settings.json
@@ -64,3 +61,30 @@ dist-mcp/
 .playwright-mcp/
 open-issues.json
 tok-check.json
+
+# All the graphify shit
+src/graphify-out/
+/graphify-out/
+
+# Generated outputs — recoverable from git history or re-runnable scripts
+*-dossier.md
+*-bundle.md
+*_export*.json
+project_sitrep_*.md
+sitrep_cloc_*.txt
+clean-docs-manifest*.md
+
+# Azure Functions host key (secret-adjacent, never commit)
+.hostkey.tmp
+
+# Historical docs (deleted, prevent re-accumulation)
+docs/ChatLogs/
+docs/RandoStuff/
+docs/Delivery/
+docs/RestartFromZero_Or_NotToBe_That_Is_The_Questions/
+docs/OtherToolComparisons/
+ResearchDocs/
+
+# Extensions — source is tracked, build artifacts are not
+extensions/*/node_modules/
+extensions/*/out/

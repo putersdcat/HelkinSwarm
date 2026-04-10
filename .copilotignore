@@ -28,6 +28,9 @@ docs/ChatLogs/
 # Other stuff
 # visualAssets/
 
+# Extensions — dev tool with its own lifecycle, skip for graphify/scanning
+extensions/
+
 # Generated or temporary files
 *.log
 *.tmp

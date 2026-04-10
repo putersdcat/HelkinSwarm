@@ -5,6 +5,11 @@
       "command": "node",
       "args": ["${workspaceFolder}/dist-mcp/src/mcp/teamsTestHarness.js"],
       "env": { "MCP_RESTART": "2" }
+    },
+    "graphify": {
+      "type": "stdio",
+      "command": "C:\\Users\\eric\\AppData\\Local\\Programs\\Python\\Python311\\python.exe",
+      "args": ["-m", "graphify.serve", "${workspaceFolder}/graphify-out/graph.json"]
     }
   }
 }

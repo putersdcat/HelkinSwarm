@@ -99,6 +99,7 @@ HelkinSwarm v2 is a **nuclear clean-start** from the scrapped first attempt ("He
 |----------------|--------------------------------|
 | **Project**    | HelkinSwarm (personal)         |
 | **Owner**      | Eric Anderson                  |
+| **GitHub Repo** | `putersdcat/HelkinSwarm` — **always** use `owner: "putersdcat"`, `repo: "HelkinSwarm"` for all GitHub MCP tool calls |
 | **Purpose**    | My personal sovereign AI copilot in Teams |
 | **Default Mode** | Global frontier models (Unchained) |
 | **EU Mode**    | Configurable toggle (opt-in)   |

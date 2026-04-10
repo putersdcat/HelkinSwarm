@@ -1,0 +1,13 @@
+# graphify exclusions — skip these from knowledge graph extraction
+# These are kept in the repo but aren't useful for graph signal
+
+# VS Code extension with its own repo — integral dev tool but separate concern
+extensions/
+
+# Source art assets — binary files, not code-relevant
+visualAssets/rawIcons/
+visualAssets/sourceImages/
+
+# Compiled outputs (already in .gitignore but belt-and-suspenders)
+dist/
+dist-mcp/

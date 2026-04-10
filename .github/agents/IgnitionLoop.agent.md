@@ -32,9 +32,11 @@ Before doing anything else, read:
 4. `docs/Delivery/SitRep-2026-04-02/09-Backlog-Control-Surface.md`
 5. the active ignition prompt passed by the user
 
+> 2026-04-10 note: for current post-`#609` backlog work, `MVPAcceleration.agent.md` is the preferred successor to this agent. Use IgnitionLoop mainly for older campaign-history continuity or when explicitly requested.
+
 If the control surface declares an active constitutional gate, also read the named gate issues before selecting work.
 
-If the control surface's retirement / handoff rule says the constitutional override is no longer active, immediately read `docs/Proomptz/DevLoopIgnitionMissionv4.md` and switch to that classic backlog loop for issue selection instead of continuing to operate as though the ignition-only constitutional gate were still active.
+If the control surface's retirement / handoff rule says the constitutional override is no longer active, immediately read `docs/Proomptz/DevLoopIgnitionMissionv6.md` and switch to that newer backlog loop for issue selection instead of continuing to operate as though the ignition-only constitutional gate were still active.
 
 If live repo + issue evidence materially contradicts the control surface, do **not** keep obeying stale guidance by inertia. Refresh or re-bucket the control surface first, then continue.
 
@@ -85,7 +87,7 @@ IgnitionLoop exists to force campaign discipline while the control surface still
 
 Once the refreshed control surface says the constitutional override can retire or hand back to the regular backlog:
 - stop treating `09-Backlog-Control-Surface.md` as the primary selector,
-- switch to `docs/Proomptz/DevLoopIgnitionMissionv4.md`,
+- switch to `docs/Proomptz/DevLoopIgnitionMissionv6.md`,
 - and continue from the normal backlog loop until a future user instruction or refreshed control surface explicitly re-activates a campaign override.
 
 ### Epics are control surfaces
