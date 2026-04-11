@@ -214,3 +214,43 @@ Every SkillForge job logs to App Insights / Sentinel with:
 - Base image rebuild triggered on any change to dev tooling.
 
 SkillForge gives HelkinSwarm the adaptive power users love while keeping the entire process sandboxed, auditable, and human-gated. It is the only component allowed to “invent” new capabilities — and it does so under the strictest controls in the system (see **0e** for the full safety pipeline).
+### 11. MCP Registry as Concept Source (not just as integration target)
+
+The [official MCP Registry](https://registry.modelcontextprotocol.io/) is a discovery surface for two distinct purposes in HelkinSwarm:
+
+**Direct onboarding path** — when a registry candidate can be integrated directly via McpForge (`helkin_mcp_forge`): full external-server integration with safety review, manifest wrapping, and tool surfacing.
+
+**Concept-mining path** — when a registry candidate is better used as a *research input* for a HelkinSwarm-native first-party skill:
+- Do **not** install the external MCP server as a runtime dependency
+- Do **not** expose its tool surface directly in the registry
+- Instead: study its tool concepts, auth shape, UX assumptions, and edge-case handling
+- Then build a HelkinSwarm-native skill (`skills/<domain>/`) that follows the HelkinSwarm manifest schema, safety model, and operational posture
+
+#### When to choose concept-mining over direct onboarding
+
+| Signal | Prefer direct onboarding | Prefer concept mining |
+|--------|--------------------------|-----------------------|
+| Auth model compatible with Bot Framework OAuth | ✅ Strong fit | |
+| Requires QR-code, polling, or user-local state (e.g. WhatsApp Web) | | ✅ Build native |
+| Manifest structure already production-quality | ✅ Strong fit | |
+| Implementation reveals patterns we want to adapt, not depend on | | ✅ Build native |
+| External server is from a trusted, maintained source | ✅ Consider onboarding | |
+| External server is a community prototype / research quality | | ✅ Mine concepts |
+
+#### Reference case: WhatsApp skill (#458)
+
+The [whatsapp-mcp](https://github.com/meharajM/whatsapp-mcp) repository shows:
+- TypeScript MCP server with `connect`, `disconnect`, `send_message`, `ask_question`, `get_status` tool concepts
+- WhatsApp Web authentication via QR code + session persistence
+- Allowed-number restrictions
+
+**Decision**: Use as concept reference only. The QR-code auth model is incompatible with HelkinSwarm's OAuth-linked bot identity. The tool concepts (`send_message`, `get_messages`, status checks) should be replicated in a native `skills/whatsapp/` skill once the auth model is resolved.
+
+#### Process
+
+Registry discovery output can now produce three explicit outcomes (tracked in `#453`):
+1. **Onboard**: integrate the external server via McpForge
+2. **Mine and build**: use the server as a design reference, build a native skill
+3. **Defer**: log the candidate for future evaluation
+
+All three are first-class decisions to be documented in the relevant backlog issue.
