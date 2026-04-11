@@ -20,11 +20,27 @@ The capabilities system is the **contract** between the core runtime and the swa
 ```
 HelkinSwarm/
 ├── skills/                    # Top-level modular skills library (see 0a)
-│   ├── core/                  # Built-in always-present tools
-│   ├── outlook/
-│   ├── teams/
-│   ├── github/
-│   ├── azure/
+│   ├── core/                  # Built-in always-present tools (helkin_*)
+│   ├── azure/                 # Azure Cost Management (helkin_get_costs)
+│   ├── azuremcp/              # Azure MCP bridge integration
+│   ├── budget/                # Cost Estimation & Budgeting (#242)
+│   ├── docformat/             # Markdown → DOCX conversion + OneDrive (#239)
+│   ├── docs/                  # AI-native document storage + search (#244)
+│   ├── entra/                 # Entra ID directory lookup (#243)
+│   ├── github/                # GitHub Issues management (#121)
+│   ├── graphenterprise/       # Microsoft Graph enterprise helpers
+│   ├── hr/                    # HR & Owner Reporting (Azure costs + ledger) (#245)
+│   ├── ledger/                # Lightweight bookkeeping ledger (#246)
+│   ├── math/                  # Math specialist + expression evaluator (#434)
+│   ├── mcpreference/          # MCP Registry search/discovery
+│   ├── microsoftlearn/        # Microsoft Learn documentation search
+│   ├── outlook/               # Email, calendar, OneDrive via Microsoft Graph
+│   ├── research/              # Deep research via Brave Search + DuckDuckGo
+│   ├── teams/                 # Teams reactions and channel interactions
+│   ├── translate/             # Language translation via OpenRouter (#240)
+│   ├── vault/                 # Key Vault secrets management (#178)
+│   ├── weather/               # Weather forecasts
+│   ├── web/                   # Web search (Brave Search + DuckDuckGo fallback)
 │   └── custom/                # User/private skills (hot-reloadable)
 ├── src/capabilities/          # Capability loader + schema (core only)
 ```
@@ -292,6 +308,8 @@ The `core` skill is always present and cannot be uninstalled. It provides Helkin
 |------|------|-------------|
 | `helkin_health_check` | low | Returns bot version, runtime health, and component status |
 | `helkin_list_skills` | low | Lists all loaded skill manifests and their domains |
+| `helkin_current_datetime` | low | Returns current UTC datetime and timezone information |
+| `helkin_recent_requests` | low | Returns the most recent turns processed by the orchestrator for context continuity |
 | `helkin_skill_search` | low | Discovery-only skill/tool browser with `help`, `search`, `describe_skill`, `describe_tool`, and `list_domains` for narrowing the capability surface before execution |
 | `helkin_mcp_registry_search` | low | Searches a synced local cache of official MCP Registry candidates with `help`, `search`, `status`, and `refresh`, keeping external candidates distinct from installed HelkinSwarm skills |
 | `helkin_mcp_forge` | medium | Drafts, inspects, and locally approves McpForge onboarding bundles for discovered MCP Registry candidates after MCP smoke-test validation |
@@ -324,4 +342,36 @@ Added in #248. Three roles are defined:
 Role resolution flows through `getUserRole(userId)` → `canInvokeTool(role, toolName)` in `toolDispatchActivity.ts`. Currently owner-restricted tools: `helkin_test_confirmation`.
 
 The `OWNER_USER_ID` environment variable must be set on the Function App (e.g. `40f5c975-3aa2-47d8-b32d-a9d7a392f6dc` for eric@putersdcat.com).
+
+### Current Live Skills Inventory (as of 2026-04-11)
+
+22 skill domains are loaded at runtime on the `a7f2` stamp.
+
+| Domain | Key Tools | Auth | Status |
+|--------|-----------|------|--------|
+| `core` | `helkin_*` (health, whoami, skill_search, get_costs, …) | UAMI | Always-on |
+| `azure` | Budget/cost fetching | UAMI | Operational |
+| `azuremcp` | Azure MCP bridge | UAMI | Operational |
+| `budget` | `budget_estimate_cost`, `budget_compare_options` | UAMI | Operational |
+| `docformat` | `docformat_save_docx` | GraphOAuth (OneDrive) | Requires `/link` |
+| `docs` | `docs_save`, `docs_get`, `docs_list`, `docs_search` | UAMI (Cosmos) | Operational |
+| `entra` | `entra_get_my_profile`, `entra_find_people` | GraphOAuth | Requires `/link` (People.Read) |
+| `github` | `github_list_issues`, `github_push_files`, … | GitHub App token | Operational |
+| `graphenterprise` | Enterprise Graph helpers | UAMI | Operational |
+| `hr` | `hr_generate_owner_report` | UAMI + GraphOAuth | Operational |
+| `ledger` | `ledger_record_entry`, `ledger_query` | UAMI (Cosmos) | Operational |
+| `math` | `math_evaluate`, `math_solve`, `math_unit_convert` | None | Operational |
+| `mcpreference` | `helkin_mcp_registry_search`, `helkin_mcp_forge` | None | Operational |
+| `microsoftlearn` | `microsoftlearn_search` | None | Operational |
+| `outlook` | `outlook_list_emails`, `outlook_send_email`, calendar, OneDrive | GraphOAuth | Requires `/link` |
+| `research` | `deep_research` | Brave API key | Operational (DuckDuckGo fallback) |
+| `teams` | `teams_add_reaction`, `teams_get_message` | GraphOAuth | Requires `/link` |
+| `translate` | `translate_text` | OpenRouter | Operational |
+| `vault` | `vault_get_secret`, `vault_set_secret`, `vault_list` | UAMI | Operational (owner-restricted) |
+| `weather` | `weather_get_current`, `weather_get_forecast` | OpenWeather API | Operational |
+| `web` | `web_search` | Brave API key | Operational (DuckDuckGo fallback) |
+| `custom` | User-defined | Varies | Hot-reloadable |
+
+_Note: "Requires `/link`" means the skill uses a delegated OAuth token from `GraphOAuth` Bot Service connection. User must type `/link <skill>` to consent._
+
 
