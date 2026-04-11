@@ -1,0 +1,142 @@
+{
+  "domain": "azure",
+  "version": "1.0",
+  "shortName": "azure-foundry",
+  "displayName": "Azure AI Foundry Oversight",
+  "shortDescription": "Read-only oversight of HelkinSwarm's own Azure AI Foundry infrastructure — model deployments, deprecation schedules, quota availability, and monitoring metrics. Gives the Living Mind self-awareness of its own AI control plane.",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/core.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials",
+  "licenseAvoidant": true,
+  "discoveryHints": [
+    "model deployments",
+    "Foundry",
+    "AI infrastructure",
+    "model deprecation",
+    "quota",
+    "model status",
+    "what models am I running",
+    "Azure AI",
+    "deployment health"
+  ],
+  "orchestratorUseCases": [
+    "check what AI models are currently deployed and their capacity",
+    "determine if any running model is approaching deprecation or retirement",
+    "check available model quota before scaling or deploying new capabilities",
+    "get a health overview of the Azure AI Foundry deployment"
+  ],
+  "recommendedEntryTools": ["foundry_list_deployments"],
+  "useWhen": [
+    "user asks what models HelkinSwarm is running",
+    "user wants to check if AI models are deprecated or need upgrading",
+    "user asks about model quota or capacity",
+    "orchestrator needs to understand available AI capacity before planning a task"
+  ],
+  "avoidWhen": [
+    "user wants to deploy or modify model deployments — this is read-only",
+    "user wants to manage Azure resources beyond AI/Foundry — use az CLI or azure-mcp instead"
+  ],
+  "aliases": [
+    "foundry status",
+    "model deployments",
+    "AI model check",
+    "foundry oversight",
+    "model deprecation check",
+    "azure ai status"
+  ],
+  "discoveryTerms": [
+    "model deployment",
+    "Foundry",
+    "Azure AI",
+    "deprecation",
+    "quota",
+    "model status",
+    "what models",
+    "AI infrastructure",
+    "model retirement"
+  ],
+  "capabilityGroups": [
+    {
+      "id": "model-oversight",
+      "displayName": "Model Oversight",
+      "shortDescription": "Inspect running model deployments, deprecation schedules, and available quota.",
+      "discoveryHints": ["model deployments", "foundry status", "deprecation", "quota", "what models running"],
+      "useWhen": [
+        "you need to list active model deployments",
+        "you want to check if a deployment is using a deprecated model",
+        "you need quota visibility before planning capacity-intensive tasks"
+      ],
+      "upstreamNamespace": "azure_foundry",
+      "upstreamToolSelectors": ["foundry_list_deployments", "foundry_check_deprecation", "foundry_get_quota"]
+    }
+  ],
+  "tools": [
+    {
+      "name": "foundry_list_deployments",
+      "description": "Lists all Azure AI Foundry (Cognitive Services) model deployments for this HelkinSwarm stamp. Returns deployment name, model name/version, capacity units, and provisioning status. Use this to understand what AI models are currently running.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "discoveryTerms": ["list model deployments", "what models running", "foundry deployments", "AI model list", "model status"],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "string", "description": "Injected by toolDispatchActivity" },
+          "correlationId": { "type": "string", "description": "Injected by toolDispatchActivity" }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "foundry_check_deprecation",
+      "description": "Checks all current model deployments for upcoming deprecation or retirement dates. Returns any deployments where the underlying model is deprecated or has a retirement date within the next 90 days. Essential for proactive model lifecycle management.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "discoveryTerms": ["deprecated models", "model retirement", "deprecation check", "model upgrade needed", "model lifecycle"],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "string", "description": "Injected by toolDispatchActivity" },
+          "correlationId": { "type": "string", "description": "Injected by toolDispatchActivity" }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "foundry_get_quota",
+      "description": "Returns available deployment quota for the current Azure region, broken down by model family. Shows current usage versus quota limit. Useful for planning capacity before deploying new models or scaling existing deployments.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "discoveryTerms": ["quota", "capacity", "model quota", "deployment quota", "available capacity", "token capacity"],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "userId": { "type": "string", "description": "Injected by toolDispatchActivity" },
+          "correlationId": { "type": "string", "description": "Injected by toolDispatchActivity" }
+        },
+        "required": []
+      }
+    }
+  ]
+}
