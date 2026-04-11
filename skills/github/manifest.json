@@ -392,25 +392,92 @@
       },
       "privilegeClass": "read-only",
       "requiresSubAgent": false
+    },
+    {
+      "name": "github_list_workflow_runs",
+      "description": "List recent GitHub Actions workflow runs for the HelkinSwarm repository. Returns run status, conclusion, workflow name, trigger event, elapsed time, and URL. Useful for checking deploy status, CI health, and Actions billing.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "number",
+            "description": "Number of recent runs to return (1–30, default 10)"
+          },
+          "workflow_id": {
+            "type": "string",
+            "description": "Optional: filter by workflow file name (e.g. deploy-stamp.yml) or workflow ID"
+          },
+          "branch": {
+            "type": "string",
+            "description": "Optional: filter by branch name (e.g. main)"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["queued", "in_progress", "completed", "waiting", "requested", "pending"],
+            "description": "Optional: filter by run status"
+          }
+        },
+        "required": []
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
+    },
+    {
+      "name": "github_get_workflow_run",
+      "description": "Get full details for a specific GitHub Actions workflow run by its run ID, including billable time breakdown by operating system (Linux/macOS/Windows). Useful for costing individual deploys or debugging failed runs.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "run_id": {
+            "type": "number",
+            "description": "The numeric ID of the workflow run"
+          }
+        },
+        "required": ["run_id"]
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
     }
   ],
   "shortName": "github",
   "displayName": "GitHub",
-  "shortDescription": "Issue tracking, PR management, milestones, and repository operations",
+  "shortDescription": "Issue tracking, PR management, milestones, workflow runs, and repository operations",
   "discoveryHints": [
     "issues",
     "pull requests",
     "milestones",
-    "repository backlog"
+    "repository backlog",
+    "GitHub Actions",
+    "workflow runs",
+    "CI/CD",
+    "deployment runs",
+    "Actions billing",
+    "billable minutes"
   ],
   "orchestratorUseCases": [
     "read and search issues or pull requests",
-    "create, update, and comment on repository work items"
+    "create, update, and comment on repository work items",
+    "check GitHub Actions workflow run status, history, and billable minutes"
   ],
   "recommendedEntryTools": [
     "github_search_issues",
     "github_list_issues",
-    "github_get_issue"
+    "github_get_issue",
+    "github_list_workflow_runs"
   ],
   "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/github.png",
   "deploymentScenario": "personal-user-centric",

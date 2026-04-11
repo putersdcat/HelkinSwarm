@@ -472,3 +472,148 @@ export const github_list_milestones: ToolHandler = async (args) => {
     })),
   };
 };
+
+// ---------------------------------------------------------------------------
+// Zod schemas for Actions/workflow run endpoints
+// ---------------------------------------------------------------------------
+
+const WorkflowRunActorSchema = z.object({
+  login: z.string(),
+}).passthrough();
+
+const WorkflowRunSchema = z.object({
+  id: z.number(),
+  name: z.string().nullable().optional(),
+  display_title: z.string().nullable().optional(),
+  status: z.string().nullable(),
+  conclusion: z.string().nullable(),
+  event: z.string(),
+  head_branch: z.string().nullable().optional(),
+  head_sha: z.string(),
+  run_number: z.number(),
+  run_attempt: z.number().optional(),
+  created_at: z.string(),
+  updated_at: z.string(),
+  run_started_at: z.string().nullable().optional(),
+  html_url: z.string(),
+  triggering_actor: WorkflowRunActorSchema.nullable().optional(),
+  path: z.string().nullable().optional(),
+}).passthrough();
+
+const WorkflowRunsListSchema = z.object({
+  total_count: z.number(),
+  workflow_runs: z.array(WorkflowRunSchema),
+}).passthrough();
+
+const WorkflowBillableOSSchema = z.object({
+  total_ms: z.number(),
+  jobs: z.number().optional(),
+}).passthrough();
+
+const WorkflowTimingSchema = z.object({
+  billable: z.object({
+    UBUNTU: WorkflowBillableOSSchema.optional(),
+    MACOS: WorkflowBillableOSSchema.optional(),
+    WINDOWS: WorkflowBillableOSSchema.optional(),
+  }).passthrough().optional(),
+  run_duration_ms: z.number().optional(),
+}).passthrough();
+
+// ---------------------------------------------------------------------------
+// Tool: github_list_workflow_runs
+// ---------------------------------------------------------------------------
+
+export const github_list_workflow_runs: ToolHandler = async (args) => {
+  const rawLimit = typeof args['limit'] === 'number' ? args['limit'] : 10;
+  const limit = Math.min(Math.max(1, rawLimit), 30);
+  const params = new URLSearchParams({ per_page: String(limit) });
+
+  if (args['branch']) params.set('branch', String(args['branch']));
+  if (args['status']) params.set('status', String(args['status']));
+
+  let runsUrl: string;
+  if (args['workflow_id']) {
+    const wf = encodeURIComponent(String(args['workflow_id']));
+    runsUrl = `${API_BASE}/actions/workflows/${wf}/runs?${params.toString()}`;
+  } else {
+    runsUrl = `${API_BASE}/actions/runs?${params.toString()}`;
+  }
+
+  const result = await ghFetch(runsUrl, WorkflowRunsListSchema);
+
+  return {
+    total_count: result.total_count,
+    returned: result.workflow_runs.length,
+    runs: result.workflow_runs.map((r) => {
+      const startedAt = r.run_started_at ?? r.created_at;
+      const endedAt = r.updated_at;
+      const durationMs = r.status === 'completed'
+        ? new Date(endedAt).getTime() - new Date(startedAt).getTime()
+        : null;
+      return {
+        id: r.id,
+        name: r.name ?? r.display_title ?? '(unnamed)',
+        status: r.status,
+        conclusion: r.conclusion,
+        event: r.event,
+        branch: r.head_branch ?? null,
+        run_number: r.run_number,
+        created_at: r.created_at,
+        duration_seconds: durationMs !== null ? Math.round(durationMs / 1000) : null,
+        url: r.html_url,
+        triggered_by: r.triggering_actor?.login ?? null,
+      };
+    }),
+  };
+};
+
+// ---------------------------------------------------------------------------
+// Tool: github_get_workflow_run
+// ---------------------------------------------------------------------------
+
+export const github_get_workflow_run: ToolHandler = async (args) => {
+  const runId = args['run_id'];
+  if (typeof runId !== 'number') {
+    return { error: 'run_id must be a number' };
+  }
+
+  const [run, timing] = await Promise.all([
+    ghFetch(`${API_BASE}/actions/runs/${runId}`, WorkflowRunSchema),
+    ghFetch(`${API_BASE}/actions/runs/${runId}/timing`, WorkflowTimingSchema)
+      .catch(() => null as null),
+  ]);
+
+  const startedAt = run.run_started_at ?? run.created_at;
+  const durationMs = run.status === 'completed'
+    ? new Date(run.updated_at).getTime() - new Date(startedAt).getTime()
+    : null;
+
+  const billable = timing?.billable;
+  const totalBillableMs = billable
+    ? (billable['UBUNTU']?.total_ms ?? 0) + (billable['MACOS']?.total_ms ?? 0) + (billable['WINDOWS']?.total_ms ?? 0)
+    : null;
+
+  return {
+    id: run.id,
+    name: run.name ?? run.display_title ?? '(unnamed)',
+    status: run.status,
+    conclusion: run.conclusion,
+    event: run.event,
+    branch: run.head_branch ?? null,
+    run_number: run.run_number,
+    run_attempt: run.run_attempt ?? 1,
+    created_at: run.created_at,
+    started_at: run.run_started_at ?? null,
+    updated_at: run.updated_at,
+    duration_seconds: durationMs !== null ? Math.round(durationMs / 1000) : null,
+    url: run.html_url,
+    triggered_by: run.triggering_actor?.login ?? null,
+    billable_ms: {
+      linux: billable?.['UBUNTU']?.total_ms ?? null,
+      macos: billable?.['MACOS']?.total_ms ?? null,
+      windows: billable?.['WINDOWS']?.total_ms ?? null,
+      total: totalBillableMs,
+    },
+    run_duration_ms: timing?.run_duration_ms ?? null,
+  };
+};
