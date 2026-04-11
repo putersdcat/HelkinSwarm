@@ -1,0 +1,100 @@
+{
+  "domain": "hr",
+  "version": "2.1",
+  "shortName": "hr",
+  "displayName": "Human Relations & Owner Reporting",
+  "shortDescription": "Periodic executive summaries for the virtual company owner — infrastructure burn, internal ledger, open invoices, risk highlights, and forward-plan framing",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/hr.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials",
+  "virtualEmployeeCompatible": true,
+  "supportsBudgeting": true,
+  "costModel": { "type": "no-direct-cost" },
+  "discoveryHints": [
+    "owner report",
+    "executive summary",
+    "weekly summary",
+    "monthly summary",
+    "virtual company report",
+    "company status",
+    "investor update",
+    "burn report",
+    "hr report"
+  ],
+  "orchestratorUseCases": [
+    "generate a periodic executive summary combining Azure burn rate and internal bookkeeping data",
+    "produce a weekly or monthly owner update with expenses, revenue, open invoices, and risk highlights",
+    "get a combined company status overview without querying individual budget and ledger tools separately"
+  ],
+  "recommendedEntryTools": ["hr_generate_owner_report"],
+  "useWhen": [
+    "user wants a company overview, status report, or executive summary",
+    "user asks for a weekly or monthly update on the virtual company",
+    "user wants burn rate, revenue, ledger summary, and risk in one output"
+  ],
+  "avoidWhen": [
+    "user only wants Azure infrastructure costs — use budget_get_status instead",
+    "user only wants raw bookkeeping data — use ledger_get_summary instead"
+  ],
+  "aliases": ["owner report", "executive summary", "company status", "weekly update", "monthly update"],
+  "discoveryTerms": ["owner report", "executive summary", "company status", "weekly report", "monthly report", "hr report", "investor update", "burn report", "virtual company report"],
+  "tools": [
+    {
+      "name": "hr_generate_owner_report",
+      "description": "Generates a combined executive summary for the virtual company owner. Pulls Azure infrastructure burn rate from cost management and internal bookkeeping data from the ledger. Returns a structured owner report with burn rate, internal revenue and expenses, open invoices, net balance, and risk highlights. Use when the user asks for a company status update, weekly/monthly summary, or owner overview.",
+      "risk": "low",
+      "dataSensitivity": "mixed",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "enum": ["this-month", "last-month", "all-time"],
+            "description": "Time period for internal ledger data aggregation. Defaults to 'this-month'. Azure burn rate is always month-to-date."
+          }
+        },
+        "required": []
+      },
+      "aliases": [
+        "owner report",
+        "executive summary",
+        "company status",
+        "weekly update",
+        "monthly update",
+        "company overview",
+        "investor update"
+      ],
+      "discoveryTerms": [
+        "owner report",
+        "executive summary",
+        "company status",
+        "weekly report",
+        "monthly report",
+        "hr report",
+        "investor update",
+        "burn report",
+        "virtual company report",
+        "company overview"
+      ],
+      "useWhen": [
+        "user wants a company overview or status report",
+        "user asks for an executive summary of the virtual company",
+        "user wants a weekly or monthly update",
+        "user asks about company health, burn rate, revenue, or risk combined"
+      ],
+      "avoidWhen": [
+        "user only wants Azure infrastructure costs — use budget_get_status instead",
+        "user only wants ledger bookkeeping data — use ledger_get_summary instead"
+      ],
+      "returnsSummaryShape": "formatted executive summary markdown with infrastructure burn, ledger summary (revenue/expenses/invoices/net), and risk highlights"
+    }
+  ]
+}
