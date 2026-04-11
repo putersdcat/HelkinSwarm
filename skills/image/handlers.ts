@@ -1,16 +1,15 @@
-// Image generation skill handler — text-to-image via Azure AI Services DALL-E 3.
+// Image generation skill handler — text-to-image via OpenRouter.
 // Spec ref: 05-Capabilities-Framework.md
 // Issue: #241
 //
-// Backend: Azure AI Services DALL-E 3 deployment in the stamp's AI project (#241)
-// Endpoint: {AZURE_AI_FOUNDRY_ENDPOINT}/openai/deployments/{deployment}/images/generations?api-version=2024-10-21
-// Auth: Managed Identity bearer token (scope: https://cognitiveservices.azure.com/.default)
-// Deployment: 'dall-e-3' by default, override via AZURE_DALL_E_DEPLOYMENT env var
-// Output: b64_json decoded → persisted to runtime-asset blob via runtimeAssetStore
+// Backend: OpenRouter chat completions with modalities:["image","text"]
+// Endpoint: https://openrouter.ai/api/v1/chat/completions
+// Auth: OPENROUTER_API_KEY bearer token
+// Model: openai/gpt-5-image-mini by default, override via IMAGE_MODEL env var
+// Output: base64 data URL extracted → decoded → persisted to runtime-asset blob via runtimeAssetStore
 
 import type { ToolHandler } from '../../src/capabilities/capabilityLoader.js';
 import { persistRuntimeAsset } from '../../src/integrations/runtimeAssetStore.js';
-import { getBearerToken } from '../../src/auth/identity.js';
 import { getEnvConfig } from '../../src/config/envConfig.js';
 import { z } from 'zod';
 
@@ -18,24 +17,33 @@ import { z } from 'zod';
 // Constants
 // ---------------------------------------------------------------------------
 
-const AZURE_API_VERSION = '2024-10-21';
-const DEFAULT_DALL_E_DEPLOYMENT = 'dall-e-3';
-// Cognitive Services token scope for managed identity on Azure AI Services
-const COGNITIVE_SERVICES_SCOPE = 'https://cognitiveservices.azure.com/.default';
+const OPENROUTER_COMPLETIONS_URL = 'https://openrouter.ai/api/v1/chat/completions';
+const DEFAULT_IMAGE_MODEL = 'openai/gpt-5-image-mini';
 
 // ---------------------------------------------------------------------------
 // Zod schemas for API response validation at boundary
 // ---------------------------------------------------------------------------
 
-const ImageDataSchema = z.object({
-  b64_json: z.string().min(1).optional(),
-  url: z.string().url().optional(),
-  revised_prompt: z.string().optional(),
+const ImageMessageSchema = z.object({
+  role: z.string(),
+  content: z.string().nullable().optional(),
+  images: z.array(
+    z.object({
+      image_url: z.object({
+        url: z.string().min(1),
+      }),
+    }),
+  ).optional(),
 }).passthrough();
 
-const ImagesResponseSchema = z.object({
-  created: z.number().optional(),
-  data: z.array(ImageDataSchema),
+const ImageChoiceSchema = z.object({
+  message: ImageMessageSchema,
+}).passthrough();
+
+const OpenRouterImageResponseSchema = z.object({
+  id: z.string().optional(),
+  choices: z.array(ImageChoiceSchema).min(1),
+  model: z.string().optional(),
 }).passthrough();
 
 // ---------------------------------------------------------------------------
@@ -55,10 +63,15 @@ const ImageGenerateArgsSchema = z.object({
 // Helpers
 // ---------------------------------------------------------------------------
 
-function buildFileName(deployment: string, size: string, correlationId: string): string {
-  const deploySlug = deployment.replace(/[^a-z0-9-]/gi, '-');
-  const corrShort = correlationId.slice(0, 8);
-  return `${deploySlug}-${size}-${corrShort}.png`;
+export function extractBase64FromDataUrl(dataUrl: string): { bytes: Uint8Array<ArrayBuffer>; mimeType: string } {
+  const semicolonIdx = dataUrl.indexOf(';');
+  const colonIdx = dataUrl.indexOf(':');
+  const mimeType = dataUrl.slice(colonIdx + 1, semicolonIdx);
+  const base64Data = dataUrl.slice(dataUrl.indexOf(',') + 1);
+  const buf = Buffer.from(base64Data, 'base64');
+  // Copy to a clean ArrayBuffer to satisfy strict Uint8Array<ArrayBuffer> typing
+  const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+  return { bytes: new Uint8Array(ab), mimeType };
 }
 
 // ---------------------------------------------------------------------------
@@ -76,37 +89,33 @@ export const image_generate: ToolHandler = async (args) => {
   });
 
   const config = getEnvConfig();
-  if (!config.azureAiFoundryEndpoint) {
+  if (!config.openrouterApiKey) {
     throw new Error(
-      'Image generation requires AZURE_AI_FOUNDRY_ENDPOINT to be configured. '
-      + 'Ensure the stamp Azure AI Services resource is provisioned.',
+      'Image generation requires OPENROUTER_API_KEY to be configured. '
+      + 'Add the key to Key Vault and ensure the Function App reads it.',
     );
   }
 
-  const deployment = process.env['AZURE_DALL_E_DEPLOYMENT'] ?? DEFAULT_DALL_E_DEPLOYMENT;
+  const model = process.env['IMAGE_MODEL'] ?? DEFAULT_IMAGE_MODEL;
   const correlationId = parsed.correlationId ?? `img-${Date.now()}`;
 
-  // Build Azure AI Services DALL-E endpoint
-  const base = config.azureAiFoundryEndpoint.replace(/\/+$/, '');
-  const url = `${base}/openai/deployments/${encodeURIComponent(deployment)}/images/generations?api-version=${AZURE_API_VERSION}`;
-
-  // Obtain managed identity bearer token for Cognitive Services
-  const token = await getBearerToken(COGNITIVE_SERVICES_SCOPE);
-
-  const requestBody: Record<string, unknown> = {
-    prompt: parsed.prompt,
-    n: 1,
-    size: parsed.size,
-    quality: parsed.quality,
-    style: parsed.style,
-    response_format: 'b64_json',
+  const requestBody = {
+    model,
+    messages: [
+      {
+        role: 'user' as const,
+        content: parsed.prompt,
+      },
+    ],
+    modalities: ['image', 'text'],
   };
 
-  const response = await fetch(url, {
+  const response = await fetch(OPENROUTER_COMPLETIONS_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
+      'Authorization': `Bearer ${config.openrouterApiKey}`,
+      'X-OpenRouter-Title': 'HelkinSwarm',
       'x-correlation-id': correlationId,
     },
     body: JSON.stringify(requestBody),
@@ -120,28 +129,37 @@ export const image_generate: ToolHandler = async (args) => {
   }
 
   const rawJson = await response.json() as unknown;
-  const parsed_response = ImagesResponseSchema.parse(rawJson);
-  const imageData = parsed_response.data[0];
+  const parsedResponse = OpenRouterImageResponseSchema.parse(rawJson);
+  const choice = parsedResponse.choices[0];
 
-  if (!imageData) {
-    throw new Error('Image generation API returned an empty data array.');
+  if (!choice) {
+    throw new Error('Image generation API returned no choices.');
   }
 
-  if (!imageData.b64_json) {
+  const images = choice.message.images;
+  if (!images || images.length === 0) {
     throw new Error(
-      'Image generation API did not return b64_json. '
-      + 'response_format: b64_json was requested — check DALL-E deployment configuration.',
+      'Image generation API returned no images in the response. '
+      + `Model used: ${model}. Text content: ${choice.message.content ?? '(none)'}`,
     );
   }
 
-  // Decode base64 → Buffer → persist to runtime asset store
-  const imageBytes = Buffer.from(imageData.b64_json, 'base64');
-  const fileName = buildFileName(deployment, parsed.size, correlationId);
+  const imageUrl = images[0]?.image_url.url;
+  if (!imageUrl) {
+    throw new Error('Image generation API returned an image with no URL.');
+  }
+
+  // Extract base64 bytes from the data URL
+  const { bytes: imageBytes, mimeType } = extractBase64FromDataUrl(imageUrl);
+  const ext = mimeType.split('/')[1] ?? 'png';
+  const modelSlug = model.replace(/[^a-z0-9-]/gi, '-');
+  const corrShort = correlationId.slice(0, 8);
+  const fileName = `${modelSlug}-${corrShort}.${ext}`;
 
   const assetReference = await persistRuntimeAsset({
     userId: parsed.userId,
     correlationId,
-    contentType: 'image/png',
+    contentType: mimeType,
     fileName,
     bytes: imageBytes,
     source: {
@@ -156,19 +174,11 @@ export const image_generate: ToolHandler = async (args) => {
     throw new Error('Failed to persist generated image to runtime asset store.');
   }
 
-  const result: Record<string, unknown> = {
+  return {
     assetId: assetReference.id,
-    model: `azure:${deployment}`,
-    size: parsed.size,
+    model: parsedResponse.model ?? model,
     fileName: assetReference.fileName ?? fileName,
-    contentType: 'image/png',
+    contentType: mimeType,
     message: `Image generated and stored. Asset ID: ${assetReference.id}. Use this assetId to embed it in an email or reply to the user.`,
   };
-
-  if (imageData.revised_prompt && imageData.revised_prompt !== parsed.prompt) {
-    result['revisedPrompt'] = imageData.revised_prompt;
-    result['message'] = `${result['message']} Model revised the prompt: "${imageData.revised_prompt}"`;
-  }
-
-  return result;
 };
