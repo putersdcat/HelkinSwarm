@@ -10,7 +10,7 @@ import {
   toBenchmarkTasks,
   BenchmarkTaskSchema,
 } from '../../src/llm/selfTuning/benchmarkTasks.js';
-import { evaluateTaskSuccess } from '../../src/llm/selfTuning/monteCarloRunner.js';
+import { evaluateTaskSuccess, containsExpectedAnswer } from '../../src/llm/selfTuning/monteCarloRunner.js';
 import { computeCompositeScore, SCORE_WEIGHTS } from '../../src/llm/selfTuning/evalStore.js';
 
 // ---------------------------------------------------------------------------
@@ -100,6 +100,42 @@ describe('evaluateTaskSuccess', () => {
     expect(evaluateTaskSuccess(task, ['outlook_list_emails', 'teams_send_message'], '')).toBe(true);
     expect(evaluateTaskSuccess(task, ['outlook_list_emails'], '')).toBe(false);
   });
+
+  it('passes math task when expectedAnswer found in content', () => {
+    const task = {
+      id: 'math-arith-001',
+      category: 'math' as const,
+      prompt: 'What is 2 + 2?',
+      expectedTools: [],
+      expectedAnswer: '4',
+    };
+    expect(evaluateTaskSuccess(task, [], 'The answer is 4.')).toBe(true);
+    expect(evaluateTaskSuccess(task, [], '2 + 2 equals 4')).toBe(true);
+  });
+
+  it('fails math task when expectedAnswer absent from content', () => {
+    const task = {
+      id: 'math-arith-001',
+      category: 'math' as const,
+      prompt: 'What is 2 + 2?',
+      expectedTools: [],
+      expectedAnswer: '4',
+    };
+    expect(evaluateTaskSuccess(task, [], 'I think it might be 5.')).toBe(false);
+    expect(evaluateTaskSuccess(task, [], '')).toBe(false);
+  });
+
+  it('fails math task when correct answer given but forbidden tool also called', () => {
+    const task = {
+      id: 'math-arith-001',
+      category: 'math' as const,
+      prompt: 'What is 2 + 2?',
+      expectedTools: [],
+      forbiddenTools: ['helkin_skill_search'],
+      expectedAnswer: '4',
+    };
+    expect(evaluateTaskSuccess(task, ['helkin_skill_search'], 'The answer is 4.')).toBe(false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -173,6 +209,112 @@ describe('benchmarkTasks corpus', () => {
     const [converted] = toBenchmarkTasks([st001Def]);
     // forbiddenTools should be omitted (undefined) for tasks that don't declare any
     expect(converted.forbiddenTools).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// containsExpectedAnswer — deterministic math answer checker (#436)
+// ---------------------------------------------------------------------------
+
+describe('containsExpectedAnswer', () => {
+  it('matches exact substring', () => {
+    expect(containsExpectedAnswer('The answer is 4.', '4')).toBe(true);
+    expect(containsExpectedAnswer('Result: 221', '221')).toBe(true);
+  });
+
+  it('matches answer embedded in prose', () => {
+    expect(containsExpectedAnswer('2 + 2 equals 4 in decimal arithmetic.', '4')).toBe(true);
+    expect(containsExpectedAnswer('x = 5 is the solution.', '5')).toBe(true);
+  });
+
+  it('does not match a number that is only a substring of a larger number', () => {
+    // "4" must not match "40" or "14"
+    expect(containsExpectedAnswer('The answer is 40.', '4')).toBe(false);
+    expect(containsExpectedAnswer('Result: 14', '4')).toBe(false);
+  });
+
+  it('is case-insensitive for string answers', () => {
+    expect(containsExpectedAnswer('The answer is FOUR', 'four')).toBe(true);
+  });
+
+  it('returns false when content is empty', () => {
+    expect(containsExpectedAnswer('', '4')).toBe(false);
+  });
+
+  it('returns false for wrong numeric answer', () => {
+    expect(containsExpectedAnswer('The answer is 5.', '4')).toBe(false);
+  });
+
+  it('matches decimal forms: "62.1" in prose output', () => {
+    expect(containsExpectedAnswer('100 km is approximately 62.1 miles.', '62.1')).toBe(true);
+    expect(containsExpectedAnswer('The conversion gives 62.1 miles.', '62.1')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Math benchmark corpus (#436)
+// ---------------------------------------------------------------------------
+
+describe('math benchmark corpus', () => {
+  it('corpus contains all five math categories as tags', () => {
+    const library = loadTaskLibrary();
+    const mathTasks = filterTasks(library.tasks, { categories: ['math'] });
+    const tags = new Set(mathTasks.flatMap((t) => t.tags));
+    expect(tags.has('arithmetic')).toBe(true);
+    expect(tags.has('algebra')).toBe(true);
+    expect(tags.has('unit-conversion')).toBe(true);
+    expect(tags.has('discrete')).toBe(true);
+    expect(tags.has('word-problem')).toBe(true);
+  });
+
+  it('every math task has an expectedAnswer set', () => {
+    const library = loadTaskLibrary();
+    const mathTasks = filterTasks(library.tasks, { categories: ['math'] });
+    expect(mathTasks.length).toBeGreaterThanOrEqual(15);
+    for (const task of mathTasks) {
+      expect(task.expectedAnswer).toBeDefined();
+      expect(task.expectedAnswer).not.toBe('');
+    }
+  });
+
+  it('every math task has expectedTools=[] (no tool calls required)', () => {
+    const library = loadTaskLibrary();
+    const mathTasks = filterTasks(library.tasks, { categories: ['math'] });
+    for (const task of mathTasks) {
+      expect(task.expectedTools).toEqual([]);
+    }
+  });
+
+  it('every math task has at least one forbiddenTool (guards against false-positive routing)', () => {
+    const library = loadTaskLibrary();
+    const mathTasks = filterTasks(library.tasks, { categories: ['math'] });
+    for (const task of mathTasks) {
+      expect(task.forbiddenTools?.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('all math tasks pass Zod schema validation', () => {
+    const library = loadTaskLibrary();
+    const mathTasks = filterTasks(library.tasks, { categories: ['math'] });
+    for (const task of mathTasks) {
+      expect(() => BenchmarkTaskSchema.parse(task)).not.toThrow();
+    }
+  });
+
+  it('toBenchmarkTasks propagates expectedAnswer for math tasks', () => {
+    const library = loadTaskLibrary();
+    const mathDef = library.tasks.find((t) => t.id === 'math-arith-001');
+    expect(mathDef).toBeDefined();
+    const [converted] = toBenchmarkTasks([mathDef!]);
+    expect(converted.expectedAnswer).toBe('4');
+  });
+
+  it('specific math answers are correct: 17x13=221, 5!=120, C(5,2)=10', () => {
+    const library = loadTaskLibrary();
+    const taskMap = new Map(library.tasks.map((t) => [t.id, t]));
+    expect(taskMap.get('math-arith-002')?.expectedAnswer).toBe('221');
+    expect(taskMap.get('math-disc-001')?.expectedAnswer).toBe('120');
+    expect(taskMap.get('math-disc-002')?.expectedAnswer).toBe('10');
   });
 });
 

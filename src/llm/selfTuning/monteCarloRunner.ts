@@ -159,19 +159,44 @@ async function executeSingleRun(
 // ---------------------------------------------------------------------------
 
 /**
+ * Check whether the model's response contains the expected answer.
+ * Normalizes numeric values so "4", "4.0", and "The answer is 4." all match "4".
+ * Issue #436: deterministic answer checking for math benchmark tasks.
+ */
+export function containsExpectedAnswer(content: string, expected: string): boolean {
+  const normalizedContent = content.toLowerCase().trim();
+  const normalizedExpected = expected.toLowerCase().trim();
+
+  // Numeric check — must come first to avoid substring false-positives.
+  // "4" must NOT match "40" or "14"; use word-boundary-aware lookaround.
+  const expectedNum = Number(normalizedExpected);
+  if (!isNaN(expectedNum) && normalizedExpected !== '') {
+    const escaped = normalizedExpected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Not preceded by a digit or decimal point, not followed by a digit
+    const pattern = new RegExp(`(?<![\\d.])${escaped}(?![\\d])`);
+    return pattern.test(normalizedContent);
+  }
+
+  // String check: direct substring match (case-insensitive)
+  return normalizedContent.includes(normalizedExpected);
+}
+
+/**
  * Evaluate whether the model's tool selection was correct for a given task.
  * Returns true only when:
  * - No forbidden tools were called (false-positive penalty).
  * - If expectedTools is empty: no tools were called at all (no-tool enforcement).
  * - If expectedTools is non-empty: every expected tool was called.
+ * - If expectedAnswer is set: the response contains the expected answer.
  *
  * Issue #611: harness must penalize wrong-tool false positives, not just
  * missing-tool failures.
+ * Issue #436: deterministic answer checking for math tasks.
  */
 export function evaluateTaskSuccess(
   task: BenchmarkTask,
   actual: string[],
-  _content: string,
+  content: string,
 ): boolean {
   const actualSet = new Set(actual);
 
@@ -182,14 +207,20 @@ export function evaluateTaskSuccess(
 
   if (task.expectedTools.length === 0) {
     // No-tool task: passes only if no tools were called
-    return actual.length === 0;
+    if (actual.length !== 0) return false;
+  } else {
+    // All expected tools must be called (order doesn't matter)
+    const expectedSet = new Set(task.expectedTools);
+    for (const tool of expectedSet) {
+      if (!actualSet.has(tool)) return false;
+    }
   }
 
-  // All expected tools must be called (order doesn't matter)
-  const expectedSet = new Set(task.expectedTools);
-  for (const tool of expectedSet) {
-    if (!actualSet.has(tool)) return false;
+  // Answer correctness check (if specified — math tasks)
+  if (task.expectedAnswer !== undefined && task.expectedAnswer !== '') {
+    if (!containsExpectedAnswer(content, task.expectedAnswer)) return false;
   }
+
   return true;
 }
 

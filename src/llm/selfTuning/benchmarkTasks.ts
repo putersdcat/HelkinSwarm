@@ -23,6 +23,7 @@ export const BenchmarkTaskSchema = z.object({
     'no-tool',
     'ambiguous-intent',
     'error-recovery',
+    'math', // deterministic math benchmarks — issue #436
   ]),
   prompt: z.string().min(1),
   expectedTools: z.array(z.string()),
@@ -31,6 +32,12 @@ export const BenchmarkTaskSchema = z.object({
    * Issue #611: harness must penalize wrong-tool false positives.
    */
   forbiddenTools: z.array(z.string()).optional().default([]),
+  /**
+   * Expected answer for deterministic correctness checking (#436).
+   * Used by math tasks to verify the LLM emits the correct numeric result.
+   * containsExpectedAnswer() normalizes numeric values before matching.
+   */
+  expectedAnswer: z.string().optional(),
   /** Expected result matcher — substring in LLM output */
   expectedOutputPattern: z.string().optional(),
   /** Whether this task should trigger safety refusal */
@@ -267,6 +274,168 @@ const SEED_TASKS: BenchmarkTaskInput[] = [
     difficulty: 2,
   },
 
+  // ---------- math — arithmetic (#436) ----------
+  // No tools should be called for any math task.
+  // expectedAnswer enables deterministic correctness checking.
+  {
+    id: 'math-arith-001',
+    category: 'math',
+    prompt: 'What is 2 + 2?',
+    expectedTools: [],
+    forbiddenTools: ['helkin_skill_search', 'outlook_reply_to_latest_email', 'outlook_list_emails'],
+    expectedAnswer: '4',
+    tags: ['math', 'arithmetic', 'no-tool'],
+    difficulty: 1,
+  },
+  {
+    id: 'math-arith-002',
+    category: 'math',
+    prompt: 'What is 17 × 13?',
+    expectedTools: [],
+    forbiddenTools: ['helkin_skill_search'],
+    expectedAnswer: '221',
+    tags: ['math', 'arithmetic', 'no-tool'],
+    difficulty: 1,
+  },
+  {
+    id: 'math-arith-003',
+    category: 'math',
+    prompt: 'What is 144 ÷ 12?',
+    expectedTools: [],
+    forbiddenTools: ['helkin_skill_search'],
+    expectedAnswer: '12',
+    tags: ['math', 'arithmetic', 'no-tool'],
+    difficulty: 1,
+  },
+  {
+    id: 'math-arith-004',
+    category: 'math',
+    prompt: 'What is 2 to the power of 10?',
+    expectedTools: [],
+    forbiddenTools: ['helkin_skill_search'],
+    expectedAnswer: '1024',
+    tags: ['math', 'arithmetic', 'no-tool'],
+    difficulty: 2,
+  },
+
+  // ---------- math — algebra ----------
+  {
+    id: 'math-alg-001',
+    category: 'math',
+    prompt: 'Solve for x: 3x + 7 = 22',
+    expectedTools: [],
+    forbiddenTools: ['helkin_skill_search'],
+    expectedAnswer: '5',
+    tags: ['math', 'algebra', 'no-tool'],
+    difficulty: 2,
+  },
+  {
+    id: 'math-alg-002',
+    category: 'math',
+    prompt: 'What is the value of (x + 3) squared when x = 4?',
+    expectedTools: [],
+    forbiddenTools: ['helkin_skill_search'],
+    expectedAnswer: '49',
+    tags: ['math', 'algebra', 'no-tool'],
+    difficulty: 2,
+  },
+
+  // ---------- math — unit conversion ----------
+  {
+    id: 'math-conv-001',
+    category: 'math',
+    prompt: 'Convert 100 kilometers to miles. Give the numeric result rounded to one decimal place.',
+    expectedTools: [],
+    forbiddenTools: ['helkin_skill_search', 'web_search', 'deep_research'],
+    expectedAnswer: '62.1',
+    tags: ['math', 'unit-conversion', 'no-tool'],
+    difficulty: 2,
+  },
+  {
+    id: 'math-conv-002',
+    category: 'math',
+    prompt: 'Convert 0 degrees Celsius to Fahrenheit.',
+    expectedTools: [],
+    forbiddenTools: ['helkin_skill_search'],
+    expectedAnswer: '32',
+    tags: ['math', 'unit-conversion', 'no-tool'],
+    difficulty: 1,
+  },
+  {
+    id: 'math-conv-003',
+    category: 'math',
+    prompt: 'How many seconds are in 2.5 hours?',
+    expectedTools: [],
+    forbiddenTools: ['helkin_skill_search'],
+    expectedAnswer: '9000',
+    tags: ['math', 'unit-conversion', 'no-tool'],
+    difficulty: 2,
+  },
+
+  // ---------- math — discrete math ----------
+  {
+    id: 'math-disc-001',
+    category: 'math',
+    prompt: 'What is 5 factorial (5!)?',
+    expectedTools: [],
+    forbiddenTools: ['helkin_skill_search'],
+    expectedAnswer: '120',
+    tags: ['math', 'discrete', 'no-tool'],
+    difficulty: 2,
+  },
+  {
+    id: 'math-disc-002',
+    category: 'math',
+    prompt: 'How many ways can you choose 2 items from a set of 5 (C(5,2))?',
+    expectedTools: [],
+    forbiddenTools: ['helkin_skill_search'],
+    expectedAnswer: '10',
+    tags: ['math', 'discrete', 'combinatorics', 'no-tool'],
+    difficulty: 3,
+  },
+  {
+    id: 'math-disc-003',
+    category: 'math',
+    prompt: 'What is 17 mod 5?',
+    expectedTools: [],
+    forbiddenTools: ['helkin_skill_search'],
+    expectedAnswer: '2',
+    tags: ['math', 'discrete', 'modular-arithmetic', 'no-tool'],
+    difficulty: 2,
+  },
+
+  // ---------- math — word problems ----------
+  {
+    id: 'math-wp-001',
+    category: 'math',
+    prompt: 'A train travels at 60 mph. How many miles does it travel in 2.5 hours?',
+    expectedTools: [],
+    forbiddenTools: ['helkin_skill_search'],
+    expectedAnswer: '150',
+    tags: ['math', 'word-problem', 'no-tool'],
+    difficulty: 2,
+  },
+  {
+    id: 'math-wp-002',
+    category: 'math',
+    prompt: 'If 3 workers complete a task in 12 days, how many days will it take 9 workers at the same rate?',
+    expectedTools: [],
+    forbiddenTools: ['helkin_skill_search'],
+    expectedAnswer: '4',
+    tags: ['math', 'word-problem', 'proportional-reasoning', 'no-tool'],
+    difficulty: 3,
+  },
+  {
+    id: 'math-wp-003',
+    category: 'math',
+    prompt: 'A rectangle is 8 cm wide and 15 cm tall. What is its perimeter in centimeters?',
+    expectedTools: [],
+    forbiddenTools: ['helkin_skill_search'],
+    expectedAnswer: '46',
+    tags: ['math', 'word-problem', 'geometry', 'no-tool'],
+    difficulty: 2,
+  },
+
   // ---------- error-recovery ----------
   {
     id: 'er-001',
@@ -335,6 +504,7 @@ export function toBenchmarkTasks(defs: BenchmarkTaskDef[]): BenchmarkTask[] {
     prompt: d.prompt,
     expectedTools: d.expectedTools,
     ...(d.forbiddenTools.length > 0 ? { forbiddenTools: d.forbiddenTools } : {}),
+    ...(d.expectedAnswer ? { expectedAnswer: d.expectedAnswer } : {}),
   }));
 }
 

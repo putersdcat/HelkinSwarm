@@ -32,6 +32,12 @@ export interface BenchmarkTask {
    * Issue #611: harness must penalize wrong-tool false positives.
    */
   forbiddenTools?: string[];
+  /**
+   * Expected answer string for deterministic correctness checking (#436).
+   * If set, evaluateTaskSuccess() verifies the LLM response contains this
+   * value (after numeric normalization for math tasks).
+   */
+  expectedAnswer?: string;
 }
 
 /** Result of benchmarking a single candidate */
