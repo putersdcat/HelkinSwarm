@@ -97,9 +97,9 @@ const ManagerSchema = z.object({
 
 const PersonSchema = z.object({
   displayName: z.string().optional(),
-  emailAddresses: z.array(z.object({
+  scoredEmailAddresses: z.array(z.object({
     address: z.string().optional(),
-    name: z.string().optional(),
+    relevanceScore: z.number().optional(),
   })).optional(),
   jobTitle: z.string().nullable().optional(),
   department: z.string().nullable().optional(),
@@ -185,7 +185,7 @@ export const entra_find_people: ToolHandler = async (args) => {
   const encodedQuery = encodeURIComponent(query);
   const raw = await graphGet(
     token,
-    `/me/people?$search="${encodedQuery}"&$top=${maxResults}&$select=displayName,emailAddresses,jobTitle,department,phones`,
+    `/me/people?$search="${encodedQuery}"&$top=${maxResults}&$select=displayName,scoredEmailAddresses,jobTitle,department,phones`,
   );
 
   const parsed = PeopleResponseSchema.parse(raw);
@@ -195,7 +195,7 @@ export const entra_find_people: ToolHandler = async (args) => {
   }
 
   const items = parsed.value.map((p, i) => {
-    const email = p.emailAddresses?.find((e) => e.address)?.address ?? '';
+    const email = p.scoredEmailAddresses?.find((e) => e.address)?.address ?? '';
     const phone = p.phones?.find((ph) => ph.number)?.number ?? '';
     const parts = [
       `**${p.displayName ?? 'Unknown'}**`,
