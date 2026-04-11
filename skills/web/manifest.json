@@ -51,22 +51,72 @@
       "returnsSummaryShape": "top web search results with titles, urls, and snippets",
       "privilegeClass": "read-only",
       "requiresSubAgent": false
+    },
+    {
+      "name": "web_fetch_page",
+      "description": "Fetch and read the text content of any public web page or URL. Returns extracted readable text from HTML pages, up to 8 KB. Use when the user asks you to read, browse, visit, open, or summarize a specific URL or web page.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The full URL to fetch (must use http:// or https://)"
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "aliases": [
+        "read url",
+        "browse url",
+        "open page",
+        "read webpage"
+      ],
+      "discoveryTerms": [
+        "read a webpage",
+        "browse to a url",
+        "fetch page content",
+        "open a link",
+        "summarize a url"
+      ],
+      "useWhen": [
+        "the user wants to read or summarize a specific web page or URL"
+      ],
+      "typicalInputs": [
+        "https://docs.microsoft.com/en-us/azure/",
+        "https://example.com/some-article"
+      ],
+      "returnsSummaryShape": "final URL, content-type header, and extracted readable text (up to 8 KB)",
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
     }
   ],
   "shortName": "web",
-  "displayName": "Web Search",
-  "shortDescription": "Search the web via Brave Search API (when key is configured) or DuckDuckGo Instant Answer (zero-credential fallback)",
+  "displayName": "Web Search & Page Reader",
+  "shortDescription": "Search the web (Brave Search API or DuckDuckGo fallback) and fetch/read the text content of specific URLs",
   "discoveryHints": [
     "web search",
     "fresh public information",
     "news",
-    "research"
+    "research",
+    "read a webpage",
+    "browse a url"
   ],
   "orchestratorUseCases": [
-    "look up recent public information on the open web"
+    "look up recent public information on the open web",
+    "read or summarize a specific webpage or URL"
   ],
   "recommendedEntryTools": [
-    "web_search"
+    "web_search",
+    "web_fetch_page"
   ],
   "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/web.png",
   "deploymentScenario": "personal-user-centric",
