@@ -12,13 +12,32 @@ const runtimeAssetHarness = vi.hoisted(() => ({
   persistRuntimeAsset: vi.fn(),
 }));
 
+const identityHarness = vi.hoisted(() => ({
+  getBearerToken: vi.fn(),
+}));
+
+const envConfigHarness = vi.hoisted(() => ({
+  getEnvConfig: vi.fn(),
+}));
+
 vi.mock('../../src/integrations/runtimeAssetStore.js', () => ({
   persistRuntimeAsset: runtimeAssetHarness.persistRuntimeAsset,
+}));
+
+vi.mock('../../src/auth/identity.js', () => ({
+  getBearerToken: identityHarness.getBearerToken,
+}));
+
+vi.mock('../../src/config/envConfig.js', () => ({
+  getEnvConfig: envConfigHarness.getEnvConfig,
 }));
 
 // ---------------------------------------------------------------------------
 // Fixtures
 // ---------------------------------------------------------------------------
+
+const MOCK_FOUNDRY_ENDPOINT = 'https://helkinswarm-ai-t.services.ai.azure.com';
+const MOCK_BEARER_TOKEN = 'mock-azure-token-xyz';
 
 const MOCK_ASSET_REFERENCE = {
   id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
@@ -62,13 +81,20 @@ function makeFetchMock(options: {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  delete process.env['OPENROUTER_API_KEY'];
-  delete process.env['IMAGE_GENERATION_MODEL'];
+  delete process.env['AZURE_DALL_E_DEPLOYMENT'];
 });
 
 beforeEach(() => {
   runtimeAssetHarness.persistRuntimeAsset.mockReset();
   runtimeAssetHarness.persistRuntimeAsset.mockResolvedValue(MOCK_ASSET_REFERENCE);
+
+  identityHarness.getBearerToken.mockReset();
+  identityHarness.getBearerToken.mockResolvedValue(MOCK_BEARER_TOKEN);
+
+  envConfigHarness.getEnvConfig.mockReset();
+  envConfigHarness.getEnvConfig.mockReturnValue({
+    azureAiFoundryEndpoint: MOCK_FOUNDRY_ENDPOINT,
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -76,9 +102,7 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('image_generate — happy path', () => {
-  it('calls OpenRouter images endpoint and returns assetId', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'test-key';
-
+  it('calls Azure AI Services DALL-E endpoint and returns assetId', async () => {
     const mockFetch = makeFetchMock({
       body: {
         created: 1234567890,
@@ -94,14 +118,44 @@ describe('image_generate — happy path', () => {
     }) as Record<string, unknown>;
 
     expect(result['assetId']).toBe(MOCK_ASSET_REFERENCE.id);
-    expect(result['model']).toBe('openai/dall-e-3');
+    expect(result['model']).toBe('azure:dall-e-3');
     expect(result['size']).toBe('1024x1024');
     expect((result['message'] as string)).toContain(MOCK_ASSET_REFERENCE.id);
   });
 
-  it('passes correct request body for DALL-E model', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'test-key';
+  it('calls correct Azure endpoint URL with default deployment', async () => {
+    const mockFetch = makeFetchMock({
+      body: { data: [{ b64_json: MOCK_B64_PNG }] },
+    });
+    vi.spyOn(globalThis, 'fetch').mockImplementation(mockFetch);
 
+    await image_generate({
+      prompt: 'sunset over mountains',
+      userId: 'user-1',
+      correlationId: 'corr-2',
+    });
+
+    const [url] = mockFetch.mock.calls[0]!;
+    expect(url).toBe(
+      `${MOCK_FOUNDRY_ENDPOINT}/openai/deployments/dall-e-3/images/generations?api-version=2024-10-21`,
+    );
+  });
+
+  it('uses AZURE_DALL_E_DEPLOYMENT env var when set', async () => {
+    process.env['AZURE_DALL_E_DEPLOYMENT'] = 'my-dalle-deployment';
+
+    const mockFetch = makeFetchMock({
+      body: { data: [{ b64_json: MOCK_B64_PNG }] },
+    });
+    vi.spyOn(globalThis, 'fetch').mockImplementation(mockFetch);
+
+    const result = await image_generate({ prompt: 'test', userId: 'user-1' }) as Record<string, unknown>;
+    const [url] = mockFetch.mock.calls[0]!;
+    expect(url).toContain('/openai/deployments/my-dalle-deployment/');
+    expect(result['model']).toBe('azure:my-dalle-deployment');
+  });
+
+  it('passes correct request body to Azure DALL-E', async () => {
     const mockFetch = makeFetchMock({
       body: { data: [{ b64_json: MOCK_B64_PNG }] },
     });
@@ -116,12 +170,8 @@ describe('image_generate — happy path', () => {
       correlationId: 'corr-2',
     });
 
-    const lastCall = mockFetch.mock.calls[0];
-    expect(lastCall).toBeDefined();
-    const [url, options] = lastCall!;
-    expect(url).toBe('https://openrouter.ai/api/v1/images/generations');
-    const body = JSON.parse(options.body as string);
-    expect(body.model).toBe('openai/dall-e-3');
+    const body = JSON.parse(mockFetch.mock.calls[0]![1].body as string);
+    expect(body.prompt).toBe('sunset over mountains');
     expect(body.size).toBe('1792x1024');
     expect(body.style).toBe('natural');
     expect(body.quality).toBe('hd');
@@ -129,30 +179,23 @@ describe('image_generate — happy path', () => {
     expect(body.n).toBe(1);
   });
 
-  it('omits DALL-E-specific params for non-DALL-E models', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'test-key';
-
+  it('sends managed identity bearer token as Authorization header', async () => {
     const mockFetch = makeFetchMock({
       body: { data: [{ b64_json: MOCK_B64_PNG }] },
     });
     vi.spyOn(globalThis, 'fetch').mockImplementation(mockFetch);
 
-    await image_generate({
-      prompt: 'abstract art',
-      model: 'black-forest-labs/flux-1.1-pro',
-      userId: 'user-1',
-    });
+    await image_generate({ prompt: 'test', userId: 'user-1' });
 
-    const body = JSON.parse(mockFetch.mock.calls[0]![1].body as string);
-    expect(body.style).toBeUndefined();
-    expect(body.quality).toBeUndefined();
-    expect(body.size).toBeUndefined();
-    expect(body.model).toBe('black-forest-labs/flux-1.1-pro');
+    const headers = mockFetch.mock.calls[0]![1].headers as Record<string, string>;
+    expect(headers['Authorization']).toBe(`Bearer ${MOCK_BEARER_TOKEN}`);
+    // Verify we requested the correct scope
+    expect(identityHarness.getBearerToken).toHaveBeenCalledWith(
+      'https://cognitiveservices.azure.com/.default',
+    );
   });
 
   it('includes revised_prompt in result when model changes the prompt', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'test-key';
-
     const revisedPrompt = 'a majestic red fox leaping through powder snow in a pine forest';
     vi.spyOn(globalThis, 'fetch').mockImplementation(makeFetchMock({
       body: { data: [{ b64_json: MOCK_B64_PNG, revised_prompt: revisedPrompt }] },
@@ -167,9 +210,7 @@ describe('image_generate — happy path', () => {
     expect((result['message'] as string)).toContain('revised');
   });
 
-  it('does not include revisedPrompt when prompt is identical', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'test-key';
-
+  it('does not include revisedPrompt when revised prompt is identical to original', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(makeFetchMock({
       body: { data: [{ b64_json: MOCK_B64_PNG, revised_prompt: 'red fox in snow' }] },
     }));
@@ -182,9 +223,7 @@ describe('image_generate — happy path', () => {
     expect(result['revisedPrompt']).toBeUndefined();
   });
 
-  it('persists decoded bytes to runtime asset store', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'test-key';
-
+  it('persists decoded PNG bytes to runtime asset store', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(makeFetchMock({
       body: { data: [{ b64_json: MOCK_B64_PNG }] },
     }));
@@ -200,39 +239,10 @@ describe('image_generate — happy path', () => {
     expect(call.userId).toBe('user-42');
     expect(call.correlationId).toBe('corr-xyz');
     expect(call.kind).toBe('image');
+    expect(call.contentType).toBe('image/png');
     expect(call.source.toolName).toBe('image_generate');
     expect(call.bytes).toBeInstanceOf(Uint8Array);
     expect(call.bytes).toEqual(Buffer.from(MOCK_B64_PNG, 'base64'));
-  });
-
-  it('uses IMAGE_GENERATION_MODEL env var as model override', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'test-key';
-    process.env['IMAGE_GENERATION_MODEL'] = 'openai/dall-e-2';
-
-    const mockFetch = makeFetchMock({
-      body: { data: [{ b64_json: MOCK_B64_PNG }] },
-    });
-    vi.spyOn(globalThis, 'fetch').mockImplementation(mockFetch);
-
-    const result = await image_generate({ prompt: 'test', userId: 'user-1' }) as Record<string, unknown>;
-    expect(result['model']).toBe('openai/dall-e-2');
-  });
-
-  it('model arg overrides IMAGE_GENERATION_MODEL env var', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'test-key';
-    process.env['IMAGE_GENERATION_MODEL'] = 'openai/dall-e-2';
-
-    const mockFetch = makeFetchMock({
-      body: { data: [{ b64_json: MOCK_B64_PNG }] },
-    });
-    vi.spyOn(globalThis, 'fetch').mockImplementation(mockFetch);
-
-    const result = await image_generate({
-      prompt: 'test',
-      model: 'black-forest-labs/flux-1.1-pro',
-      userId: 'user-1',
-    }) as Record<string, unknown>;
-    expect(result['model']).toBe('black-forest-labs/flux-1.1-pro');
   });
 });
 
@@ -241,22 +251,20 @@ describe('image_generate — happy path', () => {
 // ---------------------------------------------------------------------------
 
 describe('image_generate — error paths', () => {
-  it('throws when OPENROUTER_API_KEY is missing', async () => {
-    delete process.env['OPENROUTER_API_KEY'];
+  it('throws when AZURE_AI_FOUNDRY_ENDPOINT is missing', async () => {
+    envConfigHarness.getEnvConfig.mockReturnValue({ azureAiFoundryEndpoint: undefined });
 
     await expect(
       image_generate({ prompt: 'test', userId: 'user-1' }),
-    ).rejects.toThrow(/OPENROUTER_API_KEY/);
+    ).rejects.toThrow(/AZURE_AI_FOUNDRY_ENDPOINT/);
   });
 
-  it('throws on non-OK HTTP response from OpenRouter', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'test-key';
-
+  it('throws on non-OK HTTP response from Azure (400)', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(makeFetchMock({
       ok: false,
       status: 400,
       statusText: 'Bad Request',
-      errorText: '{"error": "content policy violation"}',
+      errorText: '{"error": {"code": "contentFilter"}}',
     }));
 
     await expect(
@@ -264,14 +272,12 @@ describe('image_generate — error paths', () => {
     ).rejects.toThrow(/Image generation failed: 400/);
   });
 
-  it('throws on 429 rate limit from OpenRouter', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'test-key';
-
+  it('throws on 429 rate limit from Azure', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(makeFetchMock({
       ok: false,
       status: 429,
       statusText: 'Too Many Requests',
-      errorText: '{"error": "rate limit exceeded"}',
+      errorText: '{"error": {"code": "429"}}',
     }));
 
     await expect(
@@ -280,8 +286,6 @@ describe('image_generate — error paths', () => {
   });
 
   it('throws when API returns empty data array', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'test-key';
-
     vi.spyOn(globalThis, 'fetch').mockImplementation(makeFetchMock({
       body: { data: [] },
     }));
@@ -292,10 +296,8 @@ describe('image_generate — error paths', () => {
   });
 
   it('throws when API returns data without b64_json', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'test-key';
-
     vi.spyOn(globalThis, 'fetch').mockImplementation(makeFetchMock({
-      body: { data: [{ url: 'https://cdn.openrouter.ai/img/abc.png' }] },
+      body: { data: [{ url: 'https://example.com/image.png' }] },
     }));
 
     await expect(
@@ -303,33 +305,7 @@ describe('image_generate — error paths', () => {
     ).rejects.toThrow(/b64_json/);
   });
 
-  it('rejects prompt exceeding 4000 chars', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'test-key';
-
-    await expect(
-      image_generate({ prompt: 'a'.repeat(4001), userId: 'user-1' }),
-    ).rejects.toThrow();
-  });
-
-  it('rejects missing userId', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'test-key';
-
-    await expect(
-      image_generate({ prompt: 'test image' }),
-    ).rejects.toThrow();
-  });
-
-  it('rejects empty prompt', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'test-key';
-
-    await expect(
-      image_generate({ prompt: '', userId: 'user-1' }),
-    ).rejects.toThrow();
-  });
-
   it('throws when persistRuntimeAsset returns null (storage unavailable)', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'test-key';
-
     vi.spyOn(globalThis, 'fetch').mockImplementation(makeFetchMock({
       body: { data: [{ b64_json: MOCK_B64_PNG }] },
     }));
@@ -339,60 +315,65 @@ describe('image_generate — error paths', () => {
       image_generate({ prompt: 'test', userId: 'user-1' }),
     ).rejects.toThrow(/persist.*image/i);
   });
+
+  it('rejects prompt exceeding 4000 chars', async () => {
+    await expect(
+      image_generate({ prompt: 'a'.repeat(4001), userId: 'user-1' }),
+    ).rejects.toThrow();
+  });
+
+  it('rejects missing userId', async () => {
+    await expect(
+      image_generate({ prompt: 'test image' }),
+    ).rejects.toThrow();
+  });
+
+  it('rejects empty prompt', async () => {
+    await expect(
+      image_generate({ prompt: '', userId: 'user-1' }),
+    ).rejects.toThrow();
+  });
 });
 
 // ---------------------------------------------------------------------------
-// Content type inference
+// Defaults
 // ---------------------------------------------------------------------------
 
-describe('image_generate — content type inference', () => {
-  it('assigns image/png for DALL-E models', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'test-key';
-
+describe('image_generate — defaults', () => {
+  it('defaults size to 1024x1024', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(makeFetchMock({
       body: { data: [{ b64_json: MOCK_B64_PNG }] },
     }));
 
-    await image_generate({ prompt: 'test', userId: 'user-1' });
+    const result = await image_generate({ prompt: 'test', userId: 'user-1' }) as Record<string, unknown>;
+    expect(result['size']).toBe('1024x1024');
 
-    const call = runtimeAssetHarness.persistRuntimeAsset.mock.calls[0]![0];
-    expect(call.contentType).toBe('image/png');
+    const body = JSON.parse((vi.mocked(globalThis.fetch).mock.calls[0]![1]).body as string);
+    expect(body.size).toBe('1024x1024');
+    expect(body.style).toBe('vivid');
+    expect(body.quality).toBe('standard');
   });
 
-  it('assigns image/webp for FLUX models', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'test-key';
-
+  it('accepts landscape size', async () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(makeFetchMock({
       body: { data: [{ b64_json: MOCK_B64_PNG }] },
     }));
 
-    await image_generate({
+    const result = await image_generate({
       prompt: 'test',
-      model: 'black-forest-labs/flux-1.1-pro',
+      size: '1792x1024',
       userId: 'user-1',
-    });
-
-    const call = runtimeAssetHarness.persistRuntimeAsset.mock.calls[0]![0];
-    expect(call.contentType).toBe('image/webp');
+    }) as Record<string, unknown>;
+    expect(result['size']).toBe('1792x1024');
   });
-});
 
-// ---------------------------------------------------------------------------
-// Authorization header
-// ---------------------------------------------------------------------------
-
-describe('image_generate — auth header', () => {
-  it('sends Authorization: Bearer <key> header', async () => {
-    process.env['OPENROUTER_API_KEY'] = 'my-secret-key-123';
-
-    const mockFetch = makeFetchMock({
+  it('includes contentType image/png in result', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(makeFetchMock({
       body: { data: [{ b64_json: MOCK_B64_PNG }] },
-    });
-    vi.spyOn(globalThis, 'fetch').mockImplementation(mockFetch);
+    }));
 
-    await image_generate({ prompt: 'test', userId: 'user-1' });
-
-    const headers = mockFetch.mock.calls[0]![1].headers as Record<string, string>;
-    expect(headers['Authorization']).toBe('Bearer my-secret-key-123');
+    const result = await image_generate({ prompt: 'test', userId: 'user-1' }) as Record<string, unknown>;
+    expect(result['contentType']).toBe('image/png');
   });
 });
+

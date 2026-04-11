@@ -1,22 +1,27 @@
-// Image generation skill handler — text-to-image via OpenRouter.
+// Image generation skill handler — text-to-image via Azure AI Services DALL-E 3.
 // Spec ref: 05-Capabilities-Framework.md
 // Issue: #241
 //
-// API: https://openrouter.ai/api/v1/images/generations (OpenAI-compatible images endpoint)
-// Auth: OPENROUTER_API_KEY env var (same key used for chat completions — see #501)
-// Default model: openai/dall-e-3 (also supports: openai/dall-e-2, black-forest-labs/flux-1.1-pro)
+// Backend: Azure AI Services DALL-E 3 deployment in the stamp's AI project (#241)
+// Endpoint: {AZURE_AI_FOUNDRY_ENDPOINT}/openai/deployments/{deployment}/images/generations?api-version=2024-10-21
+// Auth: Managed Identity bearer token (scope: https://cognitiveservices.azure.com/.default)
+// Deployment: 'dall-e-3' by default, override via AZURE_DALL_E_DEPLOYMENT env var
 // Output: b64_json decoded → persisted to runtime-asset blob via runtimeAssetStore
 
 import type { ToolHandler } from '../../src/capabilities/capabilityLoader.js';
 import { persistRuntimeAsset } from '../../src/integrations/runtimeAssetStore.js';
+import { getBearerToken } from '../../src/auth/identity.js';
+import { getEnvConfig } from '../../src/config/envConfig.js';
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const DEFAULT_IMAGE_MODEL = 'openai/dall-e-3';
-const OPENROUTER_IMAGES_ENDPOINT = 'https://openrouter.ai/api/v1/images/generations';
+const AZURE_API_VERSION = '2024-10-21';
+const DEFAULT_DALL_E_DEPLOYMENT = 'dall-e-3';
+// Cognitive Services token scope for managed identity on Azure AI Services
+const COGNITIVE_SERVICES_SCOPE = 'https://cognitiveservices.azure.com/.default';
 
 // ---------------------------------------------------------------------------
 // Zod schemas for API response validation at boundary
@@ -34,7 +39,7 @@ const ImagesResponseSchema = z.object({
 }).passthrough();
 
 // ---------------------------------------------------------------------------
-// Input schema  
+// Input schema
 // ---------------------------------------------------------------------------
 
 const ImageGenerateArgsSchema = z.object({
@@ -42,7 +47,6 @@ const ImageGenerateArgsSchema = z.object({
   size: z.enum(['1024x1024', '1792x1024', '1024x1792']).optional().default('1024x1024'),
   style: z.enum(['vivid', 'natural']).optional().default('vivid'),
   quality: z.enum(['standard', 'hd']).optional().default('standard'),
-  model: z.string().min(1).optional(),
   userId: z.string().min(1),
   correlationId: z.string().optional(),
 });
@@ -51,18 +55,10 @@ const ImageGenerateArgsSchema = z.object({
 // Helpers
 // ---------------------------------------------------------------------------
 
-function inferContentTypeFromModel(model: string): string {
-  // FLUX and Stability AI models may produce WebP; DALL-E produces PNG.
-  if (model.includes('flux') || model.includes('stable')) {
-    return 'image/webp';
-  }
-  return 'image/png';
-}
-
-function buildFileName(model: string, size: string, correlationId: string): string {
-  const modelSlug = model.split('/').pop()?.replace(/[^a-z0-9-]/gi, '-') ?? 'generated';
+function buildFileName(deployment: string, size: string, correlationId: string): string {
+  const deploySlug = deployment.replace(/[^a-z0-9-]/gi, '-');
   const corrShort = correlationId.slice(0, 8);
-  return `${modelSlug}-${size}-${corrShort}.png`;
+  return `${deploySlug}-${size}-${corrShort}.png`;
 }
 
 // ---------------------------------------------------------------------------
@@ -75,46 +71,43 @@ export const image_generate: ToolHandler = async (args) => {
     size: args['size'] ?? '1024x1024',
     style: args['style'] ?? 'vivid',
     quality: args['quality'] ?? 'standard',
-    model: args['model'] ?? undefined,
     userId: args['userId'],
     correlationId: args['correlationId'],
   });
 
-  const apiKey = process.env['OPENROUTER_API_KEY'];
-  if (!apiKey) {
+  const config = getEnvConfig();
+  if (!config.azureAiFoundryEndpoint) {
     throw new Error(
-      'Image generation requires OPENROUTER_API_KEY. '
-      + 'Configure it in the stamp Key Vault as OpenRouterApiKey.',
+      'Image generation requires AZURE_AI_FOUNDRY_ENDPOINT to be configured. '
+      + 'Ensure the stamp Azure AI Services resource is provisioned.',
     );
   }
 
-  const model = parsed.model ?? process.env['IMAGE_GENERATION_MODEL'] ?? DEFAULT_IMAGE_MODEL;
+  const deployment = process.env['AZURE_DALL_E_DEPLOYMENT'] ?? DEFAULT_DALL_E_DEPLOYMENT;
   const correlationId = parsed.correlationId ?? `img-${Date.now()}`;
 
-  // Build request body — use only DALL-E-specific params (size/style/quality) when
-  // the model is from OpenAI; other models may not support them.
-  const isDalleModel = model.startsWith('openai/dall-e') || model.startsWith('openai/gpt-image');
+  // Build Azure AI Services DALL-E endpoint
+  const base = config.azureAiFoundryEndpoint.replace(/\/+$/, '');
+  const url = `${base}/openai/deployments/${encodeURIComponent(deployment)}/images/generations?api-version=${AZURE_API_VERSION}`;
+
+  // Obtain managed identity bearer token for Cognitive Services
+  const token = await getBearerToken(COGNITIVE_SERVICES_SCOPE);
 
   const requestBody: Record<string, unknown> = {
-    model,
     prompt: parsed.prompt,
     n: 1,
+    size: parsed.size,
+    quality: parsed.quality,
+    style: parsed.style,
     response_format: 'b64_json',
   };
 
-  if (isDalleModel) {
-    requestBody['size'] = parsed.size;
-    requestBody['style'] = parsed.style;
-    requestBody['quality'] = parsed.quality;
-  }
-
-  const response = await fetch(OPENROUTER_IMAGES_ENDPOINT, {
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
-      'HTTP-Referer': 'https://github.com/putersdcat/HelkinSwarm',
-      'X-Title': 'HelkinSwarm',
+      'Authorization': `Bearer ${token}`,
+      'x-correlation-id': correlationId,
     },
     body: JSON.stringify(requestBody),
   });
@@ -137,19 +130,18 @@ export const image_generate: ToolHandler = async (args) => {
   if (!imageData.b64_json) {
     throw new Error(
       'Image generation API did not return b64_json. '
-      + 'response_format: b64_json was requested — check OpenRouter model support.',
+      + 'response_format: b64_json was requested — check DALL-E deployment configuration.',
     );
   }
 
   // Decode base64 → Buffer → persist to runtime asset store
   const imageBytes = Buffer.from(imageData.b64_json, 'base64');
-  const contentType = inferContentTypeFromModel(model);
-  const fileName = buildFileName(model, parsed.size, correlationId);
+  const fileName = buildFileName(deployment, parsed.size, correlationId);
 
   const assetReference = await persistRuntimeAsset({
     userId: parsed.userId,
     correlationId,
-    contentType,
+    contentType: 'image/png',
     fileName,
     bytes: imageBytes,
     source: {
@@ -166,10 +158,10 @@ export const image_generate: ToolHandler = async (args) => {
 
   const result: Record<string, unknown> = {
     assetId: assetReference.id,
-    model,
+    model: `azure:${deployment}`,
     size: parsed.size,
     fileName: assetReference.fileName ?? fileName,
-    contentType,
+    contentType: 'image/png',
     message: `Image generated and stored. Asset ID: ${assetReference.id}. Use this assetId to embed it in an email or reply to the user.`,
   };
 
