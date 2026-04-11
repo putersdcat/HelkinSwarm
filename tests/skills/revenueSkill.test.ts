@@ -121,56 +121,51 @@ describe('overallRecommendation', () => {
 });
 
 // ---------------------------------------------------------------------------
-// ddgOpportunitySearch
+// ddgOpportunitySearch (now delegates to RemoteOK)
 // ---------------------------------------------------------------------------
 
 describe('ddgOpportunitySearch', () => {
   it('returns empty array on fetch error', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
-    const results = await ddgOpportunitySearch('test query', 5);
+    const results = await ddgOpportunitySearch('ai automation', 5);
     expect(results).toEqual([]);
   });
 
   it('returns empty array on non-ok response', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) } as Response));
-    const results = await ddgOpportunitySearch('test query', 5);
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, json: async () => [] } as Response));
+    const results = await ddgOpportunitySearch('ai automation', 5);
     expect(results).toEqual([]);
   });
 
-  it('returns abstract result when DDG returns Abstract', async () => {
-    const ddgPayload = {
-      Abstract: 'Freelance AI development opportunities worldwide.',
-      AbstractURL: 'https://example.com/freelance-ai',
-      AbstractSource: 'Wikipedia',
-      Heading: 'Freelance AI Development',
-      RelatedTopics: [],
-    };
+  it('returns matched jobs from RemoteOK response', async () => {
+    const remoteOKPayload = [
+      { legal: 'RemoteOK API' },
+      { position: 'AI Engineer', company: 'Acme Corp', url: 'https://remoteok.com/l/123', description: 'Build AI models', tags: ['ai', 'python'] },
+      { position: 'Data Scientist', company: 'Beta Inc', url: 'https://remoteok.com/l/124', description: 'Machine learning automation', tags: ['ml', 'data'] },
+    ];
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ddgPayload,
+      json: async () => remoteOKPayload,
     } as unknown as Response));
 
-    const results = await ddgOpportunitySearch('freelance AI', 5);
-    expect(results).toHaveLength(1);
-    expect(results[0].title).toBe('Freelance AI Development (Wikipedia)');
-    expect(results[0].url).toBe('https://example.com/freelance-ai');
+    const results = await ddgOpportunitySearch('ai engineer', 5);
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0].url).toContain('remoteok.com');
   });
 
-  it('deduplicates results by URL when count > available', async () => {
-    const ddgPayload = {
-      RelatedTopics: [
-        { Text: 'Topic A - First topic', FirstURL: 'https://example.com/a' },
-        { Text: 'Topic B - Second topic', FirstURL: 'https://example.com/b' },
-        { Text: 'Topic C - Third topic', FirstURL: 'https://example.com/c' },
-      ],
-    };
+  it('filters out jobs that do not match keywords', async () => {
+    const remoteOKPayload = [
+      { legal: 'RemoteOK API' },
+      { position: 'Plumber', company: 'Pipes Corp', url: 'https://remoteok.com/l/100', description: 'Fix pipes on-site', tags: ['plumbing'] },
+      { position: 'AI Researcher', company: 'AI Lab', url: 'https://remoteok.com/l/101', description: 'Research AI topics', tags: ['ai', 'research'] },
+    ];
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ddgPayload,
+      json: async () => remoteOKPayload,
     } as unknown as Response));
 
-    const results = await ddgOpportunitySearch('freelance', 2);
-    expect(results).toHaveLength(2);
+    const results = await ddgOpportunitySearch('research', 5);
+    expect(results.every(r => r.title.toLowerCase().includes('ai') || r.url.includes('101'))).toBe(true);
   });
 });
 
@@ -234,36 +229,28 @@ describe('revenue_score_opportunity', () => {
 // ---------------------------------------------------------------------------
 
 describe('revenue_discover_opportunities', () => {
-  it('returns empty list when DDG returns nothing', async () => {
+  it('returns empty list when RemoteOK returns nothing', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false } as Response));
     const result = await revenue_discover_opportunities({});
     expect(Array.isArray(result.opportunities)).toBe(true);
     expect(result.count).toBe(0);
   });
 
-  it('deduplicates results from multiple search angles', async () => {
-    let callCount = 0;
-    vi.stubGlobal('fetch', vi.fn().mockImplementation(async () => {
-      callCount++;
-      // First 2 angles return the same URL, third returns unique
-      const url = callCount <= 2 ? 'https://example.com/shared' : 'https://example.com/unique';
-      return {
-        ok: true,
-        json: async () => ({
-          Abstract: 'AI research opportunity',
-          AbstractURL: url,
-          AbstractSource: 'Test',
-          Heading: 'AI Freelance',
-          RelatedTopics: [],
-        }),
-      } as unknown as Response;
-    }));
+  it('returns scored jobs from RemoteOK matching the skillset', async () => {
+    const remoteOKPayload = [
+      { legal: 'RemoteOK API' },
+      { position: 'AI Research Engineer', company: 'DeepLab', url: 'https://remoteok.com/l/1', description: 'Machine learning automation research NLP', tags: ['ai', 'ml', 'research'] },
+      { position: 'Content Writer', company: 'WriteCo', url: 'https://remoteok.com/l/2', description: 'Writing automation content creation', tags: ['writing', 'content'] },
+    ];
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => remoteOKPayload,
+    } as unknown as Response));
 
-    const result = await revenue_discover_opportunities({ max_results: 10 });
-    // Should deduplicate the shared URL across angles
-    const urls = result.opportunities.map((o: { url: string }) => o.url);
-    const unique = new Set(urls);
-    expect(urls.length).toBe(unique.size);
+    const result = await revenue_discover_opportunities({ skillset_focus: 'AI research writing' });
+    expect(result.count).toBeGreaterThan(0);
+    expect(result.opportunities[0]).toHaveProperty('score');
+    expect(result.opportunities[0]).toHaveProperty('recommendation');
   });
 
   it('respects max_results cap of 20', async () => {
@@ -278,16 +265,17 @@ describe('revenue_discover_opportunities', () => {
     expect(result.skillset_focus).toBe('translation');
   });
 
-  it('sorts pursue before evaluate before skip', async () => {
-    // Return 3 results: one neutral (evaluate), one strong AI fit (pursue), one bad (skip)
-    const topics = [
-      { Text: 'Generic admin work - some task', FirstURL: 'https://example.com/1' },
-      { Text: 'Upwork AI research automation - NLP machine learning', FirstURL: 'https://example.com/2' },
-      { Text: 'Unpaid volunteer construction on-site', FirstURL: 'https://example.com/3' },
+  it('sorts pursue before skip in results', async () => {
+    const remoteOKPayload = [
+      { legal: 'RemoteOK API' },
+      // Weak signal — skip candidate (volunteer physical)
+      { position: 'Volunteer Helper', company: 'NGO', url: 'https://remoteok.com/l/10', description: 'Unpaid volunteer on-site', tags: [] },
+      // Strong signal — pursue candidate (AI fit, Upwork, retainer)
+      { position: 'AI NLP Researcher', company: 'Upwork Client', url: 'https://remoteok.com/l/11', description: 'Upwork verified long-term retainer NLP machine learning automation', tags: ['ai', 'nlp'] },
     ];
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ RelatedTopics: topics }),
+      json: async () => remoteOKPayload,
     } as unknown as Response));
 
     const result = await revenue_discover_opportunities({ max_results: 10 });

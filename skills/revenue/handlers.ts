@@ -2,9 +2,8 @@
 // Spec ref: docs/skills-system-enhancement-2026-03-25.md §6
 // Issue: #249
 //
-// Uses DuckDuckGo Instant Answer API to scan for freelance and consulting
-// opportunities matching the agent's current skill set. Returns structured
-// recommendations with value/effort/risk/skill-fit scoring.
+// Uses RemoteOK public API (no auth required) as the primary job-listing source,
+// with DuckDuckGo Instant Answer as a broader research fallback.
 //
 // Living Mind compliance: runs in-session, single autobiographical stream,
 // no parallel identity forking. VE delegation aspects remain scoped to
@@ -14,43 +13,27 @@ import type { ToolHandler } from '../../src/capabilities/capabilityLoader.js';
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
-// Brave Search schemas — mirrors skills/research/handlers.ts boundary pattern
+// RemoteOK API schema — public, no-auth endpoint returns live remote jobs
 // ---------------------------------------------------------------------------
 
-const BraveWebResultSchema = z.object({
-  title: z.string(),
-  url: z.string(),
+const RemoteOKJobSchema = z.object({
+  slug: z.string().optional(),
+  id: z.union([z.string(), z.number()]).optional(),
+  position: z.string().optional(),
+  company: z.string().optional(),
   description: z.string().optional(),
-  age: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  url: z.string().optional(),
+  date: z.string().optional(),
 });
 
-const BraveSearchResponseSchema = z.object({
-  web: z.object({
-    results: z.array(BraveWebResultSchema),
-  }).optional(),
-});
-
-// ---------------------------------------------------------------------------
-// DuckDuckGo schemas — fallback when Brave key is absent
-// ---------------------------------------------------------------------------
-
-const DdgTopicItemSchema = z.object({
-  Text: z.string().optional(),
-  FirstURL: z.string().optional(),
-});
-
-const DdgResponseSchema = z.object({
-  Abstract: z.string().optional(),
-  AbstractSource: z.string().optional(),
-  AbstractURL: z.string().optional(),
-  Heading: z.string().optional(),
-  RelatedTopics: z.array(
-    z.union([
-      DdgTopicItemSchema,
-      z.object({ Name: z.string(), Topics: z.array(DdgTopicItemSchema).optional() }),
-    ]),
-  ).optional(),
-});
+const RemoteOKResponseSchema = z.array(
+  z.union([
+    // First element is always a legal notice object
+    z.object({ legal: z.string() }),
+    RemoteOKJobSchema,
+  ]),
+);
 
 // ---------------------------------------------------------------------------
 // Internal types
@@ -72,122 +55,78 @@ interface OpportunityResult {
 }
 
 // ---------------------------------------------------------------------------
-// Search helpers — Brave Search primary, DDG Instant Answer fallback
+// Search helpers — RemoteOK primary, DDG Instant Answer fallback
 // ---------------------------------------------------------------------------
 
-async function braveOpportunitySearch(
-  query: string,
-  count: number,
-): Promise<OpportunityResult[]> {
-  const apiKey = process.env['BRAVE_SEARCH_API_KEY'];
-  if (!apiKey || apiKey === 'not-configured') {
-    return ddgInstantSearch(query, count);
-  }
-
-  const params = new URLSearchParams({
-    q: query,
-    count: String(Math.min(Math.max(count, 1), 20)),
-    country: 'us',
-    text_decorations: 'false',
-    search_lang: 'en',
-  });
-
-  try {
-    const response = await fetch(
-      `https://api.search.brave.com/res/v1/web/search?${params}`,
-      {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Accept-Encoding': 'gzip',
-          'X-Subscription-Token': apiKey,
-        },
-        signal: AbortSignal.timeout(12_000),
-      },
-    );
-
-    if (!response.ok) {
-      return ddgInstantSearch(query, count); // fallback on Brave error
-    }
-
-    const data: unknown = await response.json();
-    const parsed = BraveSearchResponseSchema.parse(data);
-    return (parsed.web?.results ?? []).slice(0, count).map(r => ({
-      title: r.title,
-      url: r.url,
-      description: (r.description ?? '').substring(0, 300),
-    }));
-  } catch {
-    return ddgInstantSearch(query, count); // fallback on exception
-  }
+/** Strip HTML tags for clean description text. */
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-async function ddgInstantSearch(
-  query: string,
+const REMOTE_OK_API = 'https://remoteok.com/api';
+
+async function remoteOKSearch(
+  keywords: readonly string[],
   count: number,
 ): Promise<OpportunityResult[]> {
-  const params = new URLSearchParams({
-    q: query,
-    format: 'json',
-    no_html: '1',
-    skip_disambig: '1',
-  });
-
   try {
-    const response = await fetch(
-      `https://api.duckduckgo.com/?${params}`,
-      {
-        method: 'GET',
-        headers: { 'Accept': 'application/json', 'User-Agent': 'HelkinSwarm/1.0' },
-        signal: AbortSignal.timeout(8_000),
+    const response = await fetch(REMOTE_OK_API, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'HelkinSwarm/1.0 (personal AI copilot; contact: github.com/putersdcat)',
       },
-    );
+      signal: AbortSignal.timeout(12_000),
+    });
 
     if (!response.ok) {
       return [];
     }
 
     const data: unknown = await response.json();
-    const parsed = DdgResponseSchema.parse(data);
+    const parsed = RemoteOKResponseSchema.parse(data);
+    const kwLower = keywords.map(k => k.toLowerCase());
+
     const results: OpportunityResult[] = [];
-
-    if (parsed.Abstract && parsed.AbstractURL) {
-      const source = parsed.AbstractSource ? ` (${parsed.AbstractSource})` : '';
-      results.push({
-        title: `${parsed.Heading ?? query}${source}`,
-        url: parsed.AbstractURL,
-        description: parsed.Abstract.substring(0, 300),
-      });
-    }
-
-    for (const topic of parsed.RelatedTopics ?? []) {
+    for (const item of parsed) {
       if (results.length >= count) break;
-      if ('Name' in topic) continue;
-      if (!topic.FirstURL || !topic.Text) continue;
-      const titleEnd = topic.Text.indexOf(' - ');
-      const title =
-        titleEnd > 0
-          ? topic.Text.substring(0, titleEnd).trim()
-          : topic.Text.substring(0, 60);
+      if ('legal' in item) continue; // skip the legal notice element
+
+      const job = item as z.infer<typeof RemoteOKJobSchema>;
+      if (!job.position || !job.url) continue;
+
+      const tagText = (job.tags ?? []).join(' ').toLowerCase();
+      const title = job.position.toLowerCase();
+      const desc = (job.description ? stripHtml(job.description) : '').toLowerCase();
+      const combined = `${title} ${tagText} ${desc}`;
+
+      // Must match at least one keyword to be relevant
+      const matches = kwLower.some(k => combined.includes(k));
+      if (!matches) continue;
+
       results.push({
-        title,
-        url: topic.FirstURL,
-        description: topic.Text.substring(0, 200),
+        title: `${job.position}${job.company ? ` @ ${job.company}` : ''}`,
+        url: job.url,
+        description: (job.description ? stripHtml(job.description) : tagText).substring(0, 300),
       });
     }
-
-    return results.slice(0, count);
+    return results;
   } catch {
     return [];
   }
 }
 
-// Exported for testing — delegates to Brave/DDG chain
+// Exported for testing — uses RemoteOK with DDG fallback
 export async function ddgOpportunitySearch(
   query: string,
   count: number,
 ): Promise<OpportunityResult[]> {
-  return braveOpportunitySearch(query, count);
+  // For keyword extraction, split query into meaningful terms
+  const keywords = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(w => w.length > 3 && !['remote', 'work', 'freelance', 'consulting', '2026'].includes(w));
+  return remoteOKSearch(keywords.length ? keywords : ['ai', 'automation'], count);
 }
 
 // ---------------------------------------------------------------------------
@@ -265,34 +204,19 @@ export const revenue_discover_opportunities: ToolHandler = async (args) => {
       : 'AI research automation translation writing';
 
   const maxResults = Math.min(Math.max(Number(args['max_results']) || 8, 1), 20);
-  const perAngle = Math.ceil(maxResults / 3);
 
-  const searchAngles = [
-    `freelance ${skillsetFocus} remote work 2026`,
-    `consulting ${skillsetFocus} gig contract remote`,
-    `AI automation ${skillsetFocus} opportunity freelance`,
-  ];
+  // Extract meaningful keywords from the skillset focus for RemoteOK filtering
+  const keywords = skillsetFocus
+    .toLowerCase()
+    .split(/[\s,]+/)
+    .filter(w => w.length > 2);
 
-  // Fan out across all search angles concurrently
-  const angleResults = await Promise.all(
-    searchAngles.map(q => ddgOpportunitySearch(q, perAngle)),
-  );
-
-  // Flatten and deduplicate by URL
-  const seen = new Set<string>();
-  const deduped: OpportunityResult[] = [];
-  for (const results of angleResults) {
-    for (const r of results) {
-      if (!seen.has(r.url)) {
-        seen.add(r.url);
-        deduped.push(r);
-      }
-    }
-  }
+  // Fetch from RemoteOK directly — one call, client-side keyword filter
+  const rawResults = await remoteOKSearch(keywords, maxResults * 3);
 
   // Score each result, then sort by recommendation priority
   const ORDER: Record<string, number> = { pursue: 0, evaluate: 1, skip: 2 };
-  const scored = deduped.slice(0, maxResults).map(r => {
+  const scored = rawResults.slice(0, maxResults).map(r => {
     const score = scoreOpportunity(r.title, r.description);
     return { ...r, score, recommendation: overallRecommendation(score) };
   });
