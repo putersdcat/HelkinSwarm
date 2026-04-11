@@ -14,7 +14,24 @@ import type { ToolHandler } from '../../src/capabilities/capabilityLoader.js';
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
-// DuckDuckGo schemas — mirrors skills/research/handlers.ts boundary pattern
+// Brave Search schemas — mirrors skills/research/handlers.ts boundary pattern
+// ---------------------------------------------------------------------------
+
+const BraveWebResultSchema = z.object({
+  title: z.string(),
+  url: z.string(),
+  description: z.string().optional(),
+  age: z.string().optional(),
+});
+
+const BraveSearchResponseSchema = z.object({
+  web: z.object({
+    results: z.array(BraveWebResultSchema),
+  }).optional(),
+});
+
+// ---------------------------------------------------------------------------
+// DuckDuckGo schemas — fallback when Brave key is absent
 // ---------------------------------------------------------------------------
 
 const DdgTopicItemSchema = z.object({
@@ -55,10 +72,57 @@ interface OpportunityResult {
 }
 
 // ---------------------------------------------------------------------------
-// Search helper — DDG Instant Answer with graceful fallback
+// Search helpers — Brave Search primary, DDG Instant Answer fallback
 // ---------------------------------------------------------------------------
 
-export async function ddgOpportunitySearch(
+async function braveOpportunitySearch(
+  query: string,
+  count: number,
+): Promise<OpportunityResult[]> {
+  const apiKey = process.env['BRAVE_SEARCH_API_KEY'];
+  if (!apiKey || apiKey === 'not-configured') {
+    return ddgInstantSearch(query, count);
+  }
+
+  const params = new URLSearchParams({
+    q: query,
+    count: String(Math.min(Math.max(count, 1), 20)),
+    country: 'us',
+    text_decorations: 'false',
+    search_lang: 'en',
+  });
+
+  try {
+    const response = await fetch(
+      `https://api.search.brave.com/res/v1/web/search?${params}`,
+      {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Accept-Encoding': 'gzip',
+          'X-Subscription-Token': apiKey,
+        },
+        signal: AbortSignal.timeout(12_000),
+      },
+    );
+
+    if (!response.ok) {
+      return ddgInstantSearch(query, count); // fallback on Brave error
+    }
+
+    const data: unknown = await response.json();
+    const parsed = BraveSearchResponseSchema.parse(data);
+    return (parsed.web?.results ?? []).slice(0, count).map(r => ({
+      title: r.title,
+      url: r.url,
+      description: (r.description ?? '').substring(0, 300),
+    }));
+  } catch {
+    return ddgInstantSearch(query, count); // fallback on exception
+  }
+}
+
+async function ddgInstantSearch(
   query: string,
   count: number,
 ): Promise<OpportunityResult[]> {
@@ -116,6 +180,14 @@ export async function ddgOpportunitySearch(
   } catch {
     return [];
   }
+}
+
+// Exported for testing — delegates to Brave/DDG chain
+export async function ddgOpportunitySearch(
+  query: string,
+  count: number,
+): Promise<OpportunityResult[]> {
+  return braveOpportunitySearch(query, count);
 }
 
 // ---------------------------------------------------------------------------
