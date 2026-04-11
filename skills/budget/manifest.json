@@ -1,0 +1,113 @@
+{
+  "domain": "budget",
+  "version": "1.0",
+  "tools": [
+    {
+      "name": "budget_get_status",
+      "description": "Returns the current Azure infrastructure spend for this month, including total spend to date, daily velocity, projected month-end cost, and a comparison against the previous month. Use this when the user asks about costs, spend, burn rate, or how much HelkinSwarm has cost so far.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": ["monthly_cost_baseline"],
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "aliases": [
+        "cost status",
+        "budget status",
+        "how much have I spent",
+        "how much is this costing"
+      ],
+      "discoveryTerms": [
+        "azure spend",
+        "budget",
+        "cost status",
+        "burn rate",
+        "monthly spend",
+        "infrastructure cost"
+      ],
+      "useWhen": [
+        "the user asks how much HelkinSwarm is costing",
+        "the user wants to check current Azure spend or burn rate",
+        "the user asks about daily or monthly budget status"
+      ],
+      "avoidWhen": [
+        "the user is asking about a model's per-token pricing — use budget_estimate_tokens instead"
+      ],
+      "returnsSummaryShape": "object with currentMonthSpend, dailyVelocity, projectedMonthEnd, currency, and model rate table",
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
+    },
+    {
+      "name": "budget_estimate_tokens",
+      "description": "Estimates how many tokens and conversational turns a given dollar budget buys for a specific model. Also returns the per-million-token rate for the model. Use when the user asks how far a budget will go, how much a certain number of turns costs, or wants to compare model pricing.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "usd_budget": {
+            "type": "number",
+            "description": "Dollar amount to estimate (e.g. 10 for $10)"
+          },
+          "model": {
+            "type": "string",
+            "description": "Optional model to price against. Defaults to the current primary model (grok-4.1-fast). Examples: 'grok-4.1-fast', 'o4-mini', 'gpt-5'."
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["input", "output", "blended"],
+            "description": "Token mode to price: 'input' (prompt tokens only), 'output' (completion only), 'blended' (mixed average). Default: 'blended'."
+          }
+        },
+        "required": ["usd_budget"]
+      },
+      "aliases": [
+        "how many tokens for $",
+        "estimate token budget",
+        "how much does a turn cost"
+      ],
+      "discoveryTerms": [
+        "token estimate",
+        "token budget",
+        "model pricing",
+        "cost per turn",
+        "how far will my budget go"
+      ],
+      "useWhen": [
+        "the user wants to know how many turns or tokens a fixed dollar budget covers",
+        "the user wants to compare model pricing",
+        "the user wants to set a token ceiling for a given spend target"
+      ],
+      "avoidWhen": [
+        "the user wants their actual current Azure spend — use budget_get_status instead"
+      ],
+      "returnsSummaryShape": "object with estimated_total_tokens, estimated_turns, rate_per_million_tokens, model, and mode",
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
+    }
+  ],
+  "shortName": "budget",
+  "displayName": "Cost Estimation & Budgeting",
+  "shortDescription": "Azure infrastructure spend tracking, per-model pricing lookup, and dollar-to-token budget translation",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/budget.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials",
+  "externalAccountsNeeded": [],
+  "virtualEmployeeCompatible": false,
+  "requiresOrchestratorApproval": false,
+  "licenseAvoidant": false,
+  "supportsBudgeting": true,
+  "costModel": "no-direct-cost"
+}
