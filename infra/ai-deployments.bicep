@@ -112,7 +112,7 @@ resource aiDeployGpt54Mini 'Microsoft.CognitiveServices/accounts/deployments@202
   dependsOn: [ aiDeployGrokFast ]
   sku: { name: 'GlobalStandard', capacity: capGpt54Mini }
   properties: {
-    model: { format: 'OpenAI', name: 'o4-mini', version: '2026-03-17' }
+    model: { format: 'OpenAI', name: 'o4-mini', version: '2025-04-16' }
     raiPolicyName: 'Microsoft.DefaultV2'
     versionUpgradeOption: 'NoAutoUpgrade'
   }
@@ -166,18 +166,5 @@ resource aiDeployDeepSeek 'Microsoft.CognitiveServices/accounts/deployments@2024
   }
 }
 
-// Image generation model (#241) — DALL-E 3 via Azure AI Services.
-// Capacity for image models is measured in images per minute (IPM), not TPM.
-// SKU must be 'Standard' (ImageGeneration feature is not available in GlobalStandard).
-// API path: {endpoint}/openai/deployments/dall-e-3/images/generations?api-version=2024-10-21
-resource aiDeployDallE3 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
-  parent: aiServices
-  name: 'dall-e-3'
-  dependsOn: [ aiDeployDeepSeek ]
-  sku: { name: 'Standard', capacity: 1 }
-  properties: {
-    model: { format: 'OpenAI', name: 'dall-e-3', version: '3.0' }
-    raiPolicyName: 'Microsoft.DefaultV2'
-    versionUpgradeOption: 'NoAutoUpgrade'
-  }
-}
+// NOTE (#241): dall-e-3 and other image generation models are not available in eastus2.
+// Image generation requires a cross-region resource. Tracked in #241.
