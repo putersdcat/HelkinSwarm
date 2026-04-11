@@ -1,0 +1,98 @@
+{
+  "domain": "x",
+  "version": "1.0",
+  "shortName": "x-twitter",
+  "displayName": "X / Twitter",
+  "shortDescription": "Lightweight X (Twitter) company presence — search recent posts, people, and topics using the Twitter API v2. Outbound posting is defined but requires OAuth 2.0 user-context credentials not yet available.",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/core.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "operator/backend-config-required",
+  "lifecycleRules": "keep-credentials",
+  "licenseAvoidant": true,
+  "discoveryHints": [
+    "Twitter",
+    "X",
+    "tweet",
+    "tweets",
+    "post on X",
+    "social media search",
+    "company X account",
+    "X/Twitter presence",
+    "search Twitter",
+    "recent tweets"
+  ],
+  "orchestratorUseCases": [
+    "search recent X / Twitter posts about a topic, person, or company",
+    "monitor mentions and social media signals on X/Twitter",
+    "check what people are saying about a topic on X",
+    "search for relevant conversations or thought leaders on X"
+  ],
+  "recommendedEntryTools": ["x_search"],
+  "capabilityGroups": [
+    {
+      "id": "x-presence",
+      "displayName": "X / Twitter Presence",
+      "shortDescription": "Search and monitor X/Twitter content. Outbound posting reserved for future OAuth 2.0 user-context integration.",
+      "discoveryHints": ["Twitter search", "X search", "tweets", "social media monitoring"],
+      "useWhen": ["user wants to search X or Twitter for recent content or social signals"],
+      "upstreamNamespace": "x_twitter"
+    }
+  ],
+  "tools": [
+    {
+      "name": "x_search",
+      "description": "Search X (Twitter) for recent posts, people, and topics using the Twitter API v2 app-only search. Returns up to 10 recent matching tweets with author, timestamp, and text. Requires TWITTER_BEARER_TOKEN env var set by operator.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "privilegeClass": "read-only",
+      "capabilityGroup": "x-presence",
+      "discoveryTerms": [
+        "twitter", "X", "tweet", "tweets", "search Twitter",
+        "social media", "trending", "mentions", "X search"
+      ],
+      "useWhen": [
+        "user wants to search X/Twitter for recent posts or news",
+        "user wants to monitor mentions or topics on X",
+        "orchestrator needs social media signal for a topic or person"
+      ],
+      "avoidWhen": [
+        "user wants to post or reply on X — use x_post instead",
+        "user needs full historical archive search beyond recent 7-day window"
+      ],
+      "typicalInputs": [
+        "query: string — Twitter search query (keywords, hashtags, phrases, from: filters, etc.)",
+        "max_results: number (optional, 10–100, default 10)"
+      ],
+      "returnsSummaryShape": "{ status, query, count, tweets: [{ id, text, authorId, createdAt }] }"
+    },
+    {
+      "name": "x_post",
+      "description": "Compose and publish a post on X/Twitter via the HelkinSwarm company account. NOTE: Currently returns not-configured — outbound posting requires OAuth 2.0 user-context credentials (not available via app-only Bearer token). Requires explicit owner approval before any post is published.",
+      "risk": "high",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": true,
+      "requiresExecutor": false,
+      "privilegeClass": "create",
+      "capabilityGroup": "x-presence",
+      "discoveryTerms": [
+        "post on Twitter", "tweet", "publish on X", "post to X",
+        "company tweet", "X post", "company social media post"
+      ],
+      "useWhen": [
+        "user or orchestrator wants to post a public update to X/Twitter from the company account"
+      ],
+      "avoidWhen": [
+        "user wants to search X — use x_search instead",
+        "DMs — not supported by this skill (requires separate per-user OAuth flow)"
+      ],
+      "typicalInputs": [
+        "text: string — the post text (max 280 characters for standard accounts)"
+      ],
+      "returnsSummaryShape": "{ status: 'not-configured' | 'posted', explanation?, tweetId? }"
+    }
+  ]
+}
