@@ -145,7 +145,10 @@
       "--tool",
       "resourcehealth_health-events_list"
     ],
-    "timeoutMs": 30000
+    "timeoutMs": 30000,
+    "env": {
+      "AZURE_TOKEN_CREDENTIALS": "prod"
+    }
   },
   "tools": [
     {
