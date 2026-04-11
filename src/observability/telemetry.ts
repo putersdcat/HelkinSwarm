@@ -83,6 +83,7 @@ export type TelemetryEventName =
   | 'MultiRoundDispatch'
   | 'DiscoveryQueryExecuted'
   | 'DiscoveryToolSubsetSelected'
+  | 'DiscoveryRegistryFallbackUsed'
   | 'ModelProfileApplied'
   | 'McpRegistryCatalogRefreshed'
   | 'McpRegistrySearchExecuted'

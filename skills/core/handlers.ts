@@ -207,6 +207,8 @@ export const helkin_skill_search: ToolHandler = async (args) => {
       toolLimit: Number(args['toolLimit'] ?? 8),
     });
 
+    const localMiss = result.skills.length === 0 && result.tools.length === 0;
+
     trackEvent({
       name: 'DiscoveryQueryExecuted',
       correlationId,
@@ -216,8 +218,54 @@ export const helkin_skill_search: ToolHandler = async (args) => {
         skillCount: result.skills.length,
         toolCount: result.tools.length,
         selectedTools: result.tools.map((tool) => tool.id).join(','),
+        localMiss: String(localMiss),
       },
     });
+
+    // ---------------------------------------------------------------------------
+    // Registry fallback: when no installed skills match, attempt MCP Registry
+    // candidate discovery as a second-hop. Candidates are clearly labeled
+    // external and never auto-activated. Satisfies issue #482.
+    // ---------------------------------------------------------------------------
+    let registryFallbackCandidates: Array<{
+      name: string;
+      title: string | null;
+      description: string;
+      activationGate: unknown;
+      score: number;
+    }> | undefined;
+
+    if (localMiss) {
+      try {
+        const { searchMcpRegistryCatalog } = await import('../../src/mcp/mcpRegistryCatalog.js');
+        const registryResult = await searchMcpRegistryCatalog(query, {
+          limit: 5,
+          includeDeleted: false,
+          includeDeprecated: false,
+          forceRefresh: false,
+        });
+        if (registryResult.candidates.length > 0) {
+          registryFallbackCandidates = registryResult.candidates.map((c) => ({
+            name: c.name,
+            title: c.title,
+            description: c.description,
+            activationGate: c.activationGate,
+            score: c.score,
+          }));
+          trackEvent({
+            name: 'DiscoveryRegistryFallbackUsed',
+            correlationId,
+            userId,
+            properties: {
+              query,
+              candidateCount: String(registryFallbackCandidates.length),
+            },
+          });
+        }
+      } catch {
+        // Registry fallback is best-effort — local miss result is still returned.
+      }
+    }
 
     return {
       status: 'success',
@@ -269,6 +317,11 @@ export const helkin_skill_search: ToolHandler = async (args) => {
           score: hit.score,
           matchReasons: hit.matchReasons,
         };
+      }),
+      ...(registryFallbackCandidates !== undefined && registryFallbackCandidates.length > 0 && {
+        local_miss: true,
+        registry_fallback_candidates: registryFallbackCandidates,
+        registry_fallback_note: 'No installed skills matched. These are external MCP candidates — not installed skills. They require explicit onboarding via helkin_mcp_forge before use.',
       }),
     };
   }

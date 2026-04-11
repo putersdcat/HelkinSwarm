@@ -1,6 +1,26 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearSkillDiscoveryIndex, rebuildSkillDiscoveryIndex } from '../../src/capabilities/skillDiscoveryIndex.js';
 import type { CapabilityManifest } from '../../src/capabilities/manifestSchema.js';
+
+vi.mock('../../src/mcp/mcpRegistryCatalog.js', () => ({
+  searchMcpRegistryCatalog: vi.fn().mockResolvedValue({
+    candidates: [
+      {
+        name: 'salesforce-mcp',
+        title: 'Salesforce MCP Server',
+        description: 'CRM integration for Salesforce',
+        activationGate: { discoveredFrom: 'official-mcp-registry-cache', sourceStatus: 'active', moderationTrust: 'minimal-external-moderation', installedSkillId: null },
+        score: 0.82,
+        repositoryUrl: 'https://github.com/example/salesforce-mcp',
+        websiteUrl: null,
+      },
+    ],
+    generatedAt: '2026-01-01T00:00:00Z',
+    usedStaleCache: false,
+    excluded: 0,
+    syncStatus: 'ok',
+  }),
+}));
 
 const manifests: CapabilityManifest[] = [
   {
@@ -118,5 +138,19 @@ describe('helkin_skill_search', () => {
     expect(result.skill).toBe('outlook');
     expect(result.operationalState).toBe('action-required');
     expect(result.operationalSummary).toContain('needs user action');
+  });
+
+  it('returns registry fallback candidates when local search returns no results', async () => {
+    const { helkin_skill_search } = await import('../../skills/core/handlers.js');
+    const result = await helkin_skill_search({ command: 'search', query: 'salesforce crm integration' }) as {
+      local_miss: boolean;
+      registry_fallback_candidates: Array<{ name: string; title: string | null; score: number }>;
+      registry_fallback_note: string;
+    };
+
+    expect(result.local_miss).toBe(true);
+    expect(result.registry_fallback_candidates).toHaveLength(1);
+    expect(result.registry_fallback_candidates[0]?.name).toBe('salesforce-mcp');
+    expect(result.registry_fallback_note).toContain('not installed');
   });
 });
