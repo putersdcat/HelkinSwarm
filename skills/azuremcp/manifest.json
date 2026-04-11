@@ -122,6 +122,8 @@
       "start",
       "--read-only",
       "true",
+      "--outgoing-auth-strategy",
+      "UseHostingEnvironmentIdentity",
       "--tool",
       "subscription_list",
       "--tool",
