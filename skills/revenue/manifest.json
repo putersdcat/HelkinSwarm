@@ -1,0 +1,165 @@
+{
+  "domain": "revenue",
+  "version": "2.1",
+  "shortName": "revenue",
+  "displayName": "Revenue Discovery",
+  "shortDescription": "Scans freelance and consulting marketplaces for work opportunities matching the agent's skill set. Returns ranked opportunity recommendations with value, effort, risk, and skill-fit scoring.",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/revenue.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials",
+  "virtualEmployeeCompatible": true,
+  "requiresOrchestratorApproval": false,
+  "licenseAvoidant": false,
+  "supportsBudgeting": true,
+  "costModel": { "type": "no-direct-cost" },
+  "discoveryHints": [
+    "revenue",
+    "opportunities",
+    "freelance",
+    "consulting",
+    "income",
+    "monetize",
+    "marketplace",
+    "gig work",
+    "contract work"
+  ],
+  "orchestratorUseCases": [
+    "find freelance or consulting opportunities matching the agent's current skill set",
+    "score and rank a specific opportunity description for feasibility and fit",
+    "discover revenue-generating work across AI research, translation, writing, and automation skills",
+    "assess potential gig or contract opportunities before pursuing them"
+  ],
+  "recommendedEntryTools": ["revenue_discover_opportunities"],
+  "useWhen": [
+    "user wants to find freelance or consulting work opportunities",
+    "user asks about revenue generation for the virtual company",
+    "user wants to score or assess a specific opportunity"
+  ],
+  "avoidWhen": [
+    "user is asking about Azure or AI infrastructure costs — use budget_get_status instead",
+    "user wants internal bookkeeping — use ledger_get_summary instead"
+  ],
+  "aliases": [
+    "find opportunities",
+    "revenue discovery",
+    "freelance search",
+    "consulting opportunities",
+    "monetize skills",
+    "gig work scan"
+  ],
+  "discoveryTerms": [
+    "revenue",
+    "opportunity",
+    "freelance",
+    "consulting",
+    "gig",
+    "contract work",
+    "income",
+    "marketplace",
+    "monetize",
+    "work opportunities"
+  ],
+  "tools": [
+    {
+      "name": "revenue_discover_opportunities",
+      "description": "Scans freelance and consulting platforms for work matching the agent's skill set (AI research, translation, writing, math, automation). Returns ranked opportunities with value-potential, effort, risk, and skill-fit scores. Use when the user asks to find revenue opportunities, discover freelance work, or identify consulting gigs.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "skillset_focus": {
+            "type": "string",
+            "description": "Optional skill area to target (e.g. 'AI research', 'translation', 'content writing'). Defaults to scanning all current skills."
+          },
+          "max_results": {
+            "type": "number",
+            "description": "Maximum number of opportunities to return (1-20). Defaults to 8."
+          }
+        },
+        "required": []
+      },
+      "aliases": [
+        "find freelance work",
+        "discover opportunities",
+        "scan for gigs",
+        "find consulting work",
+        "revenue opportunities"
+      ],
+      "discoveryTerms": [
+        "freelance opportunities",
+        "consulting gigs",
+        "revenue discovery",
+        "work opportunities",
+        "gig scan",
+        "monetize skills"
+      ],
+      "useWhen": [
+        "user wants to find work opportunities matching the agent's skills",
+        "user asks about revenue generation or freelance income",
+        "user wants to discover consulting or gig work"
+      ],
+      "avoidWhen": [
+        "user wants to score a specific opportunity — use revenue_score_opportunity instead"
+      ],
+      "returnsSummaryShape": "object with count, skillset_focus, and opportunities array (title, url, description, score, recommendation)"
+    },
+    {
+      "name": "revenue_score_opportunity",
+      "description": "Scores a specific opportunity by value potential, effort level, risk level, and skill fit. Returns a structured assessment and overall recommendation (pursue/evaluate/skip). Use when the user has a specific opportunity in mind and wants a structured feasibility assessment.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Opportunity title or name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Opportunity description, including scope, requirements, and any platform/client context."
+          }
+        },
+        "required": ["title", "description"]
+      },
+      "aliases": [
+        "score opportunity",
+        "assess gig",
+        "evaluate opportunity",
+        "rate opportunity",
+        "should I pursue"
+      ],
+      "discoveryTerms": [
+        "score opportunity",
+        "assess gig",
+        "evaluate opportunity",
+        "opportunity assessment",
+        "feasibility check"
+      ],
+      "useWhen": [
+        "user has a specific opportunity to assess",
+        "user wants to know if a gig or contract is worth pursuing",
+        "user asks for a structured feasibility score on a project"
+      ],
+      "avoidWhen": [
+        "user wants to discover new opportunities — use revenue_discover_opportunities instead"
+      ],
+      "returnsSummaryShape": "object with title, score (value_potential, effort_level, risk_level, skill_fit), recommendation, and explanation"
+    }
+  ]
+}
