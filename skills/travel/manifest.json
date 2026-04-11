@@ -1,0 +1,145 @@
+{
+  "domain": "travel",
+  "version": "1.0",
+  "tools": [
+    {
+      "name": "travel_drive_time",
+      "description": "Get estimated drive time, walking time, or cycling time between two locations. Resolves addresses to coordinates via Nominatim (OpenStreetMap) and calculates the route using OSRM. Works for cities, street addresses, landmarks, and 'lat,lon' coordinate strings. No API key required.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Starting location — address, city, landmark, or 'lat,lon' coordinates"
+          },
+          "to": {
+            "type": "string",
+            "description": "Destination location — address, city, landmark, or 'lat,lon' coordinates"
+          },
+          "mode": {
+            "type": "string",
+            "enum": ["driving", "walking", "cycling"],
+            "description": "Travel mode (default: driving)"
+          }
+        },
+        "required": ["from", "to"]
+      },
+      "aliases": [
+        "drive time",
+        "commute time",
+        "how far",
+        "travel time",
+        "distance to",
+        "how long to drive",
+        "directions"
+      ],
+      "discoveryTerms": [
+        "route",
+        "navigation",
+        "travel time",
+        "drive time",
+        "commute",
+        "directions",
+        "distance",
+        "how long",
+        "how far"
+      ],
+      "useWhen": [
+        "the user asks for drive time, walk time, or cycling time between two places",
+        "the user wants to know how long it takes to travel between two locations",
+        "the user asks for distance between two places"
+      ],
+      "avoidWhen": [
+        "the user needs real-time traffic data — this tool uses typical estimated times",
+        "the user needs transit schedules (bus/train) — use a transit-specific service"
+      ],
+      "typicalInputs": [
+        "from Austin TX to Houston TX",
+        "New York Penn Station to JFK Airport",
+        "home to the office",
+        "Times Square New York to Central Park walking"
+      ],
+      "returnsSummaryShape": "estimated travel duration and distance with resolved location names",
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
+    },
+    {
+      "name": "travel_geocode",
+      "description": "Resolve a place name, address, or landmark to geographic coordinates (latitude, longitude). Returns the canonical display name and coordinates. Useful for location lookups, mapping queries, and as a precursor to routing or weather lookups.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Address, city, landmark, or place name to resolve to coordinates"
+          }
+        },
+        "required": ["address"]
+      },
+      "aliases": [
+        "find location",
+        "where is",
+        "coordinates of",
+        "what are the coordinates"
+      ],
+      "discoveryTerms": [
+        "geocode",
+        "coordinates",
+        "latitude longitude",
+        "location lookup"
+      ],
+      "useWhen": [
+        "the user wants to find the coordinates of a location",
+        "the user asks where a place is or what its coordinates are"
+      ],
+      "typicalInputs": [
+        "1600 Pennsylvania Avenue Washington DC",
+        "Eiffel Tower Paris",
+        "Tesla Gigafactory Austin"
+      ],
+      "returnsSummaryShape": "latitude, longitude, and canonical display name for the resolved location",
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
+    }
+  ],
+  "shortName": "travel",
+  "displayName": "Travel & Routing",
+  "shortDescription": "Drive time, walk time, cycling time, and geocoding via free OpenStreetMap APIs — no API key required",
+  "discoveryHints": [
+    "drive time",
+    "travel time",
+    "commute",
+    "directions",
+    "routing",
+    "navigation",
+    "distance",
+    "geocode",
+    "coordinates"
+  ],
+  "orchestratorUseCases": [
+    "answer questions about travel time and distance between places",
+    "geocode addresses or place names to coordinates",
+    "estimate commute or drive times"
+  ],
+  "recommendedEntryTools": [
+    "travel_drive_time"
+  ],
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/travel.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials"
+}
