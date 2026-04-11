@@ -1,0 +1,94 @@
+{
+  "domain": "image",
+  "version": "1.0",
+  "tools": [
+    {
+      "name": "image_generate",
+      "description": "Generate an image from a text prompt using an AI image model. Returns a persistent runtime-asset reference (assetId) that can be used in emails, reports, or sent back to the user in Teams. Requires OPENROUTER_API_KEY.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "description": "Text description of the image to generate (e.g. 'a photorealistic sunset over the Swiss Alps')"
+          },
+          "size": {
+            "type": "string",
+            "enum": ["1024x1024", "1792x1024", "1024x1792"],
+            "description": "Output image dimensions (default: 1024x1024). Use landscape (1792x1024) or portrait (1024x1792) for non-square outputs."
+          },
+          "style": {
+            "type": "string",
+            "enum": ["vivid", "natural"],
+            "description": "Style for DALL-E 3: vivid produces hyper-real dramatic images; natural produces less hyper-real more subdued images (default: vivid)"
+          },
+          "quality": {
+            "type": "string",
+            "enum": ["standard", "hd"],
+            "description": "Image quality: hd creates images with finer details and greater consistency (default: standard)"
+          },
+          "model": {
+            "type": "string",
+            "description": "Override the image generation model (default: openai/dall-e-3). Other available models: openai/dall-e-2, black-forest-labs/flux-1.1-pro"
+          }
+        },
+        "required": ["prompt"]
+      },
+      "aliases": [
+        "draw",
+        "create image",
+        "make image",
+        "generate image",
+        "paint"
+      ],
+      "discoveryTerms": [
+        "generate image",
+        "create picture",
+        "draw",
+        "AI image",
+        "DALL-E",
+        "text to image"
+      ],
+      "useWhen": [
+        "the user wants to generate, create, or draw an image from a text description",
+        "the user asks to 'generate an image of', 'draw', 'create a picture of', or 'make an image of'",
+        "an image needs to be produced for use in an email, report, or Teams reply"
+      ],
+      "avoidWhen": [
+        "the user wants to edit an existing image — this tool only generates from text prompts",
+        "the user wants to search for or find existing images — use web_search instead"
+      ],
+      "typicalInputs": [
+        "a futuristic city skyline at night with neon lights",
+        "a photorealistic portrait of a golden retriever wearing sunglasses",
+        "a minimalist logo design for a tech company called HelkinSwarm"
+      ],
+      "returnsSummaryShape": "assetId (UUID) pointing to a runtime-asset blob, plus the revised prompt used by the model",
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
+    }
+  ],
+  "shortName": "image",
+  "displayName": "Image Generation",
+  "shortDescription": "Generate images from text prompts via AI image models — outputs stored as reusable runtime assets",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/image.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials",
+  "externalAccountsNeeded": [
+    {
+      "description": "OpenRouter API key — provides access to DALL-E 3 and other image models",
+      "envVarName": "OPENROUTER_API_KEY",
+      "howToObtain": "https://openrouter.ai/ — create an account and generate an API key; store in stamp Key Vault as OpenRouterApiKey",
+      "satisfiedBy": "operator-kv",
+      "required": true
+    }
+  ]
+}
