@@ -169,6 +169,7 @@ jobs:
       function-app-name: ${{ steps.query.outputs.functionAppName }}
       managed-identity-client-id: ${{ steps.query.outputs.managedIdentityClientId }}
       managed-identity-resource-id: ${{ steps.query.outputs.managedIdentityResourceId }}
+      image-changed: ${{ steps.changes.outputs.imageChanged }}
 
     steps:
       - name: Checkout
@@ -184,24 +185,27 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "infraChanged=true" >> "$GITHUB_OUTPUT"
-            echo "ℹ️ Manual dispatch — running full infra deployment."
+            echo "imageChanged=true" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ Manual dispatch — running full infra and image deployment."
             exit 0
           fi
 
-          # [skip-infra] in commit message forces code-only deploy.
+          # [skip-infra] in commit message forces code-only deploy but still rebuilds image.
           # This works even when EARLY_DEV_COST_GUARD is active — the guard
           # assertion step runs independently of infraChanged. (#597)
           COMMIT_MSG=$(git log -1 --format='%s' "${{ github.sha }}")
           if echo "$COMMIT_MSG" | grep -qi '\[skip-infra\]'; then
             echo "infraChanged=false" >> "$GITHUB_OUTPUT"
-            echo "ℹ️ [skip-infra] detected in commit message — skipping Bicep deployment."
+            echo "imageChanged=true" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ [skip-infra] detected in commit message — skipping Bicep deployment, rebuilding image."
             exit 0
           fi
 
           BEFORE_SHA="${{ github.event.before }}"
           if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
             echo "infraChanged=true" >> "$GITHUB_OUTPUT"
-            echo "ℹ️ No reliable before-SHA available — running full infra deployment."
+            echo "imageChanged=true" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ No reliable before-SHA available — running full deployment."
             exit 0
           fi
 
@@ -215,7 +219,17 @@ jobs:
             echo "✅ Infrastructure-affecting files changed — running Bicep deployment."
           else
             echo "infraChanged=false" >> "$GITHUB_OUTPUT"
-            echo "ℹ️ Code-only push detected — skipping Bicep deployment and reusing existing stamp resources."
+            echo "ℹ️ No infra-affecting files changed — skipping Bicep deployment."
+          fi
+
+          # Check if image-affecting files changed (src, skills, Dockerfile, package files)
+          # Infra-only pushes skip the Docker build entirely, saving ~2-3 minutes. (#597)
+          if echo "$CHANGED_FILES" | grep -qE '^(src/|skills/|model-profiles/|Dockerfile$|package\.json$|pnpm-lock\.yaml$|tsconfig\.json$|host\.json$)'; then
+            echo "imageChanged=true" >> "$GITHUB_OUTPUT"
+            echo "✅ Image-affecting files changed — will rebuild Docker image."
+          else
+            echo "imageChanged=false" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ No image-affecting files changed — will skip Docker rebuild (infra-only deploy)."
           fi
 
           # When EARLY_DEV_COST_GUARD is active, log that guard assertions will
@@ -790,15 +804,20 @@ jobs:
 
   # ─────────────────────────────────────────────────────────────────────────
   # 3. Build & Push Container Image
+  # Skipped on infra-only pushes (imageChanged=false) to save ~2-3 minutes. (#597)
   # ─────────────────────────────────────────────────────────────────────────
   build-and-push:
     name: Build & Push Container
     needs: deploy-infra
+    if: needs.deploy-infra.outputs.image-changed == 'true'
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Azure Login (OIDC)
         uses: azure/login@v3
@@ -810,11 +829,15 @@ jobs:
       - name: Login to ACR
         run: az acr login --name ${{ needs.deploy-infra.outputs.acr-name }}
 
-      - name: Build and push Docker image
+      - name: Build and push Docker image (Buildx + ACR layer cache)
         run: |
           set -euo pipefail
-          IMAGE=${{ needs.deploy-infra.outputs.acr-login-server }}/helkinswarm:${{ github.sha }}
-          IMAGE_LATEST=${{ needs.deploy-infra.outputs.acr-login-server }}/helkinswarm:latest
+          ACR_SERVER=${{ needs.deploy-infra.outputs.acr-login-server }}
+          IMAGE="${ACR_SERVER}/helkinswarm:${{ github.sha }}"
+          IMAGE_LATEST="${ACR_SERVER}/helkinswarm:latest"
+          # ACR-backed layer cache: deps layer reused across pushes when package.json unchanged,
+          # saving ~60-90s per code-only push. mode=max caches all intermediate layers. (#597)
+          CACHE_REF="${ACR_SERVER}/helkinswarm:buildcache"
 
           max_attempts=3
           attempt=1
@@ -823,9 +846,13 @@ jobs:
           while [ "$attempt" -le "$max_attempts" ]; do
             echo "🐳 Build/push attempt ${attempt}/${max_attempts}"
 
-            if docker build -t "$IMAGE" -t "$IMAGE_LATEST" . \
-              && docker push "$IMAGE" \
-              && docker push "$IMAGE_LATEST"; then
+            if docker buildx build \
+              --push \
+              --tag "$IMAGE" \
+              --tag "$IMAGE_LATEST" \
+              --cache-from "type=registry,ref=${CACHE_REF}" \
+              --cache-to "type=registry,ref=${CACHE_REF},mode=max" \
+              .; then
               echo "✅ Docker image build/push succeeded on attempt ${attempt}"
               break
             fi
@@ -848,6 +875,8 @@ jobs:
   deploy-app:
     name: Deploy to Container Apps
     needs: [deploy-infra, build-and-push]
+    # Run when infra succeeded and image was either built successfully or skipped (infra-only push). (#597)
+    if: always() && needs.deploy-infra.result == 'success' && (needs.build-and-push.result == 'success' || needs.build-and-push.result == 'skipped')
     runs-on: ubuntu-latest
     outputs:
       fqdn: ${{ steps.verify.outputs.fqdn }}
@@ -866,7 +895,12 @@ jobs:
           ACR_SERVER=${{ needs.deploy-infra.outputs.acr-login-server }}
           MI_RESOURCE_ID=${{ needs.deploy-infra.outputs.managed-identity-resource-id }}
           MI_CLIENT_ID=${{ needs.deploy-infra.outputs.managed-identity-client-id }}
-          IMAGE_TAG=${{ github.sha }}
+          # Use sha tag when image was rebuilt; fall back to latest for infra-only deploys. (#597)
+          if [ "${{ needs.deploy-infra.outputs.image-changed }}" = "true" ]; then
+            IMAGE_TAG=${{ github.sha }}
+          else
+            IMAGE_TAG=latest
+          fi
           EXPECTED_BOT_APP_ID="${{ vars.BOT_APP_ID }}"
           EXPECTED_BOT_MSI_RESOURCE_ID="${{ vars.ROUTER_UAMI_ID }}"
 
@@ -920,9 +954,15 @@ jobs:
               MICROSOFT_APP_TENANT_ID="${{ vars.AZURE_TENANT_ID }}"
 
           # Switch to ACR image with managed identity auth
-          az rest --method PATCH \
-            --url "/subscriptions/${{ env.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ env.RESOURCE_GROUP }}/providers/Microsoft.Web/sites/${FUNC_NAME}?api-version=2023-12-01" \
-            --body "{\"properties\":{\"siteConfig\":{\"linuxFxVersion\":\"DOCKER|${ACR_SERVER}/helkinswarm:${IMAGE_TAG}\",\"acrUseManagedIdentityCreds\":true,\"acrUserManagedIdentityID\":\"${MI_RESOURCE_ID}\"}}}"
+          # Only switch image tag when a new image was built — skip for infra-only deploys
+          # to avoid triggering an unnecessary container restart on the same image. (#597)
+          if [ "${{ needs.deploy-infra.outputs.image-changed }}" = "true" ]; then
+            az rest --method PATCH \
+              --url "/subscriptions/${{ env.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ env.RESOURCE_GROUP }}/providers/Microsoft.Web/sites/${FUNC_NAME}?api-version=2023-12-01" \
+              --body "{\"properties\":{\"siteConfig\":{\"linuxFxVersion\":\"DOCKER|${ACR_SERVER}/helkinswarm:${IMAGE_TAG}\",\"acrUseManagedIdentityCreds\":true,\"acrUserManagedIdentityID\":\"${MI_RESOURCE_ID}\"}}}" 
+          else
+            echo "ℹ️ Image unchanged — preserving existing container version (infra-only deploy)."
+          fi
 
       - name: Verify deployment & health check
         id: verify
@@ -1048,7 +1088,8 @@ jobs:
   deployment-report:
     name: "📊 Deployment Report"
     needs: [deploy-infra, build-and-push, deploy-app]
-    if: success()
+    # Tolerate skipped build-and-push (infra-only deploys where imageChanged=false). (#597)
+    if: always() && needs.deploy-infra.result == 'success' && needs.deploy-app.result == 'success'
     runs-on: ubuntu-latest
 
     steps:
