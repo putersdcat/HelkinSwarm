@@ -533,6 +533,20 @@ resource containerDocs 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/conta
   }
 }
 
+// ledger container — Lightweight Ledger / Bookkeeping skill (#246)
+// Partition key /entryType (expense|revenue|invoice|transfer), no TTL (ledger entries are permanent)
+resource containerLedger 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  parent: cosmosDatabase
+  name: 'ledger'
+  properties: {
+    resource: {
+      id: 'ledger'
+      partitionKey: { paths: [ '/entryType' ], kind: 'Hash' }
+      defaultTtl: -1
+    }
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 //  8. AZURE AI SERVICES — Foundry (spec 03, 06)
 //     SKU is always S0 at the account level.

@@ -1,0 +1,217 @@
+{
+  "domain": "ledger",
+  "version": "2.1",
+  "shortName": "ledger",
+  "displayName": "Lightweight Ledger & Bookkeeping",
+  "shortDescription": "Internal bookkeeping for the virtual company — track expenses, revenues, invoices, and burn rate without external accounting SaaS",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/ledger.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials",
+  "costModel": { "type": "no-direct-cost" },
+  "discoveryHints": [
+    "record expense",
+    "record revenue",
+    "track invoice",
+    "bookkeeping",
+    "ledger",
+    "burn rate",
+    "financial summary",
+    "expenses",
+    "revenue events",
+    "invoice tracking",
+    "payout tracking"
+  ],
+  "orchestratorUseCases": [
+    "record a new expense, revenue event, invoice, or transfer",
+    "list recent expenses or revenue events with optional filters by type, category, status, or date range",
+    "get a financial summary showing total expenses, revenues, and net balance for a time period",
+    "update the status of an invoice from pending to paid or cancelled"
+  ],
+  "recommendedEntryTools": [
+    "ledger_get_summary"
+  ],
+  "useWhen": [
+    "user wants to track or record a business expense or cost",
+    "user wants to log a revenue event or payment received",
+    "user wants to create or track an invoice",
+    "user wants a financial summary, burn rate, or net balance report",
+    "user asks about bookkeeping, ledger, or financial records"
+  ],
+  "avoidWhen": [
+    "user asks about live Azure cloud costs (use budget_get_status instead)",
+    "user asks about token or API usage (use budget_estimate_tokens instead)",
+    "user needs a full accounting or ERP system"
+  ],
+  "aliases": ["bookkeeping", "finance tracker", "expense tracker", "revenue tracker"],
+  "discoveryTerms": ["ledger", "expense", "revenue", "invoice", "bookkeeping", "burn rate", "financial", "payout", "budget record"],
+  "tools": [
+    {
+      "name": "ledger_record_entry",
+      "description": "Records a new financial event in the virtual company ledger. Use for expenses, revenue events, invoices, or transfers. Returns the generated entry ID for future reference.",
+      "risk": "medium",
+      "dataSensitivity": "financial",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-write",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "discoveryTerms": ["record expense", "log expense", "record revenue", "log revenue", "add invoice", "create invoice", "record transfer", "add entry"],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "entryType": {
+            "type": "string",
+            "enum": ["expense", "revenue", "invoice", "transfer"],
+            "description": "Type of financial event. Use 'expense' for costs, 'revenue' for income received, 'invoice' for billed work awaiting payment, 'transfer' for internal fund movements."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Monetary amount (positive number). For expenses this is a cost; for revenue this is income."
+          },
+          "currency": {
+            "type": "string",
+            "description": "ISO 4217 currency code. Defaults to USD.",
+            "default": "USD"
+          },
+          "date": {
+            "type": "string",
+            "description": "Date of the event in YYYY-MM-DD format. Defaults to today if omitted."
+          },
+          "description": {
+            "type": "string",
+            "description": "Human-readable description of what this event represents (max 500 chars)."
+          },
+          "category": {
+            "type": "string",
+            "description": "Optional category label for grouping (e.g. 'hosting', 'tooling', 'consulting', 'saas-subscription'). Defaults to 'general'."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["draft", "pending", "confirmed", "paid", "cancelled"],
+            "description": "Status of this entry. Defaults to 'confirmed' for expenses/revenues, 'pending' for invoices.",
+            "default": "confirmed"
+          },
+          "notes": {
+            "type": "string",
+            "description": "Optional additional notes or context."
+          },
+          "referenceId": {
+            "type": "string",
+            "description": "Optional ID linking this entry to another (e.g. linking a payment to an invoice)."
+          }
+        },
+        "required": ["entryType", "amount", "description"]
+      }
+    },
+    {
+      "name": "ledger_list_entries",
+      "description": "Lists ledger entries with optional filters. Returns a formatted summary of matching entries. Use to review recent expenses, outstanding invoices, or revenue events.",
+      "risk": "low",
+      "dataSensitivity": "financial",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "discoveryTerms": ["list expenses", "list invoices", "list revenue", "show ledger", "financial history", "pending invoices"],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "entryType": {
+            "type": "string",
+            "enum": ["expense", "revenue", "invoice", "transfer"],
+            "description": "Filter by entry type. Omit to return all types."
+          },
+          "category": {
+            "type": "string",
+            "description": "Filter by category label."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["draft", "pending", "confirmed", "paid", "cancelled"],
+            "description": "Filter by status."
+          },
+          "fromDate": {
+            "type": "string",
+            "description": "Filter entries on or after this date (YYYY-MM-DD)."
+          },
+          "toDate": {
+            "type": "string",
+            "description": "Filter entries on or before this date (YYYY-MM-DD)."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Maximum number of entries to return (1-100). Defaults to 20.",
+            "default": 20
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "ledger_get_summary",
+      "description": "Returns an aggregated financial summary: total expenses, total revenues, net balance, and entry counts. Use for burn rate analysis, profit/loss checks, or owner reporting.",
+      "risk": "low",
+      "dataSensitivity": "financial",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "discoveryTerms": ["financial summary", "burn rate", "net balance", "total expenses", "total revenue", "profit loss", "ledger summary"],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "enum": ["this-month", "last-month", "all-time"],
+            "description": "Time period for the summary. Defaults to 'all-time'.",
+            "default": "all-time"
+          }
+        },
+        "required": []
+      }
+    },
+    {
+      "name": "ledger_update_entry_status",
+      "description": "Updates the status of an existing ledger entry. Use to mark invoices as paid, confirm draft entries, or cancel pending events.",
+      "risk": "medium",
+      "dataSensitivity": "financial",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-write",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "discoveryTerms": ["mark invoice paid", "update invoice status", "cancel invoice", "confirm entry", "mark paid"],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "entryId": {
+            "type": "string",
+            "description": "The ID of the ledger entry to update (returned by ledger_record_entry)."
+          },
+          "entryType": {
+            "type": "string",
+            "enum": ["expense", "revenue", "invoice", "transfer"],
+            "description": "The type of the entry to update (required for Cosmos partition lookup)."
+          },
+          "status": {
+            "type": "string",
+            "enum": ["draft", "pending", "confirmed", "paid", "cancelled"],
+            "description": "The new status to set."
+          }
+        },
+        "required": ["entryId", "entryType", "status"]
+      }
+    }
+  ]
+}
