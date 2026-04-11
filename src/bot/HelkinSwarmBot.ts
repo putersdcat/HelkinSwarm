@@ -455,12 +455,14 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     const correlationId = crypto.randomUUID();
 
     // Dedup: Bot Connector may retry the same webhook POST within ~15s (#300).
-    // activity.timestamp can differ between original and retry, so we use userId +
-    // message text prefix only. TTL-based: same text from same user within 60s = dup.
-    const dedupKey = createHash('sha256')
-      .update(`${userId ?? 'anon'}:${messageText.slice(0, 200)}`)
-      .digest('hex')
-      .slice(0, 16);
+    // Use activity.id as the dedup key — identical across Bot Connector retries but
+    // unique for each distinct user message, which prevents false positives on rapid
+    // repeated commands like /unlink + /link within 60s.
+    const dedupKey = context.activity.id ??
+      createHash('sha256')
+        .update(`${userId ?? 'anon'}:${messageText.slice(0, 200)}`)
+        .digest('hex')
+        .slice(0, 16);
     {
       const now = Date.now();
       const lastSeen = HelkinSwarmBot.recentActivityIds.get(dedupKey);
