@@ -21,8 +21,12 @@
   "functionTimeout": "00:10:00",
   "extensions": {
     "durableTask": {
+      "hubName": "HelkinSwarmHub",
       "maxQueuePollingInterval": "00:00:02",
-      "useGracefulShutdown": true
+      "useGracefulShutdown": true,
+      "storageProvider": {
+        "partitionCount": 1
+      }
     }
   }
 }
