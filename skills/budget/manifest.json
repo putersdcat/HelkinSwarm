@@ -109,5 +109,5 @@
   "requiresOrchestratorApproval": false,
   "licenseAvoidant": false,
   "supportsBudgeting": true,
-  "costModel": "no-direct-cost"
+  "costModel": { "type": "no-direct-cost" }
 }
