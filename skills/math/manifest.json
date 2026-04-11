@@ -1,0 +1,73 @@
+{
+  "domain": "math",
+  "version": "1.0",
+  "tools": [
+    {
+      "name": "math_solve",
+      "description": "Solves math problems deterministically where possible. For pure arithmetic expressions (e.g. '2^10 + 5', '(3.5 * 8) / 2', '-7 + 15') returns an exact numeric answer. For complex problems (algebra, calculus, statistics, trigonometry) classifies the problem and returns it structured for a reasoning model to complete. Use for any math question: arithmetic, calculate, compute, estimate, unit math.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "problem": {
+            "type": "string",
+            "description": "The math problem or expression to solve. Pure arithmetic expressions are evaluated exactly. Complex problems are classified and returned structured for reasoning."
+          },
+          "model_hint": {
+            "type": "string",
+            "description": "Optional model deployment name to target for complex reasoning when deterministic solving is not possible (e.g. 'o4-mini', 'grok-4-1-fast-reasoning'). Defaults to 'grok-4-1-fast-reasoning'."
+          }
+        },
+        "required": ["problem"]
+      },
+      "aliases": [
+        "solve math",
+        "calculate",
+        "compute",
+        "arithmetic",
+        "evaluate expression"
+      ],
+      "discoveryTerms": [
+        "math",
+        "calculate",
+        "arithmetic",
+        "solve equation",
+        "compute",
+        "algebra",
+        "geometry",
+        "statistics",
+        "number"
+      ],
+      "useWhen": [
+        "the user asks a math question or wants to calculate something",
+        "the user gives a numeric expression to evaluate",
+        "the user wants to solve an equation or math problem",
+        "the user needs arithmetic, algebra, calculus, or statistical computation"
+      ],
+      "avoidWhen": [
+        "the user is asking a general knowledge question unrelated to computation"
+      ],
+      "returnsSummaryShape": "object with status, method (deterministic|framed-for-reasoning), problem_type, answer (if deterministic), expression (if deterministic), problem_framed (if complex), recommended_reasoning_model (if complex)"
+    }
+  ],
+  "shortName": "math",
+  "displayName": "Math Specialist",
+  "shortDescription": "Deterministic arithmetic evaluation and structured problem framing for complex math requiring a reasoning model",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/math.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials",
+  "externalAccountsNeeded": [],
+  "virtualEmployeeCompatible": false,
+  "requiresOrchestratorApproval": false,
+  "licenseAvoidant": false,
+  "supportsBudgeting": false
+}
