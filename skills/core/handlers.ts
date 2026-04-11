@@ -3,6 +3,7 @@
 // Each export matches a tool name from manifest.json.
 
 import type { ToolHandler } from '../../src/capabilities/capabilityLoader.js';
+import { z } from 'zod';
 
 function resolveTimeZone(timezone: string | undefined): string {
   if (!timezone) {
@@ -587,6 +588,68 @@ export const helkin_mcp_forge: ToolHandler = async (args) => {
 export const helkin_get_costs: ToolHandler = async (_args) => {
   const { getAzureResourceGroupCostSummary } = await import('../../src/integrations/azureCostManagement.js');
   return getAzureResourceGroupCostSummary();
+};
+
+// Zod schema for OpenRouter key API response (boundary validation)
+const OpenRouterKeyDataSchema = z.object({
+  label: z.string().optional(),
+  limit: z.number().nullable().optional(),
+  limit_remaining: z.number().nullable().optional(),
+  usage: z.number(),
+  usage_daily: z.number().optional(),
+  usage_weekly: z.number().optional(),
+  usage_monthly: z.number().optional(),
+  is_free_tier: z.boolean().optional(),
+  expires_at: z.string().nullable().optional(),
+}).passthrough();
+
+const OpenRouterKeyResponseSchema = z.object({
+  data: OpenRouterKeyDataSchema,
+});
+
+export const helkin_get_openrouter_spend: ToolHandler = async (_args) => {
+  const apiKey = process.env['OPENROUTER_API_KEY'];
+  if (!apiKey) {
+    return { status: 'unavailable', message: 'OPENROUTER_API_KEY not configured on this stamp.' };
+  }
+
+  const response = await fetch('https://openrouter.ai/api/v1/auth/key', {
+    headers: { 'Authorization': `Bearer ${apiKey}` },
+  });
+
+  if (!response.ok) {
+    return {
+      status: 'error',
+      message: `OpenRouter API returned ${response.status} ${response.statusText}`,
+    };
+  }
+
+  const rawJson = await response.json() as unknown;
+  const parsed = OpenRouterKeyResponseSchema.safeParse(rawJson);
+  if (!parsed.success) {
+    return { status: 'error', message: 'OpenRouter API response parsing failed.' };
+  }
+
+  const d = parsed.data.data;
+  const limitUsd = d.limit ?? null;
+  const remainingUsd = d.limit_remaining ?? null;
+
+  return {
+    status: 'success',
+    provider: 'openrouter',
+    label: d.label ?? 'unknown',
+    usageMonthlyUsd: d.usage_monthly ?? d.usage,
+    usageWeeklyUsd: d.usage_weekly ?? null,
+    usageDailyUsd: d.usage_daily ?? null,
+    totalUsageUsd: d.usage,
+    limitUsd,
+    remainingUsd,
+    expiresAt: d.expires_at ?? null,
+    isFreeTier: d.is_free_tier ?? false,
+    summary: limitUsd != null
+      ? `OpenRouter: $${(d.usage_monthly ?? d.usage).toFixed(4)} used this month of $${limitUsd.toFixed(2)} limit ($${(remainingUsd ?? 0).toFixed(4)} remaining)`
+      : `OpenRouter: $${(d.usage_monthly ?? d.usage).toFixed(4)} used this month (no limit set)`,
+  };
 };
 
 export const helkin_test_confirmation: ToolHandler = async (_args) => {

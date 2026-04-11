@@ -32,6 +32,7 @@ export const ROLE_REQUIREMENTS: Record<string, HelkinRole> = {
 
   // Control plane / infrastructure
   'helkin_get_costs': 'owner',
+  'helkin_get_openrouter_spend': 'owner',
 
   // Confirmation-gated tools — already guarded by requiresConfirmation=true,
   // but role-check provides an additional defence layer.

@@ -267,6 +267,24 @@
       "requiresSubAgent": false
     },
     {
+      "name": "helkin_get_openrouter_spend",
+      "description": "Returns OpenRouter API key usage and spend data: daily, weekly, monthly usage in USD, credit limit, and remaining balance. Use alongside helkin_get_costs for full cost visibility.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
+    },
+    {
       "name": "helkin_test_confirmation",
       "description": "Test tool for verifying the Adaptive Card confirmation flow. Returns a simple success message after approval.",
       "risk": "medium",
