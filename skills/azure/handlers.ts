@@ -55,7 +55,7 @@ async function getBearerToken(): Promise<string> {
 function getFoundryAccountName(): string | null {
   const endpoint = process.env['AZURE_AI_FOUNDRY_ENDPOINT'];
   if (!endpoint) return null;
-  const match = /https:\/\/([^.]+)\.(?:services\.ai|openai)\.azure\.com/.exec(endpoint);
+  const match = /https:\/\/([^.]+)\.(?:services\.ai|openai|cognitiveservices)\.azure\.com/.exec(endpoint);
   return match?.[1] ?? null;
 }
 
