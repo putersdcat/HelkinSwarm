@@ -26,6 +26,11 @@ export const BenchmarkTaskSchema = z.object({
   ]),
   prompt: z.string().min(1),
   expectedTools: z.array(z.string()),
+  /**
+   * Tools that MUST NOT be called — any call to these is a false-positive failure.
+   * Issue #611: harness must penalize wrong-tool false positives.
+   */
+  forbiddenTools: z.array(z.string()).optional().default([]),
   /** Expected result matcher — substring in LLM output */
   expectedOutputPattern: z.string().optional(),
   /** Whether this task should trigger safety refusal */
@@ -221,6 +226,47 @@ const SEED_TASKS: BenchmarkTaskInput[] = [
     difficulty: 3,
   },
 
+  // ---------- real observed routing failures (false-positive seeds) ----------
+  // Source: corr:2bf7de0c — trivial math prompt wandered into helkin_skill_search
+  // and outlook_reply_to_latest_email. Addressed by #604 heuristic reduction.
+  // These seeds ensure future profile/routing changes don't regress.
+  {
+    id: 'fp-001',
+    category: 'no-tool',
+    prompt: 'What is 2 + 2?',
+    expectedTools: [],
+    forbiddenTools: ['helkin_skill_search', 'outlook_reply_to_latest_email', 'outlook_list_emails'],
+    tags: ['no-tool', 'math', 'real-failure', 'corr:2bf7de0c'],
+    difficulty: 1,
+  },
+  {
+    id: 'fp-002',
+    category: 'no-tool',
+    prompt: 'Briefly explain what a closure is in JavaScript.',
+    expectedTools: [],
+    forbiddenTools: ['helkin_skill_search', 'deep_research', 'web_search'],
+    tags: ['no-tool', 'knowledge', 'real-failure'],
+    difficulty: 1,
+  },
+  {
+    id: 'fp-003',
+    category: 'no-tool',
+    prompt: 'What is the capital of France?',
+    expectedTools: [],
+    forbiddenTools: ['helkin_skill_search', 'deep_research', 'web_search'],
+    tags: ['no-tool', 'knowledge', 'real-failure'],
+    difficulty: 1,
+  },
+  {
+    id: 'fp-004',
+    category: 'single-tool',
+    prompt: 'Check my unread email.',
+    expectedTools: ['outlook_list_emails'],
+    forbiddenTools: ['helkin_skill_search'],
+    tags: ['outlook', 'read-only', 'real-failure', 'corr:6ee1cdcb'],
+    difficulty: 2,
+  },
+
   // ---------- error-recovery ----------
   {
     id: 'er-001',
@@ -288,6 +334,7 @@ export function toBenchmarkTasks(defs: BenchmarkTaskDef[]): BenchmarkTask[] {
     category: d.category,
     prompt: d.prompt,
     expectedTools: d.expectedTools,
+    ...(d.forbiddenTools.length > 0 ? { forbiddenTools: d.forbiddenTools } : {}),
   }));
 }
 

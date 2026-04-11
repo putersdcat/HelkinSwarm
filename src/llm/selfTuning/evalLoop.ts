@@ -26,6 +26,12 @@ export interface BenchmarkTask {
   prompt: string;
   /** Expected tool invocation(s) */
   expectedTools: string[];
+  /**
+   * Tools that must NOT be called — a call to any of these counts as a
+   * false-positive failure even if all expectedTools are also present.
+   * Issue #611: harness must penalize wrong-tool false positives.
+   */
+  forbiddenTools?: string[];
 }
 
 /** Result of benchmarking a single candidate */
