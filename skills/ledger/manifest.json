@@ -50,7 +50,7 @@
       "name": "ledger_record_entry",
       "description": "Records a new financial event in the virtual company ledger. Use for expenses, revenue events, invoices, or transfers. Returns the generated entry ID for future reference.",
       "risk": "medium",
-      "dataSensitivity": "financial",
+      "dataSensitivity": "mixed",
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
@@ -110,7 +110,7 @@
       "name": "ledger_list_entries",
       "description": "Lists ledger entries with optional filters. Returns a formatted summary of matching entries. Use to review recent expenses, outstanding invoices, or revenue events.",
       "risk": "low",
-      "dataSensitivity": "financial",
+      "dataSensitivity": "mixed",
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
@@ -157,7 +157,7 @@
       "name": "ledger_get_summary",
       "description": "Returns an aggregated financial summary: total expenses, total revenues, net balance, and entry counts. Use for burn rate analysis, profit/loss checks, or owner reporting.",
       "risk": "low",
-      "dataSensitivity": "financial",
+      "dataSensitivity": "mixed",
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
@@ -183,7 +183,7 @@
       "name": "ledger_update_entry_status",
       "description": "Updates the status of an existing ledger entry. Use to mark invoices as paid, confirm draft entries, or cancel pending events.",
       "risk": "medium",
-      "dataSensitivity": "financial",
+      "dataSensitivity": "mixed",
       "allowedModelLane": "any",
       "requiresConfirmation": false,
       "requiresExecutor": false,
@@ -215,3 +215,4 @@
     }
   ]
 }
+
