@@ -133,13 +133,25 @@ describe('ToolRegistry', () => {
       risk: 'low',
       dataSensitivity: 'non-pii',
     });
+    // Register an excluded tool to verify the profile exclusion is applied
+    registry.register({
+      name: 'helkin_health_check',
+      description: 'Returns HelkinSwarm system health.',
+      risk: 'low',
+      dataSensitivity: 'non-pii',
+    });
 
     const profiled = registry.toFunctionSchemasForModel('x-ai/grok-4.1-fast');
 
     expect(profiled.profileModel).toBe('x-ai/grok-4.1-fast');
-    expect(profiled.wasTransformed).toBe(true);
-    expect(profiled.tools[0]?.function.description).toBe('List the latest emails from Outlook.');
-    expect(profiled.tools[1]?.function.description).toBe('Search the installed skills and return matching tools.');
+    expect(profiled.wasTransformed).toBe(true); // helkin_health_check was excluded
+    // compact: false — full descriptions preserved
+    expect(profiled.tools.find(t => t.function.name === 'outlook_list_emails')?.function.description)
+      .toContain('Includes sender, subject, and received time.');
+    expect(profiled.tools.find(t => t.function.name === 'helkin_skill_search')?.function.description)
+      .toContain('Search the installed skills');
+    // Excluded tool must not appear
+    expect(profiled.tools.find(t => t.function.name === 'helkin_health_check')).toBeUndefined();
   });
 
   it('can disable model profile application via env guard (#610)', () => {

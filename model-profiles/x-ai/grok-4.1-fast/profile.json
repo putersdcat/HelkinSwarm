@@ -6,13 +6,13 @@
   "schemaInjection": {
     "includeJsonSchema": true,
     "includeExamples": true,
-    "compact": true
+    "compact": false
   },
   "preferredNaming": "snake_case",
   "examples": [],
   "knownLimitations": [
-    "OpenRouter reasoning frontage can over-attend to verbose tool descriptions",
-    "Compact tool descriptions reduce prompt bloat without changing the allowed tool surface"
+    "Grok 4.1-fast reasons automatically; OpenRouter exposes reasoning: { enabled: true } — already sent for all primary-lane calls",
+    "web_search is a first-order skill injected into the base tool surface alongside helkin_skill_search — no discovery step required"
   ],
   "excludeTools": [
     "helkin_health_check",

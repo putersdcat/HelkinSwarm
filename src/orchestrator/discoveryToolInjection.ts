@@ -818,10 +818,17 @@ export function buildCapabilityMapFragment(): string {
   return `Installed skill domains: ${domains.join(', ')}. Call tools from these domains directly when you know the tool name (e.g., web_search for internet queries). Use helkin_skill_search to discover tools by category. When search returns zero results, reformulate with a direct capability term (e.g., "web search", "outlook email", "github", "weather").`;
 }
 
+/**
+ * Web access tools are first-order capabilities that LLMs are post-trained for.
+ * They belong in the base tool surface alongside core helkin_* tools so the model
+ * never needs a discovery step before calling web_search.
+ */
+const FIRST_ORDER_WEB_TOOLS = new Set(['web_search', 'web_fetch_page']);
+
 export function getDiscoveryFirstToolDefinitions(): Array<{ name: string; description: string }> {
   return toolRegistry
     .getSafetyFiltered()
-    .filter((tool) => isCoreTool(tool.name))
+    .filter((tool) => isCoreTool(tool.name) || FIRST_ORDER_WEB_TOOLS.has(tool.name))
     .map((tool) => ({ name: tool.name, description: tool.description }));
 }
 

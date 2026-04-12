@@ -150,7 +150,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
   const tools = input.toolSummaryDefinitions ?? getDiscoveryFirstToolDefinitions();
   mark('post-tools');
   const toolSummary = tools.length > 0
-    ? `Initial tool surface: ${tools.map((t) => `${t.name} (${t.description})`).join('; ')}. Use helkin_skill_search first when you need non-core skills or a narrower tool subset.`
+    ? `Initial tool surface: ${tools.map((t) => `${t.name} (${t.description})`).join('; ')}. Use helkin_skill_search to discover additional tools from installed domains when needed.`
     : '';
 
   mark('post-tools');
