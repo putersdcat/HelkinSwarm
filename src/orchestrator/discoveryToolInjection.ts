@@ -1061,6 +1061,66 @@ export function deriveLocatorUrlFetchCall(
   return null;
 }
 
+/**
+ * Dealer/service locator brands. When a dealer-locator intent is detected
+ * and the brand matches, navigate to the brand's official homepage with
+ * web_interact so the follow-up LLM can locate and operate the dealer finder.
+ * This bypasses the Brave limitation — dealer-locator URLs rarely surface in
+ * Brave search results; the browser must navigate to the brand site directly.
+ */
+const DEALER_INTENT_RE =
+  /\b(authorized|certified)\s+(dealer|service|shop|center|centre|partner)\b|\bdealer\s+(locator|finder|search)\b|\bservice\s+(center|centre|point|shop)\b|\bofficial\s+(dealer|partner)\b|\bnearest\s+(dealer|shop|service)\b|\bhändler\b|\bwerkstatt\b/i;
+
+const BRAND_DOMAIN_TABLE: ReadonlyArray<{ pattern: RegExp; domain: string }> = [
+  { pattern: /\bfox\b.{0,30}\b(suspension|fork|shock|federgabel)\b|\b(fox\s+)?federgabel\b/i, domain: 'https://www.ridefox.com' },
+  { pattern: /\bsram\b/i, domain: 'https://www.sram.com' },
+  { pattern: /\bshimano\b/i, domain: 'https://www.shimano.com' },
+  { pattern: /\btrek(\s+bike)?\b/i, domain: 'https://www.trekbikes.com' },
+  { pattern: /\bspecialized\b/i, domain: 'https://www.specialized.com' },
+  { pattern: /\bcannondale\b/i, domain: 'https://www.cannondale.com' },
+  { pattern: /\brockshox\b|\brock\s+shox\b/i, domain: 'https://www.sram.com' },
+];
+
+/**
+ * When a dealer/service locator query fails to surface a locator URL via
+ * web_search, deterministically inject a web_interact navigation to the
+ * brand's official homepage.  The follow-up LLM can then identify the
+ * dealer-locator page from the returned content and navigate to it.
+ */
+export function deriveWebInteractDealerLocatorCall(
+  userMessage: string,
+  toolResults: readonly { toolName: string; success: boolean; result?: unknown }[],
+  toolSchemas: ToolDefinition[] | null | undefined,
+): DeterministicFollowUpToolCall | null {
+  if (!DEALER_INTENT_RE.test(userMessage)) return null;
+
+  // Don't re-inject if web_interact already succeeded this turn.
+  if (toolResults.some((r) => r.toolName === 'web_interact' && r.success)) return null;
+
+  if (!toolSchemas?.some((t) => t.function.name === 'web_interact')) return null;
+
+  const stripped = stripInjectedRoutingContext(userMessage);
+  for (const { pattern, domain } of BRAND_DOMAIN_TABLE) {
+    if (pattern.test(stripped)) {
+      return { name: 'web_interact', arguments: { url: domain, actions: [] } };
+    }
+  }
+
+  // Fallback: detect brand domain from web_search result URLs.
+  for (const tr of toolResults) {
+    if (tr.toolName !== 'web_search' || !tr.success || !isWebSearchResult(tr.result)) continue;
+    const urls = (tr.result.web?.results ?? []).map((r) => r.url).join(' ');
+    for (const { domain } of BRAND_DOMAIN_TABLE) {
+      const host = domain.replace('https://www.', '');
+      if (urls.includes(host)) {
+        return { name: 'web_interact', arguments: { url: domain, actions: [] } };
+      }
+    }
+  }
+
+  return null;
+}
+
 export function deriveSelectiveFollowUpToolSchemas(
   toolResults: ToolResult[],
 ): ToolDefinition[] | null {

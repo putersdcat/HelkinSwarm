@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearSkillDiscoveryIndex, rebuildSkillDiscoveryIndex } from '../../src/capabilities/skillDiscoveryIndex.js';
 import type { CapabilityManifest } from '../../src/capabilities/manifestSchema.js';
 
@@ -1561,5 +1561,87 @@ describe('deriveLocatorUrlFetchCall', () => {
     );
     expect(result).not.toBeNull();
     expect(result?.name).toBe('web_fetch_page');
+  });
+});
+
+const webInteractSchema = {
+  type: 'function' as const,
+  function: { name: 'web_interact', description: 'interactive browser', parameters: {} },
+};
+
+describe('deriveWebInteractDealerLocatorCall', () => {
+  it('injects web_interact for Fox suspension certified service query', async () => {
+    vi.resetModules();
+    const { deriveWebInteractDealerLocatorCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+    const result = deriveWebInteractDealerLocatorCall(
+      'find a certified service shop for my Fox suspension fork in Munich',
+      [],
+      [webInteractSchema],
+    );
+    expect(result).not.toBeNull();
+    expect(result?.name).toBe('web_interact');
+    expect((result?.arguments as { url: string }).url).toBe('https://www.ridefox.com');
+  });
+
+  it('returns null when message has no dealer intent', async () => {
+    vi.resetModules();
+    const { deriveWebInteractDealerLocatorCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+    const result = deriveWebInteractDealerLocatorCall(
+      'tell me about Fox suspension forks',
+      [],
+      [webInteractSchema],
+    );
+    expect(result).toBeNull();
+  });
+
+  it('returns null when web_interact already succeeded', async () => {
+    vi.resetModules();
+    const { deriveWebInteractDealerLocatorCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+    const result = deriveWebInteractDealerLocatorCall(
+      'find authorized Fox suspension dealer in Munich',
+      [{ toolName: 'web_interact', success: true, result: { content: 'some content' } }],
+      [webInteractSchema],
+    );
+    expect(result).toBeNull();
+  });
+
+  it('returns null when web_interact schema is not available', async () => {
+    vi.resetModules();
+    const { deriveWebInteractDealerLocatorCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+    const noInteractSchema = {
+      type: 'function' as const,
+      function: { name: 'web_fetch_page', description: 'fetch page', parameters: {} },
+    };
+    const result = deriveWebInteractDealerLocatorCall(
+      'find authorized Fox suspension dealer in Munich',
+      [],
+      [noInteractSchema],
+    );
+    expect(result).toBeNull();
+  });
+
+  it('falls back to brand domain from web_search result URLs', async () => {
+    vi.resetModules();
+    const { deriveWebInteractDealerLocatorCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+    const result = deriveWebInteractDealerLocatorCall(
+      'find a certified service center for this brand in Berlin',
+      [
+        {
+          toolName: 'web_search',
+          success: true,
+          result: {
+            web: {
+              results: [
+                { url: 'https://www.ridefox.com/bike.html', title: 'Fox Bikes', description: 'Fox suspension products' },
+              ],
+            },
+          },
+        },
+      ],
+      [webInteractSchema],
+    );
+    expect(result).not.toBeNull();
+    expect(result?.name).toBe('web_interact');
+    expect((result?.arguments as { url: string }).url).toBe('https://www.ridefox.com');
   });
 });

@@ -73,6 +73,7 @@ import {
   synthesizeExactToolCall,
   synthesizeDeterministicFollowUpToolCall,
   deriveLocatorUrlFetchCall,
+  deriveWebInteractDealerLocatorCall,
   stripValidationNoise,
 } from './discoveryToolInjection.js';
 import { buildRecentRequestRecallResponse } from './autobiographicalReflex.js';
@@ -1248,7 +1249,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       ) ?? (rawDeterministicFollowUp && !alreadySucceededToolNames.has(rawDeterministicFollowUp.name)
         ? rawDeterministicFollowUp
         : null)
-        ?? deriveLocatorUrlFetchCall(toolResults.results ?? [], followUpToolSchemas);
+        ?? deriveLocatorUrlFetchCall(toolResults.results ?? [], followUpToolSchemas)
+        ?? deriveWebInteractDealerLocatorCall(effectiveTaskMessage, toolResults.results ?? [], followUpToolSchemas);
       if (deterministicFollowUpToolCall) {
         yield* emitOrchestratorTelemetry(context, {
           name: 'PolicyOverrideApplied',
