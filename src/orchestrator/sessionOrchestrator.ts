@@ -1523,6 +1523,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             cumulativePromptTokens += followUp.promptTokens;
             accumulateProviderCost(followUp.providerCost, followUp.providerCostUnit, followUp.providerCostDetails);
             rememberOperationalEvidence(operationalNotices, followUp);
+
+            // If the model responded with new tool calls (e.g. web_fetch_page after web_search cap),
+            // continue the while loop so those calls are actually dispatched.
+            if (hasCapExceededWithPivot && followUp.toolCalls && followUp.toolCalls.length > 0) {
+              continue;
+            }
           }
           break;
         }
