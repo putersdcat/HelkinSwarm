@@ -921,9 +921,17 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       : toolCallsForDispatch;
 
     const initialSeenToolFingerprints = new Set<string>();
+    const initialToolCallCountByName = new Map<string, number>();
     const filteredInitialToolCalls = gatedToolCallsForDispatch.filter((call) => {
       const fingerprint = buildToolCallFingerprint(call.name, call.arguments);
       if (initialSeenToolFingerprints.has(fingerprint)) {
+        return false;
+      }
+
+      // Per-tool cap: apply same limits in the initial batch
+      const initialCount = initialToolCallCountByName.get(call.name) ?? 0;
+      const initialCap = PER_TOOL_TURN_CAPS[call.name] ?? DEFAULT_PER_TOOL_TURN_CAP;
+      if (initialCount >= initialCap) {
         return false;
       }
 
@@ -933,6 +941,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       }
 
       initialSeenToolFingerprints.add(fingerprint);
+      initialToolCallCountByName.set(call.name, initialCount + 1);
       return true;
     });
 
