@@ -73,6 +73,13 @@ import '../orchestrator/postReplyBatchActivity.js';
 import '../orchestrator/handoffToFreshOverseerActivity.js';
 import '../orchestrator/skillForgePrototypeActivity.js';
 
+// Swarm activities (Phase S0 — #631)
+import '../orchestrator/swarm/swarmChatroomEntity.js';
+import '../orchestrator/swarm/swarmDecomposerActivity.js';
+import '../orchestrator/swarm/swarmWorkerActivity.js';
+import '../orchestrator/swarm/swarmLeaderActivity.js';
+import '../orchestrator/swarm/swarmOrchestrator.js';
+
 // Capability loader — scan skills/ directory and register tool handlers
 import { loadCapabilities } from '../capabilities/capabilityLoader.js';
 

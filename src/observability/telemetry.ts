@@ -93,7 +93,19 @@ export type TelemetryEventName =
   | 'ClarificationResumed'
   | 'ClarificationCancelled'
   | 'ClarificationExpired'
-  | 'PostReplyBatchCompleted';
+  | 'PostReplyBatchCompleted'
+  | 'SwarmExecutionStarted'
+  | 'SwarmExecutionCompleted'
+  | 'SwarmDecomposerParseError'
+  | 'SwarmDecomposerValidationError'
+  | 'SwarmPlanGenerated'
+  | 'SwarmDecomposerError'
+  | 'SwarmWorkerStarted'
+  | 'SwarmWorkerCompleted'
+  | 'SwarmWorkerError'
+  | 'SwarmLeaderStarted'
+  | 'SwarmLeaderCompleted'
+  | 'SwarmLeaderError';
 
 // ---------------------------------------------------------------------------
 // Session Tracer — maps events to trace phases for Dev Console (#140)

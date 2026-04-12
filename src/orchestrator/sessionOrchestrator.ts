@@ -24,6 +24,8 @@ import { applyModelProfileToFunctionSchemas } from '../tools/toolRegistry.js';
 import { buildSuccessfulFailoverNotices } from '../llm/foundryClient.js';
 import { recoverOperationalNoticesFromTrace } from './failoverNoticeRecovery.js';
 import type { PlanInput, PlanResult } from './planActivity.js';
+import type { SwarmDecomposerInput, SwarmDecomposerResult, SwarmOrchestratorInput, SwarmOrchestratorResult } from './swarm/swarmTypes.js';
+import { isSwarmEligible } from './swarm/swarmTypes.js';
 import { canonicalizeInput } from './inputCanonicalizer.js';
 import { computeToolBudget, DEFAULT_PER_TOOL_TURN_CAP, PER_TOOL_CAP_EXCEEDED_MESSAGES, PER_TOOL_TURN_CAPS } from './toolBudgetScaler.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
@@ -713,6 +715,111 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   const planResult: PlanResult = yield context.df.callActivity('planActivity', planInput);
   if (planResult.planTokensUsed > 0) {
     spans.push({ label: 'plan', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
+  }
+
+  // ---------------------------------------------------------------------------
+  // 1c. Swarm routing — compound/complex requests that are swarm-eligible (#631)
+  // ---------------------------------------------------------------------------
+  const swarmEnabled = process.env['SWARM_ENABLED']?.toLowerCase() === 'true';
+  if (
+    swarmEnabled
+    && planResult.complexity !== 'simple'
+    && isSwarmEligible(userMessageForLlm)
+    && !input.devLoopContext?.isDevLoop
+    && !input.skillForgeRequest
+  ) {
+    // Try the swarm decomposer
+    const decomposerInput: SwarmDecomposerInput = {
+      userMessage: userMessageForLlm,
+      correlationId,
+      userId: input.state.userId,
+      availableToolNames: toolRegistry.getToolNames(),
+    };
+
+    const decomposerResult: SwarmDecomposerResult = yield context.df.callActivity(
+      'swarmDecomposerActivity',
+      decomposerInput,
+    );
+
+    if (decomposerResult.plan) {
+      // Execute the swarm
+      yield* emitOrchestratorTelemetry(context, {
+        name: 'SwarmExecutionStarted',
+        correlationId,
+        userId: input.state.userId,
+        properties: {
+          agentCount: decomposerResult.plan.agents.length,
+          swarmId: decomposerResult.plan.swarmId,
+          decomposerModel: decomposerResult.decomposerModel,
+          decomposerTokens: decomposerResult.tokensUsed,
+        },
+      });
+
+      const swarmInput: SwarmOrchestratorInput = {
+        plan: decomposerResult.plan,
+        correlationId,
+        userId: input.state.userId,
+        conversationReference: input.conversationReference,
+        userMessage: userMessageForLlm,
+      };
+
+      const swarmTimer = context.df.createTimer(
+        new Date(context.df.currentUtcDateTime.getTime() + (decomposerResult.plan.timeoutMs + 30_000)),
+      );
+      const swarmTask = context.df.callSubOrchestrator('swarmOrchestrator', swarmInput);
+      const swarmWinner: df.Task = yield context.df.Task.any([swarmTask, swarmTimer]);
+
+      let swarmResponse: string;
+      let swarmTokens = decomposerResult.tokensUsed;
+      let swarmModel = decomposerResult.decomposerModel;
+
+      if (swarmWinner === swarmTimer) {
+        swarmResponse = '⚡ The multi-agent analysis timed out. Please try a simpler query or try again.';
+      } else {
+        swarmTimer.cancel();
+        const swarmResult = swarmTask.result as SwarmOrchestratorResult;
+        swarmResponse = swarmResult.response;
+        swarmTokens += swarmResult.totalTokensUsed;
+        swarmModel = swarmResult.leaderResult.model;
+
+        yield* emitOrchestratorTelemetry(context, {
+          name: 'SwarmExecutionCompleted',
+          correlationId,
+          userId: input.state.userId,
+          properties: {
+            swarmId: swarmResult.swarmId,
+            success: swarmResult.success,
+            totalTokens: swarmResult.totalTokensUsed,
+            agentCount: swarmResult.agentResults.length,
+            chatroomMessages: swarmResult.chatroomTranscript.length,
+            leaderAgentsHeardFrom: swarmResult.leaderResult.agentsHeardFrom.join(', '),
+          },
+        });
+      }
+
+      // Deliver the swarm result
+      const swarmReplyInput: SendReplyInput = {
+        userId: input.state.userId,
+        message: swarmResponse,
+        correlationId,
+        conversationReference: input.conversationReference,
+      };
+      const replyResult: SendReplyResult = yield context.df.callActivity('sendReplyActivity', swarmReplyInput);
+
+      return {
+        response: swarmResponse,
+        cleanResponse: swarmResponse,
+        tokensUsed: swarmTokens,
+        promptTokens: 0,
+        model: `swarm:${swarmModel}`,
+        toolCalls: [],
+        toolResults: null,
+        replySent: replyResult.success,
+        safetyPassed: true,
+        pendingClarification: pendingClarificationUpdate,
+      } satisfies SessionResult;
+    }
+    // If decomposer returned null (fallback), continue with normal sequential path
   }
 
   // Inject plan guidance into prompt messages for compound/complex requests (#320)
