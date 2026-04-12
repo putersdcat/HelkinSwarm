@@ -103,6 +103,9 @@ export type TelemetryEventName =
   | 'SwarmWorkerStarted'
   | 'SwarmWorkerCompleted'
   | 'SwarmWorkerError'
+  | 'SwarmToolBlocked'
+  | 'SwarmToolHandlerMissing'
+  | 'SwarmToolError'
   | 'SwarmLeaderStarted'
   | 'SwarmLeaderCompleted'
   | 'SwarmLeaderError';

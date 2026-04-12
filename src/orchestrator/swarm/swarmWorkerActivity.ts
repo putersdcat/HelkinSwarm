@@ -85,11 +85,21 @@ async function executeToolCall(
 ): Promise<string> {
   // Safety check
   if (!toolRegistry.isAllowedBySafetyMode(toolName)) {
+    trackEvent({
+      name: 'SwarmToolBlocked',
+      correlationId,
+      properties: { toolName, reason: 'safety_mode' },
+    });
     return `Tool ${toolName} blocked by safety mode`;
   }
 
   const handler = getHandler(toolName);
   if (!handler) {
+    trackEvent({
+      name: 'SwarmToolHandlerMissing',
+      correlationId,
+      properties: { toolName },
+    });
     return `No handler for tool: ${toolName}`;
   }
 
@@ -100,6 +110,11 @@ async function executeToolCall(
     return typeof result === 'string' ? result : JSON.stringify(result);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    trackEvent({
+      name: 'SwarmToolError',
+      correlationId,
+      properties: { toolName, error: msg.slice(0, 300) },
+    });
     return `Tool error: ${msg}`;
   }
 }
