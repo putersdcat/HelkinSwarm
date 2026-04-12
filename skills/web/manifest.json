@@ -4,7 +4,7 @@
   "tools": [
     {
       "name": "web_search",
-      "description": "Search the web for current information. Returns titles, URLs, and text snippets for the top results. Use when the user asks about recent events, wants to look something up online, or needs information you don't already know.",
+      "description": "Search the web for current information. Returns titles, URLs, and text snippets for the top results. Use when the user asks about recent events, wants to look something up online, or needs information you don't already know. For local content (shops, dealers, services, restaurants in a specific country) formulate the query in the LOCAL LANGUAGE of that country and set the market parameter to the country code — local web content is indexed in the local language, not English.",
       "risk": "low",
       "dataSensitivity": "non-pii",
       "allowedModelLane": "any",
@@ -25,7 +25,7 @@
           },
           "market": {
             "type": "string",
-            "description": "Country code for localized results (e.g. 'us', 'nl'). Default: 'us'"
+            "description": "Market/country code for localized results (e.g. 'de' for Germany, 'ja' for Japan, 'fr' for France, 'us' for USA). Default: 'us'. Always set this when the user is asking about a specific country — it returns results from that country's web index in the local language."
           }
         },
         "required": [
@@ -121,7 +121,9 @@
         "summarize a url"
       ],
       "useWhen": [
-        "the user wants to read or summarize a specific web page or URL"
+        "the user wants to read or summarize a specific web page or URL",
+        "web_search returns a URL for a dealer locator, store finder, service directory, or structured results page — fetch it immediately rather than directing the user to visit it manually",
+        "a web search snippet is incomplete and a specific URL is available that likely contains the full answer"
       ],
       "typicalInputs": [
         "https://docs.microsoft.com/en-us/azure/",
@@ -209,7 +211,8 @@
       "useWhen": [
         "the user needs to interact with a web page (click, fill forms, navigate SPAs)",
         "the page requires JavaScript rendering",
-        "web_fetch_page returns empty or incomplete content due to client-side rendering",
+        "web_fetch_page returns empty or incomplete content due to client-side rendering \u2014 escalate to web_interact to render the page with a full browser",
+        "a dealer locator, store finder, or service directory page requires filling a location field and pressing Search to get results",
         "the user needs to submit a form or go through a multi-step flow"
       ],
       "typicalInputs": [
