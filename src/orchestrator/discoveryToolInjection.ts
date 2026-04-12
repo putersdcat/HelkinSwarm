@@ -1069,7 +1069,7 @@ export function deriveLocatorUrlFetchCall(
  * Brave search results; the browser must navigate to the brand site directly.
  */
 const DEALER_INTENT_RE =
-  /\b(authorized|certified)\s+(dealer|service|shop|center|centre|partner)\b|\bdealer\s+(locator|finder|search)\b|\bservice\s+(center|centre|point|shop)\b|\bofficial\s+(dealer|partner)\b|\bnearest\s+(dealer|shop|service)\b|\bhändler\b|\bwerkstatt\b/i;
+  /\b(authorized|authorised|certified|official)\s+(dealer|service|shop|center|centre|partner|workshop)\b|\b(dealer|shop|center|centre|workshop)\s+(certified|authorized|authorised|official)\b|\bdealer\s+(locator|finder|search)\b|\bservice\s+(center|centre|point|shop|workshop)\b|\b(nearest|closest)\s+(dealer|shop|service|workshop|center|centre)\b|\bget\s+\S+\s+(serviced|repaired|fixed)\b|\bhändler\b|\bwerkstatt\b|\bautorisiert\b/i;
 
 const BRAND_DOMAIN_TABLE: ReadonlyArray<{ pattern: RegExp; domain: string }> = [
   { pattern: /\bfox\b.{0,30}\b(suspension|fork|shock|federgabel)\b|\b(fox\s+)?federgabel\b/i, domain: 'https://www.ridefox.com' },
