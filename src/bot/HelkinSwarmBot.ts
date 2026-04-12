@@ -39,6 +39,7 @@ import { getEnvConfig } from '../config/envConfig.js';
 import { getCorrelatedAck } from './ackVariants.js';
 import { getContainerAgeMs, isColdStarting } from './lifecycleNotices.js';
 import { loadCapabilities, getManifest, getLinkableSkills } from '../capabilities/capabilityLoader.js';
+import { clearPersonaCache } from '../orchestrator/buildPromptActivity.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { parseDevLoopMessage } from '../devloop/radioProtocol.js';
 import { createPendingIntent } from '../orchestrator/pendingIntentStore.js';
@@ -732,6 +733,17 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
             ? `, ${result.errors.length} errors: ${result.errors.map((e) => e.path).join(', ')}`
             : ''),
       );
+      return;
+    }
+
+    // /reload persona — hot-reload persona text from disk (owner-only, #487)
+    if (lowerMessage === '/reload persona') {
+      if (!(await isOwnerUserId(userId))) {
+        await context.sendActivity('⛔ Owner-only command.');
+        return;
+      }
+      clearPersonaCache();
+      await context.sendActivity('♻️ Persona cache cleared — next prompt will re-read dronePersona.md from disk.');
       return;
     }
 

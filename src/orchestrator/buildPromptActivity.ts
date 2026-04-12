@@ -54,6 +54,11 @@ const DEFAULT_PERSONA = 'You are HelkinSwarm — a personal sovereign AI copilot
 // Cache persona text after first load
 let cachedPersona: string | null = null;
 
+/** Clear the cached persona so the next prompt build re-reads from disk. */
+export function clearPersonaCache(): void {
+  cachedPersona = null;
+}
+
 async function loadPersona(): Promise<string> {
   if (cachedPersona) return cachedPersona;
   try {

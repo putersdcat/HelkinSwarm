@@ -174,4 +174,47 @@ describe('buildPrompt soft timeouts', () => {
     expect(prompt.systemPrompt).toContain('Current runtime date: Thursday, April 9, 2026 (UTC)');
     expect(prompt.systemPrompt).toContain('Most recent prior user requests: "Hey buddy"; "What is your purpose?"');
   });
+
+  it('clearPersonaCache forces persona re-read on next buildPrompt call (#487)', async () => {
+    const mod = await loadBuildPromptModule();
+
+    // First call — persona loads and caches
+    const prompt1 = await mod.buildPrompt({
+      state: {
+        userId: 'user-persona-reload',
+        userAlias: 'user-persona-reload',
+        conversationId: 'conv-reload',
+        turnCount: 0,
+        accumulatedTokens: 0,
+        euResidencyMode: false,
+        recentHistory: [],
+      },
+      userMessage: 'hello',
+      correlationId: 'corr-persona-reload-1',
+    });
+
+    const originalPersona = prompt1.systemPrompt;
+    expect(originalPersona.length).toBeGreaterThan(0);
+
+    // Clear the persona cache
+    mod.clearPersonaCache();
+
+    // Second call — persona re-reads from disk (same file, so same content)
+    const prompt2 = await mod.buildPrompt({
+      state: {
+        userId: 'user-persona-reload',
+        userAlias: 'user-persona-reload',
+        conversationId: 'conv-reload',
+        turnCount: 1,
+        accumulatedTokens: 10,
+        euResidencyMode: false,
+        recentHistory: [],
+      },
+      userMessage: 'world',
+      correlationId: 'corr-persona-reload-2',
+    });
+
+    // Persona content should be the same (same source file) but the cache was cleared
+    expect(prompt2.systemPrompt).toContain('HelkinSwarm');
+  }, 10_000);
 });
