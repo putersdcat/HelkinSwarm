@@ -1071,8 +1071,20 @@ export function deriveLocatorUrlFetchCall(
 const DEALER_INTENT_RE =
   /\b(authorized|authorised|certified|official)\s+(dealer|service|shop|center|centre|partner|workshop)\b|\b(dealer|shop|center|centre|workshop)\s+(certified|authorized|authorised|official)\b|\bdealer\s+(locator|finder|search)\b|\bservice\s+(center|centre|point|shop|workshop)\b|\b(nearest|closest)\s+(dealer|shop|service|workshop|center|centre)\b|\bget\s+\S+\s+(serviced|repaired|fixed)\b|\bhändler\b|\bwerkstatt\b|\bautorisiert\b/i;
 
-const BRAND_DOMAIN_TABLE: ReadonlyArray<{ pattern: RegExp; domain: string }> = [
-  { pattern: /\bfox\b.{0,30}\b(suspension|fork|shock|federgabel)\b|\b(fox\s+)?federgabel\b/i, domain: 'https://www.ridefox.com' },
+type BrandEntry = {
+  pattern: RegExp;
+  /** Brand homepage — used as fallback if no locatorUrl. */
+  domain: string;
+  /** Direct URL to the service/dealer locator page. Skips the homepage hop. */
+  locatorUrl?: string;
+};
+
+const BRAND_DOMAIN_TABLE: ReadonlyArray<BrandEntry> = [
+  {
+    pattern: /\bfox\b.{0,30}\b(suspension|fork|shock|federgabel)\b|\b(fox\s+)?federgabel\b/i,
+    domain: 'https://www.ridefox.com',
+    locatorUrl: 'https://www.ridefox.com/us/en/service',
+  },
   { pattern: /\bsram\b/i, domain: 'https://www.sram.com' },
   { pattern: /\bshimano\b/i, domain: 'https://www.shimano.com' },
   { pattern: /\btrek(\s+bike)?\b/i, domain: 'https://www.trekbikes.com' },
@@ -1084,8 +1096,8 @@ const BRAND_DOMAIN_TABLE: ReadonlyArray<{ pattern: RegExp; domain: string }> = [
 /**
  * When a dealer/service locator query fails to surface a locator URL via
  * web_search, deterministically inject a web_interact navigation to the
- * brand's official homepage.  The follow-up LLM can then identify the
- * dealer-locator page from the returned content and navigate to it.
+ * brand's service locator page (or homepage if no direct locator URL is known).
+ * Navigates directly to the locator URL when available, bypassing the homepage hop.
  */
 export function deriveWebInteractDealerLocatorCall(
   userMessage: string,
@@ -1100,9 +1112,10 @@ export function deriveWebInteractDealerLocatorCall(
   if (!toolSchemas?.some((t) => t.function.name === 'web_interact')) return null;
 
   const stripped = stripInjectedRoutingContext(userMessage);
-  for (const { pattern, domain } of BRAND_DOMAIN_TABLE) {
+  for (const { pattern, domain, locatorUrl } of BRAND_DOMAIN_TABLE) {
     if (pattern.test(stripped)) {
-      return { name: 'web_interact', arguments: { url: domain, actions: [] } };
+      const targetUrl = locatorUrl ?? domain;
+      return { name: 'web_interact', arguments: { url: targetUrl, actions: [] } };
     }
   }
 
