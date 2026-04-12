@@ -9,7 +9,38 @@ import { getModelRouting } from '../../llm/modelRouter.js';
 import { trackEvent } from '../../observability/telemetry.js';
 import { recordOrchestratorStage } from '../../observability/orchestratorStageHealth.js';
 import { SwarmPlanSchema } from './swarmTypes.js';
-import type { SwarmDecomposerInput, SwarmDecomposerResult } from './swarmTypes.js';
+import type { SwarmAgent, SwarmDecomposerInput, SwarmDecomposerResult } from './swarmTypes.js';
+
+// ---------------------------------------------------------------------------
+// Tool-filtering + fallback — extracted for testability
+// ---------------------------------------------------------------------------
+
+/** Universal fallback tool for research agents that lost all assigned tools. */
+const RESEARCH_FALLBACK_TOOL = 'web_search';
+
+/**
+ * Filter each agent's assignedTools to only valid (executable) tool names.
+ * Agents that lose ALL tools get `web_search` as a fallback rather than being
+ * removed entirely — a research agent with web_search can still contribute.
+ *
+ * Returns only agents that end up with ≥ 1 tool.
+ */
+export function filterAgentTools(
+  agents: SwarmAgent[],
+  availableToolNames: string[],
+): SwarmAgent[] {
+  const validTools = new Set(availableToolNames);
+  const hasFallback = validTools.has(RESEARCH_FALLBACK_TOOL);
+
+  for (const agent of agents) {
+    agent.assignedTools = agent.assignedTools.filter(t => validTools.has(t));
+    if (agent.assignedTools.length === 0 && hasFallback) {
+      agent.assignedTools = [RESEARCH_FALLBACK_TOOL];
+    }
+  }
+
+  return agents.filter(a => a.assignedTools.length > 0);
+}
 
 const DECOMPOSER_SYSTEM_PROMPT = `You are a task decomposer for a multi-agent swarm. Given a user query and available tools, decide how to split the work across 2-4 specialized agents working in parallel.
 
@@ -37,7 +68,10 @@ Rules:
 - **CRITICAL**: Each agent must research a DIFFERENT aspect of the query. Do NOT create agents with overlapping tasks.
   - BAD: Alpha researches "performance of X", Beta researches "performance of Y" ← same dimension, different subjects
   - GOOD: Alpha researches "technical performance benchmarks", Beta researches "ecosystem and community", Gamma researches "industry adoption and case studies" ← different dimensions
-- Each agent gets ONLY the tools relevant to their specific task. Do not give all tools to all agents.
+- **TOOL ASSIGNMENT — MANDATORY**: Every research agent MUST have "web_search" in assignedTools. It is the universal research backbone. Agents without web_search cannot gather external information and will produce empty results.
+  - Also give "web_fetch_page" to agents that need to extract details from specific URLs.
+  - "deep_research" is for multi-angle deep dives when available. Prefer web_search for breadth.
+- Beyond web_search, give each agent ONLY the additional tools relevant to their specific sub-task.
 - If there are only 1-2 tools available, use only 2 agents (more agents without tools just hallucinate).
 - Agent names should be short and distinct (Alpha, Beta, Gamma, Delta).
 - Each agent's task must be specific and actionable — not vague "research this topic".
@@ -136,14 +170,8 @@ df.app.activity('swarmDecomposerActivity', {
         };
       }
 
-      // Filter agent tools to only valid tools
-      const validTools = new Set(input.availableToolNames);
-      for (const agent of parsed.data.agents) {
-        agent.assignedTools = agent.assignedTools.filter(t => validTools.has(t));
-      }
-
-      // Remove agents with no valid tools
-      const validAgents = parsed.data.agents.filter(a => a.assignedTools.length > 0);
+      // Filter agent tools to only executable tools, with web_search fallback
+      const validAgents = filterAgentTools(parsed.data.agents, input.availableToolNames);
       if (validAgents.length === 0) {
         return {
           plan: null,
