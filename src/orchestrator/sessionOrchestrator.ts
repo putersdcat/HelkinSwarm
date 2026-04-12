@@ -1498,6 +1498,11 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             toolResults.results.push(...skippedRoundResults);
             toolResults.totalCalls += skippedRoundResults.length;
 
+            // If any cap-exceeded result has a pivot message (e.g. web_search → web_fetch_page),
+            // pass follow-up tools so the model can actually invoke the pivot tool.
+            const hasCapExceededWithPivot = capExceededRoundResults.some(
+              (r) => PER_TOOL_CAP_EXCEEDED_MESSAGES[r.toolName] !== undefined,
+            );
             const forcedTextFollowUpInput: LlmFollowUpInput = {
               originalMessages: promptWithPlan.messages,
               assistantToolCallMessage: {
@@ -1507,7 +1512,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
               toolResults: toolResults?.results.slice(0, initialResultCount) ?? [],
               correlationId,
               modelOverride: effectiveFollowUpModelOverride,
-              enableRetry: false,
+              enableRetry: hasCapExceededWithPivot,
+              tools: hasCapExceededWithPivot ? followUpToolSchemas : undefined,
               modelProfileTelemetry: followUpModelProfileTelemetry,
               additionalTurns,
             };
