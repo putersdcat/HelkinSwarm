@@ -14,7 +14,11 @@
     "Reasoning variant — higher latency but better at multi-step planning"
   ],
   "excludeTools": [],
-  "boostTools": [],
+  "boostTools": [
+    "web_search",
+    "web_fetch_page",
+    "helkin_skill_search"
+  ],
   "meta": {
     "updatedAt": "2026-03-22T00:00:00Z",
     "updatedBy": "manual"

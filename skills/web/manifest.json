@@ -34,19 +34,52 @@
       },
       "aliases": [
         "web lookup",
-        "internet search"
+        "internet search",
+        "find online",
+        "search internet"
       ],
       "discoveryTerms": [
         "current information",
         "recent news",
-        "online search"
+        "online search",
+        "find shop",
+        "find location",
+        "nearest",
+        "closest",
+        "local business",
+        "near me",
+        "near by",
+        "city search",
+        "where to find",
+        "locate",
+        "search for business",
+        "find restaurant",
+        "find store",
+        "find service",
+        "shop in",
+        "store in",
+        "business in",
+        "address of",
+        "directions to",
+        "opening hours",
+        "certified dealer",
+        "authorized service",
+        "web search",
+        "search the web",
+        "look up online"
       ],
       "useWhen": [
-        "the user needs fresh public-web information that is not already in the local skill set"
+        "the user needs fresh public-web information that is not already in the local skill set",
+        "the user wants to find a business, shop, restaurant, or service near a location or in a specific city",
+        "the user asks for directions, addresses, opening hours, or a local service provider",
+        "the user needs to search for anything that requires up-to-date public web data"
       ],
       "typicalInputs": [
         "latest Azure OpenAI pricing",
-        "SpaceX Starship launch 2026"
+        "SpaceX Starship launch 2026",
+        "mountain bike shop Munich Germany",
+        "Fox suspension authorized service center near me",
+        "best coffee shop in Amsterdam open Sunday"
       ],
       "returnsSummaryShape": "top web search results with titles, urls, and snippets",
       "privilegeClass": "read-only",
@@ -201,12 +234,27 @@
     "interact with a webpage",
     "click a button on a website",
     "fill a web form",
-    "javascript spa"
+    "javascript spa",
+    "find",
+    "locate",
+    "nearest",
+    "closest",
+    "near me",
+    "local business",
+    "shop",
+    "store",
+    "restaurant",
+    "service provider",
+    "city",
+    "address",
+    "directions"
   ],
   "orchestratorUseCases": [
     "look up recent public information on the open web",
     "read or summarize a specific webpage or URL",
-    "interact with a web page using a full browser (click, fill forms, navigate SPAs)"
+    "interact with a web page using a full browser (click, fill forms, navigate SPAs)",
+    "find a local business, shop, service center, or restaurant near a location or in a specific city",
+    "search for directions, addresses, opening hours, or contact details for a physical location"
   ],
   "recommendedEntryTools": [
     "web_search",

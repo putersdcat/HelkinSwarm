@@ -873,6 +873,20 @@ export function getForcedInitialToolChoice(
     return { type: 'function', function: { name: 'outlook_read_email' } };
   }
 
+  // Direct dispatch for geographic/local-business web search — bypass skill discovery.
+  // Skill discovery would score web_search 0 for "find bike shop Munich" type queries
+  // because the discovery terms don't include spatial/location vocabulary, causing a 6-round
+  // skill-search thrash with no useful answer. Route directly to web_search instead. (#628)
+  if (toolNames.has('web_search') && !hasMailboxMessageContext(normalized)) {
+    const hasGeographicSearchIntent =
+      /(nearest|closest|near\s?(me|by)|shop\s+near|store\s+near|restaurant\s+near|service\s+near)/.test(normalized)
+      || (/(find|locate|look for|search for|where (can|to|is))/.test(normalized)
+          && /(shop|store|dealer|restaurant|cafe|service|provider|business|office|center|centre|gym|clinic|hospital|pharmacy|repair|mechanic|garage|workshop)/.test(normalized));
+    if (hasGeographicSearchIntent) {
+      return { type: 'function', function: { name: 'web_search' } };
+    }
+  }
+
   return shouldForceDiscoveryToolSearch(userMessage) && toolNames.has('helkin_skill_search')
     ? { type: 'function', function: { name: 'helkin_skill_search' } }
     : null;

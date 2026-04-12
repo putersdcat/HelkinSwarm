@@ -17,6 +17,8 @@
   "excludeTools": [],
   "boostTools": [
     "helkin_skill_search",
+    "web_search",
+    "web_fetch_page",
     "outlook_list_emails"
   ],
   "meta": {
