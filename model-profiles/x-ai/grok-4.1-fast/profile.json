@@ -14,7 +14,15 @@
     "OpenRouter reasoning frontage can over-attend to verbose tool descriptions",
     "Compact tool descriptions reduce prompt bloat without changing the allowed tool surface"
   ],
-  "excludeTools": [],
+  "excludeTools": [
+    "helkin_health_check",
+    "helkin_get_costs",
+    "helkin_get_openrouter_spend",
+    "helkin_mcp_registry_search",
+    "helkin_mcp_forge",
+    "helkin_list_skills",
+    "helkin_skill_catalog"
+  ],
   "boostTools": [
     "helkin_skill_search",
     "web_search",

@@ -13,7 +13,15 @@
   "knownLimitations": [
     "Reasoning variant — higher latency but better at multi-step planning"
   ],
-  "excludeTools": [],
+  "excludeTools": [
+    "helkin_health_check",
+    "helkin_get_costs",
+    "helkin_get_openrouter_spend",
+    "helkin_mcp_registry_search",
+    "helkin_mcp_forge",
+    "helkin_list_skills",
+    "helkin_skill_catalog"
+  ],
   "boostTools": [
     "web_search",
     "web_fetch_page",
