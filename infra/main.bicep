@@ -709,6 +709,7 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'AZURE_RESOURCE_GROUP', value: resourceGroup().name }
         { name: 'MAINTENANCE_MODE', value: 'false' }
         { name: 'LIVING_MIND_COMPAT_MODE', value: 'false' }
+        { name: 'SWARM_ENABLED', value: 'true' }
         { name: 'STAMP_POLICY_ALLOW_OUTLOOK_SEND_WITHOUT_CONFIRMATION', value: string(stampPolicyAllowOutlookSendWithoutConfirmation) }
         { name: 'STAMP_POLICY_ALLOW_VAULT_WRITE_WITHOUT_CONFIRMATION', value: string(stampPolicyAllowVaultWriteWithoutConfirmation) }
 
