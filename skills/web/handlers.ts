@@ -352,3 +352,118 @@ export const web_fetch_page: ToolHandler = async (args) => {
 
   return `**Fetched:** ${rawUrl}${redirectNote}\n**Content-Type:** ${contentType}\n\n---\n\n${text.slice(0, MAX_OUTPUT_CHARS)}${truncNote}`;
 };
+
+// ---------------------------------------------------------------------------
+// Playwright browser interaction tool — Full Interactive Web Browsing (Phase 2)
+// Issue: #177
+// Launches a headless Chromium browser, navigates to a URL, optionally performs
+// a sequence of interactions (click, fill, select, key press, wait), and returns
+// extracted readable text from the final page state.
+// ---------------------------------------------------------------------------
+
+const ActionSchema = z.discriminatedUnion('type', [
+  z.object({
+    type: z.literal('click'),
+    selector: z.string().describe('CSS or Playwright selector of the element to click'),
+  }),
+  z.object({
+    type: z.literal('fill'),
+    selector: z.string().describe('CSS selector of the input field'),
+    value: z.string().describe('Text to type into the field'),
+  }),
+  z.object({
+    type: z.literal('select'),
+    selector: z.string().describe('CSS selector of the <select> dropdown element'),
+    option: z.string().describe('Option value or visible text to select'),
+  }),
+  z.object({
+    type: z.literal('wait_for'),
+    selector: z.string().describe('CSS selector to wait for before continuing to the next action'),
+  }),
+  z.object({
+    type: z.literal('press'),
+    key: z.string().describe('Keyboard key name to press, e.g. "Enter", "Tab", "Escape", "ArrowDown"'),
+  }),
+]);
+
+const MAX_INTERACT_CHARS = 12_000;
+const BROWSER_LAUNCH_TIMEOUT_MS = 30_000;
+
+export const web_interact: ToolHandler = async (args) => {
+  const rawUrl = String(args['url'] ?? '').trim();
+  if (!rawUrl) throw new Error('url is required');
+
+  const ssrf = checkSsrf(rawUrl);
+  if (ssrf.blocked) throw new Error(`URL not allowed: ${ssrf.reason}`);
+
+  const actionsRaw = args['actions'];
+  const actions = actionsRaw !== undefined ? z.array(ActionSchema).parse(actionsRaw) : [];
+  const waitForArg = args['wait_for'] !== undefined ? String(args['wait_for']) : undefined;
+
+  // Dynamic import — keeps the module loadable even if playwright browsers are not installed
+  // (e.g. local dev without running playwright install). Production Docker image installs browsers.
+  const { chromium } = await import('playwright');
+
+  const browser = await chromium.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    timeout: BROWSER_LAUNCH_TIMEOUT_MS,
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.setViewportSize({ width: 1280, height: 800 });
+
+    const gotoResponse = await page.goto(rawUrl, {
+      waitUntil: 'domcontentloaded',
+      timeout: 20_000,
+    });
+
+    const httpStatus = gotoResponse?.status() ?? 0;
+    if (gotoResponse !== null && !gotoResponse.ok() && httpStatus !== 0) {
+      throw new Error(`Page returned HTTP ${httpStatus} for "${rawUrl}"`);
+    }
+
+    // Wait for specific selector or network idle state before proceeding with actions
+    if (waitForArg) {
+      if (waitForArg === 'networkidle') {
+        await page.waitForLoadState('networkidle', { timeout: 10_000 });
+      } else {
+        await page.waitForSelector(waitForArg, { timeout: 10_000 });
+      }
+    }
+
+    // Execute action sequence in order
+    for (const action of actions) {
+      switch (action.type) {
+        case 'click':
+          await page.click(action.selector, { timeout: 5_000 });
+          break;
+        case 'fill':
+          await page.fill(action.selector, action.value, { timeout: 5_000 });
+          break;
+        case 'select':
+          await page.selectOption(action.selector, action.option, { timeout: 5_000 });
+          break;
+        case 'wait_for':
+          await page.waitForSelector(action.selector, { timeout: 10_000 });
+          break;
+        case 'press':
+          await page.keyboard.press(action.key);
+          break;
+      }
+    }
+
+    const html = await page.content();
+    const text = htmlToText(html);
+    const finalUrl = page.url();
+    const redirectNote = finalUrl !== rawUrl ? `\n**Final URL:** ${finalUrl}` : '';
+    const actionNote = actions.length > 0 ? `\n**Actions performed:** ${actions.length}` : '';
+
+    await page.close();
+
+    return `**Browser:** ${rawUrl}${redirectNote}${actionNote}\n\n---\n\n${text.slice(0, MAX_INTERACT_CHARS)}`;
+  } finally {
+    await browser.close();
+  }
+};

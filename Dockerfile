@@ -39,6 +39,10 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/host.json ./host.json
 COPY --from=build /app/package.json ./package.json
 
+# Install Playwright Chromium browser + OS-level dependencies for interactive browsing (#177 Phase 2)
+# Must run in the runtime stage so binaries match the target Linux environment.
+RUN npx playwright install chromium --with-deps
+
 # Copy config and skills manifests (JSON files needed at runtime)
 COPY config/ ./config/
 COPY skills/ ./skills/

@@ -97,26 +97,121 @@
       "returnsSummaryShape": "final URL, content-type header, and extracted readable text (up to 8 KB)",
       "privilegeClass": "read-only",
       "requiresSubAgent": false
+    },
+    {
+      "name": "web_interact",
+      "description": "Browse a web page with a full headless browser (Playwright/Chromium). Supports interactive actions: clicking buttons, filling forms, selecting dropdowns, pressing keys, and waiting for elements. Returns extracted text from the final page state. Use when the page requires JavaScript, SPAs, login flows, or multi-step form interactions that web_fetch_page cannot handle.",
+      "risk": "medium",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [
+        {"type": "browser", "action": "navigate"},
+        {"type": "browser", "action": "click"},
+        {"type": "browser", "action": "fill-form"}
+      ],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The full URL to navigate to (must be http:// or https://)"
+          },
+          "actions": {
+            "type": "array",
+            "description": "Optional sequence of interactions to perform after navigation",
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["click", "fill", "select", "wait_for", "press"],
+                  "description": "Action type"
+                },
+                "selector": {
+                  "type": "string",
+                  "description": "CSS selector for click/fill/select/wait_for actions"
+                },
+                "value": {
+                  "type": "string",
+                  "description": "Text value for fill action"
+                },
+                "option": {
+                  "type": "string",
+                  "description": "Option value or label for select action"
+                },
+                "key": {
+                  "type": "string",
+                  "description": "Key name for press action (e.g. 'Enter', 'Tab', 'Escape')"
+                }
+              },
+              "required": ["type"]
+            }
+          },
+          "wait_for": {
+            "type": "string",
+            "description": "CSS selector or 'networkidle' to wait for after navigation, before running actions"
+          }
+        },
+        "required": ["url"]
+      },
+      "aliases": [
+        "interactive browser",
+        "headless browser",
+        "playwright browse",
+        "click on page"
+      ],
+      "discoveryTerms": [
+        "interactive browser",
+        "click a button",
+        "fill a form",
+        "javascript page",
+        "spa",
+        "login form",
+        "submit a form",
+        "interact with webpage"
+      ],
+      "useWhen": [
+        "the user needs to interact with a web page (click, fill forms, navigate SPAs)",
+        "the page requires JavaScript rendering",
+        "web_fetch_page returns empty or incomplete content due to client-side rendering",
+        "the user needs to submit a form or go through a multi-step flow"
+      ],
+      "typicalInputs": [
+        "https://app.example.com/login",
+        "https://some-spa.com/#/dashboard"
+      ],
+      "returnsSummaryShape": "browsed URL, actions performed, and extracted readable text from the final page (up to 12 KB)",
+      "privilegeClass": "read-write",
+      "requiresSubAgent": false
     }
   ],
   "shortName": "web",
-  "displayName": "Web Search & Page Reader",
-  "shortDescription": "Search the web (Brave Search API or DuckDuckGo fallback) and fetch/read the text content of specific URLs",
+  "displayName": "Web Search, Page Reader & Interactive Browser",
+  "shortDescription": "Search the web, fetch/read static URLs, and interact with pages via a full headless Chromium browser (Playwright) — click buttons, fill forms, navigate SPAs",
   "discoveryHints": [
     "web search",
     "fresh public information",
     "news",
     "research",
     "read a webpage",
-    "browse a url"
+    "browse a url",
+    "interact with a webpage",
+    "click a button on a website",
+    "fill a web form",
+    "javascript spa"
   ],
   "orchestratorUseCases": [
     "look up recent public information on the open web",
-    "read or summarize a specific webpage or URL"
+    "read or summarize a specific webpage or URL",
+    "interact with a web page using a full browser (click, fill forms, navigate SPAs)"
   ],
   "recommendedEntryTools": [
     "web_search",
-    "web_fetch_page"
+    "web_fetch_page",
+    "web_interact"
   ],
   "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/web.png",
   "deploymentScenario": "personal-user-centric",
