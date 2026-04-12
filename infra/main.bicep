@@ -52,7 +52,7 @@ param routerUamiId string = ''
 param createOAuthConnection bool = false
 
 @description('Client ID of the HelkinSwarm-DelegatedAuth Entra app used for user-delegated Graph access (OAuth card + OBO flows). Global resource — same across all stamps.')
-param delegatedAuthClientId string = 'd4e5cf74-9f99-4504-b4ab-d4516dd10577'
+param delegatedAuthClientId string = '2a42ee69-b5e5-4efe-bc8a-dcfec80deebc'
 
 @secure()
 @description('Client secret for the DelegatedAuth Entra app. Retrieved from Key Vault during pipeline deploy. Only required when createOAuthConnection=true.')

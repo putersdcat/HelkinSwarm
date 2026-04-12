@@ -1,17 +1,18 @@
-// Entra ID Directory skill handlers — Microsoft Graph delegated read operations.
+// Entra ID Directory skill handlers — Microsoft Graph read operations.
 // Spec ref: docs/05-Capabilities-Framework.md, docs/11-Authentication-Identity.md
 // Issue: #243
 //
 // Scope requirements:
-//   - entra_get_my_profile: User.Read (already in GraphOAuth consent)
-//   - entra_find_people: People.Read (requires OAuth scope update + re-consent)
+//   - entra_get_my_profile: User.Read (user-delegated via GraphOAuth)
+//   - entra_find_people: User.ReadBasic.All (app-level via managed identity)
 //
-// Auth: user-delegated Graph token via GraphOAuth Bot Framework connection.
-//       Falls back to scoped token if injected by orchestrator (#318).
+// Auth: entra_get_my_profile uses user-delegated Graph token via GraphOAuth.
+//       entra_find_people uses app token from managed identity (no user OAuth required).
 
 import type { ToolHandler } from '../../src/capabilities/capabilityLoader.js';
 import { getGraphTokenForUser } from '../../src/auth/graphTokenHelper.js';
 import { isPlaceholderScopedToken } from '../../src/auth/scopedTokenMinter.js';
+import { getCredential } from '../../src/auth/identity.js';
 import { z } from 'zod';
 
 const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
@@ -95,22 +96,17 @@ const ManagerSchema = z.object({
   jobTitle: z.string().nullable().optional(),
 }).passthrough();
 
-const PersonSchema = z.object({
-  displayName: z.string().optional(),
-  scoredEmailAddresses: z.array(z.object({
-    address: z.string().optional(),
-    relevanceScore: z.number().optional(),
-  })).optional(),
+const UserSchema = z.object({
+  id: z.string(),
+  displayName: z.string().nullable().optional(),
+  mail: z.string().nullable().optional(),
+  userPrincipalName: z.string().nullable().optional(),
   jobTitle: z.string().nullable().optional(),
   department: z.string().nullable().optional(),
-  phones: z.array(z.object({
-    number: z.string().optional(),
-    type: z.string().optional(),
-  })).optional(),
 }).passthrough();
 
-const PeopleResponseSchema = z.object({
-  value: z.array(PersonSchema),
+const UsersResponseSchema = z.object({
+  value: z.array(UserSchema),
 }).passthrough();
 
 // ---------------------------------------------------------------------------
@@ -180,32 +176,51 @@ export const entra_find_people: ToolHandler = async (args) => {
   const { query, limit } = FindPeopleArgsSchema.parse(args);
   const maxResults = limit ?? 5;
 
-  const token = await resolveToken(args);
-
-  const encodedQuery = encodeURIComponent(query);
-  const raw = await graphGet(
-    token,
-    `/me/people?$search="${encodedQuery}"&$top=${maxResults}&$select=displayName,scoredEmailAddresses,jobTitle,department,phones`,
-  );
-
-  const parsed = PeopleResponseSchema.parse(raw);
-
-  if (parsed.value.length === 0) {
-    return `No people found in your Entra directory for "${query}".`;
+  // Use managed identity app token (User.ReadBasic.All) for directory search.
+  // This avoids the delegated OAuth token requirement and covers all org users.
+  const tokenResult = await getCredential().getToken('https://graph.microsoft.com/.default');
+  if (!tokenResult?.token) {
+    throw new Error('Failed to acquire app token for directory search.');
   }
 
-  const items = parsed.value.map((p, i) => {
-    const email = p.scoredEmailAddresses?.find((e) => e.address)?.address ?? '';
-    const phone = p.phones?.find((ph) => ph.number)?.number ?? '';
+  const encodedQuery = encodeURIComponent(query);
+  const url = `${GRAPH_BASE}/users?$search="displayName:${encodedQuery}"&$count=true&$top=${maxResults}&$select=id,displayName,mail,userPrincipalName,jobTitle,department`;
+
+  const response = await fetch(url, {
+    headers: {
+      'Authorization': `Bearer ${tokenResult.token}`,
+      'Accept': 'application/json',
+      'ConsistencyLevel': 'eventual',
+    },
+    signal: AbortSignal.timeout(12_000),
+  });
+
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const err = await response.json() as { error?: { message?: string } };
+      detail = err.error?.message ?? '';
+    } catch { /* ignore */ }
+    throw new Error(`Directory search failed: ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`);
+  }
+
+  const raw = await response.json() as unknown;
+  const parsed = UsersResponseSchema.parse(raw);
+
+  if (parsed.value.length === 0) {
+    return `No people found in the directory for "${query}".`;
+  }
+
+  const items = parsed.value.map((u, i) => {
+    const email = u.mail ?? u.userPrincipalName ?? '';
     const parts = [
-      `**${p.displayName ?? 'Unknown'}**`,
-      p.jobTitle ? `*${p.jobTitle}*` : null,
-      p.department ? `Dept: ${p.department}` : null,
+      `**${u.displayName ?? 'Unknown'}**`,
+      u.jobTitle ? `*${u.jobTitle}*` : null,
+      u.department ? `Dept: ${u.department}` : null,
       email ? `📧 ${email}` : null,
-      phone ? `📱 ${phone}` : null,
     ].filter(Boolean).join(' · ');
     return `${i + 1}. ${parts}`;
   });
 
-  return `People matching "${query}" in your organization:\n\n${items.join('\n')}`;
+  return `People matching "${query}" in the organization directory:\n\n${items.join('\n')}`;
 };
