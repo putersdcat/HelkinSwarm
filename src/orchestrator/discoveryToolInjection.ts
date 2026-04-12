@@ -1083,7 +1083,8 @@ const BRAND_DOMAIN_TABLE: ReadonlyArray<BrandEntry> = [
   {
     pattern: /\bfox\b.{0,30}\b(suspension|fork|shock|federgabel)\b|\b(fox\s+)?federgabel\b/i,
     domain: 'https://www.ridefox.com',
-    locatorUrl: 'https://www.ridefox.com/us/en/service',
+    // locatorUrl intentionally omitted — the homepage reveals the current service URL,
+    // which may change over time or vary by region.
   },
   { pattern: /\bsram\b/i, domain: 'https://www.sram.com' },
   { pattern: /\bshimano\b/i, domain: 'https://www.shimano.com' },

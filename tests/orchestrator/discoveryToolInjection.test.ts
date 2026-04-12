@@ -1580,7 +1580,7 @@ describe('deriveWebInteractDealerLocatorCall', () => {
     );
     expect(result).not.toBeNull();
     expect(result?.name).toBe('web_interact');
-    expect((result?.arguments as { url: string }).url).toBe('https://www.ridefox.com/us/en/service');
+    expect((result?.arguments as { url: string }).url).toBe('https://www.ridefox.com');
   });
 
   it('returns null when message has no dealer intent', async () => {
