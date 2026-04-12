@@ -1458,14 +1458,16 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           })
           .map((call) => buildCapExceededToolResult(call));
 
+        const roundToolCallCountByName = new Map<string, number>();
         const filteredRoundCallsForDispatch = roundCallsForDispatch.filter((call) => {
           const tool = toolRegistry.get(call.name);
           const fingerprint = buildToolCallFingerprint(call.name, call.arguments);
 
-          // Per-tool-per-turn call cap
-          const callCount = cumulativeToolCallsByName.get(call.name) ?? 0;
+          // Per-tool-per-turn cap: cumulative + within-this-round to prevent batch bypass
+          const cumulativeCount = cumulativeToolCallsByName.get(call.name) ?? 0;
+          const roundCount = roundToolCallCountByName.get(call.name) ?? 0;
           const toolCap = PER_TOOL_TURN_CAPS[call.name] ?? DEFAULT_PER_TOOL_TURN_CAP;
-          if (callCount >= toolCap) {
+          if (cumulativeCount + roundCount >= toolCap) {
             return false;
           }
 
@@ -1474,10 +1476,15 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           }
 
           if (!isMutatingTool(tool)) {
+            roundToolCallCountByName.set(call.name, roundCount + 1);
             return true;
           }
 
-          return !successfulMutatingFingerprints.has(fingerprint);
+          if (successfulMutatingFingerprints.has(fingerprint)) {
+            return false;
+          }
+          roundToolCallCountByName.set(call.name, roundCount + 1);
+          return true;
         });
 
         if (filteredRoundCallsForDispatch.length === 0) {

@@ -10,6 +10,15 @@ const MAX_BUDGET = 50;
 export const PER_TOOL_TURN_CAPS: Record<string, number> = {
   helkin_current_datetime: 1,
   helkin_skill_search: 4,
+  helkin_whoami: 1,
+  helkin_recent_requests: 1,
+  helkin_health_check: 1,
+  helkin_get_costs: 1,
+  helkin_get_openrouter_spend: 1,
+  helkin_list_skills: 1,
+  helkin_skill_catalog: 1,
+  deep_research: 1,
+  travel_geocode: 1,
   web_search: 6,
   web_fetch_page: 8,
 };
