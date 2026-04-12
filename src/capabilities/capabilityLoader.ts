@@ -92,6 +92,15 @@ export function getHandler(toolName: string): ToolHandler | undefined {
   return handlerRegistry.get(toolName);
 }
 
+/**
+ * Returns tool names that have both a registry definition AND a wired handler.
+ * Use this (instead of toolRegistry.getToolNames()) when you need only tools
+ * that can actually be executed at runtime — e.g. for swarm agent tool assignment.
+ */
+export function getExecutableToolNames(): string[] {
+  return toolRegistry.getToolNames().filter(name => handlerRegistry.has(name));
+}
+
 // ---------------------------------------------------------------------------
 // Skill discovery and loading
 // ---------------------------------------------------------------------------

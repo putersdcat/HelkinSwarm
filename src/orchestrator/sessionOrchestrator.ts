@@ -26,6 +26,7 @@ import { recoverOperationalNoticesFromTrace } from './failoverNoticeRecovery.js'
 import type { PlanInput, PlanResult } from './planActivity.js';
 import type { SwarmDecomposerInput, SwarmDecomposerResult, SwarmOrchestratorInput, SwarmOrchestratorResult } from './swarm/swarmTypes.js';
 import { isSwarmEligible } from './swarm/swarmTypes.js';
+import { getExecutableToolNames } from '../capabilities/capabilityLoader.js';
 import { canonicalizeInput } from './inputCanonicalizer.js';
 import { computeToolBudget, DEFAULT_PER_TOOL_TURN_CAP, PER_TOOL_CAP_EXCEEDED_MESSAGES, PER_TOOL_TURN_CAPS } from './toolBudgetScaler.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
@@ -728,12 +729,14 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     && !input.devLoopContext?.isDevLoop
     && !input.skillForgeRequest
   ) {
-    // Try the swarm decomposer
+    // Try the swarm decomposer — use only tools with wired handlers to avoid
+    // assigning agents tools that return "No handler" at runtime.
+    const executableTools = getExecutableToolNames();
     const decomposerInput: SwarmDecomposerInput = {
       userMessage: userMessageForLlm,
       correlationId,
       userId: input.state.userId,
-      availableToolNames: toolRegistry.getToolNames(),
+      availableToolNames: executableTools,
     };
 
     const decomposerResult: SwarmDecomposerResult = yield context.df.callActivity(

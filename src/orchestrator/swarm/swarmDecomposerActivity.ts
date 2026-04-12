@@ -32,10 +32,14 @@ Respond with ONLY a JSON object matching this schema:
 }
 
 Rules:
-- Use 2-4 agents. Prefer FEWER agents with clear responsibilities.
-- Each agent gets ONLY the tools they need. Do not give all tools to all agents.
+- Use 2-4 agents. Prefer FEWER agents with CLEARLY DISTINCT responsibilities.
+- **CRITICAL**: Each agent must research a DIFFERENT aspect of the query. Do NOT create agents with overlapping tasks.
+  - BAD: Alpha researches "performance of X", Beta researches "performance of Y" ← same dimension, different subjects
+  - GOOD: Alpha researches "technical performance benchmarks", Beta researches "ecosystem and community", Gamma researches "industry adoption and case studies" ← different dimensions
+- Each agent gets ONLY the tools relevant to their specific task. Do not give all tools to all agents.
+- If there are only 1-2 tools available, use only 2 agents (more agents without tools just hallucinate).
 - Agent names should be short and distinct (Alpha, Beta, Gamma, Delta).
-- Each agent's task must be specific — not vague "research this topic".
+- Each agent's task must be specific and actionable — not vague "research this topic".
 - The Leader synthesizes — it has NO external tools. Only chatroom_send.
 - For location-specific queries, ensure at least one agent searches in the local language.
 - assignedTools must only contain tool names from the available tools list.
@@ -156,6 +160,8 @@ df.app.activity('swarmDecomposerActivity', {
           totalTools: plan.agents.reduce((sum, a) => sum + a.assignedTools.length, 0),
           timeoutMs: plan.timeoutMs,
           maxRoundsPerAgent: plan.maxRoundsPerAgent,
+          agents: plan.agents.map(a => `${a.name}(${a.role})[${a.assignedTools.join(',')}]`).join(' | '),
+          leaderInstructions: plan.leader.synthesisInstructions.slice(0, 200),
         },
       });
 
