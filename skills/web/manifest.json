@@ -4,7 +4,7 @@
   "tools": [
     {
       "name": "web_search",
-      "description": "Search the web for current information. Returns titles, URLs, and text snippets for the top results. Use when the user asks about recent events, wants to look something up online, or needs information you don't already know. For local content (shops, dealers, services, restaurants in a specific country) formulate the query in the LOCAL LANGUAGE of that country and set the market parameter to the country code — local web content is indexed in the local language, not English.",
+      "description": "Search the web for current information. Returns titles, URLs, and text snippets for the top results. Use when the user asks about recent events, wants to look something up online, or needs information you don't already know. For local content (shops, dealers, services, restaurants in a specific country) formulate the query in the LOCAL LANGUAGE of that country and set the market parameter to the country code — local web content is indexed in the local language, not English. IMPORTANT: if any result URL looks like a dealer locator, store finder, or directory page (e.g. contains 'dealer-locator', 'store-finder', 'händler', 'find-a-store') — STOP searching and call web_fetch_page on that URL immediately. If web_fetch_page returns empty content (JavaScript SPA), escalate to web_interact.",
       "risk": "low",
       "dataSensitivity": "non-pii",
       "allowedModelLane": "any",
