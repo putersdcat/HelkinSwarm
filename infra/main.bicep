@@ -51,8 +51,8 @@ param routerUamiId string = ''
 @description('Create/update the GraphOAuth Bot Service connection. Set true only on first stamp deploy or when OAuth scopes change. Leave false on all re-deploys to avoid ARM error 715-123420.')
 param createOAuthConnection bool = false
 
-@description('Client ID of the HelkinSwarm-DelegatedAuth Entra app used for user-delegated Graph access (OAuth card + OBO flows). Global resource — same across all stamps.')
-param delegatedAuthClientId string = '2a42ee69-b5e5-4efe-bc8a-dcfec80deebc'
+@description('Client ID of the HelkinSwarm-DelegatedAuth Entra app used for user-delegated Graph access (OAuth card + OBO flows). Global resource — same across all stamps. MUST match webApplicationInfo.id in appPackage/manifest.json — this is the audience for tab SSO tokens.')
+param delegatedAuthClientId string = 'd4e5cf74-9f99-4504-b4ab-d4516dd10577'
 
 @secure()
 @description('Client secret for the DelegatedAuth Entra app. Retrieved from Key Vault during pipeline deploy. Only required when createOAuthConnection=true.')

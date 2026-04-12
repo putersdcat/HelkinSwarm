@@ -1,9 +1,9 @@
 {
   "domain": "entra",
-  "version": "1.0",
+  "version": "2.0",
   "shortName": "entra",
-  "displayName": "Entra ID Directory",
-  "shortDescription": "Look up user profiles and directory information from Microsoft Entra ID (Azure Active Directory) using delegated Graph access.",
+  "displayName": "Entra ID Directory & User Provisioning",
+  "shortDescription": "Look up directory users, provision new employees, assign M365 licenses, and manage Entra identity lifecycle using delegated and app-level Graph access.",
   "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/core.png",
   "deploymentScenario": "personal-user-centric",
   "onboardingMethod": "post-install-link",
@@ -34,17 +34,32 @@
     "active directory",
     "azure ad",
     "AAD",
-    "org directory"
+    "org directory",
+    "create user",
+    "new employee",
+    "provision user",
+    "assign license",
+    "m365 license",
+    "microsoft 365 license",
+    "list licenses",
+    "available licenses",
+    "employee provisioning",
+    "onboard employee"
   ],
   "orchestratorUseCases": [
     "look up the current user's own Entra ID profile: name, email, job title, department, phone",
     "find out who the current user's manager is",
     "look up a colleague by email address or display name",
-    "retrieve canonical user profile fields for directory-style tasks",
-    "find people in the organization the user interacts with frequently"
+    "search for people in the organization directory",
+    "create a new employee or virtual worker identity in Entra ID",
+    "list available Microsoft 365 license SKUs with remaining seat counts",
+    "assign an M365 license to a newly created or existing user",
+    "verify a user's Entra profile, license, and account status after provisioning"
   ],
   "recommendedEntryTools": [
-    "entra_get_my_profile"
+    "entra_get_my_profile",
+    "entra_list_available_licenses",
+    "entra_create_user"
   ],
   "tools": [
     {
@@ -78,7 +93,7 @@
     },
     {
       "name": "entra_find_people",
-      "description": "Search for people in your organization by name or email. Returns matching colleagues from your Entra directory with profile info (display name, job title, email, department). Uses the People API which ranks by your interaction history — most relevant colleagues appear first. Requires People.Read delegated scope.",
+      "description": "Search for people in your organization by name or email. Returns matching colleagues from the Entra directory with profile info (display name, job title, email, department). Uses app-level directory search — covers all org users. Good for finding colleagues or verifying a UPN before provisioning.",
       "risk": "low",
       "dataSensitivity": "pii",
       "allowedModelLane": "any",
@@ -95,7 +110,6 @@
         "look up colleague",
         "find colleague",
         "search directory",
-        "people api",
         "directory people",
         "graph people",
         "who is",
@@ -130,6 +144,184 @@
           }
         },
         "required": ["query"]
+      }
+    },
+    {
+      "name": "entra_list_available_licenses",
+      "description": "List all Microsoft 365 license subscriptions in the tenant with available seat counts. Returns SKU display name, SKU ID (needed for entra_assign_license), total purchased seats, consumed seats, and remaining available seats. Use this before provisioning a new employee to confirm license availability.",
+      "risk": "low",
+      "dataSensitivity": "internal",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "discoveryTerms": [
+        "list licenses",
+        "available licenses",
+        "m365 licenses",
+        "microsoft 365 licenses",
+        "license seats",
+        "license SKU",
+        "license availability",
+        "subscription licenses",
+        "tenant licenses"
+      ],
+      "useWhen": [
+        "user wants to see what Microsoft 365 licenses are available",
+        "preparing to assign a license to a new or existing user",
+        "checking license availability before employee provisioning"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "entra_get_user",
+      "description": "Look up a specific user by their UPN (e.g. user@domain.com) or Entra object ID. Returns full profile including account status, usage location, and number of assigned licenses. Use this to verify a user was created correctly or to check their license status.",
+      "risk": "low",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "discoveryTerms": [
+        "get user",
+        "user details",
+        "look up user by email",
+        "look up user by UPN",
+        "verify user",
+        "check user status",
+        "user account status",
+        "user license status"
+      ],
+      "useWhen": [
+        "user wants to look up a specific person by their UPN or object ID",
+        "verifying a newly created user's account and license status",
+        "checking if a user account exists before provisioning"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "userIdOrUpn": {
+            "type": "string",
+            "description": "User object ID (GUID) or userPrincipalName (UPN, e.g. user@yourdomain.com)"
+          }
+        },
+        "required": ["userIdOrUpn"]
+      }
+    },
+    {
+      "name": "entra_create_user",
+      "description": "Create a new user identity in Microsoft Entra ID (Azure Active Directory). Provisions the account with a temporary password that must be changed on first sign-in. UsageLocation (ISO country code) is required for later license assignment. After creation, use entra_assign_license to provision an M365 license. REQUIRES CONFIRMATION — this creates a real user account in the tenant.",
+      "risk": "high",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": true,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "write",
+      "externalAutomationCapabilities": ["creates-entra-user"],
+      "longTermMemorySchema": [],
+      "discoveryTerms": [
+        "create user",
+        "new employee",
+        "provision user",
+        "onboard employee",
+        "add user",
+        "create account",
+        "new account",
+        "create employee account",
+        "provision employee",
+        "new hire"
+      ],
+      "useWhen": [
+        "user asks to create a new employee or virtual worker in Entra ID",
+        "onboarding a new hire and creating their M365 identity",
+        "provisioning a new virtual employee account"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "displayName": {
+            "type": "string",
+            "description": "Full display name of the new user, e.g. 'Jane Smith'"
+          },
+          "userPrincipalName": {
+            "type": "string",
+            "description": "UPN (login) — must use a verified domain, e.g. 'jane.smith@yourdomain.com'"
+          },
+          "mailNickname": {
+            "type": "string",
+            "description": "Mail alias without domain, e.g. 'jane.smith'"
+          },
+          "usageLocation": {
+            "type": "string",
+            "description": "ISO 3166-1 alpha-2 country code, e.g. 'US', 'GB', 'DE'. Required before license assignment."
+          },
+          "jobTitle": {
+            "type": "string",
+            "description": "Job title for the new user (optional)"
+          },
+          "department": {
+            "type": "string",
+            "description": "Department of the new user (optional)"
+          },
+          "password": {
+            "type": "string",
+            "description": "Initial password. If omitted, a secure temporary password is auto-generated."
+          }
+        },
+        "required": ["displayName", "userPrincipalName", "mailNickname", "usageLocation"]
+      }
+    },
+    {
+      "name": "entra_assign_license",
+      "description": "Assign a Microsoft 365 license SKU to an existing Entra user. Triggers provisioning of Exchange Online mailbox, Teams, and other M365 services associated with the SKU. Mailbox creation may take up to 30 minutes (sometimes up to 24 hours). Use entra_list_available_licenses to get the correct SKU ID before calling this tool. REQUIRES CONFIRMATION — this consumes a paid license seat.",
+      "risk": "high",
+      "dataSensitivity": "internal",
+      "allowedModelLane": "any",
+      "requiresConfirmation": true,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "write",
+      "externalAutomationCapabilities": ["assigns-m365-license"],
+      "longTermMemorySchema": [],
+      "discoveryTerms": [
+        "assign license",
+        "give user license",
+        "provision license",
+        "m365 license assignment",
+        "exchange license",
+        "assign m365",
+        "license user",
+        "activate user mailbox"
+      ],
+      "useWhen": [
+        "user wants to assign an M365 license to a newly created or existing account",
+        "enabling Exchange Online mailbox for a new employee",
+        "activating M365 services for a user"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "userIdOrUpn": {
+            "type": "string",
+            "description": "User object ID (GUID) or UPN of the user to license"
+          },
+          "skuId": {
+            "type": "string",
+            "description": "License SKU ID (GUID). Get this from entra_list_available_licenses."
+          }
+        },
+        "required": ["userIdOrUpn", "skuId"]
       }
     }
   ]

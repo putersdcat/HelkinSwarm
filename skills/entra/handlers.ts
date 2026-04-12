@@ -1,13 +1,17 @@
-// Entra ID Directory skill handlers — Microsoft Graph read operations.
+// Entra ID Directory skill handlers — Microsoft Graph read + write operations.
 // Spec ref: docs/05-Capabilities-Framework.md, docs/11-Authentication-Identity.md
-// Issue: #243
+// Issues: #243, #473, #474
 //
-// Scope requirements:
+// Scope requirements (app roles on UAMI):
 //   - entra_get_my_profile: User.Read (user-delegated via GraphOAuth)
-//   - entra_find_people: User.ReadBasic.All (app-level via managed identity)
+//   - entra_find_people: User.ReadBasic.All (MI app token)
+//   - entra_get_user: User.ReadWrite.All (MI app token)
+//   - entra_list_available_licenses: Organization.Read.All (MI app token)
+//   - entra_create_user: User.ReadWrite.All (MI app token)
+//   - entra_assign_license: User.ReadWrite.All (MI app token)
 //
 // Auth: entra_get_my_profile uses user-delegated Graph token via GraphOAuth.
-//       entra_find_people uses app token from managed identity (no user OAuth required).
+//       All other tools use app token from managed identity (no user OAuth required).
 
 import type { ToolHandler } from '../../src/capabilities/capabilityLoader.js';
 import { getGraphTokenForUser } from '../../src/auth/graphTokenHelper.js';
@@ -223,4 +227,247 @@ export const entra_find_people: ToolHandler = async (args) => {
   });
 
   return `People matching "${query}" in the organization directory:\n\n${items.join('\n')}`;
+};
+
+// ---------------------------------------------------------------------------
+// Shared helpers for MI-app-token-based Graph operations
+// ---------------------------------------------------------------------------
+
+async function getMiAppToken(): Promise<string> {
+  const tokenResult = await getCredential().getToken('https://graph.microsoft.com/.default');
+  if (!tokenResult?.token) {
+    throw new Error('Failed to acquire managed identity app token for Graph API.');
+  }
+  return tokenResult.token;
+}
+
+async function graphRequest(
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  path: string,
+  body?: unknown,
+  extraHeaders?: Record<string, string>,
+): Promise<unknown> {
+  const token = await getMiAppToken();
+  const url = path.startsWith('http') ? path : `${GRAPH_BASE}${path}`;
+
+  const response = await fetch(url, {
+    method,
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      ...extraHeaders,
+    },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(20_000),
+  });
+
+  if (response.status === 204) return null; // No content
+
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const err = await response.json() as { error?: { message?: string } };
+      detail = err.error?.message ?? '';
+    } catch { /* ignore */ }
+    throw new Error(`Graph ${method} ${path} failed: ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`);
+  }
+
+  return response.json() as unknown;
+}
+
+/** Generate a secure temporary password meeting Azure AD complexity rules. */
+function generateTempPassword(): string {
+  const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  const lower = 'abcdefghjkmnpqrstuvwxyz';
+  const digits = '23456789';
+  const special = '!@#$%^&*';
+  const all = upper + lower + digits + special;
+  const rand = (chars: string) => chars[Math.floor(Math.random() * chars.length)] as string;
+
+  // Ensure at least one of each required class
+  const base: string[] = [
+    rand(upper), rand(upper),
+    rand(lower), rand(lower), rand(lower),
+    rand(digits), rand(digits),
+    rand(special),
+  ];
+  // Shuffle required chars
+  for (let i = base.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [base[i], base[j]] = [base[j] as string, base[i] as string];
+  }
+  // Pad to 12 chars
+  while (base.length < 12) base.push(rand(all));
+  return base.join('');
+}
+
+// ---------------------------------------------------------------------------
+// Zod schemas for new provisioning operations
+// ---------------------------------------------------------------------------
+
+const SkuSchema = z.object({
+  skuId: z.string(),
+  skuPartNumber: z.string().optional(),
+  displayName: z.string().nullable().optional(),
+  consumedUnits: z.number().optional(),
+  prepaidUnits: z.object({
+    enabled: z.number().optional(),
+    suspended: z.number().optional(),
+    warning: z.number().optional(),
+  }).optional(),
+}).passthrough();
+
+const SubscribedSkusResponseSchema = z.object({
+  value: z.array(SkuSchema),
+}).passthrough();
+
+const CreatedUserSchema = z.object({
+  id: z.string(),
+  displayName: z.string().optional(),
+  userPrincipalName: z.string().optional(),
+  mail: z.string().nullable().optional(),
+}).passthrough();
+
+// ---------------------------------------------------------------------------
+// Tool: entra_list_available_licenses
+// ---------------------------------------------------------------------------
+
+export const entra_list_available_licenses: ToolHandler = async (_args) => {
+  const raw = await graphRequest('GET', '/subscribedSkus?$select=skuId,skuPartNumber,displayName,consumedUnits,prepaidUnits');
+  const parsed = SubscribedSkusResponseSchema.parse(raw);
+
+  if (parsed.value.length === 0) {
+    return 'No Microsoft 365 license subscriptions found in the tenant.';
+  }
+
+  const lines: string[] = ['**Available M365 License SKUs:**\n'];
+  for (const sku of parsed.value) {
+    const enabled = sku.prepaidUnits?.enabled ?? 0;
+    const consumed = sku.consumedUnits ?? 0;
+    const available = enabled - consumed;
+    const name = sku.displayName ?? sku.skuPartNumber ?? sku.skuId;
+    lines.push(`• **${name}** — ${available} available / ${enabled} total (SKU ID: \`${sku.skuId}\`)`);
+  }
+
+  return lines.join('\n');
+};
+
+// ---------------------------------------------------------------------------
+// Tool: entra_get_user
+// ---------------------------------------------------------------------------
+
+const GetUserArgsSchema = z.object({
+  userIdOrUpn: z.string().min(1).max(300).describe('User object ID or userPrincipalName (UPN)'),
+});
+
+export const entra_get_user: ToolHandler = async (args) => {
+  const { userIdOrUpn } = GetUserArgsSchema.parse(args);
+  const encoded = encodeURIComponent(userIdOrUpn);
+  const raw = await graphRequest('GET',
+    `/users/${encoded}?$select=id,displayName,mail,userPrincipalName,jobTitle,department,accountEnabled,usageLocation,assignedLicenses,createdDateTime`);
+
+  const UserDetailSchema = z.object({
+    id: z.string(),
+    displayName: z.string().nullable().optional(),
+    mail: z.string().nullable().optional(),
+    userPrincipalName: z.string().optional(),
+    jobTitle: z.string().nullable().optional(),
+    department: z.string().nullable().optional(),
+    accountEnabled: z.boolean().optional(),
+    usageLocation: z.string().nullable().optional(),
+    assignedLicenses: z.array(z.object({ skuId: z.string() })).optional(),
+    createdDateTime: z.string().nullable().optional(),
+  }).passthrough();
+
+  const user = UserDetailSchema.parse(raw);
+
+  const lines: string[] = [];
+  lines.push(`**${user.displayName ?? 'Unknown'}**`);
+  if (user.mail ?? user.userPrincipalName) lines.push(`📧 ${user.mail ?? user.userPrincipalName}`);
+  if (user.jobTitle) lines.push(`💼 ${user.jobTitle}`);
+  if (user.department) lines.push(`🏢 ${user.department}`);
+  lines.push(`🔘 Account: ${user.accountEnabled ? 'Enabled' : 'Disabled'}`);
+  if (user.usageLocation) lines.push(`🌍 Usage Location: ${user.usageLocation}`);
+  const licCount = user.assignedLicenses?.length ?? 0;
+  lines.push(`📋 Assigned licenses: ${licCount}`);
+  if (user.createdDateTime) lines.push(`📅 Created: ${user.createdDateTime.slice(0, 10)}`);
+  lines.push(`\n_Entra ID: ${user.id}_`);
+
+  return lines.join('\n');
+};
+
+// ---------------------------------------------------------------------------
+// Tool: entra_create_user
+// ---------------------------------------------------------------------------
+
+const CreateUserArgsSchema = z.object({
+  displayName: z.string().min(1).max(256).describe('Full display name of the new user'),
+  userPrincipalName: z.string().min(5).max(256).describe('UPN — must match a verified domain, e.g. firstname.lastname@yourdomain.com'),
+  mailNickname: z.string().min(1).max(64).describe('Mail alias (no @ or domain), e.g. firstname.lastname'),
+  usageLocation: z.string().length(2).describe('ISO 3166-1 alpha-2 country code required before license assignment, e.g. "US"'),
+  jobTitle: z.string().max(128).optional().describe('Job title for the new user'),
+  department: z.string().max(128).optional().describe('Department of the new user'),
+  password: z.string().min(8).max(256).optional().describe('Initial password. If omitted, a secure temporary password is generated'),
+});
+
+export const entra_create_user: ToolHandler = async (args) => {
+  const parsed = CreateUserArgsSchema.parse(args);
+  const tempPassword = parsed.password ?? generateTempPassword();
+
+  const createBody: Record<string, unknown> = {
+    accountEnabled: true,
+    displayName: parsed.displayName,
+    mailNickname: parsed.mailNickname,
+    userPrincipalName: parsed.userPrincipalName,
+    usageLocation: parsed.usageLocation,
+    passwordProfile: {
+      forceChangePasswordNextSignIn: true,
+      password: tempPassword,
+    },
+  };
+  if (parsed.jobTitle) createBody['jobTitle'] = parsed.jobTitle;
+  if (parsed.department) createBody['department'] = parsed.department;
+
+  const raw = await graphRequest('POST', '/users', createBody);
+  const user = CreatedUserSchema.parse(raw);
+
+  const lines: string[] = [];
+  lines.push(`✅ **User created successfully**`);
+  lines.push(`**Name:** ${user.displayName ?? parsed.displayName}`);
+  lines.push(`**UPN:** ${user.userPrincipalName ?? parsed.userPrincipalName}`);
+  lines.push(`**Entra ID:** ${user.id}`);
+  lines.push(`**Usage Location:** ${parsed.usageLocation}`);
+  lines.push(`**Temp Password:** \`${tempPassword}\``);
+  lines.push(`\n⚠️ The user must change their password on first sign-in.`);
+  lines.push(`Next step: assign an M365 license using \`entra_assign_license\` with SKU ID from \`entra_list_available_licenses\`.`);
+
+  return lines.join('\n');
+};
+
+// ---------------------------------------------------------------------------
+// Tool: entra_assign_license
+// ---------------------------------------------------------------------------
+
+const AssignLicenseArgsSchema = z.object({
+  userIdOrUpn: z.string().min(1).max(300).describe('User object ID or UPN to assign a license to'),
+  skuId: z.string().uuid().describe('License SKU ID (GUID) — obtain from entra_list_available_licenses'),
+});
+
+export const entra_assign_license: ToolHandler = async (args) => {
+  const { userIdOrUpn, skuId } = AssignLicenseArgsSchema.parse(args);
+  const encoded = encodeURIComponent(userIdOrUpn);
+
+  await graphRequest('POST', `/users/${encoded}/assignLicense`, {
+    addLicenses: [{ skuId }],
+    removeLicenses: [],
+  });
+
+  return [
+    `✅ **License assigned successfully**`,
+    `User: \`${userIdOrUpn}\``,
+    `SKU ID: \`${skuId}\``,
+    `\nThe assigned license will provision Exchange Online and other M365 services. Mailbox creation typically completes within 30 minutes (may take up to 24 hours).`,
+    `Use \`entra_get_user\` to verify the license assignment.`,
+  ].join('\n');
 };
