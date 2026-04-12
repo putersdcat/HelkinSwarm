@@ -19,8 +19,9 @@ export const PER_TOOL_TURN_CAPS: Record<string, number> = {
   helkin_skill_catalog: 1,
   deep_research: 1,
   travel_geocode: 1,
-  web_search: 6,
+  web_search: 4,     // Keep shallow: try 2-3 language variants then pivot to web_fetch_page/web_interact
   web_fetch_page: 8,
+  web_interact: 4,
 };
 /** Default cap for any tool not explicitly listed. */
 export const DEFAULT_PER_TOOL_TURN_CAP = 8;

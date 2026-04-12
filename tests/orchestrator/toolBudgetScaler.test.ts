@@ -75,7 +75,7 @@ describe('toolBudgetScaler', () => {
 
   it('PER_TOOL_TURN_CAPS restricts high-frequency tools', () => {
     expect(PER_TOOL_TURN_CAPS['helkin_current_datetime']).toBe(1);
-    expect(PER_TOOL_TURN_CAPS['web_search']).toBe(6);
+    expect(PER_TOOL_TURN_CAPS['web_search']).toBe(4);
     expect(PER_TOOL_TURN_CAPS['helkin_skill_search']).toBe(4);
   });
 
