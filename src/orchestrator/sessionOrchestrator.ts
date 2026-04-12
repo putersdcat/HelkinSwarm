@@ -822,7 +822,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         promptTokens: 0,
         completionTokens: swarmTokens,
         spans,
-        toolCalls: swarmWinner === swarmTimer ? [] : (swarmTask.result as SwarmOrchestratorResult).agentResults.map((a) => `${a.agentName}:${a.toolCallsMade}t`),
+        toolCalls: swarmWinner === swarmTimer ? [] : (swarmTask.result as SwarmOrchestratorResult).agentResults.map((a) => `${a.agentName}:${a.toolCallsMade}t${a.success ? '✓' : '✗'}`),
         safetyPassed: true,
         planComplexity: planResult.complexity,
         subAgentCount: swarmWinner === swarmTimer ? 0 : (swarmTask.result as SwarmOrchestratorResult).agentResults.length,
