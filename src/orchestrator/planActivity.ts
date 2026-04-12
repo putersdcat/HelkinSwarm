@@ -38,6 +38,12 @@ export interface PlanResult {
   planProviderCostDetails?: Record<string, number>;
   /** Serializable plan artifact for telemetry. */
   planArtifact: string;
+  /**
+   * Whether the swarm feature flag is enabled.
+   * Read inside the activity (env-read safe) and passed to the orchestrator
+   * generator so the swarm branch decision is deterministic during replay.
+   */
+  swarmEnabled: boolean;
 }
 
 export interface PlanInput {
@@ -186,6 +192,7 @@ export async function plan(input: PlanInput): Promise<PlanResult> {
       planProviderCostUnit: undefined,
       planProviderCostDetails: undefined,
       planArtifact: JSON.stringify({ complexity, steps: null }),
+      swarmEnabled: process.env['SWARM_ENABLED']?.toLowerCase() === 'true',
     };
   }
 
@@ -235,6 +242,7 @@ export async function plan(input: PlanInput): Promise<PlanResult> {
     planProviderCostUnit: providerCostUnit,
     planProviderCostDetails: providerCostDetails,
     planArtifact: JSON.stringify({ complexity, steps }),
+    swarmEnabled: process.env['SWARM_ENABLED']?.toLowerCase() === 'true',
   };
   return result;
 }

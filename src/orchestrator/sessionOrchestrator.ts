@@ -108,12 +108,9 @@ const FOLLOWUP_DURABLE_TIMEOUT_MS = 100_000; // 100s = 90s LLM budget + 10s over
  */
 const SUB_AGENT_DURABLE_TIMEOUT_MS = 90_000; // 90s hard Durable cap
 
-/**
- * Swarm feature flag — read once at module load so it's deterministic during
- * Durable Functions replay. process.env reads inside generators are unsafe
- * because the value can change between the original run and any replay.
- */
-const SWARM_ENABLED = process.env['SWARM_ENABLED']?.toLowerCase() === 'true';
+// SWARM_ENABLED is now read inside planActivity (activity-safe env read)
+// and returned as planResult.swarmEnabled. This is deterministic during
+// Durable Functions replay because activity outputs are replayed from history.
 
 /**
  * Race llmFollowUpActivity against a Durable timer (#588).
@@ -731,7 +728,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // module-level constants don't change between execution and replay.
   // ---------------------------------------------------------------------------
   if (
-    SWARM_ENABLED
+    planResult.swarmEnabled
     && planResult.complexity !== 'simple'
     && isSwarmEligible(userMessageForLlm)
     && !input.devLoopContext?.isDevLoop
