@@ -109,6 +109,13 @@ const FOLLOWUP_DURABLE_TIMEOUT_MS = 100_000; // 100s = 90s LLM budget + 10s over
 const SUB_AGENT_DURABLE_TIMEOUT_MS = 90_000; // 90s hard Durable cap
 
 /**
+ * Swarm feature flag — read once at module load so it's deterministic during
+ * Durable Functions replay. process.env reads inside generators are unsafe
+ * because the value can change between the original run and any replay.
+ */
+const SWARM_ENABLED = process.env['SWARM_ENABLED']?.toLowerCase() === 'true';
+
+/**
  * Race llmFollowUpActivity against a Durable timer (#588).
  * If the timer fires first, the orchestrator receives a synthetic timeout result
  * and moves on — the abandoned activity completes in the background harmlessly.
@@ -720,10 +727,11 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
   // ---------------------------------------------------------------------------
   // 1c. Swarm routing — compound/complex requests that are swarm-eligible (#631)
+  // Reading the flag outside the generator's decision branches is safe —
+  // module-level constants don't change between execution and replay.
   // ---------------------------------------------------------------------------
-  const swarmEnabled = process.env['SWARM_ENABLED']?.toLowerCase() === 'true';
   if (
-    swarmEnabled
+    SWARM_ENABLED
     && planResult.complexity !== 'simple'
     && isSwarmEligible(userMessageForLlm)
     && !input.devLoopContext?.isDevLoop
