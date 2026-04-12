@@ -831,7 +831,7 @@ export function buildCapabilityMapFragment(): string {
  * They belong in the base tool surface alongside core helkin_* tools so the model
  * never needs a discovery step before calling web_search.
  */
-const FIRST_ORDER_WEB_TOOLS = new Set(['web_search', 'web_fetch_page']);
+const FIRST_ORDER_WEB_TOOLS = new Set(['web_search', 'web_fetch_page', 'web_interact']);
 
 export function getDiscoveryFirstToolDefinitions(): Array<{ name: string; description: string }> {
   return toolRegistry

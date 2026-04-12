@@ -213,6 +213,7 @@
         "the page requires JavaScript rendering",
         "web_fetch_page returns empty or incomplete content due to client-side rendering \u2014 escalate to web_interact to render the page with a full browser",
         "a dealer locator, store finder, or service directory page requires filling a location field and pressing Search to get results",
+        "the user asks to find an authorized dealer, certified service center, or official partner for a specific brand — navigate to the brand's official website and use their dealer/service locator tool directly",
         "the user needs to submit a form or go through a multi-step flow"
       ],
       "typicalInputs": [
