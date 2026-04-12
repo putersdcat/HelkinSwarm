@@ -21,12 +21,14 @@
     "helkin_mcp_registry_search",
     "helkin_mcp_forge",
     "helkin_list_skills",
-    "helkin_skill_catalog"
-  ],
-  "boostTools": [
-    "web_search",
-    "web_fetch_page",
-    "helkin_skill_search"
+    "helkin_skill_catalog",
+    "helkin_whoami",
+    "helkin_recent_requests",
+    "helkin_test_confirmation",
+    "helkin_save_preferences",
+    "helkin_install_skill",
+    "helkin_uninstall_skill",
+    "helkin_forget_skill"
   ],
   "meta": {
     "updatedAt": "2026-03-22T00:00:00Z",
