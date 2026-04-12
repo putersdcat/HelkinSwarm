@@ -9,6 +9,7 @@ import { getModelRouting } from '../../llm/modelRouter.js';
 import { toolRegistry } from '../../tools/toolRegistry.js';
 import { getHandler } from '../../capabilities/capabilityLoader.js';
 import { trackEvent } from '../../observability/telemetry.js';
+import { recordOrchestratorStage } from '../../observability/orchestratorStageHealth.js';
 import { buildWorkerSystemPrompt } from './swarmPersonas.js';
 import type { ChatMessage, ToolDefinition } from '../../llm/foundryClient.js';
 import type { ChatroomMessage, SwarmWorkerInput, SwarmWorkerResult } from './swarmTypes.js';
@@ -109,6 +110,9 @@ async function executeToolCall(
 
 df.app.activity('swarmWorkerActivity', {
   handler: async (input: SwarmWorkerInput): Promise<SwarmWorkerResult> => {
+    // Update stage tracking so the health endpoint shows swarm progress
+    await recordOrchestratorStage(input.correlationId, 'swarm-workers', input.userId);
+
     const routing = getModelRouting();
     // All swarm agents use the primary (high-capacity) model — confirmed by Grok team
     const client = new FoundryClient({

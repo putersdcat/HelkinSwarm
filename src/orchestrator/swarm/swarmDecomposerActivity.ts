@@ -7,6 +7,7 @@ import * as df from 'durable-functions';
 import { FoundryClient, textContent } from '../../llm/foundryClient.js';
 import { getModelRouting } from '../../llm/modelRouter.js';
 import { trackEvent } from '../../observability/telemetry.js';
+import { recordOrchestratorStage } from '../../observability/orchestratorStageHealth.js';
 import { SwarmPlanSchema } from './swarmTypes.js';
 import type { SwarmDecomposerInput, SwarmDecomposerResult } from './swarmTypes.js';
 
@@ -50,6 +51,9 @@ Rules:
 
 df.app.activity('swarmDecomposerActivity', {
   handler: async (input: SwarmDecomposerInput): Promise<SwarmDecomposerResult> => {
+    // Update stage tracking so health endpoint shows decomposer phase
+    await recordOrchestratorStage(input.correlationId, 'swarm-decompose', input.userId);
+
     const routing = getModelRouting();
     const client = new FoundryClient({
       ...routing,

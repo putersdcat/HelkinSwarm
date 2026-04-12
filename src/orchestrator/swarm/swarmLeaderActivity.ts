@@ -7,6 +7,7 @@ import * as df from 'durable-functions';
 import { FoundryClient, textContent } from '../../llm/foundryClient.js';
 import { getModelRouting } from '../../llm/modelRouter.js';
 import { trackEvent } from '../../observability/telemetry.js';
+import { recordOrchestratorStage } from '../../observability/orchestratorStageHealth.js';
 import { buildLeaderSystemPrompt } from './swarmPersonas.js';
 import type { ChatMessage } from '../../llm/foundryClient.js';
 import type { ChatroomMessage, SwarmLeaderInput, SwarmLeaderResult } from './swarmTypes.js';
@@ -27,6 +28,9 @@ function formatTranscriptForLeader(messages: ChatroomMessage[]): string {
 
 df.app.activity('swarmLeaderActivity', {
   handler: async (input: SwarmLeaderInput & { chatroomTranscript: ChatroomMessage[] }): Promise<SwarmLeaderResult> => {
+    // Update stage tracking so the health endpoint shows leader synthesis phase
+    await recordOrchestratorStage(input.correlationId, 'swarm-leader', input.userId);
+
     const routing = getModelRouting();
     // Leader uses primary model — all swarm agents use the same model
     const client = new FoundryClient({
