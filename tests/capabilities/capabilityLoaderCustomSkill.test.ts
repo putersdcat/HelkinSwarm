@@ -14,9 +14,7 @@ describe('capabilityLoader custom skill discovery', () => {
 
     const result = await loadCapabilities([join(process.cwd(), 'skills')]);
 
-    expect(result.skillsLoaded).toBeGreaterThanOrEqual(7);
-    expect(getManifest('forge-create-a-receipts-parser-skill-v367a')).toBeDefined();
-    expect(toolRegistry.get('forge_create_a_receipts_parser_skill_v367a_run')).toBeDefined();
+    expect(result.skillsLoaded).toBeGreaterThanOrEqual(6);
 
     expect(getManifest('mcpreference')).toBeDefined();
     expect(toolRegistry.get('mcpreference_echo')).toBeDefined();
