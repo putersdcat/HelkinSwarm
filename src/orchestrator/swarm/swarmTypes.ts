@@ -175,27 +175,36 @@ export interface SwarmOrchestratorResult {
 export function isSwarmEligible(message: string): boolean {
   const lower = message.toLowerCase();
 
-  // Multi-faceted research signals
+  // Multi-faceted research signals — verbs that imply gathering/exploring
   const researchSignals = [
     'find', 'search', 'compare', 'research', 'investigate',
-    'look up', 'look into', 'analyze', 'review',
+    'look up', 'look into', 'analyze', 'review', 'evaluate',
+    'assess', 'examine', 'explore', 'survey',
   ];
   const verificationSignals = [
     'verify', 'confirm', 'check', 'cross-check', 'validate',
   ];
+  // Connectors implying multiple domains or aspects
   const multiDomainSignals = [
     'and also', 'additionally', 'as well as', 'along with',
-    'plus', 'on top of', 'together with',
+    'plus', 'on top of', 'together with', 'for each',
+    'respectively', 'in addition',
   ];
+  // Compound/comparative analysis patterns
   const compoundSignals = [
     'compare', 'pros and cons', 'best option', 'ranking',
     'alternatives', 'recommendations', 'side by side',
+    'tradeoffs', 'tradeoff', 'trade-offs', 'trade-off',
+    'decision matrix', 'approaches', 'versus', ' vs ',
+    'strengths and weaknesses', 'advantages and disadvantages',
   ];
 
   let score = 0;
 
-  // Research verbs
-  if (researchSignals.some(s => lower.includes(s))) score += 1;
+  // Research verbs (count distinct matches — 2+ distinct verbs = stronger signal)
+  const researchMatches = researchSignals.filter(s => lower.includes(s)).length;
+  if (researchMatches >= 3) score += 2;
+  else if (researchMatches >= 1) score += 1;
   // Verification intent
   if (verificationSignals.some(s => lower.includes(s))) score += 1;
   // Multi-domain connectors

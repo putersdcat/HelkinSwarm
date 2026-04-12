@@ -46,6 +46,20 @@ describe('isSwarmEligible', () => {
       'What is the best framework? How does it compare to competitors? What do experts recommend?',
     )).toBe(true);
   });
+
+  it('returns true for multi-faceted analysis without explicit compare keyword', () => {
+    expect(isSwarmEligible(
+      'Analyze three different approaches to building a real-time collaborative document editor: CRDTs vs OT vs hybrid approaches. For each, research the technical tradeoffs (latency, consistency, conflict resolution), identify major open-source implementations and their GitHub activity, and investigate which companies chose each approach and their engineering blog posts explaining why. Present a decision matrix with weighted scoring.',
+    )).toBe(true);
+  });
+
+  it('awards bonus for 3+ distinct research verbs', () => {
+    // 3 verbs: find, research, investigate → +2 instead of +1
+    // length > 200 → +1 = total 3 → eligible
+    expect(isSwarmEligible(
+      'Find current market data across all major indices, research the competitive landscape for enterprise SaaS companies, and investigate emerging trends in the renewable energy sector across multiple geographic regions for comprehensive context gathering',
+    )).toBe(true);
+  });
 });
 
 describe('ChatroomMessageSchema', () => {
