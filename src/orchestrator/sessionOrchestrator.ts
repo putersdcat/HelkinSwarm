@@ -72,6 +72,7 @@ import {
   synthesizeDeterministicReadOnlyInitialToolCall,
   synthesizeExactToolCall,
   synthesizeDeterministicFollowUpToolCall,
+  deriveLocatorUrlFetchCall,
   stripValidationNoise,
 } from './discoveryToolInjection.js';
 import { buildRecentRequestRecallResponse } from './autobiographicalReflex.js';
@@ -1246,7 +1247,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         followUpToolSchemas,
       ) ?? (rawDeterministicFollowUp && !alreadySucceededToolNames.has(rawDeterministicFollowUp.name)
         ? rawDeterministicFollowUp
-        : null);
+        : null)
+        ?? deriveLocatorUrlFetchCall(toolResults.results ?? [], followUpToolSchemas);
       if (deterministicFollowUpToolCall) {
         yield* emitOrchestratorTelemetry(context, {
           name: 'PolicyOverrideApplied',
@@ -1498,11 +1500,6 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             toolResults.results.push(...skippedRoundResults);
             toolResults.totalCalls += skippedRoundResults.length;
 
-            // If any cap-exceeded result has a pivot message (e.g. web_search → web_fetch_page),
-            // pass follow-up tools so the model can actually invoke the pivot tool.
-            const hasCapExceededWithPivot = capExceededRoundResults.some(
-              (r) => PER_TOOL_CAP_EXCEEDED_MESSAGES[r.toolName] !== undefined,
-            );
             const forcedTextFollowUpInput: LlmFollowUpInput = {
               originalMessages: promptWithPlan.messages,
               assistantToolCallMessage: {
@@ -1512,8 +1509,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
               toolResults: toolResults?.results.slice(0, initialResultCount) ?? [],
               correlationId,
               modelOverride: effectiveFollowUpModelOverride,
-              enableRetry: hasCapExceededWithPivot,
-              tools: hasCapExceededWithPivot ? followUpToolSchemas : undefined,
+              enableRetry: false,
               modelProfileTelemetry: followUpModelProfileTelemetry,
               additionalTurns,
             };
@@ -1523,12 +1519,6 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             cumulativePromptTokens += followUp.promptTokens;
             accumulateProviderCost(followUp.providerCost, followUp.providerCostUnit, followUp.providerCostDetails);
             rememberOperationalEvidence(operationalNotices, followUp);
-
-            // If the model responded with new tool calls (e.g. web_fetch_page after web_search cap),
-            // continue the while loop so those calls are actually dispatched.
-            if (hasCapExceededWithPivot && followUp.toolCalls && followUp.toolCalls.length > 0) {
-              continue;
-            }
           }
           break;
         }

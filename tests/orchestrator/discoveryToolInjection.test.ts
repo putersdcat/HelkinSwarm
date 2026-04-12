@@ -1477,3 +1477,89 @@ describe('discoveryToolInjection', () => {
     expect(response).toBeNull();
   });
 });
+
+describe('deriveLocatorUrlFetchCall', () => {
+  const webFetchPageSchema = {
+    type: 'function' as const,
+    function: { name: 'web_fetch_page', description: 'fetch a URL', parameters: {} },
+  };
+
+  it('returns web_fetch_page when a dealer-locator URL appears in web_search results', async () => {
+    const { deriveLocatorUrlFetchCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+    const result = deriveLocatorUrlFetchCall(
+      [{
+        toolName: 'web_search',
+        success: true,
+        result: {
+          web: {
+            results: [
+              { title: 'Fox Factory', url: 'https://www.ridefox.com/de/de/dealer-locator.html' },
+            ],
+          },
+        },
+      }],
+      [webFetchPageSchema],
+    );
+    expect(result).not.toBeNull();
+    expect(result?.name).toBe('web_fetch_page');
+    expect(result?.arguments).toEqual({ url: 'https://www.ridefox.com/de/de/dealer-locator.html' });
+  });
+
+  it('returns null when no locator URL is present in results', async () => {
+    const { deriveLocatorUrlFetchCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+    const result = deriveLocatorUrlFetchCall(
+      [{
+        toolName: 'web_search',
+        success: true,
+        result: {
+          web: {
+            results: [
+              { title: 'Generic page', url: 'https://www.example.com/bikes/fox-fork' },
+            ],
+          },
+        },
+      }],
+      [webFetchPageSchema],
+    );
+    expect(result).toBeNull();
+  });
+
+  it('returns null when web_fetch_page is not in available schemas', async () => {
+    const { deriveLocatorUrlFetchCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+    const result = deriveLocatorUrlFetchCall(
+      [{
+        toolName: 'web_search',
+        success: true,
+        result: {
+          web: {
+            results: [
+              { title: 'Fox Factory', url: 'https://www.ridefox.com/en-us/dealer-locator' },
+            ],
+          },
+        },
+      }],
+      [], // no web_fetch_page
+    );
+    expect(result).toBeNull();
+  });
+
+  it('matches store-finder pattern', async () => {
+    const { deriveLocatorUrlFetchCall } = await import('../../src/orchestrator/discoveryToolInjection.js');
+    const result = deriveLocatorUrlFetchCall(
+      [{
+        toolName: 'web_search',
+        success: true,
+        result: {
+          web: {
+            results: [
+              { title: 'Find a store', url: 'https://www.shimano.com/store-finder' },
+            ],
+          },
+        },
+      }],
+      [webFetchPageSchema],
+    );
+    expect(result).not.toBeNull();
+    expect(result?.name).toBe('web_fetch_page');
+  });
+});

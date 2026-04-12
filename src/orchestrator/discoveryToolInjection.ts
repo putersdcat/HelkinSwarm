@@ -1018,6 +1018,49 @@ export function synthesizeDeterministicFollowUpToolCall(
   return parseDeterministicSkillVerificationIntent(userMessage, toolNames);
 }
 
+/**
+ * URL path patterns that indicate a dealer/store/service locator page.
+ * When a web_search result contains these, we should auto-fetch the page
+ * rather than asking the model to decide (#630 — multilingual web UX).
+ */
+const LOCATOR_URL_RE =
+  /\/?(dealer[s-]?locator|dealer[s-]?finder|händler[s-]?suche|händler[s-]?(liste|verzeichnis)|store[s-]?finder|store[s-]?locator|retailer[s-]?locator|service[s-]?locator|service[s-]?(center|network)|find[a-]?dealer|find[a-]?store|find[a-]?retailer|find[a-]?shop|locator\.html|dealer-locator|store-finder)\b/i;
+
+interface WebSearchResultItem {
+  url: string;
+  title?: string;
+  description?: string;
+}
+
+function isWebSearchResult(result: unknown): result is { web?: { results?: WebSearchResultItem[] } } {
+  return typeof result === 'object' && result !== null && 'web' in result;
+}
+
+/**
+ * Scans web_search tool results for dealer/store/service locator URLs.
+ * If found and web_fetch_page is available, returns a deterministic fetch call.
+ * This bypasses the LLM's tendency to request more searches (#630).
+ */
+export function deriveLocatorUrlFetchCall(
+  toolResults: readonly { toolName: string; success: boolean; result?: unknown }[],
+  toolSchemas: ToolDefinition[] | null | undefined,
+): DeterministicFollowUpToolCall | null {
+  if (!toolSchemas?.some((t) => t.function.name === 'web_fetch_page')) {
+    return null;
+  }
+
+  for (const tr of toolResults) {
+    if (tr.toolName !== 'web_search' || !tr.success || !isWebSearchResult(tr.result)) continue;
+    const results = tr.result.web?.results ?? [];
+    const locatorUrl = results.find((r) => LOCATOR_URL_RE.test(r.url))?.url;
+    if (locatorUrl) {
+      return { name: 'web_fetch_page', arguments: { url: locatorUrl } };
+    }
+  }
+
+  return null;
+}
+
 export function deriveSelectiveFollowUpToolSchemas(
   toolResults: ToolResult[],
 ): ToolDefinition[] | null {
