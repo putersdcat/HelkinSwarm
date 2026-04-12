@@ -800,6 +800,23 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         });
       }
 
+      // Append telemetry footer to swarm response
+      const swarmTurnEndTime = context.df.currentUtcDateTime.getTime();
+      const swarmTelemetryMode = 'verbose' as const;
+      swarmResponse += formatTelemetryFooter(swarmTelemetryMode, {
+        correlationId,
+        timestampIso: new Date(swarmTurnEndTime).toISOString(),
+        totalMs: swarmTurnEndTime - turnStartTime,
+        model: `swarm:${swarmModel}`,
+        promptTokens: 0,
+        completionTokens: swarmTokens,
+        spans,
+        toolCalls: swarmWinner === swarmTimer ? [] : (swarmTask.result as SwarmOrchestratorResult).agentResults.map((a) => `${a.agentName}:${a.toolCallsMade}t`),
+        safetyPassed: true,
+        planComplexity: planResult.complexity,
+        subAgentCount: swarmWinner === swarmTimer ? 0 : (swarmTask.result as SwarmOrchestratorResult).agentResults.length,
+      });
+
       // Deliver the swarm result
       const swarmReplyInput: SendReplyInput = {
         userId: input.state.userId,
