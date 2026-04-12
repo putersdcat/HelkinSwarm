@@ -18,8 +18,8 @@ import type {
 // Timeout helpers (Durable timer pattern — same as #588/#591)
 // ---------------------------------------------------------------------------
 
-const SWARM_WORKER_TIMEOUT_MS = 90_000;
-const SWARM_LEADER_TIMEOUT_MS = 90_000;
+const SWARM_WORKER_TIMEOUT_MS = 60_000;
+const SWARM_LEADER_TIMEOUT_MS = 60_000;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions generator
 df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task, SwarmOrchestratorResult, any> {
@@ -30,14 +30,15 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
   const allNames = [leaderName, ...allAgentNames];
 
   // -----------------------------------------------------------------------
-  // 1. Initialize the chatroom entity
+  // 1. Initialize the chatroom entity (fire-and-forget — workers collect
+  //    messages locally and don't interact with entity directly)
   // -----------------------------------------------------------------------
   const chatroomEntityId = new df.EntityId(
     'SwarmChatroom',
     `swarm-${plan.swarmId}`,
   );
 
-  yield context.df.callEntity(chatroomEntityId, 'init', {
+  context.df.signalEntity(chatroomEntityId, 'init', {
     swarmCorrelationId: correlationId,
     agents: allNames,
   });

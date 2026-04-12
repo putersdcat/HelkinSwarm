@@ -163,10 +163,10 @@ df.app.activity('swarmWorkerActivity', {
           messages,
           tools: tools.length > 0 ? tools : undefined,
           toolChoice: tools.length > 0 ? 'auto' : undefined,
-          maxTokens: 4096,
+          maxTokens: 2048,
           temperature: 0.7,
           correlationId: input.correlationId,
-          maxBudgetMs: 30_000,
+          maxBudgetMs: 20_000,
         });
 
         totalTokens += response.usage?.totalTokens ?? 0;

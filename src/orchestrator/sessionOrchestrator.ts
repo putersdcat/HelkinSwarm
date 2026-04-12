@@ -763,8 +763,11 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         userMessage: userMessageForLlm,
       };
 
+      // Outer timer must exceed inner worker+leader timeouts. Workers run parallel (60s max),
+      // leader runs after (60s max), plus entity overhead (~10s). Total inner ≤ 130s.
+      const swarmOuterTimeoutMs = Math.max(decomposerResult.plan.timeoutMs * 3, 180_000);
       const swarmTimer = context.df.createTimer(
-        new Date(context.df.currentUtcDateTime.getTime() + (decomposerResult.plan.timeoutMs + 30_000)),
+        new Date(context.df.currentUtcDateTime.getTime() + swarmOuterTimeoutMs),
       );
       const swarmTask = context.df.callSubOrchestrator('swarmOrchestrator', swarmInput);
       const swarmWinner: df.Task = yield context.df.Task.any([swarmTask, swarmTimer]);
