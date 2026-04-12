@@ -19,12 +19,27 @@ export const PER_TOOL_TURN_CAPS: Record<string, number> = {
   helkin_skill_catalog: 1,
   deep_research: 1,
   travel_geocode: 1,
-  web_search: 4,     // Keep shallow: try 2-3 language variants then pivot to web_fetch_page/web_interact
+  web_search: 6,     // 6 searches: enough to find locator URLs, then cap triggers pivot to web_fetch_page
   web_fetch_page: 8,
   web_interact: 4,
 };
 /** Default cap for any tool not explicitly listed. */
 export const DEFAULT_PER_TOOL_TURN_CAP = 8;
+
+/**
+ * Per-tool messages shown when the cap is exceeded.
+ * Tools that have a natural "next step" tool (e.g. web_search → web_fetch_page)
+ * should redirect here instead of saying "synthesize an answer."
+ */
+export const PER_TOOL_CAP_EXCEEDED_MESSAGES: Record<string, string> = {
+  web_search:
+    'web_search has reached its per-turn call limit. ' +
+    'Review the search results already returned and identify any dealer-locator, store-finder, ' +
+    'service-directory, or product-listing URLs. ' +
+    'Call web_fetch_page on the most relevant URL immediately. ' +
+    'If web_fetch_page returns empty/incomplete content (JavaScript SPA), escalate to web_interact. ' +
+    'Do NOT deliver a final answer until you have fetched at least one relevant URL.',
+};
 
 const COMPLEX_KEYWORDS = /\b(search\s+and\s+delete|for\s+each|batch|recursive)\b/i;
 const SIMPLE_PATTERNS = /^(show\s+my\s+inbox|list\b|get\b)/i;

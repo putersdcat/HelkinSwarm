@@ -25,7 +25,7 @@ import { buildSuccessfulFailoverNotices } from '../llm/foundryClient.js';
 import { recoverOperationalNoticesFromTrace } from './failoverNoticeRecovery.js';
 import type { PlanInput, PlanResult } from './planActivity.js';
 import { canonicalizeInput } from './inputCanonicalizer.js';
-import { computeToolBudget, DEFAULT_PER_TOOL_TURN_CAP, PER_TOOL_TURN_CAPS } from './toolBudgetScaler.js';
+import { computeToolBudget, DEFAULT_PER_TOOL_TURN_CAP, PER_TOOL_CAP_EXCEEDED_MESSAGES, PER_TOOL_TURN_CAPS } from './toolBudgetScaler.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
 import { buildModelOverrideDisclosure, formatTelemetryFooter } from './turnTelemetry.js';
@@ -1456,7 +1456,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             const cap = PER_TOOL_TURN_CAPS[call.name] ?? DEFAULT_PER_TOOL_TURN_CAP;
             return count >= cap;
           })
-          .map((call) => buildCapExceededToolResult(call));
+          .map((call) => buildCapExceededToolResult(call, PER_TOOL_CAP_EXCEEDED_MESSAGES[call.name]));
 
         const roundToolCallCountByName = new Map<string, number>();
         const filteredRoundCallsForDispatch = roundCallsForDispatch.filter((call) => {

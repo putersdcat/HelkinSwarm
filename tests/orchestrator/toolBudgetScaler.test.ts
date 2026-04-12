@@ -2,7 +2,7 @@
 // Issue: #153 discovery
 
 import { describe, it, expect } from 'vitest';
-import { computeToolBudget, PER_TOOL_TURN_CAPS, DEFAULT_PER_TOOL_TURN_CAP } from '../../src/orchestrator/toolBudgetScaler.js';
+import { computeToolBudget, PER_TOOL_TURN_CAPS, DEFAULT_PER_TOOL_TURN_CAP, PER_TOOL_CAP_EXCEEDED_MESSAGES } from '../../src/orchestrator/toolBudgetScaler.js';
 
 describe('toolBudgetScaler', () => {
   it('returns base budget for a normal message', () => {
@@ -75,8 +75,15 @@ describe('toolBudgetScaler', () => {
 
   it('PER_TOOL_TURN_CAPS restricts high-frequency tools', () => {
     expect(PER_TOOL_TURN_CAPS['helkin_current_datetime']).toBe(1);
-    expect(PER_TOOL_TURN_CAPS['web_search']).toBe(4);
+    expect(PER_TOOL_TURN_CAPS['web_search']).toBe(6);
     expect(PER_TOOL_TURN_CAPS['helkin_skill_search']).toBe(4);
+  });
+
+  it('PER_TOOL_CAP_EXCEEDED_MESSAGES redirects web_search to web_fetch_page', () => {
+    const msg = PER_TOOL_CAP_EXCEEDED_MESSAGES['web_search'];
+    expect(msg).toBeDefined();
+    expect(msg).toContain('web_fetch_page');
+    expect(msg).toContain('web_interact');
   });
 
   it('DEFAULT_PER_TOOL_TURN_CAP is permissive but finite', () => {

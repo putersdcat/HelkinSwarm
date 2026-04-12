@@ -179,21 +179,24 @@ export function buildDuplicateReplayedToolResult(
   };
 }
 
-export function buildCapExceededToolResult(call: GuardedToolCall): {
+export function buildCapExceededToolResult(
+  call: GuardedToolCall,
+  pivotMessage?: string,
+): {
   toolCallId: string;
   toolName: string;
   success: true;
   result: { status: 'cap-exceeded'; message: string };
   requiresExecutor: false;
 } {
+  const message =
+    pivotMessage ??
+    `${call.name} has reached its per-turn call limit. Stop calling it this turn and synthesize an answer from what you already have.`;
   return {
     toolCallId: call.id,
     toolName: call.name,
     success: true,
-    result: {
-      status: 'cap-exceeded',
-      message: `${call.name} has reached its per-turn call limit. Stop calling it this turn and synthesize an answer from what you already have.`,
-    },
+    result: { status: 'cap-exceeded', message },
     requiresExecutor: false,
   };
 }
