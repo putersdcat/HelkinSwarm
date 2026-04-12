@@ -6,6 +6,16 @@ const BASE_BUDGET = 10;
 const MIN_BUDGET = 5;
 const MAX_BUDGET = 50;
 
+/** Per-tool-name maximum calls across the full turn (initial + all follow-up rounds). */
+export const PER_TOOL_TURN_CAPS: Record<string, number> = {
+  helkin_current_datetime: 1,
+  helkin_skill_search: 4,
+  web_search: 6,
+  web_fetch_page: 8,
+};
+/** Default cap for any tool not explicitly listed. */
+export const DEFAULT_PER_TOOL_TURN_CAP = 8;
+
 const COMPLEX_KEYWORDS = /\b(search\s+and\s+delete|for\s+each|batch|recursive)\b/i;
 const SIMPLE_PATTERNS = /^(show\s+my\s+inbox|list\b|get\b)/i;
 

@@ -179,6 +179,25 @@ export function buildDuplicateReplayedToolResult(
   };
 }
 
+export function buildCapExceededToolResult(call: GuardedToolCall): {
+  toolCallId: string;
+  toolName: string;
+  success: true;
+  result: { status: 'cap-exceeded'; message: string };
+  requiresExecutor: false;
+} {
+  return {
+    toolCallId: call.id,
+    toolName: call.name,
+    success: true,
+    result: {
+      status: 'cap-exceeded',
+      message: `${call.name} has reached its per-turn call limit. Stop calling it this turn and synthesize an answer from what you already have.`,
+    },
+    requiresExecutor: false,
+  };
+}
+
 export function recordSuccessfulMutatingFingerprints(
   calls: readonly GuardedToolCall[],
   results: readonly GuardedToolResultLike[],

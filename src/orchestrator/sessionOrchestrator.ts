@@ -25,7 +25,7 @@ import { buildSuccessfulFailoverNotices } from '../llm/foundryClient.js';
 import { recoverOperationalNoticesFromTrace } from './failoverNoticeRecovery.js';
 import type { PlanInput, PlanResult } from './planActivity.js';
 import { canonicalizeInput } from './inputCanonicalizer.js';
-import { computeToolBudget } from './toolBudgetScaler.js';
+import { computeToolBudget, DEFAULT_PER_TOOL_TURN_CAP, PER_TOOL_TURN_CAPS } from './toolBudgetScaler.js';
 import type { DevLoopContext } from '../devloop/radioProtocol.js';
 import type { QuotedContext } from '../bot/quotedContext.js';
 import { buildModelOverrideDisclosure, formatTelemetryFooter } from './turnTelemetry.js';
@@ -44,6 +44,7 @@ import {
   sortToolCallsByPlan,
 } from './planExecutionHints.js';
 import {
+  buildCapExceededToolResult,
   buildDuplicateReplayedToolResult,
   buildDuplicateSuppressedToolResult,
   buildToolCallFingerprint,
@@ -887,6 +888,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     let completedPlanStepOrders: number[] = [];
     const successfulMutatingFingerprints = new Set<string>();
     const successfulReplayableReadOnlyResults = new Map<string, ToolDispatchResult['results'][number]>();
+    const cumulativeToolCallsByName = new Map<string, number>();
 
     // Compute adaptive tool budget (#139)
     const domains = new Set(
@@ -1158,6 +1160,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         (toolName) => toolRegistry.get(toolName),
         successfulReplayableReadOnlyResults,
       );
+      for (const call of filteredInitialToolCalls) {
+        cumulativeToolCallsByName.set(call.name, (cumulativeToolCallsByName.get(call.name) ?? 0) + 1);
+      }
       completedPlanStepOrders = collectCompletedPlanStepOrders(
         mergedResults.map((result) => ({ toolName: result.toolName, success: result.success })),
         planResult.steps,
@@ -1436,9 +1441,24 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           return priorResult ? [buildDuplicateReplayedToolResult(call, priorResult)] : [];
         });
 
+        const capExceededRoundResults = roundCallsForDispatch
+          .filter((call) => {
+            const count = cumulativeToolCallsByName.get(call.name) ?? 0;
+            const cap = PER_TOOL_TURN_CAPS[call.name] ?? DEFAULT_PER_TOOL_TURN_CAP;
+            return count >= cap;
+          })
+          .map((call) => buildCapExceededToolResult(call));
+
         const filteredRoundCallsForDispatch = roundCallsForDispatch.filter((call) => {
           const tool = toolRegistry.get(call.name);
           const fingerprint = buildToolCallFingerprint(call.name, call.arguments);
+
+          // Per-tool-per-turn call cap
+          const callCount = cumulativeToolCallsByName.get(call.name) ?? 0;
+          const toolCap = PER_TOOL_TURN_CAPS[call.name] ?? DEFAULT_PER_TOOL_TURN_CAP;
+          if (callCount >= toolCap) {
+            return false;
+          }
 
           if (isReplayableReadOnlyTool(tool) && successfulReplayableReadOnlyResults.has(fingerprint)) {
             return false;
@@ -1452,7 +1472,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         });
 
         if (filteredRoundCallsForDispatch.length === 0) {
-          const skippedRoundResults = [...suppressedRoundResults, ...replayedRoundResults];
+          const skippedRoundResults = [...suppressedRoundResults, ...replayedRoundResults, ...capExceededRoundResults];
           if (skippedRoundResults.length > 0) {
             additionalTurns.push({
               assistantContent: followUp.content,
@@ -1678,12 +1698,14 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         additionalTurns.push({
           assistantContent: followUp.content,
           assistantToolCalls: filteredRoundCallsForDispatch,
-          toolResults: [...suppressedRoundResults, ...roundResults.results],
+          toolResults: [...suppressedRoundResults, ...capExceededRoundResults, ...roundResults.results],
         });
 
         // Accumulate into overall tool results for telemetry
         toolResults.results.push(...suppressedRoundResults);
         toolResults.totalCalls += suppressedRoundResults.length;
+        toolResults.results.push(...capExceededRoundResults);
+        toolResults.totalCalls += capExceededRoundResults.length;
         toolResults.results.push(...roundResults.results);
         toolResults.totalCalls += roundResults.results.length;
         scopedTokenMintCount += roundResults.results.filter((result) => result.scopedTokenMinted).length;
@@ -1699,6 +1721,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           (toolName) => toolRegistry.get(toolName),
           successfulReplayableReadOnlyResults,
         );
+        for (const call of filteredRoundCallsForDispatch) {
+          cumulativeToolCallsByName.set(call.name, (cumulativeToolCallsByName.get(call.name) ?? 0) + 1);
+        }
 
         const shouldForceFinalTextResponse = highestRoundRisk === 'high'
           && roundResults.results.some((result) => result.success);

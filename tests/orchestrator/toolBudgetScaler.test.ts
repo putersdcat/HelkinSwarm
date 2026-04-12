@@ -2,7 +2,7 @@
 // Issue: #153 discovery
 
 import { describe, it, expect } from 'vitest';
-import { computeToolBudget } from '../../src/orchestrator/toolBudgetScaler.js';
+import { computeToolBudget, PER_TOOL_TURN_CAPS, DEFAULT_PER_TOOL_TURN_CAP } from '../../src/orchestrator/toolBudgetScaler.js';
 
 describe('toolBudgetScaler', () => {
   it('returns base budget for a normal message', () => {
@@ -71,5 +71,16 @@ describe('toolBudgetScaler', () => {
       domainCount: 0,
     });
     expect(result.budget).toBeGreaterThanOrEqual(5);
+  });
+
+  it('PER_TOOL_TURN_CAPS restricts high-frequency tools', () => {
+    expect(PER_TOOL_TURN_CAPS['helkin_current_datetime']).toBe(1);
+    expect(PER_TOOL_TURN_CAPS['web_search']).toBe(6);
+    expect(PER_TOOL_TURN_CAPS['helkin_skill_search']).toBe(4);
+  });
+
+  it('DEFAULT_PER_TOOL_TURN_CAP is permissive but finite', () => {
+    expect(DEFAULT_PER_TOOL_TURN_CAP).toBeGreaterThanOrEqual(5);
+    expect(DEFAULT_PER_TOOL_TURN_CAP).toBeLessThanOrEqual(20);
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildCapExceededToolResult,
   buildDuplicateReplayedToolResult,
   buildToolCallFingerprint,
   isReplayableReadOnlyTool,
@@ -121,5 +122,16 @@ describe('toolCallGuards', () => {
       result: [{ id: 'm1', subject: 'Hello' }],
       requiresExecutor: false,
     });
+  });
+
+  it('builds a cap-exceeded result for a call that hit its per-turn limit', () => {
+    const result = buildCapExceededToolResult({ id: 'c1', name: 'web_search', arguments: '{"query":"fox suspension Munich"}' });
+
+    expect(result.toolCallId).toBe('c1');
+    expect(result.toolName).toBe('web_search');
+    expect(result.success).toBe(true);
+    expect(result.result.status).toBe('cap-exceeded');
+    expect(result.result.message).toContain('web_search');
+    expect(result.requiresExecutor).toBe(false);
   });
 });

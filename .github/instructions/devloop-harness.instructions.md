@@ -82,4 +82,45 @@ await teamsTestHarness.fullProbe({
 - ❌ Do NOT Declare a fix verified without running at least one full TIK-TOK cycle
 - ❌ Do NOT Skip correlation tagging when DevLoop messages are active
 
+---
+
+## Playwright MCP — Active Browser Agent (April 2026+)
+
+The IDE-side Playwright MCP plugin is enabled with the operator's **active authenticated browser session**. The browser carries real OAuth tokens including Global Admin for Entra ID and the Teams app authenticated as the operator.
+
+### What this enables (agent-actionable without waiting for user)
+
+| Task | How |
+|------|-----|
+| OAuth sign-in card click (e.g. `/link entra`, `/link outlook`) | Navigate to Teams Web, find the Hero card, `click` the button |
+| Entra admin consent for new Graph permissions | Navigate `https://entra.microsoft.com` → App registrations → Grant admin consent |
+| Azure Portal resource inspection and minor config | Navigate `https://portal.azure.com` |
+| Azure Bot Service OAuth connection verification | Navigate Azure Portal → Bot Service → Configuration → OAuth Connections |
+| App registration permission management | Navigate Entra admin center → App registrations → API permissions |
+
+### What this does NOT enable (still prohibited)
+
+- ❌ Typing into the Teams message compose box — use `teams_test_full_probe` exclusively
+- ❌ Clicking the Teams "Send" button — use `teams_test_full_probe` exclusively
+- ❌ Any action that modifies infrastructure outside of Bicep/GitOps — file an infra issue instead
+- ❌ Any destructive portal actions (delete, force close, etc.) — confirm with user first
+
+### Standard auth-unblock workflow
+
+When an issue is blocked on OAuth consent or admin portal action:
+1. Use `teams_test_full_probe` to trigger the bot to send a sign-in card (e.g. send `/link entra`)
+2. Use Playwright to navigate to Teams Web (`https://teams.microsoft.com`) and take a snapshot
+3. Find the sign-in card and `click` the auth button
+4. Complete the OAuth flow (the browser has the user's active session — consent auto-completes)
+5. If a 6-digit code appears in the browser, copy it and send it via `teams_test_full_probe`
+6. Validate the tool that previously required the token with a follow-up probe
+
+### Entra admin consent workflow
+
+When a new skill needs a Graph permission that requires admin consent:
+1. Navigate `https://entra.microsoft.com` → Applications → App registrations → find the bot App ID
+2. → API permissions → add the required permission → "Grant admin consent for PUTERSDCAT-CORP"
+3. Confirm the grant is shown as "Granted for PUTERSDCAT-CORP"
+4. Then proceed with OAuth re-link if a delegated token refresh is also needed
+
 *We are the bridge.*
