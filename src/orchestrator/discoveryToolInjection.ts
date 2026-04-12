@@ -773,6 +773,14 @@ export function deriveContextAwareInitialToolSchemas(
   const explicitToolName = findExplicitToolNameMention(userMessage.toLowerCase(), allToolNames);
   const hasProofExpansion = isExecutionProofPrompt(userMessage);
 
+  // First-order web tools are post-trained capabilities that belong in every initial
+  // callable surface — the model must never need a discovery step to use web_search.
+  for (const name of FIRST_ORDER_WEB_TOOLS) {
+    if (allToolNames.has(name)) {
+      expandedNames.add(name);
+    }
+  }
+
   if (parseDeterministicOutlookListIntent(userMessage) && allToolNames.has('outlook_list_emails')) {
     expandedNames.add('outlook_list_emails');
   }
