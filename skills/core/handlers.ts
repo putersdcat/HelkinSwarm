@@ -223,6 +223,13 @@ export const helkin_skill_search: ToolHandler = async (args) => {
     });
 
     // ---------------------------------------------------------------------------
+    // When local search returns nothing, compute enriched zero-result guidance
+    // so the LLM can reason about reformulation rather than repeating the same
+    // failing query. Satisfies issue #629.
+    // ---------------------------------------------------------------------------
+    const queryTokens = query.toLowerCase().split(/[^a-z0-9]+/).filter((t) => t.length > 1);
+
+    // ---------------------------------------------------------------------------
     // Registry fallback: when no installed skills match, attempt MCP Registry
     // candidate discovery as a second-hop. Candidates are clearly labeled
     // external and never auto-activated. Satisfies issue #482.
@@ -318,10 +325,36 @@ export const helkin_skill_search: ToolHandler = async (args) => {
           matchReasons: hit.matchReasons,
         };
       }),
-      ...(registryFallbackCandidates !== undefined && registryFallbackCandidates.length > 0 && {
+      // Always surface zero_result_guidance when local search produced nothing (#629).
+      // This replaces the opaque local_miss flag with actionable LLM-readable context:
+      // query tokens, why they failed, reformulation examples, and all installed domains.
+      ...(localMiss && {
         local_miss: true,
+        zero_result_guidance: {
+          query_tokens_searched: queryTokens,
+          what_happened: `None of the tokens [${queryTokens.join(', ')}] matched any installed skill's discoveryTerms, discoveryHints, or tool descriptions. The local skill index uses token-based exact substring matching.`,
+          how_to_recover: [
+            'Reformulate using a direct capability category name rather than the original domain words.',
+            'For public internet / web lookups or local business searches → try: command=search query="web search"',
+            'For email, inbox, or calendar → try: command=search query="outlook email"',
+            'For GitHub repos, issues, or pull requests → try: command=search query="github"',
+            'For deep research or multi-angle web research → try: command=search query="research"',
+            'For weather or forecast → try: command=search query="weather"',
+            'For math or calculations → try: command=search query="math"',
+            'For language translation → try: command=search query="translate"',
+            'Alternatively, use command=list_domains to see every installed skill domain.',
+            'Do NOT repeat the same query tokens — change to the capability type you actually need.',
+          ],
+          installed_domains: getSkillDiscoveryIndex().skills.map((s) => ({
+            domain: s.domain,
+            displayName: s.displayName,
+            operationalState: s.operationalState,
+          })),
+        },
+      }),
+      ...(registryFallbackCandidates !== undefined && registryFallbackCandidates.length > 0 && {
         registry_fallback_candidates: registryFallbackCandidates,
-        registry_fallback_note: 'No installed skills matched. These are external MCP candidates — not installed skills. They require explicit onboarding via helkin_mcp_forge before use.',
+        registry_fallback_note: 'These are EXTERNAL MCP candidates — not installed. They require explicit onboarding via helkin_mcp_forge before use.',
       }),
     };
   }

@@ -18,7 +18,7 @@ import { hasOutboundArtifactClaim } from '../bot/conversationStore.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { recordOrchestratorStage, recordSubstage } from '../observability/orchestratorStageHealth.js';
 import { parseBooleanEnv } from '../config/booleanEnv.js';
-import { getDiscoveryFirstToolDefinitions } from './discoveryToolInjection.js';
+import { getDiscoveryFirstToolDefinitions, buildCapabilityMapFragment } from './discoveryToolInjection.js';
 import { buildAutobiographicalPromptFragment } from './autobiographicalReflex.js';
 import { buildInboundAttachmentPromptBlock } from '../bot/inboundAttachmentIngestion.js';
 import type { RuntimeAssetReference } from '../integrations/runtimeAssetStore.js';
@@ -153,6 +153,9 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
     ? `Initial tool surface: ${tools.map((t) => `${t.name} (${t.description})`).join('; ')}. Use helkin_skill_search first when you need non-core skills or a narrower tool subset.`
     : '';
 
+  mark('post-tools');
+  const capabilityMap = buildCapabilityMapFragment();
+
   // Inject model identity so the LLM knows what it's running on (#131)
   const routing = getModelRouting();
   const modelIdentity = `You are running on model deployment: ${routing.deploymentName} (lane: ${routing.laneName}, primary: ${routing.lane.primary}, secondary: ${routing.lane.secondary}).`;
@@ -229,6 +232,7 @@ export async function buildPrompt(input: BuildPromptInput): Promise<PromptResult
     state.euResidencyMode ? 'EU Residency Mode is ACTIVE — use only EU-compliant models.' : '',
     state.summary ? `Previous conversation summary:\n${state.summary}` : '',
     inboundAttachmentBlock,
+    capabilityMap,
     toolSummary,
   ]
     .filter(Boolean)
