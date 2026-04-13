@@ -203,13 +203,23 @@ jobs:
             exit 1
           fi
 
-      - name: Publish public user-map for runtime stamp resolution
+      - name: Write user-map from secret
+        env:
+          HELKIN_USER_MAP: ${{ secrets.HELKIN_USER_MAP }}
         run: |
-          if [ ! -f "config/user-map.json" ]; then
-            echo "❌ config/user-map.json not found"
+          if [ -n "${HELKIN_USER_MAP}" ]; then
+            echo "${HELKIN_USER_MAP}" > config/user-map.json
+            echo "✅ Wrote config/user-map.json from HELKIN_USER_MAP secret"
+          elif [ -f "config/user-map.json" ]; then
+            echo "✅ Using existing config/user-map.json (local run or pre-populated)"
+          else
+            echo "❌ HELKIN_USER_MAP secret is not set and config/user-map.json does not exist."
+            echo "   Set HELKIN_USER_MAP as a repository secret with the full user-map JSON blob."
             exit 1
           fi
 
+      - name: Publish public user-map for runtime stamp resolution
+        run: |
           jq '{ version, users: (.users | with_entries(.value |= { alias, endpoint, enabled })) }' \
             config/user-map.json > tabs/user-map.json
 

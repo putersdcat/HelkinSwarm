@@ -18,7 +18,6 @@ on:
       - 'src/config/envConfig.ts'
       - 'src/config/version.ts'
       - 'src/observability/messagePathHealth.ts'
-      - 'config/user-map.json'
       - 'infra/main-router.bicep'
       - 'Dockerfile.router'
       - 'host.json'

@@ -26,8 +26,24 @@ export async function loadUserMap(): Promise<UserMap> {
     return cachedUserMap;
   }
 
-  const mapPath = join(process.cwd(), 'config', 'user-map.json');
-  const raw = await readFile(mapPath, 'utf-8');
+  // Prefer env-injected user map (CI/production path — avoids committed PII).
+  // HELKIN_USER_MAP must be the full JSON blob matching UserMapSchema.
+  const envMapJson = process.env['HELKIN_USER_MAP'];
+  let raw: string;
+  if (envMapJson) {
+    raw = envMapJson;
+  } else {
+    // Fall back to local file — config/user-map.json is gitignored for developers.
+    // config/user-map.example.json is the committed safe template.
+    const localPath = join(process.cwd(), 'config', 'user-map.json');
+    const examplePath = join(process.cwd(), 'config', 'user-map.example.json');
+    try {
+      raw = await readFile(localPath, 'utf-8');
+    } catch {
+      raw = await readFile(examplePath, 'utf-8');
+    }
+  }
+
   cachedUserMap = UserMapSchema.parse(JSON.parse(raw));
   lastLoadTime = now;
   return cachedUserMap;
