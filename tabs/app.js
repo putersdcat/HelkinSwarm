@@ -900,18 +900,21 @@
       { key: "costs", label: "Costs" },
       { key: "config", label: "Config" },
       { key: "sessions", label: "Sessions" },
+      { key: "swarm", label: "Swarm" },
       { key: "dev", label: "Dev" }
     ];
 
-    var dataP = Promise.allSettled([apiCall("dashboard"), apiCall("dev-console"), apiCall("costs")]).then(function (results) {
+    var dataP = Promise.allSettled([apiCall("dashboard"), apiCall("dev-console"), apiCall("costs"), apiCall("swarm-activity")]).then(function (results) {
       var dash = toSettledPayload(results[0], 'Control Center dashboard');
       var dev = toSettledPayload(results[1], '');
       var costs = toSettledPayload(results[2], '');
+      var swarm = toSettledPayload(results[3], '');
       return {
         dash: dash.value,
         dev: dev.value || {},
         costs: costs.value || { status: 'error', message: costs.error || 'Cost data unavailable.' },
-        _warnings: [dev.error, costs.error].filter(Boolean)
+        swarm: swarm.value || { executions: [], count: 0 },
+        _warnings: [dev.error, costs.error, swarm.error].filter(Boolean)
       };
     });
 
@@ -1037,6 +1040,38 @@
             '<p class="empty-state">No sessions found.</p>') +
           '</div>';
       },
+      swarm: function (d) {
+        var execs = (d.swarm && d.swarm.executions) || [];
+        var totalRuns = execs.length;
+        var successRuns = execs.filter(function (e) { return e.success; }).length;
+        var totalTokens = execs.reduce(function (sum, e) { return sum + (e.totalTokensUsed || 0); }, 0);
+
+        return '<div class="kpi-row">' +
+          kpiTile("Swarm Runs", totalRuns) +
+          kpiTile("Successful", successRuns + " / " + totalRuns, totalRuns > 0 && successRuns < totalRuns ? "kpi-warn" : "") +
+          kpiTile("Total Tokens", totalTokens.toLocaleString()) +
+          '</div>' +
+          '<div class="card"><h2>Recent Swarm Executions</h2>' +
+          (execs.length > 0 ?
+            '<table><tr><th>Time</th><th>Query</th><th>Agents</th><th>Tokens</th><th>Duration</th><th>Status</th><th></th></tr>' +
+            execs.map(function (e) {
+              var st = e.success ? "ok" : "error";
+              var query = (e.userQuery || "").length > 80 ? e.userQuery.substring(0, 80) + "\u2026" : (e.userQuery || "\u2014");
+              var dur = e.executionDurationMs ? (e.executionDurationMs / 1000).toFixed(1) + "s" : "\u2014";
+              return '<tr>' +
+                '<td>' + fmtTime(e.executedAt) + '</td>' +
+                '<td title="' + esc(e.userQuery || "") + '">' + esc(query) + '</td>' +
+                '<td>' + (e.agentCount || 0) + '</td>' +
+                '<td>' + (e.totalTokensUsed || 0).toLocaleString() + '</td>' +
+                '<td>' + dur + '</td>' +
+                '<td><span class="badge badge-' + st + '">' + (e.success ? "OK" : "FAIL") + '</span></td>' +
+                '<td><button class="cmd-btn swarm-detail-btn" data-swarm-id="' + esc(e.swarmId) + '">Details</button></td>' +
+                '</tr>';
+            }).join("") + '</table>' :
+            '<p class="empty-state">No swarm executions recorded yet.</p>') +
+          '</div>' +
+          '<div id="swarm-detail-panel"></div>';
+      },
       dev: function (d) {
         var hooks = (d.dev.hooks && d.dev.hooks.list) || [];
         var mem = d.dev.memory || { vaults: [] };
@@ -1134,6 +1169,78 @@
           loadRecentTraces();
           wireTraceFilters();
           wireCorrelationSearch();
+        }
+        if (key === "swarm") {
+          container.querySelectorAll(".swarm-detail-btn").forEach(function (btn) {
+            btn.addEventListener("click", function () {
+              var swarmId = btn.getAttribute("data-swarm-id");
+              var panel = document.getElementById("swarm-detail-panel");
+              if (!panel) return;
+              panel.innerHTML = '<p class="empty-state">Loading swarm details\u2026</p>';
+              apiCall("swarm-activity?swarmId=" + encodeURIComponent(swarmId))
+                .then(function (detail) {
+                  var agents = detail.agentResults || [];
+                  var transcript = detail.chatroomTranscript || [];
+                  var cost = detail.swarmCost || {};
+
+                  var html = '<div class="card"><h2>Swarm Detail \u2014 ' + esc(detail.swarmId || swarmId) + '</h2>' +
+                    '<p><strong>Query:</strong> ' + esc(detail.userQuery || "\u2014") + '</p>' +
+                    '<p><strong>Correlation:</strong> <code>' + esc(detail.correlationId || "") + '</code></p>' +
+                    '<p><strong>Duration:</strong> ' + ((detail.executionDurationMs || 0) / 1000).toFixed(1) + 's' +
+                    ' \u00B7 <strong>Tokens:</strong> ' + (detail.totalTokensUsed || 0).toLocaleString() +
+                    ' \u00B7 <strong>Status:</strong> <span class="badge badge-' + (detail.success ? "ok" : "error") + '">' + (detail.success ? "OK" : "FAIL") + '</span></p></div>';
+
+                  // Agent breakdown
+                  html += '<div class="card"><h2>Agent Breakdown</h2>' +
+                    '<table><tr><th>Agent</th><th>Model</th><th>Tokens</th><th>Duration</th><th>Rounds</th><th>Tools</th><th>Status</th></tr>' +
+                    agents.map(function (a) {
+                      var ast = a.success ? "ok" : "error";
+                      return '<tr><td><strong>' + esc(a.agentName) + '</strong></td>' +
+                        '<td><code>' + esc(a.model || "\u2014") + '</code></td>' +
+                        '<td>' + (a.tokensUsed || 0).toLocaleString() + '</td>' +
+                        '<td>' + ((a.durationMs || 0) / 1000).toFixed(1) + 's</td>' +
+                        '<td>' + (a.roundsUsed || 0) + '</td>' +
+                        '<td>' + esc((a.toolsUsed || []).join(", ") || "\u2014") + '</td>' +
+                        '<td><span class="badge badge-' + ast + '">' + (a.success ? "\u2713" : "\u2717") + '</span></td></tr>';
+                    }).join("") + '</table></div>';
+
+                  // Cost breakdown
+                  if (cost.totalTokens) {
+                    html += '<div class="card"><h2>Cost Breakdown</h2>' +
+                      '<table><tr><th>Component</th><th>Tokens</th></tr>' +
+                      '<tr><td>Decomposer</td><td>' + (cost.decomposerTokens || 0).toLocaleString() + '</td></tr>' +
+                      '<tr><td>Workers</td><td>' + (cost.workerTokens || 0).toLocaleString() + '</td></tr>' +
+                      '<tr><td>Leader</td><td>' + (cost.leaderTokens || 0).toLocaleString() + '</td></tr>' +
+                      '<tr><td><strong>Total</strong></td><td><strong>' + (cost.totalTokens || 0).toLocaleString() + '</strong></td></tr>' +
+                      '</table></div>';
+                  }
+
+                  // Chatroom transcript
+                  if (transcript.length > 0) {
+                    html += '<div class="card"><h2>Chatroom Transcript (' + transcript.length + ' messages)</h2>' +
+                      '<table><tr><th>From</th><th>To</th><th>Type</th><th>Content</th></tr>' +
+                      transcript.map(function (m) {
+                        var content = (m.content || "").length > 200 ? m.content.substring(0, 200) + "\u2026" : (m.content || "");
+                        return '<tr><td><strong>' + esc(m.from || "\u2014") + '</strong></td>' +
+                          '<td>' + esc(m.to || "all") + '</td>' +
+                          '<td><span class="badge">' + esc(m.contentType || "text") + '</span></td>' +
+                          '<td><pre style="white-space:pre-wrap;max-width:600px;margin:0">' + esc(content) + '</pre></td></tr>';
+                      }).join("") + '</table></div>';
+                  }
+
+                  // Leader synthesis
+                  if (detail.leaderSynthesis) {
+                    html += '<div class="card"><h2>Leader Synthesis</h2>' +
+                      '<pre style="white-space:pre-wrap">' + esc(detail.leaderSynthesis) + '</pre></div>';
+                  }
+
+                  panel.innerHTML = html;
+                })
+                .catch(function (err) {
+                  panel.innerHTML = '<p class="error-msg">Failed to load swarm details: ' + esc(err.message) + '</p>';
+                });
+            });
+          });
         }
       }
     });

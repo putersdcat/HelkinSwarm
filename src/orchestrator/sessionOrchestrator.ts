@@ -25,6 +25,7 @@ import { buildSuccessfulFailoverNotices } from '../llm/foundryClient.js';
 import { recoverOperationalNoticesFromTrace } from './failoverNoticeRecovery.js';
 import type { PlanInput, PlanResult } from './planActivity.js';
 import type { SwarmDecomposerInput, SwarmDecomposerResult, SwarmOrchestratorInput, SwarmOrchestratorResult } from './swarm/swarmTypes.js';
+import type { PersistSwarmResultInput } from './swarm/persistSwarmResultActivity.js';
 import { isSwarmEligible } from './swarm/swarmTypes.js';
 import { getExecutableToolNames } from '../capabilities/capabilityLoader.js';
 import { canonicalizeInput } from './inputCanonicalizer.js';
@@ -845,6 +846,21 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
               .join(', '),
           },
         });
+      }
+
+      // Persist swarm execution data for the Swarm Activity viewer (#635)
+      if (swarmWinner !== swarmTimer) {
+        const persistInput: PersistSwarmResultInput = {
+          userId: input.state.userId,
+          correlationId,
+          swarmId: decomposerResult.plan!.swarmId,
+          userQuery: input.userMessage,
+          decomposerTokens: decomposerResult.tokensUsed,
+          decomposerModel: decomposerResult.decomposerModel,
+          executionDurationMs: context.df.currentUtcDateTime.getTime() - turnStartTime,
+          result: swarmTask.result as SwarmOrchestratorResult,
+        };
+        yield context.df.callActivity('persistSwarmResultActivity', persistInput);
       }
 
       // Append telemetry footer to swarm response

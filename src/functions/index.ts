@@ -34,6 +34,7 @@ import './tabSessions.js';
 import './tabDevConsole.js';
 import './tabSkills.js';
 import './tabBootstrapObo.js';
+import './tabSwarmActivity.js';
 
 // Orchestrator + activity registrations (Phase 2)
 import '../orchestrator/overseer.js';
@@ -79,6 +80,7 @@ import '../orchestrator/swarm/swarmDecomposerActivity.js';
 import '../orchestrator/swarm/swarmWorkerActivity.js';
 import '../orchestrator/swarm/swarmLeaderActivity.js';
 import '../orchestrator/swarm/swarmMemoryCommitActivity.js';
+import '../orchestrator/swarm/persistSwarmResultActivity.js';
 import '../orchestrator/swarm/swarmOrchestrator.js';
 
 // Capability loader — scan skills/ directory and register tool handlers
