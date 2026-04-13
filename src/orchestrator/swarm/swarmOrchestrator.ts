@@ -49,6 +49,8 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
   // -----------------------------------------------------------------------
   const workerTasks: df.Task[] = [];
   const workerTimers: df.TimerTask[] = [];
+  // Save inputs so the second-pass block can reuse them for follow-up activities (#644 Slice 1)
+  const savedWorkerInputs: SwarmWorkerInput[] = [];
 
   for (const agent of plan.agents) {
     const workerInput: SwarmWorkerInput = {
@@ -74,6 +76,7 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
     workerTimers.push(context.df.createTimer(
       new Date(context.df.currentUtcDateTime.getTime() + SWARM_WORKER_TIMEOUT_MS),
     ));
+    savedWorkerInputs.push(workerInput);
   }
 
   // -----------------------------------------------------------------------
@@ -127,6 +130,110 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
         correlationId,
         conversationReference: input.conversationReference,
       });
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // 3.5. Second-pass: route inbound messages back to each agent (#644 Slice 1)
+  // Workers run as Durable Activities (no entity access), so they cannot receive
+  // peer messages mid-execution. After all workers finish, route collected
+  // cross-agent messages to their recipients for a brief 1-2 round refinement
+  // pass before Leader synthesis.
+  // Only agents with inbound messages get a second-pass activity.
+  // -----------------------------------------------------------------------
+  const SECOND_PASS_TIMEOUT_MS = 20_000;
+  const secondPassTasks: df.Task[] = [];
+  const secondPassTimers: df.TimerTask[] = [];
+
+  for (let i = 0; i < plan.agents.length; i++) {
+    const agent = plan.agents[i];
+    const inbound = allChatroomMessages.filter(msg =>
+      typeof msg.to === 'string'
+        ? msg.to === agent.name || msg.to === 'All'
+        : (msg.to as string[]).includes(agent.name) || (msg.to as string[]).includes('All'),
+    );
+    if (inbound.length === 0) continue;
+
+    const secondPassInput: SwarmWorkerInput = {
+      ...savedWorkerInputs[i],
+      task: `Review messages your teammates sent you and send any additional insights or corrections to Helkin. Your completed assignment was: ${agent.task}`,
+      inboundMessages: inbound,
+      maxRounds: Math.min(2, plan.maxRoundsPerAgent),
+      // Token budget not tracked for second pass — it's a brief refinement only
+      tokenBudget: undefined,
+    };
+
+    secondPassTasks.push(context.df.callActivity('swarmWorkerActivity', secondPassInput));
+    secondPassTimers.push(context.df.createTimer(
+      new Date(context.df.currentUtcDateTime.getTime() + SECOND_PASS_TIMEOUT_MS),
+    ));
+  }
+
+  // Fan-in second-pass activities (activities started in parallel above)
+  for (let i = 0; i < secondPassTasks.length; i++) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions generator
+    const winner = yield context.df.Task.any([secondPassTasks[i], secondPassTimers[i]]) as df.Task;
+    secondPassTimers[i].cancel();
+    if (winner === secondPassTasks[i]) {
+      const result = secondPassTasks[i].result as SwarmWorkerResult & {
+        _pendingChatroomMessages?: ChatroomMessage[];
+      };
+      // Only collect new messages for Leader's transcript — don't pollute workerResults
+      if (result._pendingChatroomMessages) {
+        allChatroomMessages.push(...result._pendingChatroomMessages);
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // 3.5. Second-pass: route inbound messages back to each agent (#644 Slice 1)
+  // Workers run as Durable Activities (no entity access), so they cannot receive
+  // peer messages mid-execution. After all workers finish, route collected
+  // cross-agent messages to their recipients for a brief 1-2 round refinement
+  // pass before Leader synthesis.
+  // Only agents with inbound messages get a second-pass activity.
+  // -----------------------------------------------------------------------
+  const SECOND_PASS_TIMEOUT_MS = 20_000;
+  const secondPassTasks: df.Task[] = [];
+  const secondPassTimers: df.TimerTask[] = [];
+
+  for (let i = 0; i < plan.agents.length; i++) {
+    const agent = plan.agents[i];
+    const inbound = allChatroomMessages.filter(msg =>
+      typeof msg.to === 'string'
+        ? msg.to === agent.name || msg.to === 'All'
+        : (msg.to as string[]).includes(agent.name) || (msg.to as string[]).includes('All'),
+    );
+    if (inbound.length === 0) continue;
+
+    const secondPassInput: SwarmWorkerInput = {
+      ...savedWorkerInputs[i],
+      task: `Review messages your teammates sent you and send any additional insights or corrections to Helkin. Your completed assignment was: ${agent.task}`,
+      inboundMessages: inbound,
+      maxRounds: Math.min(2, plan.maxRoundsPerAgent),
+      // Token budget not tracked for second pass — it's a brief refinement only
+      tokenBudget: undefined,
+    };
+
+    secondPassTasks.push(context.df.callActivity('swarmWorkerActivity', secondPassInput));
+    secondPassTimers.push(context.df.createTimer(
+      new Date(context.df.currentUtcDateTime.getTime() + SECOND_PASS_TIMEOUT_MS),
+    ));
+  }
+
+  // Fan-in second-pass activities (activities started in parallel above)
+  for (let i = 0; i < secondPassTasks.length; i++) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions generator
+    const winner = yield context.df.Task.any([secondPassTasks[i], secondPassTimers[i]]) as df.Task;
+    secondPassTimers[i].cancel();
+    if (winner === secondPassTasks[i]) {
+      const result = secondPassTasks[i].result as SwarmWorkerResult & {
+        _pendingChatroomMessages?: ChatroomMessage[];
+      };
+      // Only collect new messages for Leader's transcript — don't pollute workerResults
+      if (result._pendingChatroomMessages) {
+        allChatroomMessages.push(...result._pendingChatroomMessages);
+      }
     }
   }
 

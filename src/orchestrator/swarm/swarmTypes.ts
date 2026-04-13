@@ -133,6 +133,9 @@ export interface SwarmWorkerInput {
   modelOverride?: string;
   /** Optional alternate persona file stem for this agent (#648). */
   personaFile?: string;
+  /** Inbound messages from teammate agents — injected as context at the start of execution.
+   *  Populated by the orchestrator for second-pass activities only (#644 Slice 1). */
+  inboundMessages?: ChatroomMessage[];
 }
 
 export interface SwarmWorkerResult {

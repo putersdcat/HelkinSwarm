@@ -22,6 +22,19 @@ const CHATROOM_SEND_TOOL = 'chatroom_send';
 const CONVERSATION_SEARCH_TOOL = 'conversation_search';
 
 /**
+ * Build the initial user turn, optionally prefixed with inbound teammate messages (#644 Slice 1).
+ * Inbound messages are injected when this is a second-pass refinement activity.
+ */
+function buildInitialUserTurn(task: string, inboundMessages?: ChatroomMessage[]): string {
+  const base = `Execute your task now. Your assignment: ${task}`;
+  if (!inboundMessages?.length) return base;
+  const teamContext = inboundMessages
+    .map(m => `**From ${m.from}** (to ${typeof m.to === 'string' ? m.to : m.to.join(', ')}): ${m.content}`)
+    .join('\n\n');
+  return `${base}\n\n[TEAM MESSAGES — RECEIVED FROM TEAMMATES]\n${teamContext}\n[END TEAM MESSAGES]\n\nReview these teammate messages and send any additional insights or corrections to Helkin.`;
+}
+
+/**
  * Build the tool definitions array for a worker agent.
  * Includes only assigned tools + chatroom_send (virtual) + conversation_search (auto).
  */
@@ -174,7 +187,10 @@ df.app.activity('swarmWorkerActivity', {
     // Conversation history for this agent's isolated session
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: `Execute your task now. Your assignment: ${input.task}` },
+      {
+        role: 'user',
+        content: buildInitialUserTurn(input.task, input.inboundMessages),
+      },
     ];
 
     let totalTokens = 0;
