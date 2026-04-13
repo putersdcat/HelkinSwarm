@@ -78,7 +78,7 @@ Each domain folder has exactly one `manifest.json` and a `tools/` subfolder.
 | `linkConfig` | object | OAuth connection config (connectionName, displayName, description) |
 | `dependencies` | string[] | Required skills (install blocked if missing) |
 | `requiredPermissions` | string[] | Entra/Graph delegated permissions needed |
-| `externalAccountsNeeded` | string[] | Third-party accounts required |
+| `externalAccountsNeeded` | object[] | Third-party accounts required (structured entries with `description`, `envVarName?`, `satisfiedBy?`, `required?`) |
 | `softOnboarding` | object | First-run personality prefs (preferredAddress, responseStyle) |
 | `maintenanceTasks` | array | Scheduled/event-driven tasks (key rotation, credential refresh) |
 
@@ -92,6 +92,18 @@ Each domain folder has exactly one `manifest.json` and a `tools/` subfolder.
 | `requiresConfirmation` | `true \| false` | Forces Adaptive Card even in `full-destructive` mode |
 | `externalAutomationCapabilities` | array | Declares native automation hooks for durable hooks (0h) |
 | `longTermMemorySchema` | array of vault field names | Declares skill-specific memory vaults (0i) |
+
+## Onboarding Honesty Rules (#641, #649)
+
+A discoverable skill must never show as "operational" when it silently fails at runtime. The assessor in `skillOperationalState.ts` classifies skills based on manifest truthfulness:
+
+- `automatic-agentic` + all prerequisites satisfied → `operational`
+- `automatic-agentic` + unsatisfied env vars or `requiredPermissions` → `operator-setup-required`
+- `post-install-link` or `both` → `action-required`
+- `operator/backend-config-required` → `operator-setup-required`
+- `satisfiedBy: "oauth-link"` accounts are satisfied by user OAuth flow, not env vars — do not count as unsatisfied
+
+**Every `externalAccountsNeeded` entry MUST include `satisfiedBy`** so the assessor knows how to check satisfaction.
 
 ## SkillForge Landing Zone
 - New AI-generated skills land in `skills/custom/`

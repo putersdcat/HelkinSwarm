@@ -29,9 +29,24 @@ Every skill **must** have a JSON manifest at `skills/<domain>/manifest.json` con
 |-------|------|-------------|
 | `dependencies` | string[] | Required skills (install blocked if missing) |
 | `requiredPermissions` | string[] | Entra/Graph delegated permissions |
-| `externalAccountsNeeded` | string[] | Third-party accounts required |
+| `externalAccountsNeeded` | object[] | Third-party accounts required (structured entries, see below) |
 | `softOnboarding` | object | First-run personality prefs (address style, response length) |
 | `maintenanceTasks` | array | Scheduled/event-driven tasks (key rotation, credential refresh) |
+
+### externalAccountsNeeded Structured Entries (#624)
+
+Each entry in `externalAccountsNeeded` is an object:
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `description` | yes | Human-readable description of the account/key |
+| `envVarName` | no | Env var name for preflight resolution (operator-kv, bicep-provisioned) |
+| `kvSecretName` | no | Key Vault secret name |
+| `howToObtain` | no | Instructions for obtaining the credential |
+| `satisfiedBy` | no | How this account is satisfied: `"operator-kv"`, `"user-vault"`, `"bicep-provisioned"`, `"oauth-link"` |
+| `required` | no | When `false`, skill degrades gracefully — stays operational without this account |
+
+**Honesty rule:** every entry MUST include `satisfiedBy` so the operational state assessor knows how to check satisfaction. Entries with `satisfiedBy: "oauth-link"` are satisfied by the user completing the OAuth flow, not by env var presence.
 
 ## Tool Definition Rules
 
@@ -70,6 +85,15 @@ Tools that should **NOT** use sub-agents:
 | `read-write` | Modifies existing resources | `.ReadWrite` scopes |
 | `create` | Creates new resources | `.ReadWrite` or `.Send` scopes |
 | `delete` | Removes resources or data | `.ReadWrite` scopes + confirmation |
+
+## Onboarding Honesty Rules (#641, #649)
+
+A skill's `onboardingMethod` and `externalAccountsNeeded` must truthfully reflect what the user will experience:
+
+- **`automatic-agentic`** → skill MUST be truly operational with zero manual steps, OR declare all prerequisites (env vars, permissions, external accounts) so the assessor correctly classifies it as `operator-setup-required`
+- **`post-install-link`** → skill requires user to complete an OAuth or setup link before use — classified as `action-required`
+- **`operator/backend-config-required`** → skill requires backend infrastructure the user cannot self-serve — classified as `operator-setup-required`
+- **A discoverable skill must never show as "operational" when it silently fails at runtime** due to missing credentials, permissions, or accounts
 
 ## Onboarding Requirements
 
