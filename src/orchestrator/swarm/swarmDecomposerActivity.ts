@@ -193,6 +193,7 @@ df.app.activity('swarmDecomposerActivity', {
           timeoutMs: plan.timeoutMs,
           maxRoundsPerAgent: plan.maxRoundsPerAgent,
           agents: plan.agents.map(a => `${a.name}(${a.role})[${a.assignedTools.join(',')}]`).join(' | '),
+          agentTasks: plan.agents.map(a => `${a.name}: ${a.task.slice(0, 120)}`).join(' | '),
           leaderInstructions: plan.leader.synthesisInstructions.slice(0, 200),
         },
       });
