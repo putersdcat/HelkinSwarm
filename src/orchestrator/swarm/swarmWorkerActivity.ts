@@ -252,7 +252,14 @@ df.app.activity('swarmWorkerActivity', {
 
     try {
       for (let round = 0; round < input.maxRounds; round++) {
-        // LLM inference call — atomic, no mid-stream injection
+        // LLM inference call — atomic, no mid-stream injection.
+        // onToken enables SSE streaming mode (#637 Phase 1): each token delta is
+        // observed by the callback, which count tokens in real-time for debugging.
+        // The callback fires after all bytes arrive (post-hoc, not real-time
+        // delivery) — Phase 2 will add progressive user-facing streaming.
+        let streamedTokenCount = 0;
+        const onToken = (_text: string) => { streamedTokenCount++; };
+
         const response = await client.chatCompletion({
           messages,
           tools: tools.length > 0 ? tools : undefined,
@@ -261,9 +268,26 @@ df.app.activity('swarmWorkerActivity', {
           temperature: 0.7,
           correlationId: input.correlationId,
           maxBudgetMs: 20_000,
+          onToken,
         });
 
         totalTokens += response.usage?.totalTokens ?? 0;
+
+        // Emit streaming observability event when tokens were streamed (#637 Phase 1)
+        if (streamedTokenCount > 0) {
+          trackEvent({
+            name: 'SwarmWorkerStreamingComplete',
+            correlationId: input.correlationId,
+            userId: input.userId,
+            properties: {
+              agentName: input.agentName,
+              round: String(round),
+              streamedTokenCount: String(streamedTokenCount),
+              reportedTotalTokens: String(response.usage?.totalTokens ?? 0),
+            },
+          });
+        }
+
         const choice = response.choices[0];
         if (!choice) break;
 

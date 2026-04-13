@@ -106,6 +106,7 @@ export type TelemetryEventName =
   | 'SwarmWorkerBudgetExceeded'
   | 'SwarmWorkerError'
   | 'SwarmWorkerWaitRequested'
+  | 'SwarmWorkerStreamingComplete'
   | 'SwarmSubSessionRequested'
   | 'SwarmSubSessionBlocked'
   | 'SwarmSubSessionCompleted'

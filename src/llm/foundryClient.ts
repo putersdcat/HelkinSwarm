@@ -94,6 +94,13 @@ export interface FoundryClientOptions {
    * of consuming the full 90s main-orchestrator budget.
    */
   maxBudgetMs?: number;
+  /**
+   * When provided, activates SSE streaming mode and calls this callback with each
+   * content token delta as it arrives in the response (#637 Phase 1).
+   * The return value of chatCompletion() is the same ChatCompletionResponse whether
+   * or not streaming is enabled — usage stats are synthesized from the SSE stream.
+   */
+  onToken?: (text: string) => void;
 }
 
 export interface ToolDefinition {
@@ -425,8 +432,13 @@ export class FoundryClient {
     const body: Record<string, unknown> = {
       model: routing.deploymentName,
       messages: options.messages.map(mapOutgoingMessage),
-      stream: false,
+      stream: options.onToken ? true : false,
     };
+
+    // When streaming, request usage in the final chunk so token counts stay accurate (#637)
+    if (options.onToken) {
+      body.stream_options = { include_usage: true };
+    }
 
     // GPT-5, GPT-4o, and o-series use max_completion_tokens; reasoning models also skip temperature (#185, #219)
     if (routing.isReasoning) {
@@ -527,7 +539,10 @@ export class FoundryClient {
               return;
             }
             try {
-              settle(() => resolve(JSON.parse(responseText) as RawApiResponse));
+              const rawParsed = options.onToken
+                ? parseSseResponse(responseText, routing.deploymentName, options.onToken)
+                : (JSON.parse(responseText) as RawApiResponse);
+              settle(() => resolve(rawParsed));
             } catch {
               settle(() => reject(new Error('Failed to parse LLM response JSON')));
             }
@@ -626,9 +641,14 @@ export class FoundryClient {
     const body: Record<string, unknown> = {
       model: routing.deploymentName,
       messages: options.messages.map(mapOutgoingMessage),
-      stream: false,
+      stream: options.onToken ? true : false,
       max_tokens: options.maxTokens ?? 4096,
     };
+
+    // When streaming, request usage in the final chunk so token counts stay accurate (#637)
+    if (options.onToken) {
+      body.stream_options = { include_usage: true };
+    }
 
     if (routing.isReasoning) {
       // Explicit reasoning control for x-ai/grok-4.1-fast on OpenRouter.
@@ -716,7 +736,10 @@ export class FoundryClient {
               return;
             }
             try {
-              settle(() => resolve(JSON.parse(responseText) as RawApiResponse));
+              const rawParsed = options.onToken
+                ? parseSseResponse(responseText, routing.deploymentName, options.onToken)
+                : (JSON.parse(responseText) as RawApiResponse);
+              settle(() => resolve(rawParsed));
             } catch {
               settle(() => reject(new Error('Failed to parse OpenRouter LLM response JSON')));
             }
@@ -961,6 +984,123 @@ function isRetryableError(err: unknown): boolean {
 // ---------------------------------------------------------------------------
 // Raw API response types (snake_case — matches OpenAI wire format)
 // ---------------------------------------------------------------------------
+
+// SSE streaming delta types (#637 Phase 1)
+interface StreamDeltaToolCall {
+  index: number;
+  id?: string;
+  type?: string;
+  function?: { name?: string; arguments?: string };
+}
+
+interface StreamChunk {
+  id?: string;
+  model?: string;
+  created?: number;
+  choices?: Array<{
+    index: number;
+    delta: {
+      role?: string;
+      content?: string | null;
+      tool_calls?: StreamDeltaToolCall[];
+    };
+    finish_reason?: string | null;
+  }>;
+  usage?: RawApiUsage;
+}
+
+/**
+ * Parse a buffered SSE response body into a synthetic RawApiResponse.
+ * Calls onToken for each content delta in order (#637 Phase 1).
+ * Works post-hoc (after all bytes arrive) — Phase 2 will add real-time streaming.
+ */
+function parseSseResponse(
+  sseText: string,
+  deploymentName: string,
+  onToken?: (text: string) => void,
+): RawApiResponse {
+  const lines = sseText.split('\n');
+
+  let responseId = `stream-${Date.now()}`;
+  let responseModel = deploymentName;
+  let responseCreated = Math.floor(Date.now() / 1000);
+  let contentBuffer = '';
+  let finishReason = 'stop';
+  let usage: RawApiUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+
+  // Tool call accumulation indexed by tool_call delta index
+  const toolCallFragments = new Map<number, { id: string; name: string; arguments: string }>();
+
+  for (const line of lines) {
+    if (!line.startsWith('data: ')) continue;
+    const data = line.slice(6).trim();
+    if (data === '[DONE]') break;
+
+    let chunk: StreamChunk;
+    try {
+      chunk = JSON.parse(data) as StreamChunk;
+    } catch {
+      continue; // Skip malformed SSE lines
+    }
+
+    if (chunk.id) responseId = chunk.id;
+    if (chunk.model) responseModel = chunk.model;
+    if (chunk.created) responseCreated = chunk.created;
+    if (chunk.usage) usage = chunk.usage;
+
+    for (const choice of chunk.choices ?? []) {
+      const delta = choice.delta;
+
+      if (delta.content) {
+        contentBuffer += delta.content;
+        onToken?.(delta.content);
+      }
+
+      for (const tcDelta of delta.tool_calls ?? []) {
+        const frag = toolCallFragments.get(tcDelta.index);
+        if (!frag) {
+          toolCallFragments.set(tcDelta.index, {
+            id: tcDelta.id ?? '',
+            name: tcDelta.function?.name ?? '',
+            arguments: tcDelta.function?.arguments ?? '',
+          });
+        } else {
+          if (tcDelta.id) frag.id = tcDelta.id;
+          if (tcDelta.function?.name) frag.name += tcDelta.function.name;
+          if (tcDelta.function?.arguments) frag.arguments += tcDelta.function.arguments;
+        }
+      }
+
+      if (choice.finish_reason) finishReason = choice.finish_reason;
+    }
+  }
+
+  const toolCalls: RawApiToolCall[] | undefined = toolCallFragments.size > 0
+    ? [...toolCallFragments.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([, tc]) => ({
+          id: tc.id,
+          type: 'function' as const,
+          function: { name: tc.name, arguments: tc.arguments },
+        }))
+    : undefined;
+
+  return {
+    id: responseId,
+    model: responseModel,
+    created: responseCreated,
+    choices: [{
+      index: 0,
+      message: {
+        role: 'assistant',
+        content: contentBuffer || null,
+        tool_calls: toolCalls,
+      },
+      finish_reason: finishReason,
+    }],
+    usage,
+  };
+}
 
 interface RawApiToolCall {
   id: string;
