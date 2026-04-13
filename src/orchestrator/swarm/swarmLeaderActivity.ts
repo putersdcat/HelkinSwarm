@@ -98,6 +98,7 @@ df.app.activity('swarmLeaderActivity', {
         },
       });
 
+      try {
       // Short delegation loop — Leader identifies gaps and delegates (max 3 rounds)
       for (let round = 0; round < 3; round++) {
         const response = await client.chatCompletion({
@@ -175,6 +176,16 @@ df.app.activity('swarmLeaderActivity', {
           swarmId: input.swarmId,
         },
       });
+      } catch (err) {
+        // LLM error during delegation — best-effort, degrade gracefully.
+        // Return empty delegation rather than crashing the activity and the orchestrator.
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        trackEvent({
+          name: 'SwarmLeaderDelegationError',
+          correlationId: input.correlationId,
+          properties: { error: errorMessage.slice(0, 300) },
+        });
+      }
 
       return {
         synthesis: '',
