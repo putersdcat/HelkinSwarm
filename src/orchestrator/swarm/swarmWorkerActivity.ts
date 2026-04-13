@@ -18,15 +18,21 @@ import { ChatroomMessageSchema } from './swarmTypes.js';
 // Internal "virtual tool" name — intercepted by the worker, not dispatched
 const CHATROOM_SEND_TOOL = 'chatroom_send';
 
+// Auto-injected memory search tool — always available to all swarm agents (#633)
+const CONVERSATION_SEARCH_TOOL = 'conversation_search';
+
 /**
  * Build the tool definitions array for a worker agent.
- * Includes only assigned tools + chatroom_send (virtual).
+ * Includes only assigned tools + chatroom_send (virtual) + conversation_search (auto).
  */
 function buildWorkerToolSchemas(assignedToolNames: string[]): ToolDefinition[] {
   const tools: ToolDefinition[] = [];
 
-  // Add assigned external tools
+  // Add assigned external tools (deduplicate conversation_search if already assigned)
+  const seenNames = new Set<string>();
   for (const name of assignedToolNames) {
+    if (seenNames.has(name)) continue;
+    seenNames.add(name);
     const def = toolRegistry.get(name);
     if (def) {
       tools.push({
@@ -35,6 +41,21 @@ function buildWorkerToolSchemas(assignedToolNames: string[]): ToolDefinition[] {
           name: def.name,
           description: def.description,
           parameters: (def.inputSchema ?? {}) as Record<string, unknown>,
+        },
+      });
+    }
+  }
+
+  // Add conversation_search from registry if not already present
+  if (!seenNames.has(CONVERSATION_SEARCH_TOOL)) {
+    const searchDef = toolRegistry.get(CONVERSATION_SEARCH_TOOL);
+    if (searchDef) {
+      tools.push({
+        type: 'function',
+        function: {
+          name: searchDef.name,
+          description: searchDef.description,
+          parameters: (searchDef.inputSchema ?? {}) as Record<string, unknown>,
         },
       });
     }

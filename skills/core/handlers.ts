@@ -1119,3 +1119,52 @@ export const helkin_persona_eval: ToolHandler = async (args) => {
       : 'Recent turns are consistent with the current persona. No adjustments needed.',
   };
 };
+
+// ---------------------------------------------------------------------------
+// conversation_search — Swarm conversation memory search tool (#633 Task 1)
+// Backed by MemoryManager.recall() with DiskANN vector search.
+// Auto-injected into all swarm agents so they can recall past session findings.
+// ---------------------------------------------------------------------------
+
+export const conversation_search: ToolHandler = async (args) => {
+  const { MemoryManager } = await import('../../src/memory/memoryManager.js');
+
+  const userId = typeof args['userId'] === 'string' ? args['userId'] : undefined;
+  if (!userId) {
+    return { status: 'error', message: 'userId is required for conversation search.' };
+  }
+
+  const query = typeof args['query'] === 'string' ? args['query'].trim() : '';
+  if (!query) {
+    return { status: 'error', message: 'query is required — describe what you want to recall from past conversations.' };
+  }
+
+  const topK = typeof args['topK'] === 'number'
+    ? Math.min(10, Math.max(1, Math.trunc(args['topK'])))
+    : 5;
+
+  const mm = new MemoryManager(userId);
+  const results = await mm.recall(query, { topK, minScore: 0.6 });
+
+  if (results.length === 0) {
+    return {
+      status: 'no-results',
+      message: 'No relevant past conversation memories found for this query.',
+      query,
+    };
+  }
+
+  return {
+    status: 'success',
+    count: results.length,
+    query,
+    memories: results.map((r) => ({
+      content: r.content,
+      score: Math.round(r.score * 100) / 100,
+      skill: r.skillId ?? 'general',
+      tags: r.tags,
+      createdAt: r.createdAt,
+    })),
+    message: `Found ${results.length} relevant memory snippet(s) from past conversations.`,
+  };
+};

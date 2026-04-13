@@ -499,6 +499,33 @@
       },
       "privilegeClass": "read-only",
       "requiresSubAgent": false
+    },
+    {
+      "name": "conversation_search",
+      "description": "Search past conversation memories using semantic vector search. Returns relevant snippets from previous sessions. Automatically available to all swarm agents for cross-session context recall.",
+      "risk": "low",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Natural language description of what to recall from past conversations"
+          },
+          "topK": {
+            "type": "number",
+            "description": "Maximum number of memory snippets to return (default: 5, max: 10)"
+          }
+        },
+        "required": ["query"]
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
     }
   ],
   "shortName": "core",
@@ -512,7 +539,9 @@
     "skill management",
     "preferences",
     "identity and role introspection",
-    "persona self-evaluation"
+    "persona self-evaluation",
+    "conversation memory search",
+    "recall past sessions"
   ],
   "orchestratorUseCases": [
     "discover which skill or tool should handle a broader user request",
