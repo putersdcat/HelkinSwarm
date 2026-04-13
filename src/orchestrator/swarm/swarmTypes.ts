@@ -55,7 +55,7 @@ export const SwarmAgentSchema = z.object({
   role: z.string().min(1).describe('Role description (e.g. "Research Specialist")'),
   task: z.string().min(1).describe('Specific task to accomplish'),
   assignedTools: z.array(z.string()).describe('Tool names this agent may use'),
-  persona: z.string().min(1).describe('Full system prompt for this agent'),
+  persona: z.string().default('Focused and thorough research agent'),
 });
 
 export type SwarmAgent = z.infer<typeof SwarmAgentSchema>;

@@ -749,6 +749,20 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       decomposerInput,
     );
 
+    if (!decomposerResult.plan) {
+      // Decomposer chose sequential fallback — log why for remote diagnosis
+      yield* emitOrchestratorTelemetry(context, {
+        name: 'SwarmDecomposerFallback',
+        correlationId,
+        userId: input.state.userId,
+        properties: {
+          reason: decomposerResult.fallbackReason ?? 'unknown',
+          decomposerModel: decomposerResult.decomposerModel,
+          tokensUsed: decomposerResult.tokensUsed,
+        },
+      });
+    }
+
     if (decomposerResult.plan) {
       // Execute the swarm
       yield* emitOrchestratorTelemetry(context, {

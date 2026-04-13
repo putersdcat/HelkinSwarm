@@ -60,6 +60,25 @@ describe('isSwarmEligible', () => {
       'Find current market data across all major indices, research the competitive landscape for enterprise SaaS companies, and investigate emerging trends in the renewable energy sector across multiple geographic regions for comprehensive context gathering',
     )).toBe(true);
   });
+
+  // Regression: owner's live queries from 2026-04-12 that SHOULD trigger swarm
+  it('triggers for microservices vs monolithic query (live regression)', () => {
+    expect(isSwarmEligible(
+      'Research the advantages and disadvantages of microservices versus monolithic architecture, compare their scalability characteristics and maintenance overhead for different team sizes, and analyze what industry experts recommend for startups compared to large enterprises',
+    )).toBe(true);
+  });
+
+  it('triggers for React vs Vue framework comparison (live regression)', () => {
+    expect(isSwarmEligible(
+      'Compare the key differences between React and Vue frameworks — analyze their performance characteristics, ecosystem maturity, and learning curve, and also research what major companies use each one and why',
+    )).toBe(true);
+  });
+
+  it('triggers for CRDTs vs OT deep analysis (live regression)', () => {
+    expect(isSwarmEligible(
+      'Analyze three different approaches to building a real-time collaborative document editor: CRDTs vs OT vs hybrid approaches. For each, research the technical tradeoffs (latency, consistency, conflict resolution), identify major open-source implementations and their GitHub activity, and investigate which companies chose each approach and their engineering blog posts explaining why. Present a decision matrix with weighted scoring.',
+    )).toBe(true);
+  });
 });
 
 describe('ChatroomMessageSchema', () => {
@@ -123,6 +142,33 @@ describe('SwarmAgentSchema', () => {
       persona: 'You are Alpha, a focused research specialist...',
     });
     expect(result.success).toBe(true);
+  });
+
+  it('applies persona default when omitted', () => {
+    const result = SwarmAgentSchema.safeParse({
+      name: 'Gamma',
+      role: 'Analyst',
+      task: 'Analyze pricing data',
+      assignedTools: ['web_search'],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.persona).toBe('Focused and thorough research agent');
+    }
+  });
+
+  it('accepts explicit persona over default', () => {
+    const result = SwarmAgentSchema.safeParse({
+      name: 'Delta',
+      role: 'Expert',
+      task: 'Deep dive into X',
+      assignedTools: [],
+      persona: 'You are a domain expert on topic X',
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.persona).toBe('You are a domain expert on topic X');
+    }
   });
 });
 

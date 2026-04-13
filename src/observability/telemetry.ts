@@ -100,6 +100,7 @@ export type TelemetryEventName =
   | 'SwarmDecomposerValidationError'
   | 'SwarmPlanGenerated'
   | 'SwarmDecomposerError'
+  | 'SwarmDecomposerFallback'
   | 'SwarmWorkerStarted'
   | 'SwarmWorkerCompleted'
   | 'SwarmWorkerError'
