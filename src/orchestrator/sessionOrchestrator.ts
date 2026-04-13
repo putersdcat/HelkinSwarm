@@ -804,6 +804,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             agentCount: swarmResult.agentResults.length,
             chatroomMessages: swarmResult.chatroomTranscript.length,
             leaderAgentsHeardFrom: swarmResult.leaderResult.agentsHeardFrom.join(', '),
+            decomposerTokens: decomposerResult.tokensUsed,
+            workerTokens: swarmResult.swarmCost?.workerTokens ?? 0,
+            leaderTokens: swarmResult.swarmCost?.leaderTokens ?? 0,
+            agentCostBreakdown: swarmResult.swarmCost?.agentBreakdown
+              ?.map(a => `${a.agent}:${a.tokens}`)
+              .join(', ') ?? '',
           },
         });
       }

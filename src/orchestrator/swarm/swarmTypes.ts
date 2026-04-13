@@ -154,6 +154,20 @@ export interface SwarmOrchestratorInput {
   userMessage: string;
 }
 
+export interface SwarmAgentCost {
+  agent: string;
+  tokens: number;
+  model: string;
+}
+
+export interface SwarmCost {
+  decomposerTokens: number;
+  workerTokens: number;
+  leaderTokens: number;
+  totalTokens: number;
+  agentBreakdown: SwarmAgentCost[];
+}
+
 export interface SwarmOrchestratorResult {
   response: string;
   success: boolean;
@@ -162,6 +176,7 @@ export interface SwarmOrchestratorResult {
   leaderResult: SwarmLeaderResult;
   chatroomTranscript: ChatroomMessage[];
   swarmId: string;
+  swarmCost?: SwarmCost;
 }
 
 // ---------------------------------------------------------------------------

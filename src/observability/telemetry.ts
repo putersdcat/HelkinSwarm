@@ -108,7 +108,9 @@ export type TelemetryEventName =
   | 'SwarmToolError'
   | 'SwarmLeaderStarted'
   | 'SwarmLeaderCompleted'
-  | 'SwarmLeaderError';
+  | 'SwarmLeaderError'
+  | 'SwarmMemoryCommitCompleted'
+  | 'SwarmMemoryCommitError';
 
 // ---------------------------------------------------------------------------
 // Session Tracer — maps events to trace phases for Dev Console (#140)

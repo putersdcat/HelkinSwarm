@@ -13,6 +13,7 @@ import type {
   SwarmLeaderInput,
   SwarmLeaderResult,
 } from './swarmTypes.js';
+import type { SwarmMemoryCommitInput } from './swarmMemoryCommitActivity.js';
 
 // ---------------------------------------------------------------------------
 // Timeout helpers (Durable timer pattern — same as #588/#591)
@@ -165,11 +166,28 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
   }
 
   // -----------------------------------------------------------------------
-  // 7. Build final result
+  // 7. Leader-only memory commit to T3 (fire-and-forget — don't block
+  //    the user response on memory persistence)
+  //    Spec ref: docs/0zi §6 — Leader-Only Memory Commit
   // -----------------------------------------------------------------------
-  const totalTokens =
-    workerResults.reduce((sum, r) => sum + r.tokensUsed, 0) +
-    leaderResult.tokensUsed;
+  if (leaderResult.success && transcript.length > 0) {
+    const commitInput: SwarmMemoryCommitInput = {
+      userId,
+      correlationId,
+      swarmId: plan.swarmId,
+      userQuery: userMessage,
+      leaderSynthesis: leaderResult.synthesis,
+      chatroomTranscript: transcript,
+    };
+    // Best-effort — memory commit failure must not fail the swarm response
+    context.df.callActivity('swarmMemoryCommitActivity', commitInput);
+  }
+
+  // -----------------------------------------------------------------------
+  // 8. Build final result with cost tracking (#633 Task 4)
+  // -----------------------------------------------------------------------
+  const workerTokens = workerResults.reduce((sum, r) => sum + r.tokensUsed, 0);
+  const totalTokens = workerTokens + leaderResult.tokensUsed;
 
   const result: SwarmOrchestratorResult = {
     response: leaderResult.synthesis,
@@ -179,6 +197,17 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
     leaderResult,
     chatroomTranscript: transcript,
     swarmId: plan.swarmId,
+    swarmCost: {
+      decomposerTokens: 0, // tracked in parent orchestrator
+      workerTokens,
+      leaderTokens: leaderResult.tokensUsed,
+      totalTokens,
+      agentBreakdown: workerResults.map(r => ({
+        agent: r.agentName,
+        tokens: r.tokensUsed,
+        model: r.model,
+      })),
+    },
   };
 
   return result;
