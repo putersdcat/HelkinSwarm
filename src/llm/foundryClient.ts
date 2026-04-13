@@ -649,8 +649,8 @@ export class FoundryClient {
       type: 'openrouter:web_search',
       parameters: {
         engine: isXai ? 'exa' : 'auto',
-        max_results: 5,
-        max_total_results: 20,
+        max_results: 3,
+        max_total_results: 5,
       },
     };
     const allTools: unknown[] = [...functionTools, serverSearchTool];
