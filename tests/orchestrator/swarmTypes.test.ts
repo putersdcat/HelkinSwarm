@@ -225,6 +225,19 @@ describe('classifySwarmZone', () => {
     expect(classifySwarmZone(5)).toBe('maybe-swarm');
     expect(classifySwarmZone(10)).toBe('always-swarm');
   });
+
+  it('non-always-sequential zone is equivalent to isSwarmEligible (#632 determinism)', () => {
+    // The sessionOrchestrator uses planResult.swarmComplexityZone !== 'always-sequential'
+    // instead of calling isSwarmEligible() directly (which reads env vars mid-orchestrator).
+    // Verify the two conditions are semantically equivalent for default gate values.
+    const defaultGate = { sequentialCeiling: 3, swarmFloor: 7 };
+    for (const score of [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+      const zone = classifySwarmZone(score, defaultGate);
+      const eligibleByScore = score >= defaultGate.sequentialCeiling;
+      const eligibleByZone = zone !== 'always-sequential';
+      expect(eligibleByZone).toBe(eligibleByScore);
+    }
+  });
 });
 
 describe('isSwarmEligible with configurable threshold', () => {

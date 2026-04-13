@@ -26,7 +26,6 @@ import { recoverOperationalNoticesFromTrace } from './failoverNoticeRecovery.js'
 import type { PlanInput, PlanResult } from './planActivity.js';
 import type { SwarmDecomposerInput, SwarmDecomposerResult, SwarmOrchestratorInput, SwarmOrchestratorResult } from './swarm/swarmTypes.js';
 import type { PersistSwarmResultInput } from './swarm/persistSwarmResultActivity.js';
-import { isSwarmEligible } from './swarm/swarmTypes.js';
 import { getExecutableToolNames } from '../capabilities/capabilityLoader.js';
 import { canonicalizeInput } from './inputCanonicalizer.js';
 import { computeToolBudget, DEFAULT_PER_TOOL_TURN_CAP, PER_TOOL_CAP_EXCEEDED_MESSAGES, PER_TOOL_TURN_CAPS } from './toolBudgetScaler.js';
@@ -727,13 +726,13 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // 1c. Swarm routing — swarm-eligible requests bypass the planner's simple/compound
   // classification (#632). classifyComplexity() only checks sequential connectors
   // (then, after that, first…) which misses compound research queries like
-  // "compare tradeoffs between X and Y". isSwarmEligible() already provides the
-  // vocabulary analysis (compare, tradeoffs, approaches, etc.) so the planner
-  // complexity gate is redundant and incorrect for swarm routing.
+  // "compare tradeoffs between X and Y". swarmComplexityZone is pre-computed in
+  // planActivity (deterministic activity context) — using it here avoids reading
+  // env vars inside the orchestrator body (Durable Functions replay safety).
   // ---------------------------------------------------------------------------
   if (
     planResult.swarmEnabled
-    && isSwarmEligible(userMessageForLlm)
+    && planResult.swarmComplexityZone !== 'always-sequential'
     && !input.devLoopContext?.isDevLoop
     && !input.skillForgeRequest
   ) {
