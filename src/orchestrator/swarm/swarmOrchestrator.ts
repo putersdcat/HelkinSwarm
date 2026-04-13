@@ -107,6 +107,23 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
         allChatroomMessages.push(...result._pendingChatroomMessages);
       }
     }
+
+    // Send progress update after each worker completes (#634)
+    if (input.conversationReference) {
+      const completedCount = workerResults.length;
+      const totalCount = workerTasks.length;
+      const latestAgent = workerResults[workerResults.length - 1];
+      const statusIcon = latestAgent.success ? '✓' : '✗';
+      const suffix = completedCount === totalCount ? ' | Leader synthesizing…' : '';
+      const progressMsg = `${statusIcon} ${latestAgent.agentName} complete (${completedCount}/${totalCount})${suffix}`;
+      // Fire-and-forget — progress delivery must not block the swarm
+      context.df.callActivity('sendReplyActivity', {
+        userId,
+        message: progressMsg,
+        correlationId,
+        conversationReference: input.conversationReference,
+      });
+    }
   }
 
   // -----------------------------------------------------------------------

@@ -785,6 +785,17 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         userMessage: userMessageForLlm,
       };
 
+      // Send immediate acknowledgment so the user knows a swarm is running (#634)
+      const agentNames = decomposerResult.plan.agents.map((a: { name: string }) => a.name);
+      const ackMessage = `🧠 Dispatching analysis team (${agentNames.join(', ')})…`;
+      const ackInput: SendReplyInput = {
+        userId: input.state.userId,
+        message: ackMessage,
+        correlationId,
+        conversationReference: input.conversationReference,
+      };
+      yield context.df.callActivity('sendReplyActivity', ackInput);
+
       // Outer timer must exceed inner worker+leader timeouts. Workers run parallel (60s max),
       // leader runs after (60s max), plus entity overhead (~10s). Total inner ≤ 130s.
       const swarmOuterTimeoutMs = Math.max(decomposerResult.plan.timeoutMs * 3, 180_000);
