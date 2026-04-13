@@ -170,3 +170,47 @@ describe('swarm_wait second-pass task message logic (orchestrator pattern)', () 
     expect(task).toContain('FOX suspension prices');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Worker system prompt — swarm_wait discoverable to LLM (#646 hardening)
+// ---------------------------------------------------------------------------
+
+import { buildWorkerSystemPrompt } from '../../src/orchestrator/swarm/swarmPersonas.js';
+
+describe('buildWorkerSystemPrompt — swarm_wait visibility (#646)', () => {
+  const baseInput = {
+    agentName: 'Lucas',
+    agentRole: 'Data Synthesis Specialist',
+    task: 'Rank the service centers by quality and distance',
+    assignedToolNames: ['web_search'],
+    allAgentNames: ['Benjamin', 'Harper', 'Lucas'],
+    userQuery: 'Find Fox Suspension service centers in Munich',
+  };
+
+  it('lists swarm_wait in the tools section', () => {
+    const prompt = buildWorkerSystemPrompt(baseInput);
+    expect(prompt).toContain('swarm_wait');
+  });
+
+  it('lists chatroom_send in the tools section', () => {
+    const prompt = buildWorkerSystemPrompt(baseInput);
+    expect(prompt).toContain('chatroom_send');
+  });
+
+  it('includes swarm_wait usage guidance for synthesis agents', () => {
+    const prompt = buildWorkerSystemPrompt(baseInput);
+    expect(prompt).toMatch(/swarm_wait\s*\(\s*\{.*waitFor/);
+  });
+
+  it('mentions SYNTHESIZE or RANK context for swarm_wait guidance', () => {
+    const prompt = buildWorkerSystemPrompt(baseInput);
+    // Guidance section should mention when to use swarm_wait
+    expect(prompt.toUpperCase()).toMatch(/SYNTHES|RANK|COMPAR/);
+  });
+
+  it('does not tell agents to use ONLY the assigned tools (swarm_wait must be reachable)', () => {
+    const prompt = buildWorkerSystemPrompt(baseInput);
+    // Old text excluded swarm_wait with "Use ONLY these tools"
+    expect(prompt).not.toContain('Use ONLY these tools');
+  });
+});

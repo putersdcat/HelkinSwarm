@@ -82,6 +82,7 @@ Rules:
 - For location-specific queries, ensure at least one agent searches in the local language.
 - assignedTools must only contain tool names from the available tools list.
 - Do NOT assign "chatroom_send" in assignedTools — all agents get it automatically.
+- All agents also have "swarm_wait" automatically. Use the persona field to instruct a SYNTHESIS or RANKING agent (e.g. Lucas) to call swarm_wait when their task depends on data from specific teammates. Example persona: "Wait for Benjamin's pricing data before ranking: call swarm_wait({ waitFor: 'Benjamin' }) at the start." Only assign swarm_wait semantics to agents whose task is genuinely dependent on peers; do NOT instruct research/browsing agents to wait.
 - timeoutMs: 30000 for simple, 60000 for research, 90000 for deep multi-source.
 - maxRoundsPerAgent: 2-4 depending on task depth.
 - You have already been selected as the decomposer because the query was classified as multi-faceted. Your job is to DECOMPOSE it into parallel sub-tasks, not to second-guess the routing decision. Only return fallback for truly trivial single-fact lookups (e.g. "what time is it?"). Research queries, comparisons, multi-source investigations, and any query mentioning multiple topics/aspects MUST be decomposed — never return fallback for these.

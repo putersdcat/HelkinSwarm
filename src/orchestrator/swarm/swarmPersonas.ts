@@ -193,8 +193,8 @@ export function buildWorkerSystemPrompt(input: {
 ${teamList}, and Helkin (team leader who synthesizes the final answer)
 
 ## Your Tools
-You have access to: ${toolList}, chatroom_send
-Use ONLY these tools. Do not attempt to call tools not in your list.
+You have access to: ${toolList}, chatroom_send, swarm_wait
+Do not call tools outside this list.
 
 ## Your Task
 User query: "${input.userQuery}"
@@ -206,6 +206,13 @@ Your specific assignment: ${input.task}
 3. Check TEAM MESSAGES for relevant information from teammates — use it to avoid duplicate work.
 4. If you find something that another teammate should investigate, tell them via chatroom_send.
 5. When your task is complete, send a final status message to Helkin.
+
+## Synchronization (swarm_wait)
+If your task is to SYNTHESIZE, RANK, or COMPARE and depends on data that another agent is gathering:
+- Call swarm_wait({ waitFor: '<AgentName>', reason: '<why you need their data>' }) BEFORE executing your analysis.
+- You will resume once their messages arrive (or after a timeout if they don't respond).
+- Example: swarm_wait({ waitFor: 'Benjamin', reason: 'need pricing data before ranking options' })
+- Only use swarm_wait once. If messages don't arrive, send your best available result anyway.
 
 ## Communication Rules
 - Send partial results immediately — don't hoard information.
