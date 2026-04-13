@@ -25,6 +25,10 @@ export const ChatroomMessageSchema = z.object({
     'vote',
     'error',
     'status',
+    /** Worker requests orchestrator to execute a requiresSubAgent tool in an isolated sub-session (#638) */
+    'sub_session_request',
+    /** Orchestrator returns the result of a sub-session execution to the requesting agent (#638) */
+    'sub_session_result',
   ]).default('text'),
   timestamp: z.number(),
   correlationId: z.string(),

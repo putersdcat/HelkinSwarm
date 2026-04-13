@@ -381,21 +381,62 @@ df.app.activity('swarmWorkerActivity', {
             // swarm_wait terminates the current round — break out of the tool-call loop
             break;
           } else if (input.assignedTools.includes(tc.function.name) || tc.function.name === CONVERSATION_SEARCH_TOOL) {
-            // External tool — execute it (includes auto-injected conversation_search)
-            toolCallsMade++;
-            toolsUsedSet.add(tc.function.name);
-            const result = await executeToolCall(
-              tc.function.name,
-              parsedArgs,
-              input.userId,
-              input.correlationId,
-            );
+            // Gate elevated tools — cannot run directly in swarm worker context (#638 Slice 1)
+            const toolDef = toolRegistry.get(tc.function.name);
+            if (toolDef?.requiresSubAgent) {
+              trackEvent({
+                name: 'SwarmSubSessionRequested',
+                correlationId: input.correlationId,
+                userId: input.userId,
+                properties: {
+                  agentName: input.agentName,
+                  toolName: tc.function.name,
+                  swarmId: input.swarmId,
+                },
+              });
 
-            messages.push({
-              role: 'tool',
-              content: result,
-              toolCallId: tc.id,
-            });
+              // Package a sub_session_request for orchestrator interception (#638 Slice 2)
+              const subSessionMsg: ChatroomMessage = {
+                id: crypto.randomUUID(),
+                from: input.agentName,
+                to: 'Leader',
+                content: JSON.stringify({
+                  toolName: tc.function.name,
+                  toolArgs: parsedArgs,
+                  requestingAgent: input.agentName,
+                }),
+                contentType: 'sub_session_request',
+                timestamp: Date.now(),
+                correlationId: input.swarmCorrelationId,
+              };
+              const validatedSubSession = ChatroomMessageSchema.safeParse(subSessionMsg);
+              if (validatedSubSession.success) {
+                pendingChatroomMessages.push(validatedSubSession.data);
+                chatroomMessagesSent++;
+              }
+
+              messages.push({
+                role: 'tool',
+                content: `Tool "${tc.function.name}" requires elevated permission. A sub-session request has been routed to the orchestrator — result will be injected into your context when ready. Continue with other tasks while waiting.`,
+                toolCallId: tc.id,
+              });
+            } else {
+              // Non-elevated external tool — execute directly
+              toolCallsMade++;
+              toolsUsedSet.add(tc.function.name);
+              const result = await executeToolCall(
+                tc.function.name,
+                parsedArgs,
+                input.userId,
+                input.correlationId,
+              );
+
+              messages.push({
+                role: 'tool',
+                content: result,
+                toolCallId: tc.id,
+              });
+            }
           } else {
             // Tool not in agent's allowed list
             messages.push({

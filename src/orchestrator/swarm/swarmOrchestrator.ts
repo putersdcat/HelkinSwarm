@@ -180,6 +180,18 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
   // pass before Leader synthesis.
   // Only agents with inbound messages get a second-pass activity.
   // -----------------------------------------------------------------------
+
+  // -----------------------------------------------------------------------
+  // 3.4a. Sub-session interception — TODO(#638 Slice 2)
+  // Scan allChatroomMessages for contentType === 'sub_session_request'.
+  // For each: mint a least-privilege scoped token, spawn swarmSubSessionActivity
+  // with (toolName, toolArgs, userId, correlationId), collect results, and inject
+  // them back into allChatroomMessages as contentType 'sub_session_result' addressed
+  // to the requesting agent.
+  // Filter sub_session_request messages OUT before second-pass routing so workers
+  // don't see raw unhandled requests in their context injection.
+  // -----------------------------------------------------------------------
+
   const SECOND_PASS_TIMEOUT_MS = 20_000;
   const secondPassTasks: df.Task[] = [];
   const secondPassTimers: df.TimerTask[] = [];
