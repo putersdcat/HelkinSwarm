@@ -797,6 +797,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         message: ackMessage,
         correlationId,
         conversationReference: input.conversationReference,
+        skipOutboundClaim: true,
       };
       yield context.df.callActivity('sendReplyActivity', ackInput);
       spans.push({ label: 'swarm-ack', durationMs: context.df.currentUtcDateTime.getTime() - ackSpanStart });

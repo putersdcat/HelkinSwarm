@@ -59,6 +59,9 @@ export interface SendReplyInput {
   correlationId?: string;
   /** Pass-through ConversationReference to avoid Cosmos read (#327 diagnostic). */
   conversationReference?: Partial<ConversationReference>;
+  /** Skip the outbound dedup claim. Use for intermediate messages (e.g. swarm ack)
+   *  that share a correlationId with a later final reply. */
+  skipOutboundClaim?: boolean;
 }
 
 export interface SendReplyResult {
@@ -236,7 +239,7 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
     resolvedConversationId = conversationId;
 
     let outboundClaimed = false;
-    if (input.correlationId && !SENDREPLY_FAST_PATH) {
+    if (input.correlationId && !SENDREPLY_FAST_PATH && !input.skipOutboundClaim) {
       outboundClaimed = await claimOutboundArtifact(
         conversationId,
         input.userId,
@@ -245,6 +248,8 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
       );
       if (!outboundClaimed) {
         console.warn(`[sendReplyActivity] Duplicate reply suppressed for correlationId=${input.correlationId}`);
+        // Clear the stage tracker so the health endpoint doesn't show a stale active turn
+        try { await clearOrchestratorStage(input.correlationId, input.userId); } catch { /* best-effort */ }
         return { success: true };
       }
     }
