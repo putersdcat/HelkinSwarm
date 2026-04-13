@@ -14,24 +14,9 @@
     "Grok 4.1-fast reasons automatically; OpenRouter exposes reasoning: { enabled: true } — already sent for all primary-lane calls",
     "web_search is a first-order skill injected into the base tool surface alongside helkin_skill_search — no discovery step required"
   ],
-  "excludeTools": [
-    "helkin_health_check",
-    "helkin_get_costs",
-    "helkin_get_openrouter_spend",
-    "helkin_mcp_registry_search",
-    "helkin_mcp_forge",
-    "helkin_list_skills",
-    "helkin_skill_catalog",
-    "helkin_whoami",
-    "helkin_recent_requests",
-    "helkin_test_confirmation",
-    "helkin_save_preferences",
-    "helkin_install_skill",
-    "helkin_uninstall_skill",
-    "helkin_forget_skill"
-  ],
+  "excludeTools": [],
   "meta": {
-    "updatedAt": "2026-04-09T00:00:00Z",
+    "updatedAt": "2026-04-13T00:00:00Z",
     "updatedBy": "manual"
   }
 }
