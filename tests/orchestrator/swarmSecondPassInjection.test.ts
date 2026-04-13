@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SwarmWorkerInput } from '../../src/orchestrator/swarm/swarmTypes.js';
+import { buildInitialUserTurn } from '../../src/orchestrator/swarm/swarmWorkerActivity.js';
 
 const workerSrc = readFileSync(
   join(process.cwd(), 'src', 'orchestrator', 'swarm', 'swarmWorkerActivity.ts'),
@@ -177,5 +178,99 @@ describe('SwarmWorkerInput — backward compatibility (#644 Slice 1)', () => {
     };
     expect(input.inboundMessages).toHaveLength(1);
     expect(input.inboundMessages![0].from).toBe('Benjamin');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildInitialUserTurn — functional tests for AC5 (#644)
+// "Unit test: worker with injected messages produces different output than without"
+// ---------------------------------------------------------------------------
+
+describe('buildInitialUserTurn — functional behaviour (#644 AC5)', () => {
+  it('without inboundMessages returns only the task prompt', () => {
+    const result = buildInitialUserTurn('Find service centers in Munich');
+    expect(result).toContain('Find service centers in Munich');
+    expect(result).not.toContain('[TEAM MESSAGES');
+    expect(result).not.toContain('TEAMMATES');
+  });
+
+  it('with empty inboundMessages returns only the task prompt (guard against empty array)', () => {
+    const result = buildInitialUserTurn('Find service centers in Munich', []);
+    expect(result).not.toContain('[TEAM MESSAGES');
+  });
+
+  it('with inboundMessages produces DIFFERENT output than without (AC5)', () => {
+    const task = 'Rank options by quality';
+    const inbound = [{
+      id: '00000000-0000-4000-8000-000000000099',
+      from: 'Benjamin',
+      to: 'Lucas',
+      content: 'Found 3 top-tier shops: A at €100, B at €90, C at €120',
+      contentType: 'partial_result' as const,
+      timestamp: Date.now(),
+      correlationId: 'corr-test',
+    }];
+    const withoutMessages = buildInitialUserTurn(task);
+    const withMessages = buildInitialUserTurn(task, inbound);
+    expect(withMessages).not.toBe(withoutMessages);
+    expect(withMessages.length).toBeGreaterThan(withoutMessages.length);
+  });
+
+  it('injected message includes sender attribution', () => {
+    const inbound = [{
+      id: '00000000-0000-4000-8000-000000000098',
+      from: 'Harper',
+      to: 'Lucas',
+      content: 'Found additional source: example.com',
+      contentType: 'partial_result' as const,
+      timestamp: Date.now(),
+      correlationId: 'corr-test',
+    }];
+    const result = buildInitialUserTurn('Synthesize findings', inbound);
+    expect(result).toContain('From Harper');
+    expect(result).toContain('example.com');
+  });
+
+  it('uses TEAM MESSAGES delimiters for reliable LLM parsing', () => {
+    const inbound = [{
+      id: '00000000-0000-4000-8000-000000000097',
+      from: 'Benjamin',
+      to: 'All',
+      content: 'Data ready',
+      contentType: 'partial_result' as const,
+      timestamp: Date.now(),
+      correlationId: 'corr-test',
+    }];
+    const result = buildInitialUserTurn('Rank results', inbound);
+    expect(result).toContain('[TEAM MESSAGES — RECEIVED FROM TEAMMATES]');
+    expect(result).toContain('[END TEAM MESSAGES]');
+  });
+
+  it('multiple inbound messages all appear in output', () => {
+    const inbound = [
+      {
+        id: '00000000-0000-4000-8000-000000000096',
+        from: 'Benjamin',
+        to: 'Lucas',
+        content: 'Price data: A=€100, B=€90',
+        contentType: 'partial_result' as const,
+        timestamp: Date.now(),
+        correlationId: 'corr-test',
+      },
+      {
+        id: '00000000-0000-4000-8000-000000000095',
+        from: 'Harper',
+        to: 'Lucas',
+        content: 'Quality data: A=5★, B=4★',
+        contentType: 'partial_result' as const,
+        timestamp: Date.now(),
+        correlationId: 'corr-test',
+      },
+    ];
+    const result = buildInitialUserTurn('Rank options', inbound);
+    expect(result).toContain('From Benjamin');
+    expect(result).toContain('From Harper');
+    expect(result).toContain('Price data');
+    expect(result).toContain('Quality data');
   });
 });

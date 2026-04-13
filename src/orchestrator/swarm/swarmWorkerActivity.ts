@@ -27,8 +27,9 @@ const CONVERSATION_SEARCH_TOOL = 'conversation_search';
 /**
  * Build the initial user turn, optionally prefixed with inbound teammate messages (#644 Slice 1).
  * Inbound messages are injected when this is a second-pass refinement activity.
+ * Exported for unit testing.
  */
-function buildInitialUserTurn(task: string, inboundMessages?: ChatroomMessage[]): string {
+export function buildInitialUserTurn(task: string, inboundMessages?: ChatroomMessage[]): string {
   const base = `Execute your task now. Your assignment: ${task}`;
   if (!inboundMessages?.length) return base;
   const teamContext = inboundMessages
