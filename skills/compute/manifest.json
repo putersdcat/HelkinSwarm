@@ -1,0 +1,110 @@
+{
+  "domain": "compute",
+  "version": "1.0",
+  "tools": [
+    {
+      "name": "code_execute",
+      "description": "Execute JavaScript code in a sandboxed environment with no filesystem, network, or system access. Returns captured console output and the expression result. Use for data analysis, algorithmic computation, string manipulation, JSON transformation, statistical calculations, sorting/filtering arrays, or any task that benefits from deterministic code execution. Code runs with a 5-second timeout and 8 KB output limit. Available globals: Math, JSON, Array, Object, String, Number, Boolean, Date, RegExp, Map, Set, parseInt, parseFloat, console.log.",
+      "risk": "high",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": true,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "create",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "JavaScript code to execute. Use console.log() to produce output. The last expression value is also captured as the result. No require/import, no filesystem, no network access."
+          },
+          "timeout_ms": {
+            "type": "number",
+            "description": "Maximum execution time in milliseconds. Default 5000, max 10000."
+          }
+        },
+        "required": ["code"]
+      },
+      "aliases": [
+        "run code",
+        "execute code",
+        "javascript sandbox",
+        "compute",
+        "run script"
+      ],
+      "discoveryTerms": [
+        "code",
+        "execute",
+        "run",
+        "javascript",
+        "compute",
+        "script",
+        "sandbox",
+        "algorithm",
+        "data analysis",
+        "transform",
+        "sort",
+        "filter",
+        "calculate"
+      ],
+      "useWhen": [
+        "the user wants to run code or a script",
+        "the user needs data transformation, sorting, or filtering",
+        "the user wants algorithmic computation that goes beyond simple math",
+        "the task requires iterating over data, string manipulation, or JSON processing",
+        "a swarm agent needs to compute, analyze, or transform structured data"
+      ],
+      "avoidWhen": [
+        "simple arithmetic that math_solve handles directly",
+        "the user wants to run Python specifically (not supported — JavaScript only)",
+        "the task requires filesystem, network, or system access"
+      ],
+      "returnsSummaryShape": "object with status (ok|error), output (array of console.log lines), result (last expression value as string), executionMs, truncated (boolean)"
+    }
+  ],
+  "shortName": "compute",
+  "displayName": "Sandboxed Code Execution",
+  "shortDescription": "Execute JavaScript code in an isolated sandbox with no system access — for data analysis, algorithms, and computation",
+  "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/compute.png",
+  "deploymentScenario": "personal-user-centric",
+  "onboardingMethod": "automatic-agentic",
+  "lifecycleRules": "keep-credentials",
+  "externalAccountsNeeded": [],
+  "virtualEmployeeCompatible": true,
+  "requiresOrchestratorApproval": false,
+  "licenseAvoidant": false,
+  "supportsBudgeting": false,
+  "discoveryHints": {
+    "primaryCapability": "sandboxed JavaScript code execution",
+    "commonUseCases": [
+      "data analysis and transformation",
+      "algorithmic computation",
+      "JSON processing and restructuring",
+      "statistical calculations on datasets",
+      "string manipulation and text processing",
+      "sorting, filtering, and aggregating arrays"
+    ],
+    "limitations": [
+      "JavaScript only (no Python, no shell)",
+      "no filesystem, network, or system access",
+      "5-second default timeout (max 10 seconds)",
+      "8 KB output limit"
+    ]
+  },
+  "orchestratorUseCases": [
+    {
+      "scenario": "Swarm agent needs to analyze structured data returned by another tool",
+      "toolChain": ["web_search", "code_execute"],
+      "explanation": "Agent searches for data, then uses code_execute to sort, filter, or compute statistics on the results"
+    },
+    {
+      "scenario": "Agent needs to transform JSON data into a different structure",
+      "toolChain": ["code_execute"],
+      "explanation": "Agent writes JavaScript to restructure, merge, or pivot data"
+    }
+  ],
+  "recommendedEntryTools": ["code_execute"]
+}
