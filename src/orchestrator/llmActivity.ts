@@ -34,6 +34,8 @@ export interface LlmResult {
   providerCost?: number;
   providerCostUnit?: 'credits';
   providerCostDetails?: Record<string, number>;
+  /** OpenRouter server-side web search requests (#650 AC-3). */
+  webSearchRequests?: number;
   toolCalls: Array<{ id: string; name: string; arguments: string }>;
   finishReason: string;
   operationalNotices: string[];
@@ -254,6 +256,7 @@ df.app.activity('llmActivity', {
         providerCost: response.usage.providerCost,
         providerCostUnit: response.usage.providerCostUnit,
         providerCostDetails: response.usage.providerCostDetails,
+        webSearchRequests: response.usage.serverToolUse?.webSearchRequests,
         toolCalls,
         finishReason: choice.finishReason,
         operationalNotices: buildSuccessfulFailoverNotices(response.failoverSteps),

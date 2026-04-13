@@ -39,6 +39,8 @@ export interface TurnTelemetryData {
   decomposerTokens?: number;
   /** Leader synthesis token cost (#636). */
   leaderTokens?: number;
+  /** OpenRouter server-side web search requests this turn (#650 AC-3). */
+  webSearchRequests?: number;
 }
 
 /** Per-agent telemetry for swarm footer rendering (#636). */
@@ -214,6 +216,7 @@ export function formatTelemetryFooter(
     const extraParts = [
       data.subAgentCount ? `sa:${data.subAgentCount}` : '',
       // Swarm cost split: workers vs leader (#636)
+      data.webSearchRequests ? `web:${data.webSearchRequests}` : '',
       data.swarmAgentBreakdown ? `workers:${data.swarmAgentBreakdown.reduce((s, a) => s + a.tokens, 0)}t` : '',
       data.leaderTokens !== undefined ? `leader:${data.leaderTokens}t` : '',
       data.decomposerTokens ? `decomp:${data.decomposerTokens}t` : '',
@@ -251,6 +254,7 @@ export function formatTelemetryFooter(
   );
 
   parts.push(`safe:${data.safetyPassed ? '✓' : '✗'}`);
+  if (data.webSearchRequests) parts.push(`web:${data.webSearchRequests}`);
   if (data.subAgentCount) parts.push(`sa:${data.subAgentCount}`);
 
   // Per-agent swarm breakdown (#636)

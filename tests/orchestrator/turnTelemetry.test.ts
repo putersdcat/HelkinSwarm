@@ -227,3 +227,77 @@ describe('formatTelemetryFooter — swarm per-agent breakdown (#636)', () => {
     expect(result).not.toContain('Alpha');
   });
 });
+
+describe('formatTelemetryFooter — web search requests (#650 AC-3)', () => {
+  it('standard mode shows web search count when present', () => {
+    const result = formatTelemetryFooter('standard', {
+      ...baseTelemetry,
+      webSearchRequests: 2,
+    });
+    expect(result).toContain('web:2');
+  });
+
+  it('verbose mode shows web search count when present', () => {
+    const result = formatTelemetryFooter('verbose', {
+      ...baseTelemetry,
+      webSearchRequests: 3,
+    });
+    expect(result).toContain('web:3');
+  });
+
+  it('omits web search indicator when webSearchRequests is zero or absent', () => {
+    const resultAbsent = formatTelemetryFooter('verbose', baseTelemetry);
+    expect(resultAbsent).not.toContain('web:');
+
+    const resultZero = formatTelemetryFooter('verbose', {
+      ...baseTelemetry,
+      webSearchRequests: 0,
+    });
+    expect(resultZero).not.toContain('web:');
+  });
+
+  it('minimal mode does not include web search count', () => {
+    const result = formatTelemetryFooter('minimal', {
+      ...baseTelemetry,
+      webSearchRequests: 5,
+    });
+    expect(result).not.toContain('web:');
+  });
+});
+
+describe('formatTelemetryFooter — web search requests (#650 AC-3)', () => {
+  it('standard mode shows web search count when present', () => {
+    const result = formatTelemetryFooter('standard', {
+      ...baseTelemetry,
+      webSearchRequests: 2,
+    });
+    expect(result).toContain('web:2');
+  });
+
+  it('verbose mode shows web search count when present', () => {
+    const result = formatTelemetryFooter('verbose', {
+      ...baseTelemetry,
+      webSearchRequests: 3,
+    });
+    expect(result).toContain('web:3');
+  });
+
+  it('omits web search indicator when webSearchRequests is zero or absent', () => {
+    const resultAbsent = formatTelemetryFooter('verbose', baseTelemetry);
+    expect(resultAbsent).not.toContain('web:');
+
+    const resultZero = formatTelemetryFooter('verbose', {
+      ...baseTelemetry,
+      webSearchRequests: 0,
+    });
+    expect(resultZero).not.toContain('web:');
+  });
+
+  it('minimal mode does not include web search count', () => {
+    const result = formatTelemetryFooter('minimal', {
+      ...baseTelemetry,
+      webSearchRequests: 5,
+    });
+    expect(result).not.toContain('web:');
+  });
+});

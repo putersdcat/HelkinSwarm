@@ -71,6 +71,8 @@ export interface FollowUpResponseEvidence {
   providerCost?: number;
   providerCostUnit?: 'credits';
   providerCostDetails?: Record<string, number>;
+  /** Accumulated web search requests across all follow-up responses (#650 AC-3). */
+  webSearchRequests?: number;
   operationalNotices: string[];
   failoverSteps: LlmFailoverStep[];
 }
@@ -207,6 +209,7 @@ export function mergeFollowUpResponseEvidence(
   let providerCost = 0;
   let hasProviderCost = false;
   let providerCostUnit: 'credits' | undefined;
+  let webSearchRequests = 0;
 
   for (const response of responses) {
     tokensUsed += response.usage.totalTokens;
@@ -216,6 +219,7 @@ export function mergeFollowUpResponseEvidence(
       hasProviderCost = true;
       providerCostUnit = response.usage.providerCostUnit ?? providerCostUnit ?? 'credits';
     }
+    webSearchRequests += response.usage.serverToolUse?.webSearchRequests ?? 0;
     for (const notice of buildSuccessfulFailoverNotices(response.failoverSteps)) {
       operationalNotices.add(notice);
     }
@@ -228,6 +232,7 @@ export function mergeFollowUpResponseEvidence(
     providerCost: hasProviderCost ? providerCost : undefined,
     providerCostUnit: hasProviderCost ? (providerCostUnit ?? 'credits') : undefined,
     providerCostDetails: mergeProviderCostDetails(responses),
+    webSearchRequests: webSearchRequests > 0 ? webSearchRequests : undefined,
     operationalNotices: [...operationalNotices],
     failoverSteps: lastResponse.failoverSteps ?? [],
   };
@@ -423,6 +428,7 @@ df.app.activity('llmFollowUpActivity', {
             providerCost: evidence.providerCost,
             providerCostUnit: evidence.providerCostUnit,
             providerCostDetails: evidence.providerCostDetails,
+            webSearchRequests: evidence.webSearchRequests,
             toolCalls: [],
             finishReason: 'stop',
             operationalNotices: evidence.operationalNotices,
@@ -439,6 +445,7 @@ df.app.activity('llmFollowUpActivity', {
           providerCost: evidence.providerCost,
           providerCostUnit: evidence.providerCostUnit,
           providerCostDetails: evidence.providerCostDetails,
+          webSearchRequests: evidence.webSearchRequests,
           toolCalls: effectiveRetryToolCalls,
           finishReason: choice.finishReason,
           operationalNotices: evidence.operationalNotices,
@@ -479,6 +486,7 @@ df.app.activity('llmFollowUpActivity', {
         providerCost: evidence.providerCost,
         providerCostUnit: evidence.providerCostUnit,
         providerCostDetails: evidence.providerCostDetails,
+        webSearchRequests: evidence.webSearchRequests,
         toolCalls: [],
         finishReason: choice.finishReason,
         operationalNotices: evidence.operationalNotices,

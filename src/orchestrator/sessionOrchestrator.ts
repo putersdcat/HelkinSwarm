@@ -1086,6 +1086,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // Counters for telemetry footer (#321)
   let subAgentSpawnCount = 0;
   let scopedTokenMintCount = 0;
+  let cumulativeWebSearchRequests = llmResult.webSearchRequests ?? 0;
 
   // 3. If LLM returned tool calls, run the safety pipeline
   let toolResults: ToolDispatchResult | null = null;
@@ -1552,6 +1553,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       cumulativeTokensUsed += followUp.tokensUsed;
       cumulativePromptTokens += followUp.promptTokens;
       accumulateProviderCost(followUp.providerCost, followUp.providerCostUnit, followUp.providerCostDetails);
+      cumulativeWebSearchRequests += followUp.webSearchRequests ?? 0;
       rememberOperationalEvidence(operationalNotices, followUp);
 
       // Multi-round loop: if the follow-up LLM requests more tool calls,
@@ -1606,6 +1608,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           cumulativeTokensUsed += followUp.tokensUsed;
           cumulativePromptTokens += followUp.promptTokens;
           accumulateProviderCost(followUp.providerCost, followUp.providerCostUnit, followUp.providerCostDetails);
+          cumulativeWebSearchRequests += followUp.webSearchRequests ?? 0;
           rememberOperationalEvidence(operationalNotices, followUp);
           break; // Truncation retry is terminal — don't loop further
         }
@@ -1726,6 +1729,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             cumulativeTokensUsed += followUp.tokensUsed;
             cumulativePromptTokens += followUp.promptTokens;
             accumulateProviderCost(followUp.providerCost, followUp.providerCostUnit, followUp.providerCostDetails);
+            cumulativeWebSearchRequests += followUp.webSearchRequests ?? 0;
             rememberOperationalEvidence(operationalNotices, followUp);
           }
           break;
@@ -1979,6 +1983,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         cumulativeTokensUsed += followUp.tokensUsed;
         cumulativePromptTokens += followUp.promptTokens;
         accumulateProviderCost(followUp.providerCost, followUp.providerCostUnit, followUp.providerCostDetails);
+        cumulativeWebSearchRequests += followUp.webSearchRequests ?? 0;
         rememberOperationalEvidence(operationalNotices, followUp);
       }
 
@@ -2040,6 +2045,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       planComplexity: planResult.complexity,
       subAgentCount: subAgentSpawnCount > 0 ? subAgentSpawnCount : undefined,
       scopedTokenMintCount: scopedTokenMintCount > 0 ? scopedTokenMintCount : undefined,
+      webSearchRequests: cumulativeWebSearchRequests > 0 ? cumulativeWebSearchRequests : undefined,
     };
     replyMessage += formatTelemetryFooter(telemetryMode, telemetryData);
   }

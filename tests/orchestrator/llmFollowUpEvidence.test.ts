@@ -62,4 +62,46 @@ describe('mergeFollowUpResponseEvidence', () => {
       '⚠️ Operational note: o4-mini was temporarily unavailable (HTTP 503); auto-failed over to o4-mini and continued your request.',
     ]);
   });
+
+  it('accumulates webSearchRequests across multiple follow-up responses (#650)', async () => {
+    const { mergeFollowUpResponseEvidence } = await loadFollowUpModule();
+    const evidence = mergeFollowUpResponseEvidence([
+      {
+        model: 'grok-4-1-fast-non-reasoning',
+        usage: {
+          promptTokens: 500,
+          completionTokens: 200,
+          totalTokens: 700,
+          serverToolUse: { webSearchRequests: 1 },
+        },
+        failoverSteps: [],
+      },
+      {
+        model: 'grok-4-1-fast-non-reasoning',
+        usage: {
+          promptTokens: 400,
+          completionTokens: 100,
+          totalTokens: 500,
+          serverToolUse: { webSearchRequests: 2 },
+        },
+        failoverSteps: [],
+      },
+    ]);
+
+    expect(evidence.webSearchRequests).toBe(3);
+    expect(evidence.tokensUsed).toBe(1200);
+  });
+
+  it('returns undefined webSearchRequests when no responses contain server tool use', async () => {
+    const { mergeFollowUpResponseEvidence } = await loadFollowUpModule();
+    const evidence = mergeFollowUpResponseEvidence([
+      {
+        model: 'grok-4-1-fast-non-reasoning',
+        usage: { promptTokens: 100, completionTokens: 50, totalTokens: 150 },
+        failoverSteps: [],
+      },
+    ]);
+
+    expect(evidence.webSearchRequests).toBeUndefined();
+  });
 });
