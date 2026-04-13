@@ -87,6 +87,14 @@ describe('isSwarmEligible', () => {
       'Compare the tradeoffs between CRDT and OT approaches for real-time collaborative editing, evaluating consistency guarantees, latency characteristics, and adoption in modern frameworks like Yjs, Automerge, and ShareDB',
     )).toBe(true);
   });
+
+  it('triggers on explicit swarm override phrases', () => {
+    expect(isSwarmEligible('that answer was shit, do it again but use the swarm')).toBe(true);
+    expect(isSwarmEligible('use swarm mode for this')).toBe(true);
+    expect(isSwarmEligible('ask your team to handle this')).toBe(true);
+    expect(isSwarmEligible('try the swarm on this one')).toBe(true);
+    expect(isSwarmEligible('swarm this')).toBe(true);
+  });
 });
 
 describe('ChatroomMessageSchema', () => {

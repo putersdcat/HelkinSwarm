@@ -195,6 +195,14 @@ export interface SwarmOrchestratorResult {
 export function isSwarmEligible(message: string): boolean {
   const lower = message.toLowerCase();
 
+  // Explicit override — user directly requests swarm execution
+  const explicitSwarmSignals = [
+    'use the swarm', 'use swarm', 'swarm mode', 'ask the swarm',
+    'send to swarm', 'with the swarm', 'try the swarm', 'activate swarm',
+    'swarm this', 'use your team', 'use the team', 'ask your team',
+  ];
+  if (explicitSwarmSignals.some(s => lower.includes(s))) return true;
+
   // Multi-faceted research signals — verbs that imply gathering/exploring
   const researchSignals = [
     'find', 'search', 'compare', 'research', 'investigate',
