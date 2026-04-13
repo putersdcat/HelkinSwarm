@@ -13,7 +13,9 @@ import type {
   SwarmLeaderInput,
   SwarmLeaderResult,
 } from './swarmTypes.js';
+import { ChatroomMessageSchema } from './swarmTypes.js';
 import type { SwarmMemoryCommitInput } from './swarmMemoryCommitActivity.js';
+import type { SwarmSubSessionInput, SwarmSubSessionResult } from './swarmSubSessionActivity.js';
 
 // ---------------------------------------------------------------------------
 // Timeout helpers (Durable timer pattern — same as #588/#591)
@@ -182,15 +184,80 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
   // -----------------------------------------------------------------------
 
   // -----------------------------------------------------------------------
-  // 3.4a. Sub-session interception — TODO(#638 Slice 2)
-  // Scan allChatroomMessages for contentType === 'sub_session_request'.
-  // For each: mint a least-privilege scoped token, spawn swarmSubSessionActivity
-  // with (toolName, toolArgs, userId, correlationId), collect results, and inject
-  // them back into allChatroomMessages as contentType 'sub_session_result' addressed
-  // to the requesting agent.
-  // Filter sub_session_request messages OUT before second-pass routing so workers
-  // don't see raw unhandled requests in their context injection.
+  // 3.4a. Sub-session interception (#638 Slice 2)
+  // Scan allChatroomMessages for sub_session_request messages emitted by workers
+  // (gated in swarmWorkerActivity). Execute each privileged tool call in an
+  // isolated swarmSubSessionActivity. Inject sub_session_result messages back
+  // so the requesting agent receives the output via second-pass injection.
   // -----------------------------------------------------------------------
+  const subSessionRequests = allChatroomMessages.filter(m => m.contentType === 'sub_session_request');
+  if (subSessionRequests.length > 0) {
+    const SUB_SESSION_TIMEOUT_MS = 30_000;
+    // Schedule all sub-sessions concurrently before any yield
+    const subTasks = subSessionRequests.map(req => {
+      let toolName = '';
+      let toolArgs: Record<string, unknown> = {};
+      let requestingAgent = req.from;
+      try {
+        const parsed = JSON.parse(req.content) as { toolName?: string; toolArgs?: Record<string, unknown>; requestingAgent?: string };
+        toolName = parsed.toolName ?? '';
+        toolArgs = parsed.toolArgs ?? {};
+        requestingAgent = parsed.requestingAgent ?? req.from;
+      } catch {
+        // malformed content — will fail in the activity
+      }
+      return context.df.callActivity('swarmSubSessionActivity', {
+        toolName,
+        toolArgs,
+        requestingAgent,
+        requestMessageId: req.id,
+        userId,
+        correlationId,
+        swarmId: plan.swarmId,
+        swarmCorrelationId: correlationId,
+      } satisfies SwarmSubSessionInput);
+    });
+    const subTimers = subSessionRequests.map(() =>
+      context.df.createTimer(new Date(context.df.currentUtcDateTime.getTime() + SUB_SESSION_TIMEOUT_MS)),
+    );
+
+    for (let si = 0; si < subTasks.length; si++) {
+      const winner = yield context.df.Task.any([subTasks[si], subTimers[si]]) as df.Task;
+      subTimers[si].cancel();
+
+      let resultMsg: ChatroomMessage;
+      if (winner === subTimers[si]) {
+        // Sub-session timed out
+        resultMsg = {
+          id: context.df.newGuid(`${correlationId}:sub-session-timeout:${si}`),
+          from: 'Leader',
+          to: subSessionRequests[si].from,
+          content: `Sub-session timed out after ${SUB_SESSION_TIMEOUT_MS}ms — tool could not be executed`,
+          contentType: 'sub_session_result',
+          timestamp: context.df.currentUtcDateTime.getTime(),
+          correlationId,
+        };
+      } else {
+        const subResult = subTasks[si].result as SwarmSubSessionResult;
+        const label = subResult.success ? 'Result' : 'Error';
+        resultMsg = {
+          id: context.df.newGuid(`${correlationId}:sub-session-result:${si}`),
+          from: 'Leader',
+          to: subResult.requestingAgent,
+          content: `[Sub-session ${label} for ${subResult.toolName}]\n${subResult.resultContent}`,
+          contentType: 'sub_session_result',
+          timestamp: context.df.currentUtcDateTime.getTime(),
+          correlationId,
+          replyTo: subSessionRequests[si].id,
+        };
+      }
+
+      const validatedResult = ChatroomMessageSchema.safeParse(resultMsg);
+      if (validatedResult.success) {
+        allChatroomMessages.push(validatedResult.data);
+      }
+    }
+  }
 
   const SECOND_PASS_TIMEOUT_MS = 20_000;
   const secondPassTasks: df.Task[] = [];
