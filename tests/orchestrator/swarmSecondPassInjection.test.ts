@@ -100,8 +100,9 @@ describe('swarmOrchestrator — second-pass message injection (#644 Slice 1)', (
     expect(orchestratorSrc).toContain('inboundMessages: inbound');
   });
 
-  it('skips second pass for agents with no inbound messages', () => {
-    expect(orchestratorSrc).toContain('if (inbound.length === 0) continue');
+  it('skips second pass for agents with no inbound messages AND no swarm_wait request (#646)', () => {
+    // After #646, the condition also allows swarm_wait-requesting agents through
+    expect(orchestratorSrc).toContain('if (inbound.length === 0 && !requestedWait) continue');
   });
 
   it('limits second-pass to 2 rounds max', () => {

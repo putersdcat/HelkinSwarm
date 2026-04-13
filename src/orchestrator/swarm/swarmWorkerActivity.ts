@@ -18,6 +18,9 @@ import { ChatroomMessageSchema } from './swarmTypes.js';
 // Internal "virtual tool" name — intercepted by the worker, not dispatched
 const CHATROOM_SEND_TOOL = 'chatroom_send';
 
+// Yield/resume synchronization primitive — intercepted when agent calls swarm_wait (#646)
+const SWARM_WAIT_TOOL = 'swarm_wait';
+
 // Auto-injected memory search tool — always available to all swarm agents (#633)
 const CONVERSATION_SEARCH_TOOL = 'conversation_search';
 
@@ -101,6 +104,32 @@ function buildWorkerToolSchemas(assignedToolNames: string[]): ToolDefinition[] {
           },
         },
         required: ['message', 'to'],
+      },
+    },
+  });
+
+  // Add the virtual swarm_wait tool — yields agent until peer messages arrive (#646)
+  tools.push({
+    type: 'function',
+    function: {
+      name: SWARM_WAIT_TOOL,
+      description: 'Pause your execution and wait for a specific teammate to send their results. Their messages will be injected into your context before you continue working.',
+      parameters: {
+        type: 'object',
+        properties: {
+          waitFor: {
+            description: 'Agent name(s) to wait for (e.g. "Benjamin", ["Benjamin", "Harper"]) or "Any" for the next available peer message',
+            anyOf: [
+              { type: 'string' },
+              { type: 'array', items: { type: 'string' } },
+            ],
+          },
+          reason: {
+            type: 'string',
+            description: 'Brief reason for waiting (e.g. "need pricing data before I can rank options")',
+          },
+        },
+        required: ['waitFor'],
       },
     },
   });
@@ -197,6 +226,9 @@ df.app.activity('swarmWorkerActivity', {
     let toolCallsMade = 0;
     let chatroomMessagesSent = 0;
     let tokenBudgetExceeded = false;
+    // swarm_wait state — set when the agent explicitly yields for peer messages (#646)
+    let requestsSecondPass = false;
+    let waitingFor: string[] = [];
     const toolsUsedSet = new Set<string>();
     const startTimeMs = Date.now();
 
@@ -321,6 +353,33 @@ df.app.activity('swarmWorkerActivity', {
               content: `Message sent to ${typeof to === 'string' ? to : to.join(', ')}`,
               toolCallId: tc.id,
             });
+          } else if (tc.function.name === SWARM_WAIT_TOOL) {
+            // swarm_wait — agent yields; orchestrator guarantees second pass with peer messages (#646)
+            const waitArgs = parsedArgs as { waitFor?: string | string[]; reason?: string };
+            const raw = waitArgs.waitFor ?? 'Any';
+            waitingFor = Array.isArray(raw) ? raw : [raw];
+            requestsSecondPass = true;
+
+            trackEvent({
+              name: 'SwarmWorkerWaitRequested',
+              correlationId: input.correlationId,
+              userId: input.userId,
+              properties: {
+                agentName: input.agentName,
+                waitingFor: waitingFor.join(', '),
+                reason: String(waitArgs.reason ?? ''),
+                swarmId: input.swarmId,
+              },
+            });
+
+            messages.push({
+              role: 'tool',
+              content: `Wait registered. Pausing execution. You will resume with messages from ${waitingFor.join(', ')} injected into your context.`,
+              toolCallId: tc.id,
+            });
+
+            // swarm_wait terminates the current round — break out of the tool-call loop
+            break;
           } else if (input.assignedTools.includes(tc.function.name) || tc.function.name === CONVERSATION_SEARCH_TOOL) {
             // External tool — execute it (includes auto-injected conversation_search)
             toolCallsMade++;
@@ -346,6 +405,8 @@ df.app.activity('swarmWorkerActivity', {
             });
           }
         }
+        // If swarm_wait was called in this round, exit the round loop immediately
+        if (requestsSecondPass) break;
       }
 
       trackEvent({
@@ -377,9 +438,12 @@ df.app.activity('swarmWorkerActivity', {
         model: agentDeploymentName,
         tokenBudget: input.tokenBudget,
         tokenBudgetExceeded,
-        // Pass pending chatroom messages back — the orchestrator will signal the entity
+        // Pass pending chatroom messages back — orchestrator signals the entity
         _pendingChatroomMessages: pendingChatroomMessages,
-      } as SwarmWorkerResult & { _pendingChatroomMessages: ChatroomMessage[] };
+        // swarm_wait state — orchestrator uses these to guarantee a second pass (#646)
+        _requestsSecondPass: requestsSecondPass,
+        ...(waitingFor.length > 0 ? { _waitingFor: waitingFor } : {}),
+      } as SwarmWorkerResult & { _pendingChatroomMessages: ChatroomMessage[]; _requestsSecondPass: boolean; _waitingFor?: string[] };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
       trackEvent({

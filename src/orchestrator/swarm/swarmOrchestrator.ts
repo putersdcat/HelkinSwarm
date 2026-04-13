@@ -186,16 +186,48 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
 
   for (let i = 0; i < plan.agents.length; i++) {
     const agent = plan.agents[i];
+    // Check if this worker explicitly yielded via swarm_wait (#646)
+    const workerResult = workerResults[i] as SwarmWorkerResult & {
+      _requestsSecondPass?: boolean;
+      _waitingFor?: string[];
+    };
+    const requestedWait = workerResult._requestsSecondPass === true;
+    const workerWaitingFor = workerResult._waitingFor ?? [];
+
     const inbound = allChatroomMessages.filter(msg =>
       typeof msg.to === 'string'
         ? msg.to === agent.name || msg.to === 'All'
         : (msg.to as string[]).includes(agent.name) || (msg.to as string[]).includes('All'),
     );
-    if (inbound.length === 0) continue;
+    // Run second pass if: (a) there are inbound messages, OR (b) agent called swarm_wait
+    if (inbound.length === 0 && !requestedWait) continue;
+
+    // Build context-aware task description based on why this pass is running
+    let secondPassTask: string;
+    if (requestedWait && inbound.length === 0) {
+      // Timeout case: agent waited but no peer messages arrived
+      secondPassTask =
+        `You called swarm_wait(waitFor: [${workerWaitingFor.join(', ') || 'Any'}]). ` +
+        `No messages arrived from them within the timeout. ` +
+        `Resume your task and send your best available result to Helkin. ` +
+        `Your original assignment: ${agent.task}`;
+    } else if (requestedWait) {
+      // Wait satisfied: agent waited and now has peer messages
+      secondPassTask =
+        `You called swarm_wait(waitFor: [${workerWaitingFor.join(', ') || 'Any'}]). ` +
+        `Messages from your teammates are now available. ` +
+        `Review them, incorporate the data you were waiting for, and send your findings to Helkin. ` +
+        `Your original assignment: ${agent.task}`;
+    } else {
+      // Standard second pass: unsolicited inbound messages from peers
+      secondPassTask =
+        `Review messages your teammates sent you and send any additional insights or corrections to Helkin. ` +
+        `Your completed assignment was: ${agent.task}`;
+    }
 
     const secondPassInput: SwarmWorkerInput = {
       ...savedWorkerInputs[i],
-      task: `Review messages your teammates sent you and send any additional insights or corrections to Helkin. Your completed assignment was: ${agent.task}`,
+      task: secondPassTask,
       inboundMessages: inbound,
       maxRounds: Math.min(2, plan.maxRoundsPerAgent),
       // Token budget not tracked for second pass — it's a brief refinement only

@@ -153,6 +153,10 @@ export interface SwarmWorkerResult {
   tokenBudget?: number;
   /** True if the worker stopped because it exceeded its token budget (#647). */
   tokenBudgetExceeded?: boolean;
+  /** Set when the agent called swarm_wait — orchestrator guarantees a second pass. (#646) */
+  _requestsSecondPass?: boolean;
+  /** Which agent(s) the worker was waiting for. Used for context-aware second-pass task. (#646) */
+  _waitingFor?: string[];
 }
 
 export interface SwarmLeaderInput {

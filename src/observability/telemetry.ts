@@ -105,6 +105,7 @@ export type TelemetryEventName =
   | 'SwarmWorkerCompleted'
   | 'SwarmWorkerBudgetExceeded'
   | 'SwarmWorkerError'
+  | 'SwarmWorkerWaitRequested'
   | 'SwarmToolBlocked'
   | 'SwarmToolHandlerMissing'
   | 'SwarmToolError'
