@@ -931,3 +931,173 @@ export const helkin_whoami: ToolHandler = async (args) => {
     message: `You are playing the role of '${summary.role}'. ${summary.description}`,
   };
 };
+
+// ---------------------------------------------------------------------------
+// helkin_persona_eval — Self-evaluation of recent turns against persona goals
+// ---------------------------------------------------------------------------
+
+/**
+ * Extract actionable directives from the persona markdown.
+ * Looks for imperative sentences, bullet-point rules, and bolded guidance.
+ */
+function extractPersonaDirectives(personaText: string): string[] {
+  const lines = personaText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+  const directives: string[] = [];
+  for (const line of lines) {
+    // Skip headings and metadata
+    if (line.startsWith('#')) continue;
+    // Bullet-point rules
+    if (/^[-*]\s+/.test(line)) {
+      directives.push(line.replace(/^[-*]\s+/, '').replace(/\*\*/g, ''));
+      continue;
+    }
+    // Imperative / instructional sentences
+    if (/^(You |We |Do |Never |Always |Call |Use |NEVER )/i.test(line)) {
+      directives.push(line.replace(/\*\*/g, ''));
+    }
+  }
+  return directives;
+}
+
+/**
+ * Simple keyword-based alignment check between a directive and an assistant response.
+ * Returns 'aligned' if the response seems consistent, 'neutral' if no signal, 'possible-drift' if concern.
+ */
+function scoreAlignment(directive: string, response: string): 'aligned' | 'neutral' | 'possible-drift' {
+  const directiveLower = directive.toLowerCase();
+  const responseLower = response.toLowerCase();
+
+  // Negative directives — check for violations
+  if (/\b(never|do not|don't|avoid|NEVER)\b/i.test(directive)) {
+    // Extract what to avoid
+    const avoidMatch = directiveLower.match(/(?:never|do not|don't|avoid)\s+(.{5,40})/i);
+    if (avoidMatch) {
+      const avoidPhrase = avoidMatch[1].replace(/[^\w\s]/g, '').trim();
+      const avoidWords = avoidPhrase.split(/\s+/).filter(w => w.length > 3);
+      const matchCount = avoidWords.filter(w => responseLower.includes(w)).length;
+      if (matchCount >= 2) return 'possible-drift';
+    }
+    return 'neutral';
+  }
+
+  // Positive directives — check for alignment keywords
+  const significantWords = directiveLower
+    .replace(/[^\w\s]/g, '')
+    .split(/\s+/)
+    .filter(w => w.length > 4 && !['should', 'always', 'every', 'about', 'these', 'those', 'their', 'which', 'where', 'there'].includes(w));
+
+  const matchCount = significantWords.filter(w => responseLower.includes(w)).length;
+  if (matchCount >= 2) return 'aligned';
+  return 'neutral';
+}
+
+export const helkin_persona_eval: ToolHandler = async (args) => {
+  const { loadState } = await import('../../src/orchestrator/stateManager.js');
+  const { readFile } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+
+  const userId = typeof args['userId'] === 'string' ? args['userId'] : undefined;
+  if (!userId) {
+    return { status: 'error', message: 'userId is required.' };
+  }
+
+  const turnCount = typeof args['turnCount'] === 'number'
+    ? Math.min(10, Math.max(1, Math.trunc(args['turnCount'])))
+    : 5;
+
+  // Load state for recent history
+  const state = await loadState(userId);
+  if (!state?.recentHistory || state.recentHistory.length === 0) {
+    return {
+      status: 'no-history',
+      message: 'No recent conversation history available to evaluate.',
+    };
+  }
+
+  // Load persona text
+  let personaText: string;
+  try {
+    personaText = await readFile(
+      join(process.cwd(), 'src', 'persona', 'dronePersona.md'),
+      'utf-8',
+    );
+  } catch {
+    return {
+      status: 'error',
+      message: 'Could not load persona file (src/persona/dronePersona.md).',
+    };
+  }
+
+  // Extract directives
+  const directives = extractPersonaDirectives(personaText);
+  if (directives.length === 0) {
+    return {
+      status: 'error',
+      message: 'No actionable directives found in persona text.',
+    };
+  }
+
+  // Get recent assistant turns
+  const assistantTurns = state.recentHistory
+    .filter(t => t.role === 'assistant')
+    .slice(-turnCount);
+
+  if (assistantTurns.length === 0) {
+    return {
+      status: 'no-assistant-turns',
+      message: 'No recent assistant turns found to evaluate.',
+    };
+  }
+
+  // Score each directive against the recent turns
+  const directiveScores = directives.map(directive => {
+    const turnScores = assistantTurns.map((turn, idx) => ({
+      turnIndex: idx,
+      turnSnippet: turn.content.slice(0, 120) + (turn.content.length > 120 ? '…' : ''),
+      alignment: scoreAlignment(directive, turn.content),
+    }));
+
+    const alignedCount = turnScores.filter(t => t.alignment === 'aligned').length;
+    const driftCount = turnScores.filter(t => t.alignment === 'possible-drift').length;
+
+    return {
+      directive: directive.slice(0, 200),
+      alignedTurns: alignedCount,
+      driftTurns: driftCount,
+      neutralTurns: turnScores.length - alignedCount - driftCount,
+      details: turnScores.filter(t => t.alignment !== 'neutral'),
+    };
+  });
+
+  // Compute overall score
+  const totalChecks = directives.length * assistantTurns.length;
+  const totalAligned = directiveScores.reduce((s, d) => s + d.alignedTurns, 0);
+  const totalDrift = directiveScores.reduce((s, d) => s + d.driftTurns, 0);
+
+  const driftDirectives = directiveScores
+    .filter(d => d.driftTurns > 0)
+    .map(d => d.directive);
+
+  const strongDirectives = directiveScores
+    .filter(d => d.alignedTurns >= Math.ceil(assistantTurns.length / 2))
+    .map(d => d.directive);
+
+  return {
+    status: 'success',
+    turnsEvaluated: assistantTurns.length,
+    directivesExtracted: directives.length,
+    totalChecks,
+    summary: {
+      alignedSignals: totalAligned,
+      driftSignals: totalDrift,
+      neutralSignals: totalChecks - totalAligned - totalDrift,
+      overallHealth: totalDrift === 0 ? 'healthy' : totalDrift <= 2 ? 'minor-drift' : 'attention-needed',
+    },
+    strongDirectives: strongDirectives.slice(0, 5),
+    driftDirectives: driftDirectives.slice(0, 5),
+    directiveScores: directiveScores.slice(0, 15),
+    suggestion: totalDrift > 0
+      ? `${totalDrift} possible drift signal(s) detected. Review the flagged directives and consider persona adjustments or behavioral reinforcement.`
+      : 'Recent turns are consistent with the current persona. No adjustments needed.',
+  };
+};

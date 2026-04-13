@@ -448,6 +448,41 @@
       "requiresSubAgent": false
     },
     {
+      "name": "helkin_persona_eval",
+      "description": "Evaluate recent assistant turns against the current persona directives. Returns a structured self-evaluation showing which persona goals are being upheld, which show possible drift, and an overall health score. Use when asked to self-evaluate, review persona alignment, or assess behavioral consistency.",
+      "risk": "low",
+      "dataSensitivity": "mixed",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "turnCount": {
+            "type": "number",
+            "description": "Number of recent assistant turns to evaluate (default: 5, max: 10)"
+          }
+        },
+        "required": []
+      },
+      "aliases": [
+        "self-evaluation",
+        "persona check",
+        "evaluate persona",
+        "review behavior"
+      ],
+      "discoveryTerms": [
+        "self evaluation",
+        "persona alignment",
+        "behavioral review",
+        "persona scoring"
+      ],
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
+    },
+    {
       "name": "helkin_whoami",
       "description": "Return the current user's application role (owner or guest) and the list of privileged tools accessible to them. Use to explain what the current user can and cannot do.",
       "risk": "low",
@@ -476,7 +511,8 @@
     "skill discovery",
     "skill management",
     "preferences",
-    "identity and role introspection"
+    "identity and role introspection",
+    "persona self-evaluation"
   ],
   "orchestratorUseCases": [
     "discover which skill or tool should handle a broader user request",
