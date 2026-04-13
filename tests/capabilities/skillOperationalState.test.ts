@@ -25,6 +25,7 @@ describe('skill operational state assessment', () => {
     expect(byDomain['web']?.operationalState).toBe('operational'); // Brave key is optional — DuckDuckGo fallback makes it operational
     expect(byDomain['outlook']?.operationalState).toBe('action-required');
     expect(byDomain['microsoftlearn']?.operationalState).toBe('operational');
+    expect(byDomain['x']?.operationalState).toBe('operator-setup-required'); // #641 — operator/backend-config-required must not be operational
 
     const graphenterprise = inspectSkillInstall('graphenterprise');
     expect(graphenterprise.status).toBe('operator-setup-required');
@@ -37,5 +38,10 @@ describe('skill operational state assessment', () => {
     const microsoftLearn = inspectSkillInstall('microsoftlearn');
     expect(microsoftLearn.status).toBe('operational');
     expect(microsoftLearn.steps).toEqual(['No setup required — skill is ready to use.']);
+
+    // #641 — operator/backend-config-required must surface as operator-setup-required
+    const xSkill = inspectSkillInstall('x');
+    expect(xSkill.status).toBe('operator-setup-required');
+    expect(xSkill.message).toContain('operator or tenant setup');
   });
 });

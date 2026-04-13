@@ -57,8 +57,9 @@ export function assessSkillOperationalState(
   const hasOperatorOrTenantPrerequisites =
     onboardingMethod === 'automatic-agentic'
     && (unsatisfiedExternalAccounts.length > 0 || requiredPermissions.length > 0);
+  const isOperatorBackendRequired = onboardingMethod === 'operator/backend-config-required';
 
-  const operationalState: SkillOperationalState = hasOperatorOrTenantPrerequisites
+  const operationalState: SkillOperationalState = isOperatorBackendRequired || hasOperatorOrTenantPrerequisites
     ? 'operator-setup-required'
     : hasChatRecoverableUserAction
       ? 'action-required'
@@ -68,6 +69,8 @@ export function assessSkillOperationalState(
   if (onboardingMethod === 'post-install-link' || onboardingMethod === 'both') {
     const linkName = manifest.linkConfig?.connectionName ?? manifest.domain;
     steps.push(`Complete OAuth authorisation via /link (connection: ${linkName})`);
+  } else if (isOperatorBackendRequired) {
+    steps.push('Operator/backend configuration is required before this skill can be used.');
   } else if (onboardingMethod === 'automatic-agentic' && operationalState === 'operator-setup-required') {
     steps.push('Automatic onboarding can continue once the prerequisites below are satisfied.');
   }
