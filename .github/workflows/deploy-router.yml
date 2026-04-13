@@ -128,6 +128,21 @@ jobs:
             OAUTH_SECRET=$(az keyvault secret show --vault-name helkinswarm-kv-a7f2 --name DelegatedAuthClientSecret --query value -o tsv)
           fi
 
+          # Fetch the live user-map from Key Vault so real routing data is never committed to the repo.
+          # The secret name is 'HelkinUserMap' and its value is the full UserMap JSON blob.
+          # If the secret does not exist yet, fall back to empty string (router will use baked-in template).
+          # ACTION REQUIRED: store the real user-map JSON in Key Vault before first deploy (#642).
+          HELKIN_USER_MAP_VALUE=$(az keyvault secret show \
+            --vault-name helkinswarm-kv-a7f2 \
+            --name HelkinUserMap \
+            --query value -o tsv 2>/dev/null || echo "")
+
+          if [ -z "$HELKIN_USER_MAP_VALUE" ]; then
+            echo "⚠️  Key Vault secret 'HelkinUserMap' not found — router will use baked-in template (no live routing). Store the real user-map JSON in Key Vault to fix routing. (#642)"
+          else
+            echo "✅ HelkinUserMap fetched from Key Vault (${#HELKIN_USER_MAP_VALUE} chars)"
+          fi
+
           RESULT=$(az deployment group create \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --template-file infra/main-router.bicep \
@@ -136,6 +151,7 @@ jobs:
               alertEmail="${{ vars.ALERT_EMAIL }}" \
               createOAuthConnection=${{ github.event.inputs.CREATE_OAUTH_CONNECTION || 'false' }} \
               delegatedAuthClientSecret="$OAUTH_SECRET" \
+              helkinUserMap="$HELKIN_USER_MAP_VALUE" \
               lowCostDevMode=${{ github.event.inputs.LOW_COST_DEV_MODE || 'false' }} \
               earlyDevCostGuard=${{ env.EARLY_DEV_COST_GUARD }} \
               earlyDevMonthlyBudgetUsd=${{ env.EARLY_DEV_MONTHLY_BUDGET_USD }} \
