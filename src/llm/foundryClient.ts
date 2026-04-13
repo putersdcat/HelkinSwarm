@@ -640,11 +640,15 @@ export class FoundryClient {
     // Build combined tools array: function tools + OpenRouter server tools (#650).
     // When on OpenRouter, inject openrouter:web_search server tool and remove the
     // client-side web_search function tool to avoid duplication.
+    // xAI models: use engine "exa" because xAI's Chat Completions API rejects
+    // non-function tool types when mixed with function tools. Exa forces OpenRouter
+    // to handle search server-side and only forward clean function tools to xAI.
     const functionTools = (options.tools ?? []).filter((t) => t.function.name !== 'web_search');
+    const isXai = routing.deploymentName.startsWith('x-ai/');
     const serverSearchTool: Record<string, unknown> = {
       type: 'openrouter:web_search',
       parameters: {
-        engine: 'auto',
+        engine: isXai ? 'exa' : 'auto',
         max_results: 5,
         max_total_results: 20,
       },
