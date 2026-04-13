@@ -75,7 +75,7 @@ function buildWorkerToolSchemas(assignedToolNames: string[]): ToolDefinition[] {
             description: 'Message content (partial results, questions, status updates, etc.)',
           },
           to: {
-            description: 'Recipient: agent name (e.g. "Leader", "Alpha") or "All" for broadcast',
+            description: 'Recipient: agent name (e.g. "Helkin", "Benjamin", "Harper", "Lucas") or "All" for broadcast',
             anyOf: [
               { type: 'string' },
               { type: 'array', items: { type: 'string' } },
@@ -158,7 +158,7 @@ df.app.activity('swarmWorkerActivity', {
     });
 
     const tools = buildWorkerToolSchemas(input.assignedTools);
-    const allAgentNames = [input.agentName]; // Extended by orchestrator context
+    const allAgentNames = input.allAgentNames ?? [input.agentName];
     const systemPrompt = buildWorkerSystemPrompt({
       agentName: input.agentName,
       agentRole: input.agentRole,

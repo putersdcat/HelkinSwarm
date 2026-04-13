@@ -57,6 +57,7 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
       agentPersona: agent.persona,
       task: agent.task,
       assignedTools: agent.assignedTools,
+      allAgentNames,
       swarmId: plan.swarmId,
       swarmCorrelationId: correlationId,
       chatroomEntityId: `swarm-${plan.swarmId}`,
@@ -114,7 +115,7 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
       const totalCount = workerTasks.length;
       const latestAgent = workerResults[workerResults.length - 1];
       const statusIcon = latestAgent.success ? '✓' : '✗';
-      const suffix = completedCount === totalCount ? ' | Leader synthesizing…' : '';
+      const suffix = completedCount === totalCount ? ' | Helkin synthesizing…' : '';
       const progressMsg = `${statusIcon} ${latestAgent.agentName} complete (${completedCount}/${totalCount})${suffix}`;
       // Fire-and-forget — progress delivery must not block the swarm
       context.df.callActivity('sendReplyActivity', {
@@ -167,7 +168,7 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
   let leaderResult: SwarmLeaderResult;
   if (leaderWinner === leaderTimer) {
     leaderResult = {
-      synthesis: '⚡ The analysis team gathered results but synthesis timed out. Here are the partial findings from the team:\n\n' +
+      synthesis: '⚡ The swarm gathered results but Helkin\'s synthesis timed out. Here are the partial findings:\n\n' +
         allChatroomMessages
           .filter(m => m.contentType === 'partial_result' || m.contentType === 'text')
           .map(m => `**${m.from}**: ${m.content}`)
@@ -177,7 +178,7 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
       roundsUsed: 0,
       agentsHeardFrom: [...new Set(allChatroomMessages.map(m => m.from))],
       model: 'timeout',
-      error: 'Leader synthesis timed out',
+      error: 'Helkin synthesis timed out',
     };
   } else {
     leaderTimer.cancel();

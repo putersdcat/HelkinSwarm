@@ -1210,7 +1210,7 @@
                       '<table><tr><th>Component</th><th>Tokens</th></tr>' +
                       '<tr><td>Decomposer</td><td>' + (cost.decomposerTokens || 0).toLocaleString() + '</td></tr>' +
                       '<tr><td>Workers</td><td>' + (cost.workerTokens || 0).toLocaleString() + '</td></tr>' +
-                      '<tr><td>Leader</td><td>' + (cost.leaderTokens || 0).toLocaleString() + '</td></tr>' +
+                      '<tr><td>Helkin (Leader)</td><td>' + (cost.leaderTokens || 0).toLocaleString() + '</td></tr>' +
                       '<tr><td><strong>Total</strong></td><td><strong>' + (cost.totalTokens || 0).toLocaleString() + '</strong></td></tr>' +
                       '</table></div>';
                   }
@@ -1228,9 +1228,9 @@
                       }).join("") + '</table></div>';
                   }
 
-                  // Leader synthesis
+                  // Helkin (Leader) synthesis
                   if (detail.leaderSynthesis) {
-                    html += '<div class="card"><h2>Leader Synthesis</h2>' +
+                    html += '<div class="card"><h2>Helkin — Synthesis</h2>' +
                       '<pre style="white-space:pre-wrap">' + esc(detail.leaderSynthesis) + '</pre></div>';
                   }
 

@@ -790,8 +790,10 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
       // Send immediate acknowledgment so the user knows a swarm is running (#634)
       const ackSpanStart = context.df.currentUtcDateTime.getTime();
+      const PERSONA_EMOJI: Record<string, string> = { Helkin: '🤖', Benjamin: '🔍', Harper: '🧪', Lucas: '📊' };
       const agentNames = decomposerResult.plan.agents.map((a: { name: string }) => a.name);
-      const ackMessage = `🧠 Dispatching analysis team (${agentNames.join(', ')})…`;
+      const agentTags = agentNames.map(n => `${PERSONA_EMOJI[n] ?? '🔹'} ${n}`).join(' • ');
+      const ackMessage = `🧠 Swarm engaged → ${PERSONA_EMOJI['Helkin']} Helkin • ${agentTags}`;
       const ackInput: SendReplyInput = {
         userId: input.state.userId,
         message: ackMessage,

@@ -51,7 +51,7 @@ export interface SwarmChatroomState {
 // ---------------------------------------------------------------------------
 
 export const SwarmAgentSchema = z.object({
-  name: z.string().min(1).describe('Agent identifier (e.g. "Alpha", "Beta")'),
+  name: z.string().min(1).describe('Agent identifier — must be Benjamin, Harper, or Lucas'),
   role: z.string().min(1).describe('Role description (e.g. "Research Specialist")'),
   task: z.string().min(1).describe('Specific task to accomplish'),
   assignedTools: z.array(z.string()).describe('Tool names this agent may use'),
@@ -68,8 +68,8 @@ export const SwarmPlanSchema = z.object({
   swarmId: z.string().uuid(),
   userQuery: z.string(),
   leader: z.object({
-    name: z.string().default('Leader'),
-    synthesisInstructions: z.string().describe('Instructions for the Leader to synthesize final answer'),
+    name: z.string().default('Helkin'),
+    synthesisInstructions: z.string().describe('Instructions for Helkin to synthesize final answer'),
   }),
   agents: z.array(SwarmAgentSchema).min(1).max(6),
   timeoutMs: z.number().int().min(5_000).max(120_000).default(60_000),
@@ -103,6 +103,7 @@ export interface SwarmWorkerInput {
   agentPersona: string;
   task: string;
   assignedTools: string[];
+  allAgentNames?: string[];
   swarmId: string;
   swarmCorrelationId: string;
   chatroomEntityId: string;

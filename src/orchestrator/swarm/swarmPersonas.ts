@@ -1,11 +1,61 @@
 // Swarm agent personas — system prompt builders for Leader and Worker agents.
+// Loads persona definitions from src/persona/*.md and augments with task context.
 // Spec ref: docs/0zh, docs/0zf §3
 // Epic: #631
 
+import { readFileSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// ---------------------------------------------------------------------------
+// Persona file loading — cached at module init
+// ---------------------------------------------------------------------------
+
+const __dirname_local = dirname(fileURLToPath(import.meta.url));
+// In compiled output (dist/src/orchestrator/swarm/) the persona dir is at ../../persona/
+// In Docker the persona dir is copied to /home/site/wwwroot/src/persona/
+const PERSONA_PATHS: Record<string, string[]> = {
+  Helkin: [
+    resolve(__dirname_local, '../../persona/agentOnePersona.md'),
+    resolve(__dirname_local, '../../../../src/persona/agentOnePersona.md'),
+  ],
+  Benjamin: [
+    resolve(__dirname_local, '../../persona/agentTwoPersona.md'),
+    resolve(__dirname_local, '../../../../src/persona/agentTwoPersona.md'),
+  ],
+  Harper: [
+    resolve(__dirname_local, '../../persona/agentThreePersona.md'),
+    resolve(__dirname_local, '../../../../src/persona/agentThreePersona.md'),
+  ],
+  Lucas: [
+    resolve(__dirname_local, '../../persona/agentFourPersona.md'),
+    resolve(__dirname_local, '../../../../src/persona/agentFourPersona.md'),
+  ],
+};
+
+const personaCache = new Map<string, string>();
+
+function loadPersona(name: string): string | null {
+  if (personaCache.has(name)) return personaCache.get(name)!;
+  const candidates = PERSONA_PATHS[name];
+  if (!candidates) return null;
+  for (const p of candidates) {
+    try {
+      const content = readFileSync(p, 'utf-8').trim();
+      personaCache.set(name, content);
+      return content;
+    } catch { /* try next candidate */ }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Leader prompt — Helkin (Agent One)
+// ---------------------------------------------------------------------------
+
 /**
  * Build the Leader agent system prompt.
- * The Leader coordinates, collects partial results via chatroom, and synthesizes
- * the final answer. It does NOT call external tools — only chatroom_send.
+ * Uses the Helkin persona file as foundation, then appends task-specific context.
  */
 export function buildLeaderSystemPrompt(input: {
   userQuery: string;
@@ -13,15 +63,17 @@ export function buildLeaderSystemPrompt(input: {
   agentNames: string[];
 }): string {
   const agentList = input.agentNames.join(', ');
-  return `You are the Leader of a multi-agent swarm working on a single user query.
+  const persona = loadPersona('Helkin');
 
-Your team: ${agentList}
+  const base = persona
+    ?? `You are Helkin, the team leader of a multi-agent swarm.
+Your job is to synthesize a single, polished, high-quality final answer from your team's findings.
+Never do deep research yourself — delegate it.`;
 
-## Your Role
-- You coordinate the team and synthesize the final answer.
-- You do NOT call external tools (web_search, browse_page, etc.). Your team does the research.
-- You communicate with your team exclusively via chatroom_send.
-- You monitor incoming messages from team members in the TEAM MESSAGES section.
+  return `${base}
+
+## Current Team
+${agentList}
 
 ## Your Task
 User query: "${input.userQuery}"
@@ -46,10 +98,13 @@ Do NOT wrap it in a tool call. Just write the answer.
 Format it cleanly in markdown with citations where possible.`;
 }
 
+// ---------------------------------------------------------------------------
+// Worker prompt — Benjamin, Harper, or Lucas
+// ---------------------------------------------------------------------------
+
 /**
  * Build a Worker agent system prompt.
- * Workers execute a specialized slice of the task using assigned tools and
- * communicate results back to Leader (and optionally other workers).
+ * Loads the agent's persona file and augments with task, tools, and team context.
  */
 export function buildWorkerSystemPrompt(input: {
   agentName: string;
@@ -61,11 +116,15 @@ export function buildWorkerSystemPrompt(input: {
 }): string {
   const toolList = input.assignedToolNames.join(', ');
   const teamList = input.allAgentNames.filter(n => n !== input.agentName).join(', ');
+  const persona = loadPersona(input.agentName);
 
-  return `You are ${input.agentName}, the ${input.agentRole} in a multi-agent swarm.
+  const identity = persona
+    ?? `You are ${input.agentName}, the ${input.agentRole} in a multi-agent swarm led by Helkin.`;
+
+  return `${identity}
 
 ## Your Teammates
-${teamList}, and Leader (who synthesizes the final answer)
+${teamList}, and Helkin (team leader who synthesizes the final answer)
 
 ## Your Tools
 You have access to: ${toolList}, chatroom_send
@@ -77,19 +136,19 @@ Your specific assignment: ${input.task}
 
 ## Workflow
 1. Execute your task using your assigned tools.
-2. Send partial results to Leader via chatroom_send as soon as you find them. Do NOT wait until you have everything.
+2. Send partial results to Helkin via chatroom_send as soon as you find them. Do NOT wait until you have everything.
 3. Check TEAM MESSAGES for relevant information from teammates — use it to avoid duplicate work.
 4. If you find something that another teammate should investigate, tell them via chatroom_send.
-5. When your task is complete, send a final status message to Leader.
+5. When your task is complete, send a final status message to Helkin.
 
 ## Communication Rules
 - Send partial results immediately — don't hoard information.
 - Be concise but information-dense (include key facts, addresses, numbers, URLs).
 - Prefix structured data clearly (e.g., "FOUND: [shop name] | [address] | [certification]").
-- If a tool call fails, report the failure to Leader immediately.
+- If a tool call fails, report the failure to Helkin immediately.
 - If you find contradictory information, flag it explicitly.
 
 ## Important
-- Stay focused on YOUR task. Don't expand scope without Leader's direction.
+- Stay focused on YOUR task. Don't expand scope without Helkin's direction.
 - Return control when done — don't loop endlessly.`;
 }
