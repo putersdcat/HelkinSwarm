@@ -431,6 +431,106 @@ describe('SwarmWorkerResult — telemetry fields', () => {
   });
 });
 
+describe('SwarmAgentSchema — tokenBudget (#647)', () => {
+  it('accepts a valid positive integer tokenBudget', () => {
+    const result = SwarmAgentSchema.safeParse({
+      name: 'Alpha',
+      role: 'Research',
+      task: 'Find things',
+      assignedTools: [],
+      tokenBudget: 8000,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.tokenBudget).toBe(8000);
+    }
+  });
+
+  it('omits tokenBudget when not provided', () => {
+    const result = SwarmAgentSchema.safeParse({
+      name: 'Beta',
+      role: 'Analyst',
+      task: 'Analyze data',
+      assignedTools: [],
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.tokenBudget).toBeUndefined();
+    }
+  });
+
+  it('rejects non-positive tokenBudget', () => {
+    const result = SwarmAgentSchema.safeParse({
+      name: 'Gamma',
+      role: 'Writer',
+      task: 'Write report',
+      assignedTools: [],
+      tokenBudget: 0,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects non-integer tokenBudget', () => {
+    const result = SwarmAgentSchema.safeParse({
+      name: 'Delta',
+      role: 'Editor',
+      task: 'Edit report',
+      assignedTools: [],
+      tokenBudget: 1000.5,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects negative tokenBudget', () => {
+    const result = SwarmAgentSchema.safeParse({
+      name: 'Epsilon',
+      role: 'QA',
+      task: 'Verify',
+      assignedTools: [],
+      tokenBudget: -100,
+    });
+    expect(result.success).toBe(false);
+  });
+});
+
+describe('SwarmWorkerResult — tokenBudget fields (#647)', () => {
+  it('includes budget fields when set', () => {
+    const result = {
+      agentName: 'Alpha',
+      success: true,
+      roundsUsed: 2,
+      tokensUsed: 8500,
+      toolCallsMade: 3,
+      chatroomMessagesSent: 1,
+      toolsUsed: ['web_search'],
+      durationMs: 10_000,
+      model: 'grok-4.1-fast',
+      tokenBudget: 8000,
+      tokenBudgetExceeded: true,
+    } satisfies import('../../src/orchestrator/swarm/swarmTypes.js').SwarmWorkerResult;
+
+    expect(result.tokenBudget).toBe(8000);
+    expect(result.tokenBudgetExceeded).toBe(true);
+  });
+
+  it('omits budget fields when not set', () => {
+    const result = {
+      agentName: 'Beta',
+      success: true,
+      roundsUsed: 3,
+      tokensUsed: 2000,
+      toolCallsMade: 1,
+      chatroomMessagesSent: 0,
+      toolsUsed: [],
+      durationMs: 5000,
+      model: 'grok-4.1-fast',
+    } satisfies import('../../src/orchestrator/swarm/swarmTypes.js').SwarmWorkerResult;
+
+    expect(result.tokenBudget).toBeUndefined();
+    expect(result.tokenBudgetExceeded).toBeUndefined();
+  });
+});
+
 describe('SwarmAgentCost — telemetry fields', () => {
   it('includes toolsUsed and durationMs', () => {
     const cost = {

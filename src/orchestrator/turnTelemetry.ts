@@ -50,6 +50,10 @@ export interface SwarmAgentTelemetry {
   durationMs: number;
   toolCalls: number;
   success: boolean;
+  /** Token budget assigned to this agent, if any (#647). */
+  tokenBudget?: number;
+  /** Whether the agent was stopped due to exceeding its token budget (#647). */
+  tokenBudgetExceeded?: boolean;
 }
 
 // USD per 1M tokens (blended input/output average). (#254, #260)
@@ -262,7 +266,8 @@ export function formatTelemetryFooter(
   if (data.swarmAgentBreakdown) {
     for (const a of data.swarmAgentBreakdown) {
       const durSec = Math.round(a.durationMs / 1000);
-      parts.push(`${a.agent}:${a.tokens}t(${durSec}s,${a.toolCalls}tools${a.success ? '✓' : '✗'})`);
+      const budgetTag = a.tokenBudgetExceeded ? '⚠️' : a.tokenBudget ? `/${a.tokenBudget}` : '';
+      parts.push(`${a.agent}:${a.tokens}t${budgetTag}(${durSec}s,${a.toolCalls}tools${a.success ? '✓' : '✗'})`);
     }
   }
   if (data.leaderTokens !== undefined) parts.push(`leader:${data.leaderTokens}t`);

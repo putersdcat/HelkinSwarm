@@ -103,6 +103,7 @@ export type TelemetryEventName =
   | 'SwarmDecomposerFallback'
   | 'SwarmWorkerStarted'
   | 'SwarmWorkerCompleted'
+  | 'SwarmWorkerBudgetExceeded'
   | 'SwarmWorkerError'
   | 'SwarmToolBlocked'
   | 'SwarmToolHandlerMissing'

@@ -177,6 +177,7 @@ df.app.activity('swarmWorkerActivity', {
     let totalTokens = 0;
     let toolCallsMade = 0;
     let chatroomMessagesSent = 0;
+    let tokenBudgetExceeded = false;
     const toolsUsedSet = new Set<string>();
     const startTimeMs = Date.now();
 
@@ -214,6 +215,37 @@ df.app.activity('swarmWorkerActivity', {
         totalTokens += response.usage?.totalTokens ?? 0;
         const choice = response.choices[0];
         if (!choice) break;
+
+        // Token budget enforcement (#647) — stop agent if it exceeded allocation
+        if (input.tokenBudget && totalTokens >= input.tokenBudget) {
+          tokenBudgetExceeded = true;
+          trackEvent({
+            name: 'SwarmWorkerBudgetExceeded',
+            correlationId: input.correlationId,
+            userId: input.userId,
+            properties: {
+              agentName: input.agentName,
+              tokenBudget: input.tokenBudget,
+              tokensUsed: totalTokens,
+              roundsUsed: round + 1,
+            },
+          });
+          // Still process this response's content, but break after
+          const budgetText = textContent(choice.message.content);
+          if (budgetText.trim()) {
+            pendingChatroomMessages.push({
+              id: crypto.randomUUID(),
+              from: input.agentName,
+              to: 'Leader',
+              content: budgetText.trim(),
+              contentType: 'partial_result',
+              timestamp: Date.now(),
+              correlationId: input.swarmCorrelationId,
+            });
+            chatroomMessagesSent++;
+          }
+          break;
+        }
 
         const assistantMessage = choice.message;
         messages.push(assistantMessage);
@@ -309,6 +341,8 @@ df.app.activity('swarmWorkerActivity', {
           tokensUsed: totalTokens,
           toolsUsed: [...toolsUsedSet].join(', '),
           durationMs: Date.now() - startTimeMs,
+          ...(input.tokenBudget !== undefined ? { tokenBudget: input.tokenBudget } : {}),
+          tokenBudgetExceeded,
         },
       });
 
@@ -322,6 +356,8 @@ df.app.activity('swarmWorkerActivity', {
         toolsUsed: [...toolsUsedSet],
         durationMs: Date.now() - startTimeMs,
         model: routing.lane.primary,
+        tokenBudget: input.tokenBudget,
+        tokenBudgetExceeded,
         // Pass pending chatroom messages back — the orchestrator will signal the entity
         _pendingChatroomMessages: pendingChatroomMessages,
       } as SwarmWorkerResult & { _pendingChatroomMessages: ChatroomMessage[] };
@@ -343,6 +379,8 @@ df.app.activity('swarmWorkerActivity', {
         durationMs: Date.now() - startTimeMs,
         error: errorMessage,
         model: routing.lane.primary,
+        tokenBudget: input.tokenBudget,
+        tokenBudgetExceeded,
       };
     }
   },

@@ -912,6 +912,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           durationMs: a.durationMs,
           toolCalls: a.toolCallsMade,
           success: a.success,
+          tokenBudget: a.tokenBudget,
+          tokenBudgetExceeded: a.tokenBudgetExceeded,
         })),
       });
 

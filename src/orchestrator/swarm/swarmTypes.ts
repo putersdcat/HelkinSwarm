@@ -56,6 +56,8 @@ export const SwarmAgentSchema = z.object({
   task: z.string().min(1).describe('Specific task to accomplish'),
   assignedTools: z.array(z.string()).describe('Tool names this agent may use'),
   persona: z.string().default('Focused and thorough research agent'),
+  /** Optional per-agent token budget allocated by decomposer (#647). */
+  tokenBudget: z.number().int().positive().optional().describe('Max total tokens this agent may consume'),
 });
 
 export type SwarmAgent = z.infer<typeof SwarmAgentSchema>;
@@ -95,6 +97,8 @@ export interface SwarmDecomposerInput {
   conversationSummary?: string;
   /** Skill domains with at least one executable tool — helps decomposer assign domain experts (#640). */
   activeSkillDomains?: string[];
+  /** Remaining session token budget — helps decomposer size agent assignments (#647). */
+  tokenBudgetRemaining?: number;
 }
 
 export interface SwarmDecomposerResult {
@@ -119,6 +123,8 @@ export interface SwarmWorkerInput {
   correlationId: string;
   maxRounds: number;
   userQuery: string;
+  /** Optional per-agent token budget. Worker stops when exceeded (#647). */
+  tokenBudget?: number;
 }
 
 export interface SwarmWorkerResult {
@@ -132,6 +138,10 @@ export interface SwarmWorkerResult {
   durationMs: number;
   error?: string;
   model: string;
+  /** Token budget that was assigned (if any) (#647). */
+  tokenBudget?: number;
+  /** True if the worker stopped because it exceeded its token budget (#647). */
+  tokenBudgetExceeded?: boolean;
 }
 
 export interface SwarmLeaderInput {
