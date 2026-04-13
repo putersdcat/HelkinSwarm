@@ -102,13 +102,31 @@ df.app.activity('swarmDecomposerActivity', {
       return def ? `- ${name}: ${def.description.slice(0, 100)}` : `- ${name}`;
     }).join('\n');
 
+    // Build enriched context block from planner output (#640)
+    const contextLines: string[] = [];
+    if (input.complexityClass) {
+      contextLines.push(`Planner complexity classification: ${input.complexityClass}`);
+    }
+    if (input.swarmEligibilityScore !== undefined) {
+      contextLines.push(`Swarm eligibility score: ${input.swarmEligibilityScore}/10`);
+    }
+    if (input.activeSkillDomains && input.activeSkillDomains.length > 0) {
+      contextLines.push(`Active skill domains: ${input.activeSkillDomains.join(', ')}`);
+    }
+    if (input.conversationSummary) {
+      contextLines.push(`Conversation context: ${input.conversationSummary.slice(0, 300)}`);
+    }
+    const plannerContext = contextLines.length > 0
+      ? `\n\nPlanner context:\n${contextLines.join('\n')}`
+      : '';
+
     try {
       const response = await client.chatCompletion({
         messages: [
           { role: 'system', content: DECOMPOSER_SYSTEM_PROMPT },
           {
             role: 'user',
-            content: `Available tools:\n${toolList}\n\nUser query: ${input.userMessage}`,
+            content: `Available tools:\n${toolList}${plannerContext}\n\nUser query: ${input.userMessage}`,
           },
         ],
         temperature: 0.3,

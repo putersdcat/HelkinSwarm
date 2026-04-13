@@ -2,7 +2,50 @@
 // Epic: #631
 
 import { describe, it, expect } from 'vitest';
-import { isSwarmEligible, SwarmPlanSchema, ChatroomMessageSchema, SwarmAgentSchema } from '../../src/orchestrator/swarm/swarmTypes.js';
+import { isSwarmEligible, computeSwarmEligibilityScore, SwarmPlanSchema, ChatroomMessageSchema, SwarmAgentSchema } from '../../src/orchestrator/swarm/swarmTypes.js';
+
+describe('computeSwarmEligibilityScore', () => {
+  it('returns 0 for simple greetings', () => {
+    expect(computeSwarmEligibilityScore('hello')).toBe(0);
+    expect(computeSwarmEligibilityScore('hi there')).toBe(0);
+  });
+
+  it('returns 10 for explicit swarm override phrases', () => {
+    expect(computeSwarmEligibilityScore('use the swarm')).toBe(10);
+    expect(computeSwarmEligibilityScore('ask your team to handle this')).toBe(10);
+  });
+
+  it('returns low score for single-verb queries', () => {
+    const score = computeSwarmEligibilityScore('find something');
+    expect(score).toBeLessThan(3);
+  });
+
+  it('returns high score for compound research queries', () => {
+    const score = computeSwarmEligibilityScore(
+      'Compare the pros and cons of React vs Vue, and also evaluate their ecosystem support',
+    );
+    expect(score).toBeGreaterThanOrEqual(3);
+  });
+
+  it('scores multiple question marks', () => {
+    const score = computeSwarmEligibilityScore(
+      'What is the best? How does it compare? What do experts say?',
+    );
+    expect(score).toBeGreaterThanOrEqual(1);
+  });
+
+  it('isSwarmEligible threshold matches score >= 3', () => {
+    // Score < 3 → not eligible
+    const lowScoreMsg = 'find something';
+    expect(computeSwarmEligibilityScore(lowScoreMsg)).toBeLessThan(3);
+    expect(isSwarmEligible(lowScoreMsg)).toBe(false);
+
+    // Score >= 3 → eligible
+    const highScoreMsg = 'compare the pros and cons of these alternatives';
+    expect(computeSwarmEligibilityScore(highScoreMsg)).toBeGreaterThanOrEqual(3);
+    expect(isSwarmEligible(highScoreMsg)).toBe(true);
+  });
+});
 
 describe('isSwarmEligible', () => {
   it('returns false for simple greetings', () => {

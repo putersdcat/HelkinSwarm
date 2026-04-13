@@ -740,11 +740,23 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     // Try the swarm decomposer — use only tools with wired handlers to avoid
     // assigning agents tools that return "No handler" at runtime.
     const executableTools = getExecutableToolNames();
+
+    // Derive active skill domains from executable tool name prefixes (#640).
+    const activeSkillDomains = [...new Set(
+      executableTools
+        .map(name => name.split('_')[0])
+        .filter((prefix): prefix is string => !!prefix && prefix !== 'helkin'),
+    )];
+
     const decomposerInput: SwarmDecomposerInput = {
       userMessage: userMessageForLlm,
       correlationId,
       userId: input.state.userId,
       availableToolNames: executableTools,
+      complexityClass: planResult.complexity,
+      swarmEligibilityScore: planResult.swarmEligibilityScore,
+      conversationSummary: input.state.summary || undefined,
+      activeSkillDomains,
     };
 
     const decomposerResult: SwarmDecomposerResult = yield context.df.callActivity(
@@ -762,6 +774,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           reason: decomposerResult.fallbackReason ?? 'unknown',
           decomposerModel: decomposerResult.decomposerModel,
           tokensUsed: decomposerResult.tokensUsed,
+          complexityClass: planResult.complexity,
+          swarmEligibilityScore: planResult.swarmEligibilityScore,
         },
       });
     }
@@ -777,6 +791,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           swarmId: decomposerResult.plan.swarmId,
           decomposerModel: decomposerResult.decomposerModel,
           decomposerTokens: decomposerResult.tokensUsed,
+          complexityClass: planResult.complexity,
+          swarmEligibilityScore: planResult.swarmEligibilityScore,
+          activeSkillDomains: activeSkillDomains.join(','),
         },
       });
 

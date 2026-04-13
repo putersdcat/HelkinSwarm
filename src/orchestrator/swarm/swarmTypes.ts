@@ -87,6 +87,14 @@ export interface SwarmDecomposerInput {
   correlationId: string;
   userId: string;
   availableToolNames: string[];
+  /** Planner-assigned complexity classification (#640). */
+  complexityClass?: 'simple' | 'compound' | 'complex';
+  /** Numeric swarm eligibility score from vocabulary analysis (#640). */
+  swarmEligibilityScore?: number;
+  /** Conversation summary from overseer state — gives decomposer prior-turn context (#640). */
+  conversationSummary?: string;
+  /** Skill domains with at least one executable tool — helps decomposer assign domain experts (#640). */
+  activeSkillDomains?: string[];
 }
 
 export interface SwarmDecomposerResult {
@@ -189,10 +197,12 @@ export interface SwarmOrchestratorResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Signals that a request may benefit from parallel multi-agent execution.
- * This is used by the planner to decide whether to invoke the swarm decomposer.
+ * Compute a numeric swarm-eligibility score for a message.
+ * Higher score = more likely to benefit from parallel multi-agent execution.
+ * Returned separately from the boolean so the planner/decomposer can reason
+ * about confidence levels, not just a binary gate (#640).
  */
-export function isSwarmEligible(message: string): boolean {
+export function computeSwarmEligibilityScore(message: string): number {
   const lower = message.toLowerCase();
 
   // Explicit override — user directly requests swarm execution
@@ -201,7 +211,7 @@ export function isSwarmEligible(message: string): boolean {
     'send to swarm', 'with the swarm', 'try the swarm', 'activate swarm',
     'swarm this', 'use your team', 'use the team', 'ask your team',
   ];
-  if (explicitSwarmSignals.some(s => lower.includes(s))) return true;
+  if (explicitSwarmSignals.some(s => lower.includes(s))) return 10; // Explicit override = max score
 
   // Multi-faceted research signals — verbs that imply gathering/exploring
   const researchSignals = [
@@ -245,6 +255,14 @@ export function isSwarmEligible(message: string): boolean {
   // Long messages are more likely to benefit from parallelism
   if (lower.length > 200) score += 1;
 
+  return score;
+}
+
+/**
+ * Signals that a request may benefit from parallel multi-agent execution.
+ * This is used by the planner to decide whether to invoke the swarm decomposer.
+ */
+export function isSwarmEligible(message: string): boolean {
   // Threshold: 3+ signals = swarm-eligible
-  return score >= 3;
+  return computeSwarmEligibilityScore(message) >= 3;
 }

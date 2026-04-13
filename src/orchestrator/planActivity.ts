@@ -8,6 +8,7 @@ import { FoundryClient, textContent } from '../llm/foundryClient.js';
 import { getModelForTask, getModelRouting } from '../llm/modelRouter.js';
 import { trackEvent } from '../observability/telemetry.js';
 import { recordSubstage } from '../observability/orchestratorStageHealth.js';
+import { computeSwarmEligibilityScore } from './swarm/swarmTypes.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,6 +45,8 @@ export interface PlanResult {
    * generator so the swarm branch decision is deterministic during replay.
    */
   swarmEnabled: boolean;
+  /** Numeric swarm eligibility score for decomposer context (#640). */
+  swarmEligibilityScore: number;
 }
 
 export interface PlanInput {
@@ -182,6 +185,8 @@ export async function plan(input: PlanInput): Promise<PlanResult> {
     properties: { complexity, messageLength: userMessage.length },
   });
 
+  const swarmEligibilityScore = computeSwarmEligibilityScore(userMessage);
+
   // Simple requests: skip planning entirely
   if (complexity === 'simple') {
     return {
@@ -193,6 +198,7 @@ export async function plan(input: PlanInput): Promise<PlanResult> {
       planProviderCostDetails: undefined,
       planArtifact: JSON.stringify({ complexity, steps: null }),
       swarmEnabled: process.env['SWARM_ENABLED']?.toLowerCase() === 'true',
+      swarmEligibilityScore,
     };
   }
 
@@ -243,6 +249,7 @@ export async function plan(input: PlanInput): Promise<PlanResult> {
     planProviderCostDetails: providerCostDetails,
     planArtifact: JSON.stringify({ complexity, steps }),
     swarmEnabled: process.env['SWARM_ENABLED']?.toLowerCase() === 'true',
+    swarmEligibilityScore,
   };
   return result;
 }
