@@ -6,8 +6,17 @@
   "shortDescription": "Lightweight X (Twitter) company presence — search recent posts, people, and topics using the Twitter API v2. Outbound posting is defined but requires OAuth 2.0 user-context credentials not yet available.",
   "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/core.png",
   "deploymentScenario": "personal-user-centric",
-  "onboardingMethod": "operator/backend-config-required",
+  "onboardingMethod": "automatic-agentic",
   "lifecycleRules": "keep-credentials",
+  "dependencies": ["vault"],
+  "externalAccountsNeeded": [
+    {
+      "description": "Twitter API v2 Bearer Token (app-only, from developer.twitter.com)",
+      "satisfiedBy": "user-vault",
+      "kvSecretName": "TwitterBearerToken",
+      "howToObtain": "Create an App at developer.twitter.com, copy the Bearer Token from the App Keys page, then tell Helkin: store this Twitter Bearer Token for me."
+    }
+  ],
   "licenseAvoidant": true,
   "discoveryHints": [
     "Twitter",

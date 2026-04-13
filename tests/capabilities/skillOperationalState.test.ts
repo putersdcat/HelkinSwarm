@@ -56,6 +56,46 @@ describe('assessSkillOperationalState — unit', () => {
     expect(result.operationalState).toBe('operational');
   });
 
+  it('treats satisfiedBy:user-vault accounts as action-required, not operator-setup-required (#649)', () => {
+    const result = assessSkillOperationalState(
+      makeManifest({
+        onboardingMethod: 'automatic-agentic',
+        externalAccountsNeeded: [
+          { description: 'Twitter Bearer Token', satisfiedBy: 'user-vault', kvSecretName: 'TwitterBearerToken' },
+        ],
+      }),
+      installed,
+    );
+    expect(result.operationalState).toBe('action-required');
+  });
+
+  it('includes vault credential step in steps for user-vault accounts (#649)', () => {
+    const result = assessSkillOperationalState(
+      makeManifest({
+        onboardingMethod: 'automatic-agentic',
+        externalAccountsNeeded: [
+          { description: 'Twitter Bearer Token', satisfiedBy: 'user-vault', kvSecretName: 'TwitterBearerToken' },
+        ],
+      }),
+      installed,
+    );
+    expect(result.steps.some((s) => s.includes('vault skill'))).toBe(true);
+    expect(result.steps.some((s) => s.includes('Twitter Bearer Token'))).toBe(true);
+  });
+
+  it('user-vault accounts with required:false do not trigger action-required', () => {
+    const result = assessSkillOperationalState(
+      makeManifest({
+        onboardingMethod: 'automatic-agentic',
+        externalAccountsNeeded: [
+          { description: 'Optional secret', satisfiedBy: 'user-vault', required: false },
+        ],
+      }),
+      installed,
+    );
+    expect(result.operationalState).toBe('operational');
+  });
+
   it('treats required:false external accounts as optional — skill stays operational', () => {
     const result = assessSkillOperationalState(
       makeManifest({
@@ -103,7 +143,7 @@ describe('skill operational state assessment', () => {
     expect(byDomain['web']?.operationalState).toBe('operational'); // Brave key is optional — DuckDuckGo fallback makes it operational
     expect(byDomain['outlook']?.operationalState).toBe('action-required');
     expect(byDomain['microsoftlearn']?.operationalState).toBe('operational');
-    expect(byDomain['x']?.operationalState).toBe('operator-setup-required'); // #641 — operator/backend-config-required must not be operational
+    expect(byDomain['x']?.operationalState).toBe('action-required'); // #649 — now vault-path: user stores TwitterBearerToken via vault skill
 
     const graphenterprise = inspectSkillInstall('graphenterprise');
     expect(graphenterprise.status).toBe('operator-setup-required');
@@ -117,9 +157,9 @@ describe('skill operational state assessment', () => {
     expect(microsoftLearn.status).toBe('operational');
     expect(microsoftLearn.steps).toEqual(['No setup required — skill is ready to use.']);
 
-    // #641 — operator/backend-config-required must surface as operator-setup-required
+    // #649 — X skill is now user-vault-path: user stores TwitterBearerToken via vault skill
     const xSkill = inspectSkillInstall('x');
-    expect(xSkill.status).toBe('operator-setup-required');
-    expect(xSkill.message).toContain('operator or tenant setup');
+    expect(xSkill.status).toBe('action-required');
+    expect(xSkill.message).toContain('user action');
   });
 });

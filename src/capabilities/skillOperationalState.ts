@@ -35,11 +35,19 @@ export function assessSkillOperationalState(
   // Accounts with required:false are optional upgrades — the skill degrades gracefully without them.
   // Accounts with satisfiedBy:"oauth-link" are completed by the user via the OAuth link flow,
   // not by operator env var wiring — don't mark them as unsatisfied here (#649).
+  // Accounts with satisfiedBy:"user-vault" are stored by the user via the vault skill —
+  // they are user-recoverable (action-required), not operator-required (#649).
   const unsatisfiedExternalAccounts = externalAccounts.filter(
     (entry) =>
       entry.required !== false
       && entry.satisfiedBy !== 'oauth-link'
+      && entry.satisfiedBy !== 'user-vault'
       && (!entry.envVarName || !process.env[entry.envVarName]),
+  );
+
+  // Detect user-vault accounts — user can self-serve by storing keys via vault skill.
+  const hasUserVaultAccounts = externalAccounts.some(
+    (entry) => entry.required !== false && entry.satisfiedBy === 'user-vault',
   );
 
   if (missingDeps.length > 0) {
@@ -58,7 +66,8 @@ export function assessSkillOperationalState(
   const hasChatRecoverableUserAction =
     onboardingMethod === 'post-install-link'
     || onboardingMethod === 'both'
-    || Boolean(softOnboarding);
+    || Boolean(softOnboarding)
+    || hasUserVaultAccounts; // user can self-serve by storing keys via vault skill (#649)
   const hasOperatorOrTenantPrerequisites =
     onboardingMethod === 'automatic-agentic'
     && (unsatisfiedExternalAccounts.length > 0 || requiredPermissions.length > 0);
@@ -82,6 +91,12 @@ export function assessSkillOperationalState(
 
   if (unsatisfiedExternalAccounts.length > 0) {
     steps.push(`Create external account(s): ${unsatisfiedExternalAccounts.map((e) => e.description).join(', ')}`);
+  }
+  if (hasUserVaultAccounts) {
+    const vaultAccounts = externalAccounts.filter(
+      (e) => e.required !== false && e.satisfiedBy === 'user-vault',
+    );
+    steps.push(`Store credential(s) via vault skill: ${vaultAccounts.map((e) => e.description).join(', ')}`);
   }
   if (requiredPermissions.length > 0) {
     steps.push(`Grant permissions: ${requiredPermissions.join(', ')}`);

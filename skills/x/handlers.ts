@@ -21,16 +21,46 @@
 
 import { z } from 'zod';
 import type { ToolHandler } from '../../src/capabilities/capabilityLoader.js';
+import { DefaultAzureCredential, ManagedIdentityCredential } from '@azure/identity';
 
 const TWITTER_API_BASE = 'https://api.twitter.com/2';
 const SEARCH_TIMEOUT_MS = 20_000;
 
 // ---------------------------------------------------------------------------
-// Config helper
+// Config helper — tries env var first (operator backward-compat), then user vault (#649)
 // ---------------------------------------------------------------------------
 
-function getBearerToken(): string | null {
-  return process.env['TWITTER_BEARER_TOKEN'] ?? null;
+async function resolveBearer(): Promise<string | null> {
+  // 1. Operator env var (backward-compat — still works if TWITTER_BEARER_TOKEN is set)
+  const envToken = process.env['TWITTER_BEARER_TOKEN'];
+  if (envToken) return envToken;
+
+  // 2. User vault — TwitterBearerToken secret stored via vault skill
+  const vaultUri = process.env['USER_VAULT_KEY_VAULT_URI'];
+  if (!vaultUri) return null;
+
+  try {
+    const clientId = process.env['AZURE_CLIENT_ID'];
+    const cred = clientId
+      ? new ManagedIdentityCredential({ clientId })
+      : new DefaultAzureCredential();
+    const tokenResponse = await cred.getToken('https://vault.azure.net/.default', {
+      abortSignal: AbortSignal.timeout(8_000),
+    });
+    if (!tokenResponse) return null;
+
+    const base = vaultUri.replace(/\/$/, '');
+    const res = await fetch(`${base}/secrets/TwitterBearerToken?api-version=7.4`, {
+      headers: { Authorization: `Bearer ${tokenResponse.token}` },
+      signal: AbortSignal.timeout(8_000),
+    });
+    if (!res.ok) return null;
+
+    const json = await res.json() as { value: string };
+    return json.value ?? null;
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -47,15 +77,15 @@ const XSearchInput = z.object({
 // ---------------------------------------------------------------------------
 
 export const x_search: ToolHandler = async (rawInput: unknown) => {
-  const bearerToken = getBearerToken();
+  const bearerToken = await resolveBearer();
   if (!bearerToken) {
     return {
       status: 'config-missing',
       message:
-        'TWITTER_BEARER_TOKEN environment variable is not set. ' +
-        'To activate X/Twitter search: obtain a Twitter Developer Portal App Bearer Token, ' +
-        'store it as a secret in the HelkinSwarm Key Vault, and add a Key Vault reference ' +
-        'app setting TWITTER_BEARER_TOKEN to the Function App (infra/main.bicep).',
+        'Twitter Bearer Token not found. ' +
+        'To activate X/Twitter search: get a Bearer Token from developer.twitter.com ' +
+        '(create an App, copy the Bearer Token from the App Keys page), then store it: ' +
+        'vault_store_secret({ name: "TwitterBearerToken", value: "<your-token>" }).',
     };
   }
 
@@ -154,7 +184,7 @@ export const x_post: ToolHandler = async (_rawInput: unknown) => {
       'and a paid Twitter API tier (Basic: $100/month or higher). ' +
       'To enable: set up OAuth 2.0 PKCE flow for the company X account and store ' +
       'TWITTER_ACCESS_TOKEN and TWITTER_REFRESH_TOKEN in Key Vault.',
-    searchAvailable: getBearerToken() !== null,
+    searchAvailable: !!(await resolveBearer()),
     dmSupport: 'not-supported — requires per-user OAuth flow',
   };
 };
