@@ -56,4 +56,63 @@ describe('buildWorkerSystemPrompt', () => {
     });
     expect(prompt).toContain('chatroom_send');
   });
+
+  it('injects non-default agentPersona as Behavioral Guidance (#651)', () => {
+    const customPersona = 'You are a skeptical fact-checker. Verify every claim with at least two sources.';
+    const prompt = buildWorkerSystemPrompt({
+      agentName: 'Benjamin',
+      agentRole: 'Research Specialist',
+      task: 'Find recent AI papers',
+      assignedToolNames: ['web_search'],
+      allAgentNames: ['Benjamin', 'Harper', 'Helkin'],
+      userQuery: 'Research AI safety',
+      agentPersona: customPersona,
+    });
+    expect(prompt).toContain('Behavioral Guidance');
+    expect(prompt).toContain('skeptical fact-checker');
+    expect(prompt).toContain('Verify every claim');
+  });
+
+  it('does NOT inject the default placeholder persona (#651)', () => {
+    const prompt = buildWorkerSystemPrompt({
+      agentName: 'Harper',
+      agentRole: 'Tool Orchestration',
+      task: 'Browse the web',
+      assignedToolNames: ['web_fetch_page'],
+      allAgentNames: ['Harper', 'Helkin'],
+      userQuery: 'Find pricing',
+      agentPersona: 'Focused and thorough research agent',
+    });
+    expect(prompt).not.toContain('Behavioral Guidance');
+    // Default placeholder should not appear as an injected section
+    expect(prompt).not.toContain('Focused and thorough research agent');
+  });
+
+  it('does NOT inject Behavioral Guidance when agentPersona is absent (#651)', () => {
+    const prompt = buildWorkerSystemPrompt({
+      agentName: 'Lucas',
+      agentRole: 'Data Synthesis',
+      task: 'Rank alternatives',
+      assignedToolNames: ['helkin_current_datetime'],
+      allAgentNames: ['Lucas', 'Helkin'],
+      userQuery: 'Compare options',
+    });
+    expect(prompt).not.toContain('Behavioral Guidance');
+  });
+
+  it('trims whitespace from agentPersona before injection (#651)', () => {
+    const prompt = buildWorkerSystemPrompt({
+      agentName: 'Benjamin',
+      agentRole: 'Research',
+      task: 'Research topic',
+      assignedToolNames: [],
+      allAgentNames: ['Benjamin', 'Helkin'],
+      userQuery: 'topic',
+      agentPersona: '   Be extremely concise. No fluff.   ',
+    });
+    expect(prompt).toContain('Behavioral Guidance');
+    expect(prompt).toContain('Be extremely concise. No fluff.');
+    // Should not have leading/trailing whitespace in the injected section
+    expect(prompt).not.toContain('   Be extremely concise');
+  });
 });

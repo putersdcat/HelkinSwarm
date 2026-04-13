@@ -102,9 +102,13 @@ Format it cleanly in markdown with citations where possible.`;
 // Worker prompt — Benjamin, Harper, or Lucas
 // ---------------------------------------------------------------------------
 
+/** Sentinel — schema default that carries no behavioral meaning. Do not inject as guidance. */
+const DEFAULT_PERSONA_PLACEHOLDER = 'Focused and thorough research agent';
+
 /**
  * Build a Worker agent system prompt.
  * Loads the agent's persona file and augments with task, tools, and team context.
+ * If the decomposer assigned a non-default agentPersona, it is appended as Behavioral Guidance (#651).
  */
 export function buildWorkerSystemPrompt(input: {
   agentName: string;
@@ -113,6 +117,8 @@ export function buildWorkerSystemPrompt(input: {
   assignedToolNames: string[];
   allAgentNames: string[];
   userQuery: string;
+  /** Decomposer-assigned behavioral persona override — injected when non-default (#651). */
+  agentPersona?: string;
 }): string {
   const toolList = input.assignedToolNames.join(', ');
   const teamList = input.allAgentNames.filter(n => n !== input.agentName).join(', ');
@@ -121,7 +127,14 @@ export function buildWorkerSystemPrompt(input: {
   const identity = persona
     ?? `You are ${input.agentName}, the ${input.agentRole} in a multi-agent swarm led by Helkin.`;
 
-  return `${identity}
+  // Inject decomposer behavioral guidance when it's a meaningful non-default override.
+  const behavioralNote =
+    input.agentPersona &&
+    input.agentPersona.trim() !== DEFAULT_PERSONA_PLACEHOLDER
+      ? `\n\n## Behavioral Guidance (Task-Specific)\n${input.agentPersona.trim()}`
+      : '';
+
+  return `${identity}${behavioralNote}
 
 ## Your Teammates
 ${teamList}, and Helkin (team leader who synthesizes the final answer)

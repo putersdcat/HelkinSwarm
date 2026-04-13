@@ -166,6 +166,7 @@ df.app.activity('swarmWorkerActivity', {
       assignedToolNames: input.assignedTools,
       allAgentNames,
       userQuery: input.userQuery,
+      agentPersona: input.agentPersona,
     });
 
     // Conversation history for this agent's isolated session
