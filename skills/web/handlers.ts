@@ -354,6 +354,181 @@ export const web_fetch_page: ToolHandler = async (args) => {
 };
 
 // ---------------------------------------------------------------------------
+// Structured HTML → Markdown extraction
+// Preserves headings, tables, lists, and links as markdown instead of
+// flattening everything to plain text like htmlToText does.
+// ---------------------------------------------------------------------------
+
+function htmlToStructuredMarkdown(html: string): string {
+  // Strip scripts, styles, comments
+  let s = html
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '');
+
+  // Convert headings → markdown headings
+  s = s.replace(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi, (_m, level: string, content: string) => {
+    const prefix = '#'.repeat(parseInt(level, 10));
+    const text = content.replace(/<[^>]+>/g, '').trim();
+    return text ? `\n\n${prefix} ${text}\n\n` : '';
+  });
+
+  // Convert tables → markdown tables
+  s = s.replace(/<table\b[^>]*>([\s\S]*?)<\/table>/gi, (_m, tableContent: string) => {
+    const rows: string[][] = [];
+    const rowRegex = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
+    let rowMatch: RegExpExecArray | null;
+    while ((rowMatch = rowRegex.exec(tableContent)) !== null) {
+      const cells: string[] = [];
+      const cellRegex = /<(?:td|th)\b[^>]*>([\s\S]*?)<\/(?:td|th)>/gi;
+      let cellMatch: RegExpExecArray | null;
+      while ((cellMatch = cellRegex.exec(rowMatch[1]!)) !== null) {
+        cells.push(cellMatch[1]!.replace(/<[^>]+>/g, '').trim());
+      }
+      if (cells.length > 0) rows.push(cells);
+    }
+    if (rows.length === 0) return '';
+
+    const maxCols = Math.max(...rows.map(r => r.length));
+    const normalized = rows.map(r => {
+      while (r.length < maxCols) r.push('');
+      return r;
+    });
+
+    const lines: string[] = [];
+    lines.push('| ' + normalized[0]!.join(' | ') + ' |');
+    lines.push('| ' + normalized[0]!.map(() => '---').join(' | ') + ' |');
+    for (let i = 1; i < normalized.length; i++) {
+      lines.push('| ' + normalized[i]!.join(' | ') + ' |');
+    }
+    return '\n\n' + lines.join('\n') + '\n\n';
+  });
+
+  // Convert links → markdown links (only those with href)
+  s = s.replace(/<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/gi, (_m, href: string, text: string) => {
+    const linkText = text.replace(/<[^>]+>/g, '').trim();
+    return linkText ? `[${linkText}](${href})` : '';
+  });
+
+  // Convert list items
+  s = s.replace(/<li\b[^>]*>([\s\S]*?)<\/li>/gi, (_m, content: string) => {
+    const text = content.replace(/<[^>]+>/g, '').trim();
+    return text ? `\n- ${text}` : '';
+  });
+
+  // Block-level element boundaries → newlines
+  s = s.replace(/<\/?(p|div|blockquote|pre|article|section|aside|header|footer|nav|main|figure|figcaption|ul|ol)\b[^>]*>/gi, '\n');
+  s = s.replace(/<br\s*\/?>/gi, '\n');
+
+  // Strip remaining tags
+  s = s.replace(/<[^>]+>/g, ' ');
+
+  // Decode entities
+  s = s
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (_match, code: string) => {
+      const n = parseInt(code, 10);
+      return isNaN(n) ? _match : String.fromCharCode(n);
+    });
+
+  // Clean up whitespace while preserving markdown structure
+  s = s
+    .replace(/\t/g, ' ')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/\n{4,}/g, '\n\n\n')
+    .trim();
+
+  return s;
+}
+
+// ---------------------------------------------------------------------------
+// Tool: web_extract — Instruction-guided structured page extraction
+// Issue: #631 (Phase S2)
+// ---------------------------------------------------------------------------
+
+const MAX_EXTRACT_CHARS = 16_000; // Double web_fetch_page budget for structured output
+
+export const web_extract: ToolHandler = async (args) => {
+  const rawUrl = String(args['url'] ?? '').trim();
+  if (!rawUrl) throw new Error('url is required');
+
+  const instructions = String(args['instructions'] ?? '').trim();
+
+  const ssrf = checkSsrf(rawUrl);
+  if (ssrf.blocked) {
+    throw new Error(`URL not allowed: ${ssrf.reason}`);
+  }
+
+  const response = await fetch(rawUrl, {
+    method: 'GET',
+    headers: {
+      'Accept': 'text/html,application/xhtml+xml,text/plain,*/*;q=0.8',
+      'User-Agent': 'HelkinSwarm/1.0 (+https://github.com/putersdcat/HelkinSwarm; web reader)',
+    },
+    signal: AbortSignal.timeout(15_000),
+    redirect: 'follow',
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} ${response.statusText} fetching "${rawUrl}"`);
+  }
+
+  const contentType = response.headers.get('content-type') ?? '';
+  const isHtml = /text\/html|application\/xhtml/i.test(contentType);
+  const isText = /text\//i.test(contentType);
+
+  if (!isHtml && !isText) {
+    throw new Error(`Cannot read non-text content-type "${contentType}" at "${rawUrl}"`);
+  }
+
+  // Streamed read with byte cap
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('Empty response body');
+
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  let truncated = false;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      const remaining = MAX_FETCH_BYTES - totalBytes;
+      if (value.length >= remaining) {
+        chunks.push(value.slice(0, remaining));
+        truncated = true;
+        break;
+      }
+      chunks.push(value);
+      totalBytes += value.length;
+    }
+  }
+
+  reader.cancel().catch(() => undefined);
+
+  const combined = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+  let offset = 0;
+  for (const chunk of chunks) {
+    combined.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  const rawBody = new TextDecoder().decode(combined);
+  const markdown = isHtml ? htmlToStructuredMarkdown(rawBody) : rawBody.trim();
+
+  const truncNote = truncated ? '\n\n_(Content truncated at 500 KB)_' : '';
+  const redirectNote = response.url !== rawUrl ? `\n**Final URL:** ${response.url}` : '';
+  const instructionNote = instructions ? `\n**Extraction instructions:** ${instructions}` : '';
+
+  return `**Extracted:** ${rawUrl}${redirectNote}${instructionNote}\n\n---\n\n${markdown.slice(0, MAX_EXTRACT_CHARS)}${truncNote}`;
+};
+
+// ---------------------------------------------------------------------------
 // Playwright browser interaction tool — Full Interactive Web Browsing (Phase 2)
 // Issue: #177
 // Launches a headless Chromium browser, navigates to a URL, optionally performs

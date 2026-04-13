@@ -224,10 +224,67 @@
       "privilegeClass": "read-write",
       "requiresSubAgent": false
     }
+  ,
+    {
+      "name": "web_extract",
+      "description": "Fetch a web page and return structured extraction — headings, tables, lists, and links preserved as markdown. Accepts optional natural-language instructions to focus the extraction (e.g. 'extract product prices' or 'find the list of service centers'). Returns up to 16 KB. Prefer over web_fetch_page when you need structured data from a page rather than raw text.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The full URL to fetch (must use http:// or https://)"
+          },
+          "instructions": {
+            "type": "string",
+            "description": "Optional natural-language instructions guiding what to extract (e.g. 'extract all product names and prices', 'find contact information', 'list all download links'). When omitted, returns the full structured extraction."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "aliases": [
+        "extract from page",
+        "structured read",
+        "parse webpage",
+        "scrape page"
+      ],
+      "discoveryTerms": [
+        "extract data from page",
+        "parse webpage",
+        "get structured data",
+        "extract table",
+        "extract prices",
+        "extract links",
+        "get headings",
+        "scrape information"
+      ],
+      "useWhen": [
+        "you need structured data (tables, headings, links, lists) from a web page rather than flat text",
+        "the user asks to extract specific information from a URL (e.g. prices, names, addresses)",
+        "web_fetch_page returns too much noise — use web_extract with instructions to focus the output",
+        "a swarm worker needs to extract specific data points from a page for cross-verification"
+      ],
+      "typicalInputs": [
+        "https://example.com/products — extract all product names and prices",
+        "https://docs.microsoft.com/pricing — extract the pricing table"
+      ],
+      "returnsSummaryShape": "URL, extraction instructions, and structured markdown with headings, tables, lists, and links (up to 16 KB)",
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
+    }
   ],
   "shortName": "web",
-  "displayName": "Web Search, Page Reader & Interactive Browser",
-  "shortDescription": "Search the web, fetch/read static URLs, and interact with pages via a full headless Chromium browser (Playwright) — click buttons, fill forms, navigate SPAs",
+  "displayName": "Web Search, Page Reader, Structured Extractor & Interactive Browser",
+  "shortDescription": "Search the web, fetch/read static URLs, extract structured data from pages, and interact with pages via a full headless Chromium browser (Playwright) — click buttons, fill forms, navigate SPAs",
   "discoveryHints": [
     "web search",
     "fresh public information",
@@ -257,12 +314,14 @@
     "look up recent public information on the open web",
     "read or summarize a specific webpage or URL",
     "interact with a web page using a full browser (click, fill forms, navigate SPAs)",
+    "extract structured data (tables, headings, links, lists) from a public web page",
     "find a local business, shop, service center, or restaurant near a location or in a specific city",
     "search for directions, addresses, opening hours, or contact details for a physical location"
   ],
   "recommendedEntryTools": [
     "web_search",
     "web_fetch_page",
+    "web_extract",
     "web_interact"
   ],
   "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/web.png",
