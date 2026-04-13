@@ -82,7 +82,8 @@ Rules:
 - Do NOT assign "chatroom_send" in assignedTools — all agents get it automatically.
 - timeoutMs: 30000 for simple, 60000 for research, 90000 for deep multi-source.
 - maxRoundsPerAgent: 2-4 depending on task depth.
-- If the query is too simple for a swarm (single tool call would suffice), respond with: {"fallback": true, "reason": "..."}`;
+- You have already been selected as the decomposer because the query was classified as multi-faceted. Your job is to DECOMPOSE it into parallel sub-tasks, not to second-guess the routing decision. Only return fallback for truly trivial single-fact lookups (e.g. "what time is it?"). Research queries, comparisons, multi-source investigations, and any query mentioning multiple topics/aspects MUST be decomposed — never return fallback for these.
+- If the query is genuinely trivial (single fact, single tool call), respond with: {"fallback": true, "reason": "..."}`;
 
 df.app.activity('swarmDecomposerActivity', {
   handler: async (input: SwarmDecomposerInput): Promise<SwarmDecomposerResult> => {
