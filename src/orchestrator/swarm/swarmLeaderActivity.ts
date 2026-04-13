@@ -5,7 +5,7 @@
 
 import * as df from 'durable-functions';
 import { FoundryClient, textContent } from '../../llm/foundryClient.js';
-import { getModelRouting } from '../../llm/modelRouter.js';
+import { getModelRouting, isReasoningModel } from '../../llm/modelRouter.js';
 import { trackEvent } from '../../observability/telemetry.js';
 import { recordOrchestratorStage } from '../../observability/orchestratorStageHealth.js';
 import { buildLeaderSystemPrompt } from './swarmPersonas.js';
@@ -36,7 +36,7 @@ df.app.activity('swarmLeaderActivity', {
     const client = new FoundryClient({
       ...routing,
       deploymentName: routing.lane.primary,
-      isReasoning: routing.lane.primary.includes('reasoning') || routing.lane.primary.startsWith('o'),
+      isReasoning: isReasoningModel(routing.lane.primary),
     });
 
     const systemPrompt = buildLeaderSystemPrompt({

@@ -14,6 +14,7 @@ import {
   getDirectChatModelIncompatibilityReason,
   getModelRouting,
   getModelForTask,
+  isReasoningModel,
 } from '../llm/modelRouter.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import type { PromptResult } from './buildPromptActivity.js';
@@ -140,7 +141,7 @@ df.app.activity('llmActivity', {
         };
       }
       deploymentName = input.modelOverride;
-      isReasoning = deploymentName.includes('reasoning') || deploymentName.startsWith('o');
+      isReasoning = isReasoningModel(deploymentName);
     } else if (hasImages) {
       deploymentName = getModelForTask('vision');
     } else {

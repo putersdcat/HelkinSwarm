@@ -5,7 +5,7 @@
 
 import * as df from 'durable-functions';
 import { FoundryClient, textContent } from '../llm/foundryClient.js';
-import { getModelRouting, getModelForTask } from '../llm/modelRouter.js';
+import { getModelRouting, getModelForTask, isReasoningModel } from '../llm/modelRouter.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { getHandler } from '../capabilities/capabilityLoader.js';
 import { trackEvent } from '../observability/telemetry.js';
@@ -53,7 +53,7 @@ function resolvePreferredModel(preferredModel: StepModel | undefined): { deploym
       return { deploymentName: getModelForTask('reasoning'), isReasoning: true };
     case 'primary': {
       const routing = getModelRouting();
-      return { deploymentName: routing.lane.primary, isReasoning: routing.lane.primary.includes('reasoning') || routing.lane.primary.startsWith('o') };
+      return { deploymentName: routing.lane.primary, isReasoning: isReasoningModel(routing.lane.primary) };
     }
     default:
       return { deploymentName: getModelForTask('fast'), isReasoning: false };

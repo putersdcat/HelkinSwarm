@@ -13,7 +13,7 @@ import {
   shouldPageOutForLlmFailure,
   textContent,
 } from '../llm/foundryClient.js';
-import { getDirectChatModelIncompatibilityReason, getModelRouting } from '../llm/modelRouter.js';
+import { getDirectChatModelIncompatibilityReason, getModelRouting, isReasoningModel } from '../llm/modelRouter.js';
 import type { ChatMessage, ChatCompletionResponse, LlmFailoverStep, ToolDefinition } from '../llm/foundryClient.js';
 import type { LlmResult } from './llmActivity.js';
 import { synthesizeDeterministicFollowUpToolCall, synthesizeExactToolCall } from './discoveryToolInjection.js';
@@ -281,7 +281,7 @@ df.app.activity('llmFollowUpActivity', {
         };
       }
       deploymentName = input.modelOverride;
-      isReasoning = deploymentName.includes('reasoning') || deploymentName.startsWith('o');
+      isReasoning = isReasoningModel(deploymentName);
     } else {
       deploymentName = routing.deploymentName;
     }

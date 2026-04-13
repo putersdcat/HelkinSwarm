@@ -192,7 +192,16 @@ function getEuLane(config: ReturnType<typeof getEnvConfig>): ModelLane {
 }
 
 function isReasoningDeploymentName(deploymentName: string, lane: ModelLane): boolean {
-  return deploymentName === lane.reasoning || deploymentName.includes('reasoning') || deploymentName.startsWith('o');
+  return deploymentName === lane.reasoning || isReasoningModel(deploymentName);
+}
+
+/**
+ * Standalone check: is this deployment name a reasoning-class model?
+ * Excludes explicit 'non-reasoning' variants.
+ */
+export function isReasoningModel(deploymentName: string): boolean {
+  if (deploymentName.includes('non-reasoning')) return false;
+  return deploymentName.includes('reasoning') || deploymentName.startsWith('o');
 }
 
 function createRoutingEntry(base: ModelRouting, deploymentName: string): ModelRouting {
