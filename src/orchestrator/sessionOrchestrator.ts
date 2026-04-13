@@ -776,6 +776,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           tokensUsed: decomposerResult.tokensUsed,
           complexityClass: planResult.complexity,
           swarmEligibilityScore: planResult.swarmEligibilityScore,
+          swarmComplexityZone: planResult.swarmComplexityZone,
         },
       });
     }
@@ -793,6 +794,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           decomposerTokens: decomposerResult.tokensUsed,
           complexityClass: planResult.complexity,
           swarmEligibilityScore: planResult.swarmEligibilityScore,
+          swarmComplexityZone: planResult.swarmComplexityZone,
           activeSkillDomains: activeSkillDomains.join(','),
         },
       });

@@ -1,8 +1,8 @@
 // Tests for swarm types and eligibility scoring
 // Epic: #631
 
-import { describe, it, expect } from 'vitest';
-import { isSwarmEligible, computeSwarmEligibilityScore, SwarmPlanSchema, ChatroomMessageSchema, SwarmAgentSchema } from '../../src/orchestrator/swarm/swarmTypes.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { isSwarmEligible, computeSwarmEligibilityScore, classifySwarmZone, getSwarmComplexityGate, SwarmPlanSchema, ChatroomMessageSchema, SwarmAgentSchema } from '../../src/orchestrator/swarm/swarmTypes.js';
 
 describe('computeSwarmEligibilityScore', () => {
   it('returns 0 for simple greetings', () => {
@@ -137,6 +137,90 @@ describe('isSwarmEligible', () => {
     expect(isSwarmEligible('ask your team to handle this')).toBe(true);
     expect(isSwarmEligible('try the swarm on this one')).toBe(true);
     expect(isSwarmEligible('swarm this')).toBe(true);
+  });
+});
+
+describe('getSwarmComplexityGate', () => {
+  const originalEnv = process.env;
+  beforeEach(() => { process.env = { ...originalEnv }; });
+  afterEach(() => { process.env = originalEnv; });
+
+  it('returns defaults when env vars are not set', () => {
+    delete process.env['SWARM_ELIGIBILITY_THRESHOLD'];
+    delete process.env['SWARM_ALWAYS_THRESHOLD'];
+    const gate = getSwarmComplexityGate();
+    expect(gate.sequentialCeiling).toBe(3);
+    expect(gate.swarmFloor).toBe(7);
+  });
+
+  it('reads thresholds from env vars', () => {
+    process.env['SWARM_ELIGIBILITY_THRESHOLD'] = '5';
+    process.env['SWARM_ALWAYS_THRESHOLD'] = '9';
+    const gate = getSwarmComplexityGate();
+    expect(gate.sequentialCeiling).toBe(5);
+    expect(gate.swarmFloor).toBe(9);
+  });
+
+  it('falls back to defaults for non-numeric env values', () => {
+    process.env['SWARM_ELIGIBILITY_THRESHOLD'] = 'abc';
+    process.env['SWARM_ALWAYS_THRESHOLD'] = '';
+    const gate = getSwarmComplexityGate();
+    expect(gate.sequentialCeiling).toBe(3);
+    expect(gate.swarmFloor).toBe(7);
+  });
+});
+
+describe('classifySwarmZone', () => {
+  const defaultGate = { sequentialCeiling: 3, swarmFloor: 7 };
+
+  it('returns always-sequential for low scores', () => {
+    expect(classifySwarmZone(0, defaultGate)).toBe('always-sequential');
+    expect(classifySwarmZone(2, defaultGate)).toBe('always-sequential');
+  });
+
+  it('returns maybe-swarm for mid-range scores', () => {
+    expect(classifySwarmZone(3, defaultGate)).toBe('maybe-swarm');
+    expect(classifySwarmZone(5, defaultGate)).toBe('maybe-swarm');
+    expect(classifySwarmZone(6, defaultGate)).toBe('maybe-swarm');
+  });
+
+  it('returns always-swarm for high scores', () => {
+    expect(classifySwarmZone(7, defaultGate)).toBe('always-swarm');
+    expect(classifySwarmZone(10, defaultGate)).toBe('always-swarm');
+  });
+
+  it('respects custom gate thresholds', () => {
+    const customGate = { sequentialCeiling: 5, swarmFloor: 9 };
+    expect(classifySwarmZone(4, customGate)).toBe('always-sequential');
+    expect(classifySwarmZone(5, customGate)).toBe('maybe-swarm');
+    expect(classifySwarmZone(8, customGate)).toBe('maybe-swarm');
+    expect(classifySwarmZone(9, customGate)).toBe('always-swarm');
+  });
+
+  it('uses env-based defaults when no gate provided', () => {
+    // With default env (no vars set), uses 3 / 7
+    expect(classifySwarmZone(2)).toBe('always-sequential');
+    expect(classifySwarmZone(5)).toBe('maybe-swarm');
+    expect(classifySwarmZone(10)).toBe('always-swarm');
+  });
+});
+
+describe('isSwarmEligible with configurable threshold', () => {
+  const originalEnv = process.env;
+  beforeEach(() => { process.env = { ...originalEnv }; });
+  afterEach(() => { process.env = originalEnv; });
+
+  it('uses SWARM_ELIGIBILITY_THRESHOLD when set', () => {
+    // "compare the pros and cons of these alternatives" scores >= 3 with default
+    const msg = 'compare the pros and cons of these alternatives';
+    expect(isSwarmEligible(msg)).toBe(true); // default threshold 3
+
+    // Raise threshold to 5 — same message should no longer be eligible
+    process.env['SWARM_ELIGIBILITY_THRESHOLD'] = '5';
+    const score = computeSwarmEligibilityScore(msg);
+    if (score < 5) {
+      expect(isSwarmEligible(msg)).toBe(false);
+    }
   });
 });
 

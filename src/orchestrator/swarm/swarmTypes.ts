@@ -259,10 +259,49 @@ export function computeSwarmEligibilityScore(message: string): number {
 }
 
 /**
+ * Swarm complexity gate zones — drives routing decisions (#640 AC 3).
+ * - `always-sequential`: score too low, never route to swarm
+ * - `maybe-swarm`: in the zone where heuristic + decomposer co-decide
+ * - `always-swarm`: score high enough that swarm should always be tried
+ */
+export type SwarmComplexityZone = 'always-sequential' | 'maybe-swarm' | 'always-swarm';
+
+/** Thresholds for the complexity gate. Configurable via env vars. */
+export interface SwarmComplexityGate {
+  /** Score below this → always-sequential (default: 3) */
+  sequentialCeiling: number;
+  /** Score at or above this → always-swarm (default: 7) */
+  swarmFloor: number;
+}
+
+/**
+ * Read complexity gate thresholds from env vars, with sensible defaults.
+ * Called from activities (env-safe context).
+ */
+export function getSwarmComplexityGate(): SwarmComplexityGate {
+  const seqCeiling = parseInt(process.env['SWARM_ELIGIBILITY_THRESHOLD'] ?? '3', 10);
+  const swarmFloor = parseInt(process.env['SWARM_ALWAYS_THRESHOLD'] ?? '7', 10);
+  return {
+    sequentialCeiling: Number.isFinite(seqCeiling) ? seqCeiling : 3,
+    swarmFloor: Number.isFinite(swarmFloor) ? swarmFloor : 7,
+  };
+}
+
+/**
+ * Classify a swarm eligibility score into a complexity zone.
+ */
+export function classifySwarmZone(score: number, gate?: SwarmComplexityGate): SwarmComplexityZone {
+  const { sequentialCeiling, swarmFloor } = gate ?? getSwarmComplexityGate();
+  if (score < sequentialCeiling) return 'always-sequential';
+  if (score >= swarmFloor) return 'always-swarm';
+  return 'maybe-swarm';
+}
+
+/**
  * Signals that a request may benefit from parallel multi-agent execution.
  * This is used by the planner to decide whether to invoke the swarm decomposer.
  */
 export function isSwarmEligible(message: string): boolean {
-  // Threshold: 3+ signals = swarm-eligible
-  return computeSwarmEligibilityScore(message) >= 3;
+  const gate = getSwarmComplexityGate();
+  return computeSwarmEligibilityScore(message) >= gate.sequentialCeiling;
 }
