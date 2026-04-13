@@ -272,7 +272,22 @@ export function computeSwarmEligibilityScore(message: string): number {
     'strengths and weaknesses', 'advantages and disadvantages',
   ];
 
+  // Geographic business-search composite signal (#653).
+  // Queries like "find service centers in Munich" benefit strongly from parallel
+  // web agents — require BOTH a location preposition AND a business-entity term.
+  const geoPrepositions = [' in ', ' near ', ' around ', ' within ', 'nearby'];
+  const businessEntityTerms = [
+    'centers', 'branches', 'offices', 'outlets', 'dealers', 'distributors',
+    'workshops', 'showrooms', 'service center', 'service point',
+    'authorized', 'certified',
+  ];
+
   let score = 0;
+
+  // Geographic + business-entity composite: both signals must co-occur
+  const hasGeoPreposition = geoPrepositions.some(p => lower.includes(p));
+  const hasBusinessEntity = businessEntityTerms.some(t => lower.includes(t));
+  if (hasGeoPreposition && hasBusinessEntity) score += 2;
 
   // Research verbs (count distinct matches — 2+ distinct verbs = stronger signal)
   const researchMatches = researchSignals.filter(s => lower.includes(s)).length;

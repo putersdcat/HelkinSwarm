@@ -45,6 +45,28 @@ describe('computeSwarmEligibilityScore', () => {
     expect(computeSwarmEligibilityScore(highScoreMsg)).toBeGreaterThanOrEqual(3);
     expect(isSwarmEligible(highScoreMsg)).toBe(true);
   });
+
+  it('geo-business composite: scores live-failure query as eligible (#653)', () => {
+    // Empirically-proven live failure: "Find Fox Suspension service centers in Munich, Germany"
+    // was scored 1 (below threshold) and returned a poor sequential response.
+    const query = 'Find Fox Suspension service centers in Munich, Germany';
+    expect(computeSwarmEligibilityScore(query)).toBeGreaterThanOrEqual(3);
+    expect(isSwarmEligible(query)).toBe(true);
+  });
+
+  it('geo-business composite: scores certified dealer search as eligible (#653)', () => {
+    expect(computeSwarmEligibilityScore('Find certified BMW dealers near Hamburg')).toBeGreaterThanOrEqual(3);
+  });
+
+  it('geo-business composite: does NOT fire on location-only (no business entity term) (#653)', () => {
+    // "What's the weather in Paris" — has geo preposition but no business entity term
+    expect(computeSwarmEligibilityScore("What's the weather in Paris")).toBeLessThan(3);
+  });
+
+  it('geo-business composite: does NOT fire on business-term-only (no location preposition) (#653)', () => {
+    // "Tell me about dealers" — has business entity term but no geographic context
+    expect(computeSwarmEligibilityScore('Tell me about dealers')).toBeLessThan(3);
+  });
 });
 
 describe('isSwarmEligible', () => {
