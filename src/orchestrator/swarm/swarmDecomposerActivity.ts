@@ -8,6 +8,7 @@ import { FoundryClient, textContent } from '../../llm/foundryClient.js';
 import { getModelRouting, isReasoningModel } from '../../llm/modelRouter.js';
 import { trackEvent } from '../../observability/telemetry.js';
 import { recordOrchestratorStage } from '../../observability/orchestratorStageHealth.js';
+import { toolRegistry } from '../../tools/toolRegistry.js';
 import { SwarmPlanSchema } from './swarmTypes.js';
 import type { SwarmAgent, SwarmDecomposerInput, SwarmDecomposerResult } from './swarmTypes.js';
 
@@ -95,7 +96,10 @@ df.app.activity('swarmDecomposerActivity', {
       isReasoning: isReasoningModel(routing.lane.primary),
     });
 
-    const toolList = input.availableToolNames.slice(0, 60).join(', ');
+    const toolList = input.availableToolNames.slice(0, 40).map(name => {
+      const def = toolRegistry.get(name);
+      return def ? `- ${name}: ${def.description.slice(0, 100)}` : `- ${name}`;
+    }).join('\n');
 
     try {
       const response = await client.chatCompletion({
@@ -103,7 +107,7 @@ df.app.activity('swarmDecomposerActivity', {
           { role: 'system', content: DECOMPOSER_SYSTEM_PROMPT },
           {
             role: 'user',
-            content: `Available tools: ${toolList}\n\nUser query: ${input.userMessage}`,
+            content: `Available tools:\n${toolList}\n\nUser query: ${input.userMessage}`,
           },
         ],
         temperature: 0.3,
