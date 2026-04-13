@@ -121,7 +121,18 @@ df.app.activity('swarmLeaderActivity', {
 
         for (const tc of assistantMsg.toolCalls) {
           if (tc.function.name === 'chatroom_send') {
-            const args = JSON.parse(tc.function.arguments) as Record<string, unknown>;
+            let args: Record<string, unknown>;
+            try {
+              args = JSON.parse(tc.function.arguments) as Record<string, unknown>;
+            } catch {
+              // Malformed tool arguments from LLM — skip this call and tell the model
+              convoHeight.push({
+                role: 'tool',
+                content: 'Error: malformed tool arguments (not valid JSON)',
+                toolCallId: tc.id,
+              });
+              continue;
+            }
             const msgContent = String(args['message'] ?? '');
             const to = (args['to'] ?? 'All') as string | string[];
             const contentType = String(args['contentType'] ?? 'delegation');

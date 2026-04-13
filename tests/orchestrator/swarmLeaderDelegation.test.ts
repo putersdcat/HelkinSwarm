@@ -134,3 +134,42 @@ describe('SwarmLeaderResult._pendingChatroomMessages', () => {
     expect(result._pendingChatroomMessages).toBeUndefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// swarmLeaderActivity source — malformed-args guard (#632 hardening)
+// ---------------------------------------------------------------------------
+
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const leaderSrc = readFileSync(
+  join(process.cwd(), 'src', 'orchestrator', 'swarm', 'swarmLeaderActivity.ts'),
+  'utf-8',
+);
+const workerSrc = readFileSync(
+  join(process.cwd(), 'src', 'orchestrator', 'swarm', 'swarmWorkerActivity.ts'),
+  'utf-8',
+);
+
+describe('swarmLeaderActivity — malformed tool-arg guard (#632 hardening)', () => {
+  it('wraps JSON.parse in a try/catch in delegation mode', () => {
+    // A malformed LLM tool argument must not crash the activity.
+    // The guard must be present: try { JSON.parse ... } catch { ... }
+    expect(leaderSrc).toMatch(/try\s*\{[^}]*JSON\.parse\s*\(tc\.function\.arguments\)/s);
+  });
+
+  it('returns an error tool response when JSON.parse fails (not void)', () => {
+    // After the catch, the model must receive a tool-role error so it can recover.
+    expect(leaderSrc).toContain("'Error: malformed tool arguments (not valid JSON)'");
+  });
+});
+
+describe('swarmWorkerActivity — malformed tool-arg guard (#632 hardening)', () => {
+  it('wraps JSON.parse in a try/catch in the tool-call loop', () => {
+    expect(workerSrc).toMatch(/try\s*\{[^}]*JSON\.parse\s*\(tc\.function\.arguments\)/s);
+  });
+
+  it('returns an error tool response when JSON.parse fails (not void)', () => {
+    expect(workerSrc).toContain("'Error: malformed tool arguments (not valid JSON)'");
+  });
+});

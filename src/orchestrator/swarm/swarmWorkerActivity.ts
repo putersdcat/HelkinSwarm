@@ -347,7 +347,18 @@ df.app.activity('swarmWorkerActivity', {
 
         // Process tool calls
         for (const tc of assistantMessage.toolCalls) {
-          const parsedArgs = JSON.parse(tc.function.arguments) as Record<string, unknown>;
+          let parsedArgs: Record<string, unknown>;
+          try {
+            parsedArgs = JSON.parse(tc.function.arguments) as Record<string, unknown>;
+          } catch {
+            // Malformed tool arguments from LLM — skip this call and return error to model
+            messages.push({
+              role: 'tool',
+              content: 'Error: malformed tool arguments (not valid JSON)',
+              toolCallId: tc.id,
+            });
+            continue;
+          }
 
           if (tc.function.name === CHATROOM_SEND_TOOL) {
             // Virtual tool — create chatroom message
