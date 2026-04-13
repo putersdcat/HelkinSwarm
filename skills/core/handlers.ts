@@ -1082,6 +1082,24 @@ export const helkin_persona_eval: ToolHandler = async (args) => {
     .filter(d => d.alignedTurns >= Math.ceil(assistantTurns.length / 2))
     .map(d => d.directive);
 
+  const overallHealth = totalDrift === 0 ? 'healthy' : totalDrift <= 2 ? 'minor-drift' : 'attention-needed';
+
+  // Persist eval result for Dev Console version history (#487 AC#4).
+  // Fire-and-forget — recording failure must not break the eval response.
+  try {
+    const { recordPersonaEval } = await import('../../src/persona/personaEventStore.js');
+    await recordPersonaEval(userId, {
+      turnsEvaluated: assistantTurns.length,
+      directivesExtracted: directives.length,
+      overallHealth,
+      alignedSignals: totalAligned,
+      driftSignals: totalDrift,
+      driftDirectives: driftDirectives.slice(0, 5),
+    });
+  } catch {
+    // Cosmos may be unavailable; swallow silently.
+  }
+
   return {
     status: 'success',
     turnsEvaluated: assistantTurns.length,
@@ -1091,7 +1109,7 @@ export const helkin_persona_eval: ToolHandler = async (args) => {
       alignedSignals: totalAligned,
       driftSignals: totalDrift,
       neutralSignals: totalChecks - totalAligned - totalDrift,
-      overallHealth: totalDrift === 0 ? 'healthy' : totalDrift <= 2 ? 'minor-drift' : 'attention-needed',
+      overallHealth,
     },
     strongDirectives: strongDirectives.slice(0, 5),
     driftDirectives: driftDirectives.slice(0, 5),

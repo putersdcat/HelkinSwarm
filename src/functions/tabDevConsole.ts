@@ -19,6 +19,7 @@ import { MemoryManager } from '../memory/memoryManager.js';
 import { validateTabTokenFromRequest } from '../auth/tabTokenValidator.js';
 import { getLlmHealthSnapshot } from '../llm/llmHealthTracker.js';
 import { getCachedPersona, peekPersonaFromDisk } from '../orchestrator/buildPromptActivity.js';
+import { getRecentPersonaEvents } from '../persona/personaEventStore.js';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 
@@ -163,6 +164,14 @@ app.http('tab-dev-console', {
       fileLastModified: personaFileModified,
     };
 
+    // --- Persona version history + eval scores (#487 AC#4) -----------------
+    let personaHistory: unknown[] = [];
+    try {
+      personaHistory = await getRecentPersonaEvents(userId, 20);
+    } catch {
+      context.warn('Failed to fetch persona history for dev console');
+    }
+
     return {
       status: 200,
       headers: TAB_CORS_HEADERS,
@@ -185,6 +194,7 @@ app.http('tab-dev-console', {
         },
         maintenance,
         persona: personaStatus,
+        personaHistory,
         llmHealth: getLlmHealthSnapshot(),
         safetyMode: env.safetyMode,
         euResidencyMode: env.euResidencyMode,

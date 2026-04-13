@@ -414,6 +414,15 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       clearPersonaCache();
     }
 
+    // Record persona reload event for Dev Console version history (#487 AC#4).
+    // Fire-and-forget — recording failure must not break the reload UX.
+    try {
+      const { recordPersonaReload } = await import('../persona/personaEventStore.js');
+      await recordPersonaReload(data.userId, approved ? 'approved' : 'denied');
+    } catch {
+      // Cosmos may be unavailable; swallow silently.
+    }
+
     return {
       statusCode: StatusCodes.OK,
       type: 'application/vnd.microsoft.card.adaptive',
