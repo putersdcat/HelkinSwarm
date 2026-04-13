@@ -58,6 +58,10 @@ export const SwarmAgentSchema = z.object({
   persona: z.string().default('Focused and thorough research agent'),
   /** Optional per-agent token budget allocated by decomposer (#647). */
   tokenBudget: z.number().int().positive().optional().describe('Max total tokens this agent may consume'),
+  /** Optional model deployment name for agent specialization (#648). */
+  modelOverride: z.string().optional().describe('Model deployment name to use instead of the swarm default (e.g. "minimax/minimax-m2.7" for Lucas data-synthesis tasks)'),
+  /** Optional alternate persona file stem for agent specialization (#648). */
+  personaFile: z.string().optional().describe('Alternate persona file stem (e.g. "agentFourPersonaAlternate")'),
 });
 
 export type SwarmAgent = z.infer<typeof SwarmAgentSchema>;
@@ -125,6 +129,10 @@ export interface SwarmWorkerInput {
   userQuery: string;
   /** Optional per-agent token budget. Worker stops when exceeded (#647). */
   tokenBudget?: number;
+  /** Optional model deployment name for this agent (#648). */
+  modelOverride?: string;
+  /** Optional alternate persona file stem for this agent (#648). */
+  personaFile?: string;
 }
 
 export interface SwarmWorkerResult {

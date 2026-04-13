@@ -31,6 +31,11 @@ const PERSONA_PATHS: Record<string, string[]> = {
     resolve(__dirname_local, '../../persona/agentFourPersona.md'),
     resolve(__dirname_local, '../../../../src/persona/agentFourPersona.md'),
   ],
+  // Alternate persona files for model specialization (#648)
+  agentFourPersonaAlternate: [
+    resolve(__dirname_local, '../../persona/agentFourPersonaAlternate.md'),
+    resolve(__dirname_local, '../../../../src/persona/agentFourPersonaAlternate.md'),
+  ],
 };
 
 const personaCache = new Map<string, string>();
@@ -119,10 +124,13 @@ export function buildWorkerSystemPrompt(input: {
   userQuery: string;
   /** Decomposer-assigned behavioral persona override — injected when non-default (#651). */
   agentPersona?: string;
+  /** Alternate persona file stem — loads a specialization file instead of the default (#648). */
+  personaFile?: string;
 }): string {
   const toolList = input.assignedToolNames.join(', ');
   const teamList = input.allAgentNames.filter(n => n !== input.agentName).join(', ');
-  const persona = loadPersona(input.agentName);
+  // Use personaFile override if provided (agent specialization #648), else default by name
+  const persona = (input.personaFile ? loadPersona(input.personaFile) : null) ?? loadPersona(input.agentName);
 
   const identity = persona
     ?? `You are ${input.agentName}, the ${input.agentRole} in a multi-agent swarm led by Helkin.`;

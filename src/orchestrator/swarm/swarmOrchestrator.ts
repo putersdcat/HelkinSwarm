@@ -66,6 +66,8 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
       maxRounds: plan.maxRoundsPerAgent,
       userQuery: userMessage,
       tokenBudget: agent.tokenBudget,
+      modelOverride: agent.modelOverride,
+      personaFile: agent.personaFile,
     };
 
     workerTasks.push(context.df.callActivity('swarmWorkerActivity', workerInput));

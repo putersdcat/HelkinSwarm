@@ -150,11 +150,12 @@ df.app.activity('swarmWorkerActivity', {
     await recordOrchestratorStage(input.correlationId, 'swarm-workers', input.userId);
 
     const routing = getModelRouting();
-    // All swarm agents use the primary (high-capacity) model — confirmed by Grok team
+    // Per-agent model specialization: use modelOverride if provided, else primary (#648)
+    const agentDeploymentName = input.modelOverride ?? routing.lane.primary;
     const client = new FoundryClient({
       ...routing,
-      deploymentName: routing.lane.primary,
-      isReasoning: isReasoningModel(routing.lane.primary),
+      deploymentName: agentDeploymentName,
+      isReasoning: isReasoningModel(agentDeploymentName),
     });
 
     const tools = buildWorkerToolSchemas(input.assignedTools);
@@ -167,6 +168,7 @@ df.app.activity('swarmWorkerActivity', {
       allAgentNames,
       userQuery: input.userQuery,
       agentPersona: input.agentPersona,
+      personaFile: input.personaFile,
     });
 
     // Conversation history for this agent's isolated session
@@ -356,7 +358,7 @@ df.app.activity('swarmWorkerActivity', {
         chatroomMessagesSent,
         toolsUsed: [...toolsUsedSet],
         durationMs: Date.now() - startTimeMs,
-        model: routing.lane.primary,
+        model: agentDeploymentName,
         tokenBudget: input.tokenBudget,
         tokenBudgetExceeded,
         // Pass pending chatroom messages back — the orchestrator will signal the entity
@@ -379,7 +381,7 @@ df.app.activity('swarmWorkerActivity', {
         toolsUsed: [...toolsUsedSet],
         durationMs: Date.now() - startTimeMs,
         error: errorMessage,
-        model: routing.lane.primary,
+        model: agentDeploymentName,
         tokenBudget: input.tokenBudget,
         tokenBudgetExceeded,
       };
