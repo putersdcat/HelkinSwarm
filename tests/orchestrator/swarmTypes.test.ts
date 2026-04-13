@@ -79,6 +79,14 @@ describe('isSwarmEligible', () => {
       'Analyze three different approaches to building a real-time collaborative document editor: CRDTs vs OT vs hybrid approaches. For each, research the technical tradeoffs (latency, consistency, conflict resolution), identify major open-source implementations and their GitHub activity, and investigate which companies chose each approach and their engineering blog posts explaining why. Present a decision matrix with weighted scoring.',
     )).toBe(true);
   });
+  // Regression: #632 C4 — this exact query went through the normal path
+  // because classifyComplexity() returned 'simple' (no sequential connectors),
+  // even though isSwarmEligible scores it at 4.
+  it('triggers for CRDT vs OT comparison query (#632 C4 regression)', () => {
+    expect(isSwarmEligible(
+      'Compare the tradeoffs between CRDT and OT approaches for real-time collaborative editing, evaluating consistency guarantees, latency characteristics, and adoption in modern frameworks like Yjs, Automerge, and ShareDB',
+    )).toBe(true);
+  });
 });
 
 describe('ChatroomMessageSchema', () => {

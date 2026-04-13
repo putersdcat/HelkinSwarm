@@ -724,13 +724,15 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   }
 
   // ---------------------------------------------------------------------------
-  // 1c. Swarm routing — compound/complex requests that are swarm-eligible (#631)
-  // Reading the flag outside the generator's decision branches is safe —
-  // module-level constants don't change between execution and replay.
+  // 1c. Swarm routing — swarm-eligible requests bypass the planner's simple/compound
+  // classification (#632). classifyComplexity() only checks sequential connectors
+  // (then, after that, first…) which misses compound research queries like
+  // "compare tradeoffs between X and Y". isSwarmEligible() already provides the
+  // vocabulary analysis (compare, tradeoffs, approaches, etc.) so the planner
+  // complexity gate is redundant and incorrect for swarm routing.
   // ---------------------------------------------------------------------------
   if (
     planResult.swarmEnabled
-    && planResult.complexity !== 'simple'
     && isSwarmEligible(userMessageForLlm)
     && !input.devLoopContext?.isDevLoop
     && !input.skillForgeRequest
