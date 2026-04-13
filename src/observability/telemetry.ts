@@ -111,6 +111,8 @@ export type TelemetryEventName =
   | 'SwarmLeaderStarted'
   | 'SwarmLeaderCompleted'
   | 'SwarmLeaderError'
+  | 'SwarmLeaderDelegationStarted'
+  | 'SwarmLeaderDelegated'
   | 'SwarmMemoryCommitCompleted'
   | 'SwarmMemoryCommitError';
 

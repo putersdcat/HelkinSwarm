@@ -166,6 +166,9 @@ export interface SwarmLeaderInput {
   userQuery: string;
   agentNames: string[];
   timeoutMs: number;
+  /** If true, Leader acts as active coordinator — reviews transcript and sends delegation messages
+   *  via chatroom_send. Does NOT produce final synthesis. (#644 Slice 2 / #645) */
+  delegationMode?: boolean;
 }
 
 export interface SwarmLeaderResult {
@@ -176,6 +179,9 @@ export interface SwarmLeaderResult {
   agentsHeardFrom: string[];
   model: string;
   error?: string;
+  /** Delegation messages produced by Leader in delegationMode.
+   *  Returned to orchestrator for distribution to worker second-pass. (#644 Slice 2 / #645) */
+  _pendingChatroomMessages?: ChatroomMessage[];
 }
 
 export interface SwarmOrchestratorInput {

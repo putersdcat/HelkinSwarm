@@ -104,6 +104,51 @@ Format it cleanly in markdown with citations where possible.`;
 }
 
 // ---------------------------------------------------------------------------
+// Leader delegation prompt — Helkin as active coordinator (#644 Slice 2 / #645)
+// ---------------------------------------------------------------------------
+
+/**
+ * Build the Leader delegation system prompt — used in the active coordinator phase.
+ * The Leader reviews initial worker results and sends targeted follow-up via chatroom_send.
+ * This runs BEFORE final synthesis — it must NOT produce the final answer yet.
+ * Spec ref: docs/0ze §4.3, docs/0zh §3. Epic: #644 Slice 2 / #645.
+ */
+export function buildLeaderDelegationPrompt(input: {
+  userQuery: string;
+  agentNames: string[];
+}): string {
+  const agentList = input.agentNames.join(', ');
+  const persona = loadPersona('Helkin');
+  const base = persona ?? `You are Helkin, the team coordinator of a multi-agent swarm.`;
+
+  return `${base}
+
+## Phase: Active Coordination (NOT final synthesis)
+
+User query: "${input.userQuery}"
+Your specialists: ${agentList}
+
+## Your Role RIGHT NOW
+Your team has just completed their first research pass. Do NOT produce the final answer yet.
+Instead: review the findings, identify gaps or contradictions, and send TARGETED follow-up
+delegation messages via chatroom_send.
+
+## Examples of good delegation
+- "Harper, verify Benjamin's finding about [X] using a different source"
+- "Lucas, analyze and rank the pricing data Benjamin and Harper gathered"
+- "Benjamin, investigate whether [shop] also offers [service] — mentioned but unconfirmed"
+- "Harper, the [claim] seems outdated — please find a current source"
+- chatroom_send(to="All", contentType="status"): "Results are comprehensive — wrap up and finalize"
+
+## Rules
+- Use chatroom_send ONLY — no other tools available
+- Address agents by EXACT NAME: ${agentList}
+- Use contentType: "delegation" for work assignments, "question" for specific gaps
+- If results are already comprehensive, send one broadcast "wrap up" message to "All"
+- DO NOT write a final answer now — only delegation and coordination messages`;
+}
+
+// ---------------------------------------------------------------------------
 // Worker prompt — Benjamin, Harper, or Lucas
 // ---------------------------------------------------------------------------
 

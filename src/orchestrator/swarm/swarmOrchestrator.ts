@@ -134,6 +134,45 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
   }
 
   // -----------------------------------------------------------------------
+  // 3.4. Leader delegation pass (#644 Slice 2 / #645)
+  // After all first-pass workers finish, run Helkin in delegation mode so it
+  // can review initial findings and send targeted follow-up to agents.
+  // Leader's delegation messages are distributed alongside peer messages in
+  // the second-pass fan-out (3.5) below.
+  // Skipped when workers produced no chatroom messages (nothing for Leader to review).
+  // -----------------------------------------------------------------------
+  if (allChatroomMessages.length > 0) {
+    const LEADER_DELEGATION_TIMEOUT_MS = 30_000;
+    const delegationInput: SwarmLeaderInput & { chatroomTranscript: ChatroomMessage[] } = {
+      leaderName,
+      synthesisInstructions: plan.leader.synthesisInstructions,
+      swarmId: plan.swarmId,
+      swarmCorrelationId: correlationId,
+      chatroomEntityId: `swarm-${plan.swarmId}`,
+      userId,
+      correlationId,
+      userQuery: userMessage,
+      agentNames: allAgentNames,
+      timeoutMs: LEADER_DELEGATION_TIMEOUT_MS,
+      chatroomTranscript: [...allChatroomMessages],
+      delegationMode: true,
+    };
+    const delegationTimer = context.df.createTimer(
+      new Date(context.df.currentUtcDateTime.getTime() + LEADER_DELEGATION_TIMEOUT_MS),
+    );
+    const delegationTask = context.df.callActivity('swarmLeaderActivity', delegationInput);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions generator pattern
+    const delegationWinner = yield context.df.Task.any([delegationTask, delegationTimer]) as df.Task;
+    delegationTimer.cancel();
+    if (delegationWinner === delegationTask) {
+      const delegationResult = delegationTask.result as SwarmLeaderResult;
+      if (delegationResult._pendingChatroomMessages?.length) {
+        allChatroomMessages.push(...delegationResult._pendingChatroomMessages);
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
   // 3.5. Second-pass: route inbound messages back to each agent (#644 Slice 1)
   // Workers run as Durable Activities (no entity access), so they cannot receive
   // peer messages mid-execution. After all workers finish, route collected
