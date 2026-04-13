@@ -202,3 +202,57 @@ describe('SwarmPlanSchema', () => {
     expect(high.success).toBe(false);
   });
 });
+
+describe('SwarmWorkerResult — telemetry fields', () => {
+  it('includes toolsUsed and durationMs', () => {
+    // Structural type check — an object satisfying SwarmWorkerResult must include the new fields
+    const result = {
+      agentName: 'Alpha',
+      success: true,
+      roundsUsed: 2,
+      tokensUsed: 500,
+      toolCallsMade: 3,
+      chatroomMessagesSent: 2,
+      toolsUsed: ['web_search', 'web_fetch_page'],
+      durationMs: 12_345,
+      model: 'grok-4.1-fast',
+    } satisfies import('../../src/orchestrator/swarm/swarmTypes.js').SwarmWorkerResult;
+
+    expect(result.toolsUsed).toEqual(['web_search', 'web_fetch_page']);
+    expect(result.durationMs).toBe(12_345);
+  });
+
+  it('includes toolsUsed and durationMs in error case', () => {
+    const result = {
+      agentName: 'Beta',
+      success: false,
+      roundsUsed: 1,
+      tokensUsed: 100,
+      toolCallsMade: 0,
+      chatroomMessagesSent: 0,
+      toolsUsed: [],
+      durationMs: 500,
+      error: 'LLM call failed',
+      model: 'grok-4.1-fast',
+    } satisfies import('../../src/orchestrator/swarm/swarmTypes.js').SwarmWorkerResult;
+
+    expect(result.toolsUsed).toEqual([]);
+    expect(result.durationMs).toBe(500);
+    expect(result.error).toBeDefined();
+  });
+});
+
+describe('SwarmAgentCost — telemetry fields', () => {
+  it('includes toolsUsed and durationMs', () => {
+    const cost = {
+      agent: 'Alpha',
+      tokens: 500,
+      model: 'grok-4.1-fast',
+      toolsUsed: ['web_search'],
+      durationMs: 8000,
+    } satisfies import('../../src/orchestrator/swarm/swarmTypes.js').SwarmAgentCost;
+
+    expect(cost.toolsUsed).toEqual(['web_search']);
+    expect(cost.durationMs).toBe(8000);
+  });
+});

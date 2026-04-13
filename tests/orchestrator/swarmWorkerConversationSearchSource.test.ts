@@ -23,4 +23,9 @@ describe('swarmWorkerActivity — conversation_search auto-injection', () => {
   it('deduplicates already-assigned conversation_search', () => {
     expect(workerSrc).toContain('seenNames.has(name)');
   });
+
+  it('dispatches conversation_search calls even when not in assignedTools', () => {
+    // The dispatch condition must accept CONVERSATION_SEARCH_TOOL as a valid tool
+    expect(workerSrc).toContain('tc.function.name === CONVERSATION_SEARCH_TOOL');
+  });
 });

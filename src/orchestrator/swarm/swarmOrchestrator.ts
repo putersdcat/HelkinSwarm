@@ -90,6 +90,8 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
         tokensUsed: 0,
         toolCallsMade: 0,
         chatroomMessagesSent: 0,
+        toolsUsed: [],
+        durationMs: SWARM_WORKER_TIMEOUT_MS,
         error: `Worker timed out after ${SWARM_WORKER_TIMEOUT_MS}ms`,
         model: 'timeout',
       });
@@ -206,6 +208,8 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
         agent: r.agentName,
         tokens: r.tokensUsed,
         model: r.model,
+        toolsUsed: r.toolsUsed,
+        durationMs: r.durationMs,
       })),
     },
   };

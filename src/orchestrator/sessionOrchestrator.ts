@@ -810,6 +810,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             agentCostBreakdown: swarmResult.swarmCost?.agentBreakdown
               ?.map(a => `${a.agent}:${a.tokens}`)
               .join(', ') ?? '',
+            agentToolsUsed: swarmResult.agentResults
+              .map(r => `${r.agentName}:[${r.toolsUsed.join(',')}]`)
+              .join('; '),
+            agentDurations: swarmResult.agentResults
+              .map(r => `${r.agentName}:${r.durationMs}ms`)
+              .join(', '),
           },
         });
       }

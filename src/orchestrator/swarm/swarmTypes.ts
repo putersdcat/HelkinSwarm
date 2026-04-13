@@ -119,6 +119,8 @@ export interface SwarmWorkerResult {
   tokensUsed: number;
   toolCallsMade: number;
   chatroomMessagesSent: number;
+  toolsUsed: string[];
+  durationMs: number;
   error?: string;
   model: string;
 }
@@ -158,6 +160,8 @@ export interface SwarmAgentCost {
   agent: string;
   tokens: number;
   model: string;
+  toolsUsed: string[];
+  durationMs: number;
 }
 
 export interface SwarmCost {

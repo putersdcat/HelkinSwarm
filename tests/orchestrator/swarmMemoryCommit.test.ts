@@ -120,10 +120,12 @@ describe('SwarmCost type structure', () => {
         workerTokens: 200,
         leaderTokens: 200,
         totalTokens: 500,
-        agentBreakdown: [{ agent: 'Alpha', tokens: 200, model: 'grok-3' }],
+        agentBreakdown: [{ agent: 'Alpha', tokens: 200, model: 'grok-3', toolsUsed: ['web_search'], durationMs: 5000 }],
       },
     };
     expect(result.swarmCost.agentBreakdown).toHaveLength(1);
+    expect(result.swarmCost.agentBreakdown[0].toolsUsed).toEqual(['web_search']);
+    expect(result.swarmCost.agentBreakdown[0].durationMs).toBe(5000);
     expect(result.swarmCost.totalTokens).toBe(500);
   });
 });

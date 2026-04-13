@@ -177,6 +177,8 @@ df.app.activity('swarmWorkerActivity', {
     let totalTokens = 0;
     let toolCallsMade = 0;
     let chatroomMessagesSent = 0;
+    const toolsUsedSet = new Set<string>();
+    const startTimeMs = Date.now();
 
     // The entity client must be constructed from the entity ID string.
     // In the activity, we use a raw HTTP approach or the Durable client from the context.
@@ -268,9 +270,10 @@ df.app.activity('swarmWorkerActivity', {
               content: `Message sent to ${typeof to === 'string' ? to : to.join(', ')}`,
               toolCallId: tc.id,
             });
-          } else if (input.assignedTools.includes(tc.function.name)) {
-            // External tool — execute it
+          } else if (input.assignedTools.includes(tc.function.name) || tc.function.name === CONVERSATION_SEARCH_TOOL) {
+            // External tool — execute it (includes auto-injected conversation_search)
             toolCallsMade++;
+            toolsUsedSet.add(tc.function.name);
             const result = await executeToolCall(
               tc.function.name,
               parsedArgs,
@@ -304,6 +307,8 @@ df.app.activity('swarmWorkerActivity', {
           toolCallsMade,
           chatroomMessagesSent,
           tokensUsed: totalTokens,
+          toolsUsed: [...toolsUsedSet].join(', '),
+          durationMs: Date.now() - startTimeMs,
         },
       });
 
@@ -314,6 +319,8 @@ df.app.activity('swarmWorkerActivity', {
         tokensUsed: totalTokens,
         toolCallsMade,
         chatroomMessagesSent,
+        toolsUsed: [...toolsUsedSet],
+        durationMs: Date.now() - startTimeMs,
         model: routing.lane.primary,
         // Pass pending chatroom messages back — the orchestrator will signal the entity
         _pendingChatroomMessages: pendingChatroomMessages,
@@ -332,6 +339,8 @@ df.app.activity('swarmWorkerActivity', {
         tokensUsed: totalTokens,
         toolCallsMade,
         chatroomMessagesSent,
+        toolsUsed: [...toolsUsedSet],
+        durationMs: Date.now() - startTimeMs,
         error: errorMessage,
         model: routing.lane.primary,
       };
