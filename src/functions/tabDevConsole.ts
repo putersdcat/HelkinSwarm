@@ -18,6 +18,9 @@ import { getContainer } from '../memory/cosmosClient.js';
 import { MemoryManager } from '../memory/memoryManager.js';
 import { validateTabTokenFromRequest } from '../auth/tabTokenValidator.js';
 import { getLlmHealthSnapshot } from '../llm/llmHealthTracker.js';
+import { getCachedPersona, peekPersonaFromDisk } from '../orchestrator/buildPromptActivity.js';
+import { stat } from 'node:fs/promises';
+import { join } from 'node:path';
 
 const TAB_CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': 'https://helkinswarmtabsst.z20.web.core.windows.net',
@@ -132,6 +135,34 @@ app.http('tab-dev-console', {
       context.warn('Failed to fetch memory catalog for dev console');
     }
 
+    // --- Persona status (#487 AC4) -----------------------------------------
+    const personaFilePath = join(process.cwd(), 'src', 'persona', 'dronePersona.md');
+    const cachedPersona = getCachedPersona();
+    let personaFileExists = false;
+    let personaFileModified: string | null = null;
+    try {
+      const fileStat = await stat(personaFilePath);
+      personaFileExists = true;
+      personaFileModified = fileStat.mtime.toISOString();
+    } catch {
+      // file missing or unreadable
+    }
+    let diskPreview: string | null = null;
+    try {
+      const diskText = await peekPersonaFromDisk();
+      diskPreview = diskText.substring(0, 200);
+    } catch {
+      // peek failed
+    }
+    const personaStatus = {
+      cached: cachedPersona !== null,
+      source: cachedPersona ? 'loaded' : 'not-loaded',
+      preview: cachedPersona?.substring(0, 200) ?? null,
+      diskPreview,
+      fileExists: personaFileExists,
+      fileLastModified: personaFileModified,
+    };
+
     return {
       status: 200,
       headers: TAB_CORS_HEADERS,
@@ -153,6 +184,7 @@ app.http('tab-dev-console', {
           totalEntries: memoryVaults.reduce((sum, v) => sum + v.entries, 0),
         },
         maintenance,
+        persona: personaStatus,
         llmHealth: getLlmHealthSnapshot(),
         safetyMode: env.safetyMode,
         euResidencyMode: env.euResidencyMode,
