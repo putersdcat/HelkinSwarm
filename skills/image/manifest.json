@@ -74,21 +74,91 @@
       "privilegeClass": "read-only",
       "requiresSubAgent": false
     }
+  ,
+    {
+      "name": "image_search",
+      "description": "Search the web for images matching a query. Returns titles, source page URLs, thumbnail URLs, and dimensions for the top results. Useful for finding reference images, visual examples, product photos, logos, diagrams, or any image on the public web.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The image search query (e.g. 'SpaceX Starship launch', 'TypeScript logo transparent')"
+          },
+          "count": {
+            "type": "number",
+            "description": "Number of results to return (1-10, default: 5)"
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "aliases": [
+        "search images",
+        "find images",
+        "find pictures",
+        "image lookup"
+      ],
+      "discoveryTerms": [
+        "search for images",
+        "find pictures",
+        "find photos",
+        "image search",
+        "look up image",
+        "reference image",
+        "visual example",
+        "product photo",
+        "diagram",
+        "logo"
+      ],
+      "useWhen": [
+        "the user asks to find, search for, or look up images on the web",
+        "a swarm agent needs reference images or visual examples for research",
+        "the user wants to find product photos, logos, diagrams, or visual material"
+      ],
+      "avoidWhen": [
+        "the user wants to generate a NEW image from a description — use image_generate instead",
+        "the user already has a specific image URL — use web_fetch_page to read the page"
+      ],
+      "typicalInputs": [
+        "SpaceX Starship launch 2026",
+        "TypeScript logo transparent background",
+        "React vs Vue comparison diagram"
+      ],
+      "returnsSummaryShape": "list of image results with title, source URL, thumbnail URL, and dimensions",
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
+    }
   ],
   "shortName": "image",
-  "displayName": "Image Generation",
-  "shortDescription": "Generate images from text prompts via AI image models — outputs stored as reusable runtime assets",
+  "displayName": "Image Generation & Search",
+  "shortDescription": "Generate images from text prompts via AI image models, and search the web for existing images — outputs stored as reusable runtime assets",
   "iconUrl": "https://helkinswarmtabsst.z20.web.core.windows.net/icons/image.png",
   "deploymentScenario": "personal-user-centric",
   "onboardingMethod": "automatic-agentic",
   "lifecycleRules": "keep-credentials",
   "externalAccountsNeeded": [
     {
-      "description": "OpenRouter API key — provides access to DALL-E 3 and other image models",
+      "description": "OpenRouter API key — provides access to DALL-E 3 and other image models (required for image_generate)",
       "envVarName": "OPENROUTER_API_KEY",
       "howToObtain": "https://openrouter.ai/ — create an account and generate an API key; store in stamp Key Vault as OpenRouterApiKey",
       "satisfiedBy": "operator-kv",
       "required": true
+    },
+    {
+      "description": "Brave Search API key — provides image search (optional — falls back to DuckDuckGo image proxy search when absent)",
+      "envVarName": "BRAVE_SEARCH_API_KEY",
+      "howToObtain": "Free tier at https://api.search.brave.com/; store key in stamp Key Vault as BraveSearchApiKey",
+      "satisfiedBy": "operator-kv",
+      "required": false
     }
   ]
 }

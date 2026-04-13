@@ -182,3 +182,154 @@ export const image_generate: ToolHandler = async (args) => {
     message: `Image generated and stored. Asset ID: ${assetReference.id}. Use this assetId to embed it in an email or reply to the user.`,
   };
 };
+
+// ---------------------------------------------------------------------------
+// Brave Image Search API response schemas
+// ---------------------------------------------------------------------------
+
+const BraveImageResultSchema = z.object({
+  title: z.string(),
+  url: z.string(),
+  source: z.string().optional(),
+  thumbnail: z.object({
+    src: z.string(),
+  }).optional(),
+  properties: z.object({
+    url: z.string().optional(),
+  }).optional(),
+});
+
+const BraveImageSearchResponseSchema = z.object({
+  results: z.array(BraveImageResultSchema).optional(),
+});
+
+// ---------------------------------------------------------------------------
+// DuckDuckGo image search fallback — zero-key alternative
+// Uses the DuckDuckGo Instant Answer API for image-related topic results.
+// Quality is lower than Brave but functional for basic image lookups.
+// ---------------------------------------------------------------------------
+
+const DdgImageItemSchema = z.object({
+  image: z.string().optional(),
+  thumbnail: z.string().optional(),
+  title: z.string().optional(),
+  url: z.string().optional(),
+  source: z.string().optional(),
+});
+
+const DdgImageResponseSchema = z.object({
+  results: z.array(DdgImageItemSchema).optional(),
+});
+
+async function ddgImageSearch(
+  query: string,
+  count: number,
+): Promise<z.infer<typeof BraveImageSearchResponseSchema>> {
+  // DuckDuckGo doesn't have a public free image search JSON API.
+  // Fall back to the regular Instant Answer API and surface any image-bearing topics.
+  const params = new URLSearchParams({
+    q: query,
+    format: 'json',
+    no_html: '1',
+    skip_disambig: '1',
+    iax: 'images',
+    ia: 'images',
+  });
+
+  const response = await fetch(
+    `https://api.duckduckgo.com/?${params}`,
+    {
+      method: 'GET',
+      headers: { 'Accept': 'application/json', 'User-Agent': 'HelkinSwarm/1.0' },
+      signal: AbortSignal.timeout(8_000),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(`DuckDuckGo image search failed: ${response.status} ${response.statusText}`);
+  }
+
+  const data: unknown = await response.json();
+  const parsed = DdgImageResponseSchema.parse(data);
+
+  const results = (parsed.results ?? [])
+    .filter(r => r.image || r.thumbnail)
+    .slice(0, count)
+    .map(r => ({
+      title: r.title ?? query,
+      url: r.url ?? r.image ?? '',
+      source: r.source,
+      thumbnail: r.thumbnail ? { src: r.thumbnail } : undefined,
+      properties: r.image ? { url: r.image } : undefined,
+    }));
+
+  return { results };
+}
+
+// ---------------------------------------------------------------------------
+// Tool: image_search — Web Image Search via Brave (or DuckDuckGo fallback)
+// Issue: #631 (Phase S2 — tool surface expansion)
+// ---------------------------------------------------------------------------
+
+export const image_search: ToolHandler = async (args) => {
+  const query = String(args['query'] ?? '').trim();
+  if (!query) throw new Error('Search query is required');
+
+  const count = Math.min(Math.max(Number(args['count'] ?? 5), 1), 10);
+
+  const apiKey = process.env['BRAVE_SEARCH_API_KEY'];
+  const usingFallback = !apiKey || apiKey === 'not-configured';
+
+  let searchResults: z.infer<typeof BraveImageSearchResponseSchema>;
+
+  if (usingFallback) {
+    searchResults = await ddgImageSearch(query, count);
+  } else {
+    const params = new URLSearchParams({
+      q: query,
+      count: String(count),
+      search_lang: 'en',
+    });
+
+    const response = await fetch(
+      `https://api.search.brave.com/res/v1/images/search?${params}`,
+      {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Accept-Encoding': 'gzip',
+          'X-Subscription-Token': apiKey,
+        },
+        signal: AbortSignal.timeout(10_000),
+      },
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'unknown');
+      throw new Error(`Brave Image Search API error: ${response.status} ${response.statusText} — ${errorText}`);
+    }
+
+    const data: unknown = await response.json();
+    searchResults = BraveImageSearchResponseSchema.parse(data);
+  }
+
+  const results = searchResults.results ?? [];
+
+  if (results.length === 0) {
+    return `No image results found for "${query}".`;
+  }
+
+  const note = usingFallback
+    ? '\n> ⚠️ _Using DuckDuckGo fallback (limited image coverage). For full image search, configure Brave Search API key._\n'
+    : '';
+  const header = `🖼️ **Image search: "${query}"**${note}\n`;
+
+  const items = results.map((img, i) => {
+    const thumbUrl = img.thumbnail?.src ?? img.properties?.url ?? '';
+    const sourceNote = img.source ? ` _(${img.source})_` : '';
+    const thumbLine = thumbUrl ? `\n   Thumbnail: ${thumbUrl}` : '';
+    return `${i + 1}. **[${img.title}](${img.url})**${sourceNote}${thumbLine}`;
+  }).join('\n\n');
+
+  return `${header}\n${items}`;
+};
