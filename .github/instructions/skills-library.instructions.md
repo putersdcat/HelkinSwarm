@@ -103,6 +103,55 @@ A skill's `onboardingMethod` and `externalAccountsNeeded` must truthfully reflec
 - `"both"` — agentic setup + user confirmation step
 - No user-facing "missing config" errors allowed — trap and resolve in orchestrator
 
+### User-Vault Credential Path — Creation Standard (#649)
+
+When a skill needs a secret the **user must manually provide** (not operator-provisioned via Bicep), follow this canonical pattern:
+
+1. **Manifest** — add to `externalAccountsNeeded` and declare vault dependency:
+   ```json
+   {
+     "externalAccountsNeeded": [
+       {
+         "description": "Human-readable name of the credential (e.g. Twitter API v2 Bearer Token)",
+         "kvSecretName": "PascalCaseName",
+         "satisfiedBy": "user-vault",
+         "howToObtain": "Instructions for user to obtain and store the key"
+       }
+     ],
+     "dependencies": ["vault"]
+   }
+   ```
+   `kvSecretName` convention: **PascalCase**, matches the User Vault KV secret name exactly.
+
+2. **Handler** — resolve via env-var fallback then vault fetch:
+   ```typescript
+   import { SecretClient } from '@azure/keyvault-secrets';
+   import { ManagedIdentityCredential } from '@azure/identity';
+
+   async function resolveSecret(kvSecretName: string, envVarFallback?: string): Promise<string | null> {
+     // Operator/env override (backward compat for existing deployments)
+     const envVal = envVarFallback ? process.env[envVarFallback] : undefined;
+     if (envVal) return envVal;
+     // User Vault path (primary path for user-provided secrets)
+     const vaultUri = process.env['USER_VAULT_KEY_VAULT_URI'];
+     if (!vaultUri) return null;
+     try {
+       const client = new SecretClient(vaultUri, new ManagedIdentityCredential());
+       const secret = await client.getSecret(kvSecretName);
+       return secret.value ?? null;
+     } catch { return null; }
+   }
+   ```
+
+3. **Error message** when resolution fails — direct user to store via vault skill:
+   ```
+   "[Credential description] is not configured. Store it: vault_store_secret({ name: 'PascalCaseName', value: '<your-key>' })"
+   ```
+
+4. **assessor behavior**: `satisfiedBy: "user-vault"` entries classify the skill as `action-required` (not `operator-setup-required`), so the user sees a recoverable onboarding message, not an operator-only error.
+
+**Canonical reference implementation:** `skills/x/manifest.json` + `skills/x/handlers.ts`
+
 ## Lifecycle Rules
 
 - Every skill must declare uninstall behavior in `lifecycleRules`

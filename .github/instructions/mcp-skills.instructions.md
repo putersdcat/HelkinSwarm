@@ -102,8 +102,11 @@ A discoverable skill must never show as "operational" when it silently fails at 
 - `post-install-link` or `both` → `action-required`
 - `operator/backend-config-required` → `operator-setup-required`
 - `satisfiedBy: "oauth-link"` accounts are satisfied by user OAuth flow, not env vars — do not count as unsatisfied
+- `satisfiedBy: "user-vault"` accounts require user to store the secret via the vault skill → classifies as `action-required` (recoverable), NOT `operator-setup-required`. Declare `dependencies: ["vault"]` in the manifest.
 
 **Every `externalAccountsNeeded` entry MUST include `satisfiedBy`** so the assessor knows how to check satisfaction.
+
+**User-vault pattern:** when a user-provided secret is needed, use `satisfiedBy: "user-vault"` + `kvSecretName: "PascalCaseName"` + `dependencies: ["vault"]`. Resolve in the handler: try `process.env[FALLBACK_VAR]` first (backward compat), then fetch from `USER_VAULT_KEY_VAULT_URI` via `@azure/keyvault-secrets` + managed identity. On failure, return a message directing the user to `vault_store_secret({ name: 'PascalCaseName', value: '<key>' })`. See `skills/x/manifest.json` + `skills/x/handlers.ts` as the canonical reference.
 
 ## SkillForge Landing Zone
 - New AI-generated skills land in `skills/custom/`
