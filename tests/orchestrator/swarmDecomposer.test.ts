@@ -72,3 +72,18 @@ describe('filterAgentTools', () => {
     expect(result[0].assignedTools).toEqual(['web_search']);
   });
 });
+
+describe('DECOMPOSER_SYSTEM_PROMPT — source verification', () => {
+  // Verify the prompt instructs the decomposer to write task-specific persona guidance (#651 follow-on)
+  it('instructs decomposer to write task-specific behavioral personas', () => {
+    // Source-level check — read the activity file directly to confirm the rule is present
+    const { readFileSync } = require('node:fs');
+    const { join } = require('node:path');
+    const src = readFileSync(
+      join(process.cwd(), 'src', 'orchestrator', 'swarm', 'swarmDecomposerActivity.ts'),
+      'utf-8',
+    );
+    expect(src).toContain('task-specific behavioral guidance');
+    expect(src).toContain('injected directly into the agent\'s system prompt');
+  });
+});
