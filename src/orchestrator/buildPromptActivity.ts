@@ -59,6 +59,23 @@ export function clearPersonaCache(): void {
   cachedPersona = null;
 }
 
+/** Read persona from disk without touching the cache. Returns the DEFAULT_PERSONA on read failure. */
+export async function peekPersonaFromDisk(): Promise<string> {
+  try {
+    return await readFile(
+      join(process.cwd(), 'src', 'persona', 'dronePersona.md'),
+      'utf-8',
+    );
+  } catch {
+    return DEFAULT_PERSONA;
+  }
+}
+
+/** Return the currently cached persona text (or null if not yet loaded). */
+export function getCachedPersona(): string | null {
+  return cachedPersona;
+}
+
 async function loadPersona(): Promise<string> {
   if (cachedPersona) return cachedPersona;
   try {

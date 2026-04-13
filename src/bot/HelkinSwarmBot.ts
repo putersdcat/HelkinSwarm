@@ -39,7 +39,8 @@ import { getEnvConfig } from '../config/envConfig.js';
 import { getCorrelatedAck } from './ackVariants.js';
 import { getContainerAgeMs, isColdStarting } from './lifecycleNotices.js';
 import { loadCapabilities, getManifest, getLinkableSkills } from '../capabilities/capabilityLoader.js';
-import { clearPersonaCache } from '../orchestrator/buildPromptActivity.js';
+import { clearPersonaCache, peekPersonaFromDisk, getCachedPersona } from '../orchestrator/buildPromptActivity.js';
+import { buildPersonaReloadCard } from './confirmationCards.js';
 import { toolRegistry } from '../tools/toolRegistry.js';
 import { parseDevLoopMessage } from '../devloop/radioProtocol.js';
 import { createPendingIntent } from '../orchestrator/pendingIntentStore.js';
@@ -306,6 +307,10 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       return this.handleTentativeActionInvoke(invokeValue);
     }
 
+    if (verb === 'confirm_persona_reload') {
+      return this.handlePersonaReloadInvoke(invokeValue);
+    }
+
     const data = invokeValue.action?.data as
       | { action: string; correlationId: string; userId: string; toolName: string; sessionInstanceId: string }
       | undefined;
@@ -382,6 +387,45 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
             text: approved
               ? `✅ Action confirmed — proceeding`
               : `❌ Action cancelled`,
+            wrap: true,
+          },
+        ],
+      },
+    };
+  }
+
+  /**
+   * Handle persona reload approve/deny from Adaptive Card (#487 AC3).
+   */
+  private async handlePersonaReloadInvoke(
+    invokeValue: AdaptiveCardInvokeValue,
+  ): Promise<AdaptiveCardInvokeResponse> {
+    const data = invokeValue.action?.data as
+      | { action: string; userId: string }
+      | undefined;
+
+    if (!data?.userId) {
+      return { statusCode: StatusCodes.BAD_REQUEST, type: 'application/vnd.microsoft.error', value: { message: 'Missing persona reload data' } };
+    }
+
+    const approved = data.action === 'approved';
+
+    if (approved) {
+      clearPersonaCache();
+    }
+
+    return {
+      statusCode: StatusCodes.OK,
+      type: 'application/vnd.microsoft.card.adaptive',
+      value: {
+        type: 'AdaptiveCard',
+        version: '1.4',
+        body: [
+          {
+            type: 'TextBlock',
+            text: approved
+              ? '♻️ Persona cache cleared — next prompt will use the new persona from disk.'
+              : '🚫 Persona reload cancelled — keeping current persona.',
             wrap: true,
           },
         ],
@@ -737,13 +781,26 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     }
 
     // /reload persona — hot-reload persona text from disk (owner-only, #487)
+    // Shows a confirmation card so the operator can preview the change before activating.
     if (lowerMessage === '/reload persona') {
       if (!(await isOwnerUserId(userId))) {
         await context.sendActivity('⛔ Owner-only command.');
         return;
       }
-      clearPersonaCache();
-      await context.sendActivity('♻️ Persona cache cleared — next prompt will re-read dronePersona.md from disk.');
+      const currentPersona = getCachedPersona();
+      const newPersona = await peekPersonaFromDisk();
+      const currentPreview = currentPersona?.substring(0, 200) ?? '';
+      const newPreview = newPersona.substring(0, 200);
+      if (currentPersona && currentPersona === newPersona) {
+        await context.sendActivity('♻️ Persona file on disk is identical to the cached version — no reload needed.');
+        return;
+      }
+      const card = buildPersonaReloadCard({
+        userId,
+        currentPreview,
+        newPreview,
+      });
+      await context.sendActivity({ type: ActivityTypes.Message, attachments: [card] });
       return;
     }
 

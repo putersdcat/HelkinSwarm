@@ -167,3 +167,82 @@ export function buildTentativeActionCard(data: TentativeActionCardData): Attachm
 
   return CardFactory.adaptiveCard(card);
 }
+
+// ---------------------------------------------------------------------------
+// Persona Reload Confirmation Card (#487 AC3)
+// ---------------------------------------------------------------------------
+
+export interface PersonaReloadCardData {
+  userId: string;
+  /** First N chars of current persona for preview */
+  currentPreview: string;
+  /** First N chars of new persona for preview */
+  newPreview: string;
+}
+
+/**
+ * Build an Adaptive Card confirming a persona hot-reload.
+ * Shows a preview of the change so the operator can verify before activating.
+ */
+export function buildPersonaReloadCard(data: PersonaReloadCardData): Attachment {
+  const card = {
+    type: 'AdaptiveCard',
+    $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+    version: '1.4',
+    body: [
+      {
+        type: 'TextBlock',
+        text: '♻️ Persona Reload — Confirm Change',
+        weight: 'Bolder',
+        size: 'Medium',
+        wrap: true,
+      },
+      {
+        type: 'TextBlock',
+        text: '**Current persona (first 200 chars):**',
+        wrap: true,
+      },
+      {
+        type: 'TextBlock',
+        text: data.currentPreview || '_(not loaded yet — first prompt will load)_',
+        wrap: true,
+        isSubtle: true,
+        maxLines: 4,
+      },
+      {
+        type: 'TextBlock',
+        text: '**New persona from disk (first 200 chars):**',
+        wrap: true,
+      },
+      {
+        type: 'TextBlock',
+        text: data.newPreview || '_(empty or unreadable)_',
+        wrap: true,
+        isSubtle: true,
+        maxLines: 4,
+      },
+    ],
+    actions: [
+      {
+        type: 'Action.Execute',
+        title: '✅ Activate New Persona',
+        verb: 'confirm_persona_reload',
+        data: {
+          action: 'approved',
+          userId: data.userId,
+        },
+      },
+      {
+        type: 'Action.Execute',
+        title: '❌ Keep Current',
+        verb: 'confirm_persona_reload',
+        data: {
+          action: 'denied',
+          userId: data.userId,
+        },
+      },
+    ],
+  };
+
+  return CardFactory.adaptiveCard(card);
+}
