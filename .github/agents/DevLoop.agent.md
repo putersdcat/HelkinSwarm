@@ -119,6 +119,30 @@ Always validate from at least two axes before declaring something working.
 
 ---
 
+## Swarm Observability Context
+
+The multi-agent swarm (#631) is functionally complete but operates as a black box. Key files for swarm work:
+
+| File | Purpose |
+|------|---------|
+| `src/orchestrator/turnTelemetry.ts` | Debug footer formatting + cost estimation |
+| `src/orchestrator/swarm/swarmOrchestrator.ts` | Fan-out/fan-in sub-orchestrator |
+| `src/orchestrator/swarm/swarmWorkerActivity.ts` | Per-agent multi-turn tool loop |
+| `src/orchestrator/swarm/swarmLeaderActivity.ts` | Leader synthesis from transcript |
+| `src/orchestrator/swarm/swarmChatroomEntity.ts` | Durable Entity for agent messaging |
+| `src/orchestrator/swarm/swarmTypes.ts` | Zod schemas, SwarmPlan, SwarmCost |
+| `src/orchestrator/sessionOrchestrator.ts` | Swarm routing branch (~L726-870) |
+| `src/llm/foundryClient.ts` | LLM client (currently `stream: false`) |
+| `tabs/app.js` | Control Center SPA |
+
+### Swarm Validation Pattern
+
+To trigger a swarm turn for live validation, send a compound multi-domain query via `teams_test_full_probe` — e.g. "Compare React vs Vue popularity and find recent GitHub stars trends for both". The planner must classify it as compound/complex AND `isSwarmEligible()` must score it above threshold. Simple queries bypass the swarm entirely.
+
+After a swarm turn, check the debug footer for `m:swarm:*` model prefix and `sa:N` agent count to confirm swarm execution.
+
+---
+
 ## HelkinSwarm-Specific Context
 
 ### Living Specification
@@ -127,6 +151,7 @@ The full specification lives in `docs/` (01–16 + 0a–0m). Key references:
 - **0b** — Model-Specific Tool Presentation
 - **0m** — Self-Tuning Evaluation Loop
 - **0e** — Safety & Four-Eyes Verification Pipeline
+- **0ze–0zi** — Swarm Architecture, Chatroom Protocol, Personas, Memory
 - **14** — Testing & E2E
 
 ### Never-Close Issues

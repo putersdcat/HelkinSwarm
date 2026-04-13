@@ -5,6 +5,7 @@ import {
   estimateCostEur,
   formatTelemetryFooter,
   type TurnTelemetryData,
+  type SwarmAgentTelemetry,
 } from '../../src/orchestrator/turnTelemetry.js';
 
 const baseTelemetry: TurnTelemetryData = {
@@ -153,3 +154,76 @@ describe('formatTelemetryFooter', () => {
   });
 });
 
+// Swarm per-agent telemetry footer tests (#636)
+const swarmAgentBreakdown: SwarmAgentTelemetry[] = [
+  { agent: 'Alpha', tokens: 2100, durationMs: 12000, toolCalls: 3, success: true },
+  { agent: 'Beta', tokens: 1800, durationMs: 8000, toolCalls: 2, success: true },
+  { agent: 'Gamma', tokens: 500, durationMs: 3000, toolCalls: 0, success: false },
+];
+
+const swarmTelemetry: TurnTelemetryData = {
+  ...baseTelemetry,
+  model: 'swarm:grok-4-1-fast-non-reasoning',
+  completionTokens: 5300,
+  subAgentCount: 3,
+  planComplexity: 'complex',
+  decomposerTokens: 320,
+  leaderTokens: 900,
+  swarmAgentBreakdown,
+};
+
+describe('formatTelemetryFooter — swarm per-agent breakdown (#636)', () => {
+  it('verbose mode shows decomposer tokens separately', () => {
+    const result = formatTelemetryFooter('verbose', swarmTelemetry);
+    expect(result).toContain('decomp:320t');
+  });
+
+  it('verbose mode shows per-agent tokens, duration, tool count, and success', () => {
+    const result = formatTelemetryFooter('verbose', swarmTelemetry);
+    expect(result).toContain('Alpha:2100t(12s,3tools✓)');
+    expect(result).toContain('Beta:1800t(8s,2tools✓)');
+    expect(result).toContain('Gamma:500t(3s,0tools✗)');
+  });
+
+  it('verbose mode shows leader tokens separately', () => {
+    const result = formatTelemetryFooter('verbose', swarmTelemetry);
+    expect(result).toContain('leader:900t');
+  });
+
+  it('standard mode shows worker-total and leader-total split', () => {
+    const result = formatTelemetryFooter('standard', swarmTelemetry);
+    // Worker total = 2100 + 1800 + 500 = 4400
+    expect(result).toContain('workers:4400t');
+    expect(result).toContain('leader:900t');
+    expect(result).toContain('decomp:320t');
+  });
+
+  it('standard mode shows agent count', () => {
+    const result = formatTelemetryFooter('standard', swarmTelemetry);
+    expect(result).toContain('sa:3');
+  });
+
+  it('minimal mode does not include per-agent breakdown', () => {
+    const result = formatTelemetryFooter('minimal', swarmTelemetry);
+    expect(result).not.toContain('Alpha');
+    expect(result).not.toContain('decomp');
+    expect(result).not.toContain('leader:');
+    expect(result).toContain('E2E:');
+  });
+
+  it('verbose mode orders: decomposer → agents → leader', () => {
+    const result = formatTelemetryFooter('verbose', swarmTelemetry);
+    const decompIdx = result.indexOf('decomp:320t');
+    const alphaIdx = result.indexOf('Alpha:');
+    const leaderIdx = result.indexOf('leader:900t');
+    expect(decompIdx).toBeLessThan(alphaIdx);
+    expect(alphaIdx).toBeLessThan(leaderIdx);
+  });
+
+  it('non-swarm turns do not include swarm fields', () => {
+    const result = formatTelemetryFooter('verbose', baseTelemetry);
+    expect(result).not.toContain('decomp');
+    expect(result).not.toContain('leader:');
+    expect(result).not.toContain('Alpha');
+  });
+});

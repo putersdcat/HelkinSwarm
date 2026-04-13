@@ -837,6 +837,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       // Append telemetry footer to swarm response
       const swarmTurnEndTime = context.df.currentUtcDateTime.getTime();
       const swarmTelemetryMode = 'verbose' as const;
+      const swarmTimedOut = swarmWinner === swarmTimer;
+      const swarmResultData = swarmTimedOut ? undefined : swarmTask.result as SwarmOrchestratorResult;
       swarmResponse += formatTelemetryFooter(swarmTelemetryMode, {
         correlationId,
         timestampIso: new Date(swarmTurnEndTime).toISOString(),
@@ -845,10 +847,19 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         promptTokens: 0,
         completionTokens: swarmTokens,
         spans,
-        toolCalls: swarmWinner === swarmTimer ? [] : (swarmTask.result as SwarmOrchestratorResult).agentResults.map((a) => `${a.agentName}:${a.toolCallsMade}t${a.success ? '✓' : '✗'}`),
+        toolCalls: swarmResultData ? swarmResultData.agentResults.map((a) => `${a.agentName}:${a.toolCallsMade}t${a.success ? '✓' : '✗'}`) : [],
         safetyPassed: true,
         planComplexity: planResult.complexity,
-        subAgentCount: swarmWinner === swarmTimer ? 0 : (swarmTask.result as SwarmOrchestratorResult).agentResults.length,
+        subAgentCount: swarmResultData ? swarmResultData.agentResults.length : 0,
+        decomposerTokens: decomposerResult.tokensUsed,
+        leaderTokens: swarmResultData?.leaderResult.tokensUsed,
+        swarmAgentBreakdown: swarmResultData?.agentResults.map((a) => ({
+          agent: a.agentName,
+          tokens: a.tokensUsed,
+          durationMs: a.durationMs,
+          toolCalls: a.toolCallsMade,
+          success: a.success,
+        })),
       });
 
       // Deliver the swarm result

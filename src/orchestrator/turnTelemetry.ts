@@ -33,6 +33,21 @@ export interface TurnTelemetryData {
   providerCost?: number;
   providerCostUnit?: 'credits';
   providerCostDetails?: Record<string, number>;
+  /** Per-agent breakdown for swarm turns (#636). */
+  swarmAgentBreakdown?: SwarmAgentTelemetry[];
+  /** Decomposer token cost, separate from worker/leader totals (#636). */
+  decomposerTokens?: number;
+  /** Leader synthesis token cost (#636). */
+  leaderTokens?: number;
+}
+
+/** Per-agent telemetry for swarm footer rendering (#636). */
+export interface SwarmAgentTelemetry {
+  agent: string;
+  tokens: number;
+  durationMs: number;
+  toolCalls: number;
+  success: boolean;
 }
 
 // USD per 1M tokens (blended input/output average). (#254, #260)
@@ -198,6 +213,10 @@ export function formatTelemetryFooter(
   if (mode === 'standard') {
     const extraParts = [
       data.subAgentCount ? `sa:${data.subAgentCount}` : '',
+      // Swarm cost split: workers vs leader (#636)
+      data.swarmAgentBreakdown ? `workers:${data.swarmAgentBreakdown.reduce((s, a) => s + a.tokens, 0)}t` : '',
+      data.leaderTokens !== undefined ? `leader:${data.leaderTokens}t` : '',
+      data.decomposerTokens ? `decomp:${data.decomposerTokens}t` : '',
       data.scopedTokenMintCount ? `tok:${data.scopedTokenMintCount}` : '',
       data.planComplexity && data.planComplexity !== 'simple' ? `plan:${data.planComplexity}` : '',
       timestamp ? `ts:${timestamp}` : '',
@@ -233,6 +252,17 @@ export function formatTelemetryFooter(
 
   parts.push(`safe:${data.safetyPassed ? '✓' : '✗'}`);
   if (data.subAgentCount) parts.push(`sa:${data.subAgentCount}`);
+
+  // Per-agent swarm breakdown (#636)
+  if (data.decomposerTokens) parts.push(`decomp:${data.decomposerTokens}t`);
+  if (data.swarmAgentBreakdown) {
+    for (const a of data.swarmAgentBreakdown) {
+      const durSec = Math.round(a.durationMs / 1000);
+      parts.push(`${a.agent}:${a.tokens}t(${durSec}s,${a.toolCalls}tools${a.success ? '✓' : '✗'})`);
+    }
+  }
+  if (data.leaderTokens !== undefined) parts.push(`leader:${data.leaderTokens}t`);
+
   if (data.scopedTokenMintCount) parts.push(`tok:${data.scopedTokenMintCount}`);
   if (data.planComplexity && data.planComplexity !== 'simple') parts.push(`plan:${data.planComplexity}`);
   if (timestamp) parts.push(`ts:${timestamp}`);
