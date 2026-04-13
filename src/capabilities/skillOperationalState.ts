@@ -33,8 +33,13 @@ export function assessSkillOperationalState(
 
   // Preflight: only count accounts that are not already satisfied by a present env var (#624).
   // Accounts with required:false are optional upgrades — the skill degrades gracefully without them.
+  // Accounts with satisfiedBy:"oauth-link" are completed by the user via the OAuth link flow,
+  // not by operator env var wiring — don't mark them as unsatisfied here (#649).
   const unsatisfiedExternalAccounts = externalAccounts.filter(
-    (entry) => entry.required !== false && (!entry.envVarName || !process.env[entry.envVarName]),
+    (entry) =>
+      entry.required !== false
+      && entry.satisfiedBy !== 'oauth-link'
+      && (!entry.envVarName || !process.env[entry.envVarName]),
   );
 
   if (missingDeps.length > 0) {

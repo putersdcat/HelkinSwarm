@@ -1,5 +1,83 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { join } from 'node:path';
+import { assessSkillOperationalState } from '../../src/capabilities/skillOperationalState.js';
+import type { CapabilityManifest } from '../../src/capabilities/manifestSchema.js';
+
+function makeManifest(overrides: Partial<CapabilityManifest> = {}): CapabilityManifest {
+  return {
+    domain: 'test',
+    version: '1.0',
+    shortName: 'test',
+    displayName: 'Test Skill',
+    shortDescription: 'A test skill',
+    deploymentScenario: 'personal-user-centric',
+    onboardingMethod: 'automatic-agentic',
+    lifecycleRules: 'keep-credentials',
+    dependencies: [],
+    capabilityGroups: [],
+    ...overrides,
+  } as CapabilityManifest;
+}
+
+describe('assessSkillOperationalState — unit', () => {
+  const installed = new Set(['core', 'web']);
+
+  it('returns operational for a simple skill with no requirements', () => {
+    const result = assessSkillOperationalState(makeManifest(), installed);
+    expect(result.operationalState).toBe('operational');
+  });
+
+  it('returns operator-setup-required for operator/backend-config-required (#641)', () => {
+    const result = assessSkillOperationalState(
+      makeManifest({ onboardingMethod: 'operator/backend-config-required' }),
+      installed,
+    );
+    expect(result.operationalState).toBe('operator-setup-required');
+  });
+
+  it('returns action-required for post-install-link skills', () => {
+    const result = assessSkillOperationalState(
+      makeManifest({ onboardingMethod: 'post-install-link' }),
+      installed,
+    );
+    expect(result.operationalState).toBe('action-required');
+  });
+
+  it('treats satisfiedBy:oauth-link accounts as non-blocking (#649)', () => {
+    const result = assessSkillOperationalState(
+      makeManifest({
+        onboardingMethod: 'automatic-agentic',
+        externalAccountsNeeded: [
+          { description: 'Entra work account', satisfiedBy: 'oauth-link' },
+        ],
+      }),
+      installed,
+    );
+    expect(result.operationalState).toBe('operational');
+  });
+
+  it('treats required:false external accounts as optional — skill stays operational', () => {
+    const result = assessSkillOperationalState(
+      makeManifest({
+        onboardingMethod: 'automatic-agentic',
+        externalAccountsNeeded: [
+          { description: 'Optional key', envVarName: 'MISSING_KEY_OPTIONAL_TEST', required: false },
+        ],
+      }),
+      installed,
+    );
+    expect(result.operationalState).toBe('operational');
+  });
+
+  it('returns blocked when dependencies are missing', () => {
+    const result = assessSkillOperationalState(
+      makeManifest({ dependencies: ['outlook'] }),
+      installed,
+    );
+    expect(result.operationalState).toBe('blocked');
+    expect(result.missingDependencies).toEqual(['outlook']);
+  });
+});
 
 describe('skill operational state assessment', () => {
   beforeEach(() => {
