@@ -59,6 +59,8 @@ export interface ChatCompletionUsage {
   providerCost?: number;
   providerCostUnit?: 'credits';
   providerCostDetails?: Record<string, number>;
+  /** OpenRouter server-tool usage — e.g. { webSearchRequests: 2 } (#650) */
+  serverToolUse?: { webSearchRequests?: number };
 }
 
 export interface ChatCompletionResponse {
@@ -635,8 +637,22 @@ export class FoundryClient {
       body.temperature = options.temperature ?? 0.7;
     }
 
-    if (options.tools && options.tools.length > 0) {
-      body.tools = options.tools;
+    // Build combined tools array: function tools + OpenRouter server tools (#650).
+    // When on OpenRouter, inject openrouter:web_search server tool and remove the
+    // client-side web_search function tool to avoid duplication.
+    const functionTools = (options.tools ?? []).filter((t) => t.function.name !== 'web_search');
+    const serverSearchTool: Record<string, unknown> = {
+      type: 'openrouter:web_search',
+      parameters: {
+        engine: 'auto',
+        max_results: 5,
+        max_total_results: 20,
+      },
+    };
+    const allTools: unknown[] = [...functionTools, serverSearchTool];
+
+    if (allTools.length > 0) {
+      body.tools = allTools;
       body.tool_choice = options.toolChoice ?? 'auto';
     }
 
@@ -967,6 +983,7 @@ interface RawApiUsage {
   total_tokens: number;
   cost?: number;
   cost_details?: Record<string, number>;
+  server_tool_use?: { web_search_requests?: number };
 }
 
 interface RawApiResponse {
@@ -1013,6 +1030,10 @@ function mapApiResponse(raw: RawApiResponse): ChatCompletionResponse {
       )
     : undefined;
 
+  const serverToolUse = raw.usage.server_tool_use?.web_search_requests
+    ? { webSearchRequests: raw.usage.server_tool_use.web_search_requests }
+    : undefined;
+
   return {
     id: raw.id,
     model: raw.model,
@@ -1026,6 +1047,7 @@ function mapApiResponse(raw: RawApiResponse): ChatCompletionResponse {
       providerCostDetails: providerCostDetails && Object.keys(providerCostDetails).length > 0
         ? providerCostDetails
         : undefined,
+      serverToolUse,
     },
     choices: raw.choices.map((c) => ({
       index: c.index,
