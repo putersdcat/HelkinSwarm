@@ -870,11 +870,103 @@ jobs:
           done
 
   # ─────────────────────────────────────────────────────────────────────────
+  # 3b. Build & Push Python REPL container image (#639)
+  #     Runs in parallel with the Node.js image build.
+  #     Triggered when Dockerfile.python-repl or python-repl/ files change.
+  # ─────────────────────────────────────────────────────────────────────────
+  build-and-push-python:
+    name: Build & Push Python REPL
+    needs: deploy-infra
+    if: needs.deploy-infra.outputs.image-changed == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to ACR
+        run: az acr login --name ${{ needs.deploy-infra.outputs.acr-name }}
+
+      - name: Check if Python REPL files changed
+        id: python-changes
+        run: |
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+          if echo "$CHANGED_FILES" | grep -qE '^(python-repl/|Dockerfile\.python-repl$)'; then
+            echo "pythonChanged=true" >> "$GITHUB_OUTPUT"
+            echo "✅ Python REPL files changed — will rebuild Python image."
+          else
+            echo "pythonChanged=false" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ Python REPL files unchanged — skipping Python image rebuild."
+          fi
+
+      - name: Build and push Python REPL image
+        if: steps.python-changes.outputs.pythonChanged == 'true'
+        run: |
+          set -euo pipefail
+          ACR_SERVER=${{ needs.deploy-infra.outputs.acr-login-server }}
+          IMAGE="${ACR_SERVER}/helkinswarm-python-repl:${{ github.sha }}"
+          IMAGE_LATEST="${ACR_SERVER}/helkinswarm-python-repl:latest"
+          CACHE_REF="${ACR_SERVER}/helkinswarm-python-repl:buildcache"
+
+          max_attempts=3
+          attempt=1
+          retry_delays=(30 60)
+
+          while [ "$attempt" -le "$max_attempts" ]; do
+            echo "🐍 Python REPL build/push attempt ${attempt}/${max_attempts}"
+            if docker buildx build \
+              --push \
+              --file Dockerfile.python-repl \
+              --tag "$IMAGE" \
+              --tag "$IMAGE_LATEST" \
+              --cache-from "type=registry,ref=${CACHE_REF}" \
+              --cache-to "type=registry,ref=${CACHE_REF},mode=max" \
+              .; then
+              echo "✅ Python REPL image build/push succeeded"
+              break
+            fi
+            if [ "$attempt" -eq "$max_attempts" ]; then
+              echo "❌ Python REPL image build/push failed after ${max_attempts} attempts"
+              exit 1
+            fi
+            delay_index=$((attempt - 1))
+            delay=${retry_delays[$delay_index]:-60}
+            echo "⚠️ Retrying Python build in ${delay}s..."
+            sleep "$delay"
+            attempt=$((attempt + 1))
+          done
+
+      - name: Update Python REPL Container App image
+        if: steps.python-changes.outputs.pythonChanged == 'true'
+        run: |
+          set -euo pipefail
+          ACR_SERVER=${{ needs.deploy-infra.outputs.acr-login-server }}
+          RG="${{ env.RESOURCE_GROUP }}"
+          REPL_APP="helkinswarm-repl-${{ vars.USER_ALIAS }}"
+          IMAGE="${ACR_SERVER}/helkinswarm-python-repl:${{ github.sha }}"
+          az containerapp update \
+            --name "$REPL_APP" \
+            --resource-group "$RG" \
+            --image "$IMAGE" \
+            --output none
+          echo "✅ Python REPL Container App updated to $IMAGE"
+
+  # ─────────────────────────────────────────────────────────────────────────
   # 4. Deploy to Container Apps
   # ─────────────────────────────────────────────────────────────────────────
   deploy-app:
     name: Deploy to Container Apps
-    needs: [deploy-infra, build-and-push]
+    needs: [deploy-infra, build-and-push, build-and-push-python]
     # Run when infra succeeded and image was either built successfully or skipped (infra-only push). (#597)
     if: always() && needs.deploy-infra.result == 'success' && (needs.build-and-push.result == 'success' || needs.build-and-push.result == 'skipped')
     runs-on: ubuntu-latest

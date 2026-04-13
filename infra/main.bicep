@@ -131,6 +131,7 @@ var aisName       = 'helkinswarm-ai-${userAlias}'
 var caeName       = 'helkinswarm-cae-${userAlias}'
 var funcName      = 'helkinswarm-func-${userAlias}'
 var botName       = 'helkinswarm-bot-${userAlias}'
+var pythonReplName = 'helkinswarm-repl-${userAlias}'    // Python REPL sidecar (#639) — 21 chars max ✓
 
 // Built-in ARM role definition IDs
 // ─── Low Cost Dev Mode derived values (#303, #341, #393, #410) ─────────────
@@ -710,6 +711,8 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'MAINTENANCE_MODE', value: 'false' }
         { name: 'LIVING_MIND_COMPAT_MODE', value: 'false' }
         { name: 'SWARM_ENABLED', value: 'true' }
+        // ── Python REPL sidecar (internal Container Apps FQDN) (#639) ──
+        { name: 'PYTHON_REPL_URL', value: 'http://${pythonReplApp.properties.configuration.ingress.fqdn}' }
         { name: 'STAMP_POLICY_ALLOW_OUTLOOK_SEND_WITHOUT_CONFIRMATION', value: string(stampPolicyAllowOutlookSendWithoutConfirmation) }
         { name: 'STAMP_POLICY_ALLOW_VAULT_WRITE_WITHOUT_CONFIRMATION', value: string(stampPolicyAllowVaultWriteWithoutConfirmation) }
 
@@ -719,6 +722,63 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         // ── Observability (spec 13) ──
         { name: 'APPLICATIONINSIGHTS_CONNECTION_STRING', value: appInsights!.properties.ConnectionString }
       ])
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  10b. PYTHON REPL SIDECAR (Container App — sandboxed Python execution)
+//       Issue: #639
+//       Internal-only ingress — only reachable from within the same Container
+//       Apps environment. The Function App accesses it via PYTHON_REPL_URL.
+//       Single worker (1 replica) preserves in-memory session state within
+//       a swarm turn. Scale-to-1 avoids cold-start latency mid-turn.
+// ═══════════════════════════════════════════════════════════════════════════
+
+resource pythonReplApp 'Microsoft.App/containerApps@2024-03-01' = {
+  name: pythonReplName
+  location: location
+  identity: {
+    type: 'UserAssigned'
+    userAssignedIdentities: { '${uami.id}': {} }
+  }
+  properties: {
+    managedEnvironmentId: containerAppsEnv.id
+    configuration: {
+      ingress: {
+        targetPort: 8000
+        external: false
+        transport: 'http'
+        allowInsecure: true  // internal-only; TLS not needed within env VNet
+      }
+      registries: [
+        {
+          server: acr.properties.loginServer
+          identity: uami.id
+        }
+      ]
+    }
+    template: {
+      containers: [
+        {
+          // deploy-stamp.yml updates this tag after image build
+          image: '${acr.properties.loginServer}/helkinswarm-python-repl:latest'
+          name: 'python-repl'
+          resources: {
+            cpu: json('0.5')
+            memory: '1Gi'
+          }
+          env: [
+            { name: 'PYTHONDONTWRITEBYTECODE', value: '1' }
+            { name: 'PYTHONUNBUFFERED', value: '1' }
+            { name: 'MPLCONFIGDIR', value: '/tmp/matplotlib' }
+          ]
+        }
+      ]
+      scale: {
+        minReplicas: 1  // keep warm — cold start from zero takes 30-60s for scipy image
+        maxReplicas: 2
+      }
     }
   }
 }

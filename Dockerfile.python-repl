@@ -1,0 +1,62 @@
+# =============================================================================
+# HelkinSwarm Python REPL service — stateful sandboxed Python 3.12 execution
+# Spec: docs/0zj-Code-Execution-Skill-and-Math-Layer.md (Path B)
+# Issue: #639
+#
+# Security model: the container is the sandbox. No network egress (set at
+# Container Apps environment level). No filesystem mounts. CPU and memory
+# limited by Container App resource quota. Code-level defense strips
+# dangerous builtins from the execution namespace (see python-repl/main.py).
+# =============================================================================
+
+# ── Stage 1: Build / install deps ──────────────────────────────────────────
+FROM python:3.12-slim AS build
+
+WORKDIR /build
+
+# Install pip dependencies — pinned via requirements.txt for reproducibility
+COPY python-repl/requirements.txt .
+
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+# Pre-warm matplotlib font cache so the runtime container doesn't need net
+# access to download fonts on first use
+RUN python -c "\
+import matplotlib; \
+matplotlib.font_manager._load_fontmanager(try_read_cache=False); \
+print('Matplotlib font cache warmed')"
+
+# ── Stage 2: Lean runtime ──────────────────────────────────────────────────
+FROM python:3.12-slim AS runtime
+
+WORKDIR /app
+
+# Pull installed packages from build stage (avoids pip in runtime layer)
+COPY --from=build /usr/local/lib/python3.12/site-packages \
+                  /usr/local/lib/python3.12/site-packages
+COPY --from=build /usr/local/bin /usr/local/bin
+
+# Copy warmed matplotlib cache
+COPY --from=build /root/.cache/matplotlib /root/.cache/matplotlib
+
+# Copy application
+COPY python-repl/main.py .
+
+# Non-root user — principle of least privilege
+RUN useradd -r -s /bin/false -m repl && \
+    chown -R repl:repl /app && \
+    chown -R repl:repl /root/.cache/matplotlib && \
+    mkdir -p /tmp/matplotlib && chown repl:repl /tmp/matplotlib
+
+USER repl
+
+# Matplotlib user config directory writable by non-root user
+ENV MPLCONFIGDIR=/tmp/matplotlib
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 8000
+
+# Single worker: maintains in-memory session state across calls within a turn
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
