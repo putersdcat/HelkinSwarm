@@ -13,6 +13,9 @@ vi.mock('../../src/observability/telemetry.js', () => ({
   trackEvent: vi.fn(),
 }));
 
+import {
+  buildSwarmExecutionDocument,
+} from '../../src/orchestrator/swarm/persistSwarmResultActivity.js';
 import type { PersistSwarmResultInput } from '../../src/orchestrator/swarm/persistSwarmResultActivity.js';
 import type { SwarmOrchestratorResult } from '../../src/orchestrator/swarm/swarmTypes.js';
 
@@ -103,5 +106,61 @@ describe('persistSwarmResultActivity', () => {
     expect(input.result.swarmCost?.totalTokens).toBe(5500);
     expect(input.result.chatroomTranscript).toHaveLength(2);
     expect(input.result.leaderResult.agentsHeardFrom).toEqual(['Alpha', 'Beta']);
+  });
+
+  it('truncates oversized transcript content but preserves the audit record', () => {
+    const result = makeMockResult();
+    result.chatroomTranscript = Array.from({ length: 120 }, (_, index) => ({
+      id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      from: 'Harper',
+      to: 'Leader',
+      content: 'x'.repeat(2000),
+      contentType: 'partial_result',
+      timestamp: Date.now() + index,
+      correlationId: 'corr-oversize',
+    })) as never[];
+
+    const input: PersistSwarmResultInput = {
+      userId: 'test-user-123',
+      correlationId: 'corr-oversize',
+      swarmId: '00000000-0000-4000-8000-000000000777',
+      userQuery: 'Investigate the audit persistence path for a large swarm transcript',
+      decomposerTokens: 250,
+      decomposerModel: 'grok-4-1-fast',
+      executionDurationMs: 45000,
+      result,
+    };
+
+    const doc = buildSwarmExecutionDocument(input);
+    expect(doc.chatroomTranscript.length).toBeLessThanOrEqual(80);
+    expect(doc.transcriptTruncated).toBe(true);
+    expect(doc.chatroomTranscript[0]?.content.length).toBeLessThanOrEqual(1200);
+    expect(doc.persistenceMode).toBe('full');
+  });
+
+  it('can produce a compact fallback document when full persistence fails', () => {
+    const result = makeMockResult();
+    result.leaderResult.synthesis = 'y'.repeat(10000);
+
+    const input: PersistSwarmResultInput = {
+      userId: 'test-user-123',
+      correlationId: 'corr-compact',
+      swarmId: '00000000-0000-4000-8000-000000000888',
+      userQuery: 'Compact fallback test',
+      decomposerTokens: 250,
+      decomposerModel: 'grok-4-1-fast',
+      executionDurationMs: 45000,
+      result,
+    };
+
+    const doc = buildSwarmExecutionDocument(input, {
+      compact: true,
+      warning: 'Stored compact fallback after primary persistence failure',
+    });
+
+    expect(doc.persistenceMode).toBe('compact-fallback');
+    expect(doc.persistenceWarning).toContain('compact fallback');
+    expect(doc.leaderSynthesis.length).toBeLessThanOrEqual(1500);
+    expect(doc.chatroomTranscript.length).toBeLessThanOrEqual(20);
   });
 });

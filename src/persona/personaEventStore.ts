@@ -10,7 +10,7 @@ const CONTAINER_NAME = 'sessions';
 // ---------------------------------------------------------------------------
 // Schemas
 // ---------------------------------------------------------------------------
-const PersonaReloadEventSchema = z.object({
+const _PersonaReloadEventSchema = z.object({
   id: z.string(),
   userId: z.string(),
   type: z.literal('persona-reload'),
@@ -18,7 +18,7 @@ const PersonaReloadEventSchema = z.object({
   timestamp: z.string(),
 });
 
-const PersonaEvalEventSchema = z.object({
+const _PersonaEvalEventSchema = z.object({
   id: z.string(),
   userId: z.string(),
   type: z.literal('persona-eval'),
@@ -31,8 +31,8 @@ const PersonaEvalEventSchema = z.object({
   timestamp: z.string(),
 });
 
-export type PersonaReloadEvent = z.infer<typeof PersonaReloadEventSchema>;
-export type PersonaEvalEvent = z.infer<typeof PersonaEvalEventSchema>;
+export type PersonaReloadEvent = z.infer<typeof _PersonaReloadEventSchema>;
+export type PersonaEvalEvent = z.infer<typeof _PersonaEvalEventSchema>;
 export type PersonaEvent = PersonaReloadEvent | PersonaEvalEvent;
 
 // ---------------------------------------------------------------------------

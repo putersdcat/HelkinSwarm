@@ -127,7 +127,7 @@ df.app.activity('swarmLeaderActivity', {
           // Any delegations already sent are still valid.
           const errMsg = llmErr instanceof Error ? llmErr.message : String(llmErr);
           trackEvent({
-            name: 'SwarmLeaderDelegationError' as any,
+            name: 'SwarmLeaderDelegationError',
             correlationId: input.correlationId,
             userId: input.userId,
             properties: { round, error: errMsg.slice(0, 200), swarmId: input.swarmId },

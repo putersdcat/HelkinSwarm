@@ -106,14 +106,30 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
       });
     } else {
       workerTimers[i].cancel();
-      const result = workerTasks[i].result as SwarmWorkerResult & {
-        _pendingChatroomMessages?: ChatroomMessage[];
-      };
-      workerResults.push(result);
+      try {
+        const result = workerTasks[i].result as SwarmWorkerResult & {
+          _pendingChatroomMessages?: ChatroomMessage[];
+        };
+        workerResults.push(result);
 
-      // Collect chatroom messages from the worker
-      if (result._pendingChatroomMessages) {
-        allChatroomMessages.push(...result._pendingChatroomMessages);
+        // Collect chatroom messages from the worker
+        if (result._pendingChatroomMessages) {
+          allChatroomMessages.push(...result._pendingChatroomMessages);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        workerResults.push({
+          agentName: plan.agents[i].name,
+          success: false,
+          roundsUsed: 0,
+          tokensUsed: 0,
+          toolCallsMade: 0,
+          chatroomMessagesSent: 0,
+          toolsUsed: [],
+          durationMs: SWARM_WORKER_TIMEOUT_MS,
+          error: `Worker failed before returning a result: ${message.slice(0, 240)}`,
+          model: 'error',
+        });
       }
     }
 
@@ -164,13 +180,25 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
       new Date(context.df.currentUtcDateTime.getTime() + LEADER_DELEGATION_TIMEOUT_MS),
     );
     const delegationTask = context.df.callActivity('swarmLeaderActivity', delegationInput);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions generator pattern
     const delegationWinner = yield context.df.Task.any([delegationTask, delegationTimer]) as df.Task;
     delegationTimer.cancel();
     if (delegationWinner === delegationTask) {
-      const delegationResult = delegationTask.result as SwarmLeaderResult;
-      if (delegationResult._pendingChatroomMessages?.length) {
-        allChatroomMessages.push(...delegationResult._pendingChatroomMessages);
+      try {
+        const delegationResult = delegationTask.result as SwarmLeaderResult;
+        if (delegationResult._pendingChatroomMessages?.length) {
+          allChatroomMessages.push(...delegationResult._pendingChatroomMessages);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        allChatroomMessages.push({
+          id: context.df.newGuid(`${correlationId}:leader-delegation-error`),
+          from: 'Leader',
+          to: 'Leader',
+          content: `Leader delegation pass failed: ${message.slice(0, 240)}`,
+          contentType: 'error',
+          timestamp: context.df.currentUtcDateTime.getTime(),
+          correlationId,
+        });
       }
     }
   }
@@ -239,18 +267,32 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
           correlationId,
         };
       } else {
-        const subResult = subTasks[si].result as SwarmSubSessionResult;
-        const label = subResult.success ? 'Result' : 'Error';
-        resultMsg = {
-          id: context.df.newGuid(`${correlationId}:sub-session-result:${si}`),
-          from: 'Leader',
-          to: subResult.requestingAgent,
-          content: `[Sub-session ${label} for ${subResult.toolName}]\n${subResult.resultContent}`,
-          contentType: 'sub_session_result',
-          timestamp: context.df.currentUtcDateTime.getTime(),
-          correlationId,
-          replyTo: subSessionRequests[si].id,
-        };
+        try {
+          const subResult = subTasks[si].result as SwarmSubSessionResult;
+          const label = subResult.success ? 'Result' : 'Error';
+          resultMsg = {
+            id: context.df.newGuid(`${correlationId}:sub-session-result:${si}`),
+            from: 'Leader',
+            to: subResult.requestingAgent,
+            content: `[Sub-session ${label} for ${subResult.toolName}]\n${subResult.resultContent}`,
+            contentType: 'sub_session_result',
+            timestamp: context.df.currentUtcDateTime.getTime(),
+            correlationId,
+            replyTo: subSessionRequests[si].id,
+          };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          resultMsg = {
+            id: context.df.newGuid(`${correlationId}:sub-session-result-error:${si}`),
+            from: 'Leader',
+            to: subSessionRequests[si].from,
+            content: `Sub-session failed before returning a result: ${message.slice(0, 240)}`,
+            contentType: 'sub_session_result',
+            timestamp: context.df.currentUtcDateTime.getTime(),
+            correlationId,
+            replyTo: subSessionRequests[si].id,
+          };
+        }
       }
 
       const validatedResult = ChatroomMessageSchema.safeParse(resultMsg);
@@ -322,16 +364,28 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
 
   // Fan-in second-pass activities (activities started in parallel above)
   for (let i = 0; i < secondPassTasks.length; i++) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions generator
     const winner = yield context.df.Task.any([secondPassTasks[i], secondPassTimers[i]]) as df.Task;
     secondPassTimers[i].cancel();
     if (winner === secondPassTasks[i]) {
-      const result = secondPassTasks[i].result as SwarmWorkerResult & {
-        _pendingChatroomMessages?: ChatroomMessage[];
-      };
-      // Only collect new messages for Leader's transcript — don't pollute workerResults
-      if (result._pendingChatroomMessages) {
-        allChatroomMessages.push(...result._pendingChatroomMessages);
+      try {
+        const result = secondPassTasks[i].result as SwarmWorkerResult & {
+          _pendingChatroomMessages?: ChatroomMessage[];
+        };
+        // Only collect new messages for Leader's transcript — don't pollute workerResults
+        if (result._pendingChatroomMessages) {
+          allChatroomMessages.push(...result._pendingChatroomMessages);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        allChatroomMessages.push({
+          id: context.df.newGuid(`${correlationId}:second-pass-error:${i}`),
+          from: 'Leader',
+          to: 'Leader',
+          content: `Second-pass worker failed: ${message.slice(0, 240)}`,
+          contentType: 'error',
+          timestamp: context.df.currentUtcDateTime.getTime(),
+          correlationId,
+        });
       }
     }
   }
@@ -391,7 +445,24 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
     };
   } else {
     leaderTimer.cancel();
-    leaderResult = leaderTask.result as SwarmLeaderResult;
+    try {
+      leaderResult = leaderTask.result as SwarmLeaderResult;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      leaderResult = {
+        synthesis: '⚡ The swarm gathered partial results but Helkin failed during synthesis. Here is the available audit trail:\n\n' +
+          allChatroomMessages
+            .filter(m => m.contentType === 'partial_result' || m.contentType === 'text' || m.contentType === 'error')
+            .map(m => `**${m.from}**: ${m.content}`)
+            .join('\n\n'),
+        success: false,
+        tokensUsed: 0,
+        roundsUsed: 0,
+        agentsHeardFrom: [...new Set(allChatroomMessages.map(m => m.from))],
+        model: 'error',
+        error: `Helkin synthesis failed: ${message.slice(0, 240)}`,
+      };
+    }
   }
 
   // -----------------------------------------------------------------------

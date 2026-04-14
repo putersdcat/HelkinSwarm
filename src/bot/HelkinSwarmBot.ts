@@ -505,7 +505,7 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
     const userId = context.activity.from.aadObjectId;
     const userAlias =
       context.activity.from.name ?? context.activity.from.id ?? 'unknown';
-    let messageText = stripInlineQuotesFromActivityText(context.activity.text ?? '').trim();
+    const messageText = stripInlineQuotesFromActivityText(context.activity.text ?? '').trim();
     const correlationId = crypto.randomUUID();
 
     // Dedup: Bot Connector may retry the same webhook POST within ~15s (#300).

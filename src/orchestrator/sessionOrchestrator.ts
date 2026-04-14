@@ -834,48 +834,66 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       let swarmResponse: string;
       let swarmTokens = decomposerResult.tokensUsed;
       let swarmModel = decomposerResult.decomposerModel;
+      let swarmResultData: SwarmOrchestratorResult | undefined;
 
       if (swarmWinner === swarmTimer) {
         swarmResponse = '⚡ The multi-agent analysis timed out. Please try a simpler query or try again.';
       } else {
         swarmTimer.cancel();
-        const swarmResult = swarmTask.result as SwarmOrchestratorResult;
-        swarmResponse = swarmResult.response;
-        swarmTokens += swarmResult.totalTokensUsed;
-        swarmModel = swarmResult.leaderResult.model;
+        try {
+          const swarmResult = swarmTask.result as SwarmOrchestratorResult;
+          swarmResultData = swarmResult;
+          swarmResponse = swarmResult.response;
+          swarmTokens += swarmResult.totalTokensUsed;
+          swarmModel = swarmResult.leaderResult.model;
 
-        yield* emitOrchestratorTelemetry(context, {
-          name: 'SwarmExecutionCompleted',
-          correlationId,
-          userId: input.state.userId,
-          properties: {
-            swarmId: swarmResult.swarmId,
-            success: swarmResult.success,
-            totalTokens: swarmResult.totalTokensUsed,
-            agentCount: swarmResult.agentResults.length,
-            chatroomMessages: swarmResult.chatroomTranscript.length,
-            leaderAgentsHeardFrom: swarmResult.leaderResult.agentsHeardFrom.join(', '),
-            decomposerTokens: decomposerResult.tokensUsed,
-            workerTokens: swarmResult.swarmCost?.workerTokens ?? 0,
-            leaderTokens: swarmResult.swarmCost?.leaderTokens ?? 0,
-            agentCostBreakdown: swarmResult.swarmCost?.agentBreakdown
-              ?.map(a => `${a.agent}:${a.tokens}`)
-              .join(', ') ?? '',
-            agentToolsUsed: swarmResult.agentResults
-              .map(r => `${r.agentName}:[${r.toolsUsed.join(',')}]`)
-              .join('; '),
-            agentDurations: swarmResult.agentResults
-              .map(r => `${r.agentName}:${r.durationMs}ms`)
-              .join(', '),
-          },
-        });
+          yield* emitOrchestratorTelemetry(context, {
+            name: 'SwarmExecutionCompleted',
+            correlationId,
+            userId: input.state.userId,
+            properties: {
+              swarmId: swarmResult.swarmId,
+              success: swarmResult.success,
+              totalTokens: swarmResult.totalTokensUsed,
+              agentCount: swarmResult.agentResults.length,
+              chatroomMessages: swarmResult.chatroomTranscript.length,
+              leaderAgentsHeardFrom: swarmResult.leaderResult.agentsHeardFrom.join(', '),
+              decomposerTokens: decomposerResult.tokensUsed,
+              workerTokens: swarmResult.swarmCost?.workerTokens ?? 0,
+              leaderTokens: swarmResult.swarmCost?.leaderTokens ?? 0,
+              agentCostBreakdown: swarmResult.swarmCost?.agentBreakdown
+                ?.map(a => `${a.agent}:${a.tokens}`)
+                .join(', ') ?? '',
+              agentToolsUsed: swarmResult.agentResults
+                .map(r => `${r.agentName}:[${r.toolsUsed.join(',')}]`)
+                .join('; '),
+              agentDurations: swarmResult.agentResults
+                .map(r => `${r.agentName}:${r.durationMs}ms`)
+                .join(', '),
+            },
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          swarmResponse = '⚡ The multi-agent analysis failed before the final synthesis completed. The failure has been captured for audit in the Swarm Activity tab.';
+          swarmModel = 'swarm-error';
+
+          yield* emitOrchestratorTelemetry(context, {
+            name: 'SwarmExecutionCompleted',
+            correlationId,
+            userId: input.state.userId,
+            properties: {
+              swarmId: decomposerResult.plan!.swarmId,
+              error: message.slice(0, 240),
+              decomposerTokens: decomposerResult.tokensUsed,
+            },
+          });
+        }
       }
 
       // Append telemetry footer to swarm response
       const swarmTurnEndTime = context.df.currentUtcDateTime.getTime();
       const swarmTelemetryMode = 'verbose' as const;
       const swarmTimedOut = swarmWinner === swarmTimer;
-      const swarmResultData = swarmTimedOut ? undefined : swarmTask.result as SwarmOrchestratorResult;
 
       // Persist swarm execution data for the Swarm Activity viewer (#635).
       // Always persist — both successful and timed-out swarms should appear in the

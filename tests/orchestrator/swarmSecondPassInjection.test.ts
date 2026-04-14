@@ -136,6 +136,12 @@ describe('swarmOrchestrator — progress reply ownership regression', () => {
     const snippet = orchestratorSrc.slice(progressBlockStart, progressBlockStart + 700);
     expect(snippet).toContain('skipOutboundClaim: true');
   });
+
+  it('contains worker fault-guard logic so a single agent crash does not kill the audit trail', () => {
+    expect(orchestratorSrc).toContain('Worker failed before returning a result');
+    expect(orchestratorSrc).toContain('Second-pass worker failed');
+    expect(orchestratorSrc).toContain('Helkin synthesis failed');
+  });
 });
 
 // ---------------------------------------------------------------------------
