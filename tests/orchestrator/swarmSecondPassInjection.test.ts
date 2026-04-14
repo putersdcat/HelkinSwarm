@@ -127,6 +127,18 @@ describe('swarmOrchestrator — second-pass message injection (#644 Slice 1)', (
 });
 
 // ---------------------------------------------------------------------------
+// swarmOrchestrator — progress messages must not steal final reply ownership
+// ---------------------------------------------------------------------------
+describe('swarmOrchestrator — progress reply ownership regression', () => {
+  it('marks per-worker progress updates with skipOutboundClaim so the final reply is not suppressed', () => {
+    const progressBlockStart = orchestratorSrc.indexOf('const progressMsg =');
+    expect(progressBlockStart).toBeGreaterThan(-1);
+    const snippet = orchestratorSrc.slice(progressBlockStart, progressBlockStart + 700);
+    expect(snippet).toContain('skipOutboundClaim: true');
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Functional: SwarmWorkerInput type still accepts existing callers (no required field added)
 // ---------------------------------------------------------------------------
 describe('SwarmWorkerInput — backward compatibility (#644 Slice 1)', () => {

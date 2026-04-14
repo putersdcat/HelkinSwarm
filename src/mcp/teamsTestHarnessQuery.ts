@@ -132,7 +132,7 @@ function detectFormatting(text: string, html: string): HarnessFormattingHints {
   const hasHtml = /<[^>]+>/.test(html);
   const hasCodeBlock = /```/.test(text) || /<pre\b/i.test(html);
   const hasInlineCode = /`[^`]+`/.test(text) || /<code\b/i.test(html);
-  const hasMarkdownLike = /(^|\s)([#>*-]|\[[^\]]+\]\([^\)]+\)|\*\*[^*]+\*\*)/.test(text)
+  const hasMarkdownLike = /(^|\s)([#>*-]|\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*)/.test(text)
     || hasCodeBlock
     || hasInlineCode;
 

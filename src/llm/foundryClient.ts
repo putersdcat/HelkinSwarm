@@ -119,7 +119,7 @@ const HTML_ERROR_SIGNAL_REGEX = /<!doctype html|<html\b|<head\b|<body\b|<script\
  * Collapses HTML/JS/CSS page bodies into a short human-readable summary (#286).
  */
 export function sanitizeRemoteErrorText(rawErrorText: string, maxLength = 500): string {
-  const raw = rawErrorText.replace(/\u0000/g, ' ').trim();
+  const raw = rawErrorText.replaceAll('\0', ' ').trim();
   if (!raw) {
     return 'unknown';
   }
@@ -491,18 +491,16 @@ export class FoundryClient {
       // This restores the wall-clock guarantee that was provided by Promise.race() +
       // fetch() before #588, while keeping the OS-level socket teardown from #588.
       // (#589: req.setTimeout() alone is insufficient for active-socket scenarios.)
-      let wallClockTimer: ReturnType<typeof setTimeout> | undefined;
-
-      // Use let so wallClockTimer and settle can reference req before it is assigned.
-      // eslint-disable-next-line prefer-const
-      let req: ReturnType<typeof _requesterImpl>;
-
-      wallClockTimer = setTimeout(() => {
+      const wallClockTimer: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
         req?.destroy();
         const te = new Error(`LLM call wall-clock timed out after ${timeoutMs}ms`);
         te.name = 'TimeoutError';
         settle(() => reject(te));
       }, timeoutMs);
+
+      // Use let so wallClockTimer and settle can reference req before it is assigned.
+      // eslint-disable-next-line prefer-const
+      let req: ReturnType<typeof _requesterImpl>;
 
       req = _requesterImpl(
         {
@@ -688,16 +686,14 @@ export class FoundryClient {
         if (!settled) { settled = true; fn(); }
       };
 
-      let wallClockTimer: ReturnType<typeof setTimeout> | undefined;
-      // eslint-disable-next-line prefer-const
-      let req: ReturnType<typeof _requesterImpl>;
-
-      wallClockTimer = setTimeout(() => {
+      const wallClockTimer: ReturnType<typeof setTimeout> | undefined = setTimeout(() => {
         req?.destroy();
         const te = new Error(`LLM call wall-clock timed out after ${timeoutMs}ms`);
         te.name = 'TimeoutError';
         settle(() => reject(te));
       }, timeoutMs);
+      // eslint-disable-next-line prefer-const
+      let req: ReturnType<typeof _requesterImpl>;
 
       req = _requesterImpl(
         {

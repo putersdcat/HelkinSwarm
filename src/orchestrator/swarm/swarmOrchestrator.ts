@@ -131,6 +131,7 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
         message: progressMsg,
         correlationId,
         conversationReference: input.conversationReference,
+        skipOutboundClaim: true,
       });
     }
   }
