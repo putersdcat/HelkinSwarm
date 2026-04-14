@@ -456,8 +456,30 @@ const AssignLicenseArgsSchema = z.object({
 
 export const entra_assign_license: ToolHandler = async (args) => {
   const { userIdOrUpn, skuId } = AssignLicenseArgsSchema.parse(args);
-  const encoded = encodeURIComponent(userIdOrUpn);
 
+  // Preflight: verify SKU exists and has available seats before consuming one.
+  const skusRaw = await graphRequest('GET', '/subscribedSkus?$select=skuId,skuPartNumber,displayName,consumedUnits,prepaidUnits');
+  const skus = SubscribedSkusResponseSchema.parse(skusRaw);
+  const sku = skus.value.find((s) => s.skuId === skuId);
+
+  if (!sku) {
+    throw new Error(
+      `License SKU ${skuId} not found in the tenant. Use entra_list_available_licenses to list valid SKU IDs.`,
+    );
+  }
+
+  const enabled = sku.prepaidUnits?.enabled ?? 0;
+  const consumed = sku.consumedUnits ?? 0;
+  const available = enabled - consumed;
+  const skuName = sku.displayName ?? sku.skuPartNumber ?? skuId;
+
+  if (available <= 0) {
+    throw new Error(
+      `No available seats for "${skuName}" (${skuId}). ${consumed}/${enabled} seats consumed. Purchase additional licenses before assigning.`,
+    );
+  }
+
+  const encoded = encodeURIComponent(userIdOrUpn);
   await graphRequest('POST', `/users/${encoded}/assignLicense`, {
     addLicenses: [{ skuId }],
     removeLicenses: [],
@@ -466,7 +488,7 @@ export const entra_assign_license: ToolHandler = async (args) => {
   return [
     `✅ **License assigned successfully**`,
     `User: \`${userIdOrUpn}\``,
-    `SKU ID: \`${skuId}\``,
+    `License: ${skuName} (${available - 1} seats remaining after this assignment)`,
     `\nThe assigned license will provision Exchange Online and other M365 services. Mailbox creation typically completes within 30 minutes (may take up to 24 hours).`,
     `Use \`entra_get_user\` to verify the license assignment.`,
   ].join('\n');
