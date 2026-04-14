@@ -871,8 +871,16 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         });
       }
 
-      // Persist swarm execution data for the Swarm Activity viewer (#635)
-      if (swarmWinner !== swarmTimer) {
+      // Append telemetry footer to swarm response
+      const swarmTurnEndTime = context.df.currentUtcDateTime.getTime();
+      const swarmTelemetryMode = 'verbose' as const;
+      const swarmTimedOut = swarmWinner === swarmTimer;
+      const swarmResultData = swarmTimedOut ? undefined : swarmTask.result as SwarmOrchestratorResult;
+
+      // Persist swarm execution data for the Swarm Activity viewer (#635).
+      // Always persist — both successful and timed-out swarms should appear in the
+      // Control Center so operators can see what happened even when things fail.
+      {
         const persistInput: PersistSwarmResultInput = {
           userId: input.state.userId,
           correlationId,
@@ -881,16 +889,27 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           decomposerTokens: decomposerResult.tokensUsed,
           decomposerModel: decomposerResult.decomposerModel,
           executionDurationMs: context.df.currentUtcDateTime.getTime() - turnStartTime,
-          result: swarmTask.result as SwarmOrchestratorResult,
+          result: swarmResultData ?? {
+            response: swarmTimedOut ? swarmResponse : '',
+            success: false,
+            totalTokensUsed: swarmTokens,
+            agentResults: [],
+            leaderResult: {
+              synthesis: swarmResponse,
+              success: false,
+              tokensUsed: 0,
+              roundsUsed: 0,
+              agentsHeardFrom: [],
+              model: swarmModel,
+              error: swarmTimedOut ? 'swarm timed out' : 'orchestrator error',
+            },
+            chatroomTranscript: [],
+            swarmId: decomposerResult.plan!.swarmId,
+            swarmCost: undefined,
+          },
         };
         yield context.df.callActivity('persistSwarmResultActivity', persistInput);
       }
-
-      // Append telemetry footer to swarm response
-      const swarmTurnEndTime = context.df.currentUtcDateTime.getTime();
-      const swarmTelemetryMode = 'verbose' as const;
-      const swarmTimedOut = swarmWinner === swarmTimer;
-      const swarmResultData = swarmTimedOut ? undefined : swarmTask.result as SwarmOrchestratorResult;
       swarmResponse += formatTelemetryFooter(swarmTelemetryMode, {
         correlationId,
         timestampIso: new Date(swarmTurnEndTime).toISOString(),

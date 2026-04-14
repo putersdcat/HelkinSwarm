@@ -99,9 +99,15 @@ df.app.activity('swarmLeaderActivity', {
       });
 
       try {
-      // Short delegation loop — Leader identifies gaps and delegates (max 3 rounds)
+      // Short delegation loop — Leader identifies gaps and delegates (max 3 rounds).
+      // Each LLM call is raced against a 25s wall-clock timeout. If the call hangs,
+      // return whatever delegations were collected so far rather than hanging forever.
+      // The orchestrator's delegationTimer (30s) fires first and cancels the activity,
+      // but in case the timer also fails (Durable edge case), this hard cap prevents
+      // indefinite activity execution.
+      const DELEGATION_CALL_TIMEOUT_MS = 25_000;
       for (let round = 0; round < 3; round++) {
-        const response = await client.chatCompletion({
+        const callPromise = client.chatCompletion({
           messages: convoHeight,
           tools: [chatSendTool],
           toolChoice: 'auto',
@@ -110,6 +116,24 @@ df.app.activity('swarmLeaderActivity', {
           correlationId: input.correlationId,
           maxBudgetMs: 15_000,
         });
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`Delegation LLM call timed out after ${DELEGATION_CALL_TIMEOUT_MS}ms`)), DELEGATION_CALL_TIMEOUT_MS),
+        );
+        let response: Awaited<typeof callPromise>;
+        try {
+          response = await Promise.race([callPromise, timeoutPromise]);
+        } catch (llmErr) {
+          // Timeout or LLM error — break out of delegation loop gracefully.
+          // Any delegations already sent are still valid.
+          const errMsg = llmErr instanceof Error ? llmErr.message : String(llmErr);
+          trackEvent({
+            name: 'SwarmLeaderDelegationError' as any,
+            correlationId: input.correlationId,
+            userId: input.userId,
+            properties: { round, error: errMsg.slice(0, 200), swarmId: input.swarmId },
+          });
+          break;
+        }
 
         const choice = response.choices[0];
         if (!choice) break;
