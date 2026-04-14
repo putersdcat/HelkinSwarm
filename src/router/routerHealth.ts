@@ -12,7 +12,7 @@ interface RouterHealthResponse {
   version: string;
   components: {
     runtime: 'ok' | 'error';
-    routingConfig: 'ok' | 'error';
+    routingConfig: 'ok' | 'degraded' | 'error';
     messagePath: 'ok' | 'degraded' | 'error';
     safetyMode: string;
     euResidencyMode: boolean;
@@ -41,7 +41,7 @@ export function deriveRouterOverallStatus(
   if (runtime === 'error' || messagePath === 'error') {
     return 'unhealthy';
   }
-  if (routingConfig === 'error' || messagePath === 'degraded') {
+  if (routingConfig === 'error' || routingConfig === 'degraded' || messagePath === 'degraded') {
     return 'degraded';
   }
   return 'healthy';

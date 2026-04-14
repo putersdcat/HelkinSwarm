@@ -50,7 +50,7 @@ export async function loadUserMap(): Promise<UserMap> {
 }
 
 export async function getUserMapStatus(): Promise<{
-  status: 'ok' | 'error';
+  status: 'ok' | 'degraded' | 'error';
   enabledUsers: number;
   totalUsers: number;
   error: string | null;
@@ -58,9 +58,19 @@ export async function getUserMapStatus(): Promise<{
   try {
     const userMap = await loadUserMap();
     const users = Object.values(userMap.users);
+    const enabledUsers = users.filter((user) => user.enabled).length;
+    if (enabledUsers === 0) {
+      return {
+        status: 'degraded',
+        enabledUsers: 0,
+        totalUsers: users.length,
+        error:
+          'User map loaded but has 0 enabled users — routing offline. Ensure HelkinUserMap Key Vault secret is set with valid routing data. (#652)',
+      };
+    }
     return {
       status: 'ok',
-      enabledUsers: users.filter((user) => user.enabled).length,
+      enabledUsers,
       totalUsers: users.length,
       error: null,
     };

@@ -17,4 +17,8 @@ describe('router health semantics', () => {
   it('is unhealthy when the router message path is hard-failed', () => {
     expect(deriveRouterOverallStatus('ok', 'ok', 'error')).toBe('unhealthy');
   });
+
+  it('is degraded when routing config has zero enabled users', () => {
+    expect(deriveRouterOverallStatus('ok', 'degraded', 'ok')).toBe('degraded');
+  });
 });
