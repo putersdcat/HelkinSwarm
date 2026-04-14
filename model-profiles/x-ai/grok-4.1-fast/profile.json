@@ -12,11 +12,11 @@
   "examples": [],
   "knownLimitations": [
     "Grok 4.1-fast reasons automatically; OpenRouter exposes reasoning: { enabled: true } — already sent for all primary-lane calls",
-    "web_search is a first-order skill injected into the base tool surface alongside helkin_skill_search — no discovery step required"
+    "On OpenRouter, web_search is removed from function tools and replaced by openrouter:web_search server tool (engine: exa — xAI Chat Completions API rejects mixed function/non-function tool types so native engine cannot be used). The model searches autonomously via Exa; no explicit web_search tool call appears in the turn."
   ],
   "excludeTools": [],
   "meta": {
-    "updatedAt": "2026-04-13T00:00:00Z",
+    "updatedAt": "2026-04-14T00:00:00Z",
     "updatedBy": "manual"
   }
 }
