@@ -39,15 +39,13 @@ async function loadHandlersModule() {
     },
   }));
 
-  vi.doMock('../../src/integrations/runtimeAssetStore.js', async () => {
-    const mod = await vi.importActual<typeof import('../../src/integrations/runtimeAssetStore.js')>(
-      '../../src/integrations/runtimeAssetStore.js',
-    );
-    return {
-      ...mod,
-      persistRuntimeAsset,
-    };
-  });
+  // Provide an explicit stub without vi.importActual — the Azure SDK module-level
+  // side-effects in the real runtimeAssetStore contaminate module state in the full
+  // suite and cause persistRuntimeAsset to resolve to null (fix for full-suite flakiness).
+  vi.doMock('../../src/integrations/runtimeAssetStore.js', () => ({
+    persistRuntimeAsset,
+    readRuntimeAssetContent: vi.fn().mockResolvedValue(null),
+  }));
 
   const mod = await import('../../skills/outlook/handlers.js');
   return { ...mod, persistRuntimeAsset };
