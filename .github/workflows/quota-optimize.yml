@@ -92,20 +92,6 @@ jobs:
 
           echo "✅ USER_ALIAS '$ALIAS' is valid"
 
-      - name: Write user-map from secret
-        env:
-          HELKIN_USER_MAP: ${{ secrets.HELKIN_USER_MAP }}
-        run: |
-          if [ -n "${HELKIN_USER_MAP}" ]; then
-            echo "${HELKIN_USER_MAP}" > config/user-map.json
-            echo "✅ Wrote config/user-map.json from HELKIN_USER_MAP secret"
-          elif [ -f "config/user-map.json" ]; then
-            echo "✅ Using existing config/user-map.json"
-          else
-            echo "❌ HELKIN_USER_MAP secret not set and config/user-map.json does not exist."
-            exit 1
-          fi
-
       - name: Azure Login (OIDC)
         uses: azure/login@v3
         with:

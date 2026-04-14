@@ -41,9 +41,9 @@ appid.txt
 # python cache
 .mypy_cache
 
-# User-map contains AAD Object IDs — keep out of version control (spec 0q)
-# Use config/user-map.example.json as template; inject real data via HELKIN_USER_MAP env var.
-config/user-map.json
+# User-map is source-controlled — it contains only routing metadata (alias, endpoint, UPN).
+# No credentials or secrets. See config/user-map.json.
+# config/user-map.json
 
 # pnpm lockfile is committed, but store is local
 .pnpm-store/

@@ -49,10 +49,6 @@ param delegatedAuthClientId string = 'd4e5cf74-9f99-4504-b4ab-d4516dd10577'
 @description('Client secret for the DelegatedAuth Entra app. Only required when createOAuthConnection=true.')
 param delegatedAuthClientSecret string = ''
 
-@secure()
-@description('Full JSON blob for the router user-map (UserMap schema). Read from Key Vault helkinswarm-kv-a7f2 secret HelkinUserMap at deploy time. Falls back to baked-in config/user-map.json when empty (template only — no live routing). Issue: #642.')
-param helkinUserMap string = ''
-
 // ─── Variables ──────────────────────────────────────────────────────────────
 
 var routerUamiName = 'helkinswarm-id-router'
@@ -286,9 +282,6 @@ resource routerFunc 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'MicrosoftAppTenantId', value: subscription().tenantId }
             { name: 'DIRTY_DEV_MODE', value: string(earlyDevCostGuard) }
             { name: 'EARLY_DEV_COST_GUARD', value: string(earlyDevCostGuard) }
-            // User routing map — injected as JSON from Key Vault so real user data is never
-            // committed to the repo. Falls back to baked-in template when empty (#642).
-            { name: 'HELKIN_USER_MAP', value: helkinUserMap }
             { name: 'DEV_TELEMETRY_MODE', value: 'minimal' }
             { name: 'AzureFunctionsJobHost__logging__logLevel__Host.Aggregator', value: 'Warning' }
             { name: 'AzureFunctionsJobHost__logging__logLevel__Azure.Core', value: 'Warning' }
