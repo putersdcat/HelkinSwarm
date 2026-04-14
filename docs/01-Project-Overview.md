@@ -39,6 +39,7 @@ This is **my IP, built on my own time**. It exists first for my personal automat
 6. **Lean & Observable** — Desired-state Bicep, GitHub-native CI/CD, everything versioned.  
 7. **Modular by Design** — Core vs Skills Library separation (0a) so the system can grow into multiple libraries, providers, or deployments without refactoring.  
 8. **Digital Body Ethos** — Master = brain, Virtual Employees = organs, Skills = reflexes, Hydra-Net = senses (0j, 0k, 0l).
+9. **Collaborative Intelligence** — Intra-session agent swarm (0ze–0zi) for complex multi-domain queries: 2–4 specialist agents execute in parallel, communicate via chatroom entity, and synthesize a higher-quality answer than any single-agent pass.
 
 ### Success Definition (v1.0 MVP)
 
@@ -54,5 +55,7 @@ By the time this spec is fully implemented:
 
 - Voice-to-voice (Teams call join + Azure Speech) — Phase 2  
 - Meeting side-panel / Live Share visuals — Phase 3  
-- Full 3.0 Virtual Employees / swarm spawning — architected (0j) but deferred to post-MVP  
+- Persistent Virtual Employees (nested orchestrators, 0j) — architected but deferred to post-MVP  
 - Public/open-source release — remains a personal tool for now
+
+> Note: The **intra-session agent swarm** (docs/0ze–0zi, #631) IS shipped in v1.0 — parallel specialist agents (Helkin/Benjamin/Harper/Lucas) collaborating within a single user turn. This is distinct from persistent Virtual Employees (0j), which remain post-MVP.
