@@ -15,7 +15,9 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "start": "func start",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist",
+    "benchmark": "tsx scripts/run-benchmark.ts",
+    "benchmark:quick": "tsx scripts/run-benchmark.ts --count 5 --reps 1 --category no-tool,math"
   },
   "dependencies": {
     "@azure/cosmos": "^4.9.2",
