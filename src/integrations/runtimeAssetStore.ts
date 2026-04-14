@@ -136,22 +136,22 @@ function getBlobServiceClient(): BlobServiceClient | undefined {
     return blobServiceClient;
   }
 
+  const accountName = process.env['AzureWebJobsStorage__accountName'];
+  if (accountName) {
+    blobServiceClient = new BlobServiceClient(
+      `https://${accountName}.blob.core.windows.net`,
+      getCredential(),
+    );
+    return blobServiceClient;
+  }
+
   const connectionString = process.env['AzureWebJobsStorage'] ?? process.env['AZUREWEBJOBSSTORAGE'];
   if (connectionString) {
     blobServiceClient = BlobServiceClient.fromConnectionString(connectionString);
     return blobServiceClient;
   }
 
-  const accountName = process.env['AzureWebJobsStorage__accountName'];
-  if (!accountName) {
-    return undefined;
-  }
-
-  blobServiceClient = new BlobServiceClient(
-    `https://${accountName}.blob.core.windows.net`,
-    getCredential(),
-  );
-  return blobServiceClient;
+  return undefined;
 }
 
 async function ensureContainer(): Promise<boolean> {

@@ -224,6 +224,22 @@ describe('ack correlation scoping', () => {
     expect(recordSubstage).toHaveBeenCalledWith('corr-fast-path', 'send-reply', 'user-1');
   });
 
+  it('sendReply skips late intermediate swarm updates after the final reply claim already exists', async () => {
+    const { sendReply, continueConversationAsync } = await loadSendReplyModule();
+    harness.hasOutboundArtifactClaim.mockResolvedValue(true);
+
+    const result = await sendReply({
+      userId: 'user-1',
+      correlationId: 'corr-progress-race',
+      message: '✓ Benjamin complete (1/3)',
+      skipOutboundClaim: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(continueConversationAsync).not.toHaveBeenCalled();
+    expect(harness.getPendingAckId).not.toHaveBeenCalled();
+  });
+
   it('sendReply does not hang the reply path when pending-ack cleanup stalls after a successful send', async () => {
     const { sendReply, clearPendingAckId } = await loadSendReplyModule({ hangAckClear: true });
 

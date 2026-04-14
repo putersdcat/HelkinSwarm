@@ -16,6 +16,7 @@ import {
   clearPendingAckId,
   releaseOutboundArtifactClaim,
   saveSentMessageText,
+  hasOutboundArtifactClaim,
 } from '../bot/conversationStore.js';
 import { cacheSentMessage } from '../bot/sentMessageCache.js';
 import { parseBooleanEnv } from '../config/booleanEnv.js';
@@ -250,6 +251,18 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
         console.warn(`[sendReplyActivity] Duplicate reply suppressed for correlationId=${input.correlationId}`);
         // Clear the stage tracker so the health endpoint doesn't show a stale active turn
         try { await clearOrchestratorStage(input.correlationId, input.userId); } catch { /* best-effort */ }
+        return { success: true };
+      }
+    }
+
+    if (input.correlationId && !SENDREPLY_FAST_PATH && input.skipOutboundClaim) {
+      const finalReplyAlreadyClaimed = await hasOutboundArtifactClaim(
+        conversationId,
+        'reply',
+        input.correlationId,
+      );
+      if (finalReplyAlreadyClaimed) {
+        console.log(`[sendReplyActivity] Intermediate update skipped after final reply claim for correlationId=${input.correlationId}`);
         return { success: true };
       }
     }

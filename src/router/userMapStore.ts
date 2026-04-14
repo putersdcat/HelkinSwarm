@@ -26,8 +26,35 @@ export async function loadUserMap(): Promise<UserMap> {
     return cachedUserMap;
   }
 
-  const mapPath = join(process.cwd(), 'config', 'user-map.json');
-  const raw = await readFile(mapPath, 'utf-8');
+  const configuredMapPath = process.env['HELKIN_USER_MAP'];
+  const candidatePaths = configuredMapPath
+    ? [
+        configuredMapPath,
+        join(process.cwd(), 'config', 'user-map.json'),
+        join(process.cwd(), 'config', 'user-map.example.json'),
+      ]
+    : [
+        join(process.cwd(), 'config', 'user-map.json'),
+        join(process.cwd(), 'config', 'user-map.example.json'),
+      ];
+
+  let raw: string | undefined;
+  let lastError: unknown;
+  for (const mapPath of candidatePaths) {
+    try {
+      raw = await readFile(mapPath, 'utf-8');
+      break;
+    } catch (error: unknown) {
+      lastError = error;
+    }
+  }
+
+  if (!raw) {
+    throw lastError instanceof Error
+      ? lastError
+      : new Error('Unable to load a HelkinSwarm user map from the configured candidates.');
+  }
+
   cachedUserMap = UserMapSchema.parse(JSON.parse(raw));
   lastLoadTime = now;
   return cachedUserMap;
