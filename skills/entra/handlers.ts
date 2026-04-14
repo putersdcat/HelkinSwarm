@@ -9,6 +9,7 @@
 //   - entra_list_available_licenses: Organization.Read.All (MI app token)
 //   - entra_create_user: User.ReadWrite.All (MI app token)
 //   - entra_assign_license: User.ReadWrite.All (MI app token)
+//   - entra_check_provisioning_ready: User.ReadWrite.All (MI app token)
 //
 // Auth: entra_get_my_profile uses user-delegated Graph token via GraphOAuth.
 //       All other tools use app token from managed identity (no user OAuth required).
@@ -490,6 +491,89 @@ export const entra_assign_license: ToolHandler = async (args) => {
     `User: \`${userIdOrUpn}\``,
     `License: ${skuName} (${available - 1} seats remaining after this assignment)`,
     `\nThe assigned license will provision Exchange Online and other M365 services. Mailbox creation typically completes within 30 minutes (may take up to 24 hours).`,
-    `Use \`entra_get_user\` to verify the license assignment.`,
+    `Use \`entra_check_provisioning_ready\` to confirm when the mailbox is fully provisioned.`,
   ].join('\n');
+};
+
+// ---------------------------------------------------------------------------
+// Tool: entra_check_provisioning_ready
+// ---------------------------------------------------------------------------
+
+const CheckProvisioningArgsSchema = z.object({
+  userIdOrUpn: z.string().min(1).max(300).describe('User object ID or UPN to check provisioning status for'),
+});
+
+const ProvisionedPlanSchema = z.object({
+  servicePlanId: z.string().optional(),
+  servicePlanName: z.string().optional(),
+  provisioningStatus: z.string().optional(),
+  capabilityStatus: z.string().optional(),
+}).passthrough();
+
+const ProvisioningUserSchema = z.object({
+  id: z.string(),
+  displayName: z.string().nullable().optional(),
+  userPrincipalName: z.string().optional(),
+  accountEnabled: z.boolean().optional(),
+  mail: z.string().nullable().optional(),
+  assignedLicenses: z.array(z.object({ skuId: z.string() })).optional(),
+  proxyAddresses: z.array(z.string()).optional(),
+  provisionedPlans: z.array(ProvisionedPlanSchema).optional(),
+}).passthrough();
+
+export const entra_check_provisioning_ready: ToolHandler = async (args) => {
+  const { userIdOrUpn } = CheckProvisioningArgsSchema.parse(args);
+  const encoded = encodeURIComponent(userIdOrUpn);
+  const raw = await graphRequest('GET',
+    `/users/${encoded}?$select=id,displayName,userPrincipalName,accountEnabled,mail,assignedLicenses,proxyAddresses,provisionedPlans`);
+
+  const user = ProvisioningUserSchema.parse(raw);
+
+  const licenseCount = user.assignedLicenses?.length ?? 0;
+  const hasMailbox = typeof user.mail === 'string' && user.mail.length > 0;
+  const accountEnabled = user.accountEnabled ?? true;
+
+  const activePlans = (user.provisionedPlans ?? []).filter(
+    (p) => p.capabilityStatus === 'Enabled' && p.provisioningStatus === 'Success',
+  );
+
+  let statusLabel: string;
+  let statusDetail: string;
+
+  if (!accountEnabled) {
+    statusLabel = 'DISABLED';
+    statusDetail = 'Account is disabled — enable the account before checking provisioning state.';
+  } else if (licenseCount === 0) {
+    statusLabel = 'NOT STARTED';
+    statusDetail = 'No M365 license has been assigned. Use `entra_assign_license` to start provisioning.';
+  } else if (!hasMailbox) {
+    statusLabel = 'PROVISIONING';
+    statusDetail =
+      'License assigned but Exchange Online mailbox not yet provisioned. ' +
+      'Mailbox creation typically completes within 30 minutes of license assignment ' +
+      '(up to 24 hours in some cases). Re-check shortly.';
+  } else {
+    statusLabel = 'READY';
+    statusDetail = 'User account and Exchange Online mailbox are fully provisioned.';
+  }
+
+  const lines: string[] = [];
+  lines.push(`**Provisioning Status: ${statusLabel}**`);
+  lines.push(statusDetail);
+  lines.push('');
+  lines.push(`- Account enabled: ${accountEnabled ? 'Yes' : 'No'}`);
+  lines.push(`- Licenses assigned: ${licenseCount}`);
+  lines.push(`- Mailbox (mail): ${hasMailbox ? user.mail : 'not yet provisioned'}`);
+
+  const smtpAddresses = (user.proxyAddresses ?? [])
+    .filter((a) => a.toLowerCase().startsWith('smtp:'))
+    .map((a) => a.replace(/^smtp:/i, ''));
+  if (smtpAddresses.length > 0) {
+    lines.push(`- Proxy SMTP addresses: ${smtpAddresses.join(', ')}`);
+  }
+
+  lines.push(`- Active M365 service plans: ${activePlans.length}`);
+  lines.push(`\n_Object ID: ${user.id}_`);
+
+  return lines.join('\n');
 };

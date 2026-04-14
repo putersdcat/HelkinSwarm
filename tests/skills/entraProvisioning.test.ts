@@ -328,3 +328,103 @@ describe('entra_get_user', () => {
     expect(mockFetch).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// entra_check_provisioning_ready
+// ---------------------------------------------------------------------------
+
+describe('entra_check_provisioning_ready', () => {
+  it('returns READY when account enabled, license assigned, and mail exists', async () => {
+    const { entra_check_provisioning_ready } = await loadHandlers();
+    mockFetch.mockResolvedValueOnce(jsonResponse({
+      id: 'user-guid-0099',
+      displayName: 'Carol Ready',
+      userPrincipalName: 'carol@contoso.com',
+      accountEnabled: true,
+      mail: 'carol@contoso.com',
+      assignedLicenses: [{ skuId: SKU_WITH_SEATS.skuId }],
+      proxyAddresses: ['SMTP:carol@contoso.com', 'smtp:carol.ready@contoso.com'],
+      provisionedPlans: [
+        { servicePlanName: 'EXCHANGE_S_ENTERPRISE', provisioningStatus: 'Success', capabilityStatus: 'Enabled' },
+        { servicePlanName: 'TEAMS1', provisioningStatus: 'Success', capabilityStatus: 'Enabled' },
+      ],
+    }));
+
+    const result = await entra_check_provisioning_ready({ userIdOrUpn: 'carol@contoso.com' });
+
+    expect(result).toContain('READY');
+    expect(result).toContain('fully provisioned');
+    expect(result).toContain('carol@contoso.com');
+    expect(result).toContain('Licenses assigned: 1');
+    expect(result).toContain('Active M365 service plans: 2');
+    expect(result).toContain('carol.ready@contoso.com');   // proxy SMTP (lowercased)
+  });
+
+  it('returns PROVISIONING when license assigned but mail is null', async () => {
+    const { entra_check_provisioning_ready } = await loadHandlers();
+    mockFetch.mockResolvedValueOnce(jsonResponse({
+      id: 'user-guid-0100',
+      displayName: 'Dave Pending',
+      userPrincipalName: 'dave@contoso.com',
+      accountEnabled: true,
+      mail: null,
+      assignedLicenses: [{ skuId: SKU_WITH_SEATS.skuId }],
+      proxyAddresses: [],
+      provisionedPlans: [],
+    }));
+
+    const result = await entra_check_provisioning_ready({ userIdOrUpn: 'dave@contoso.com' });
+
+    expect(result).toContain('PROVISIONING');
+    expect(result).toContain('30 minutes');
+    expect(result).toContain('24 hours');
+    expect(result).toContain('not yet provisioned');
+    expect(result).toContain('Licenses assigned: 1');
+  });
+
+  it('returns NOT STARTED when no licenses assigned', async () => {
+    const { entra_check_provisioning_ready } = await loadHandlers();
+    mockFetch.mockResolvedValueOnce(jsonResponse({
+      id: 'user-guid-0101',
+      displayName: 'Eve Unlicensed',
+      userPrincipalName: 'eve@contoso.com',
+      accountEnabled: true,
+      mail: null,
+      assignedLicenses: [],
+      proxyAddresses: [],
+      provisionedPlans: [],
+    }));
+
+    const result = await entra_check_provisioning_ready({ userIdOrUpn: 'eve@contoso.com' });
+
+    expect(result).toContain('NOT STARTED');
+    expect(result).toContain('entra_assign_license');
+    expect(result).toContain('Licenses assigned: 0');
+  });
+
+  it('returns DISABLED when accountEnabled is false', async () => {
+    const { entra_check_provisioning_ready } = await loadHandlers();
+    mockFetch.mockResolvedValueOnce(jsonResponse({
+      id: 'user-guid-0102',
+      displayName: 'Frank Disabled',
+      userPrincipalName: 'frank@contoso.com',
+      accountEnabled: false,
+      mail: null,
+      assignedLicenses: [{ skuId: SKU_WITH_SEATS.skuId }],
+      proxyAddresses: [],
+      provisionedPlans: [],
+    }));
+
+    const result = await entra_check_provisioning_ready({ userIdOrUpn: 'frank@contoso.com' });
+
+    expect(result).toContain('DISABLED');
+    expect(result).toContain('Account enabled: No');
+  });
+
+  it('rejects missing userIdOrUpn before calling Graph', async () => {
+    const { entra_check_provisioning_ready } = await loadHandlers();
+
+    await expect(entra_check_provisioning_ready({ userIdOrUpn: '' })).rejects.toThrow();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+});

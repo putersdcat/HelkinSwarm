@@ -44,7 +44,15 @@
     "list licenses",
     "available licenses",
     "employee provisioning",
-    "onboard employee"
+    "onboard employee",
+    "check provisioning",
+    "provisioning status",
+    "mailbox ready",
+    "is mailbox ready",
+    "provisioning complete",
+    "m365 ready",
+    "exchange mailbox status",
+    "user provisioning status"
   ],
   "orchestratorUseCases": [
     "look up the current user's own Entra ID profile: name, email, job title, department, phone",
@@ -54,12 +62,15 @@
     "create a new employee or virtual worker identity in Entra ID",
     "list available Microsoft 365 license SKUs with remaining seat counts",
     "assign an M365 license to a newly created or existing user",
-    "verify a user's Entra profile, license, and account status after provisioning"
+    "verify a user's Entra profile, license, and account status after provisioning",
+    "check whether a newly provisioned user's Exchange Online mailbox is ready",
+    "confirm M365 services are active after license assignment before sending email to a new employee"
   ],
   "recommendedEntryTools": [
     "entra_get_my_profile",
     "entra_list_available_licenses",
-    "entra_create_user"
+      "entra_create_user",
+      "entra_check_provisioning_ready"
   ],
   "tools": [
     {
@@ -322,6 +333,49 @@
           }
         },
         "required": ["userIdOrUpn", "skuId"]
+      }
+    },
+    {
+      "name": "entra_check_provisioning_ready",
+      "description": "Check whether a newly provisioned user's M365 services are ready. Verifies account enabled state, license assignment, Exchange Online mailbox creation, and active service plan count. Use this after entra_assign_license to confirm mailbox provisioning is complete — mailboxes typically provision within 30 minutes but can take up to 24 hours. Returns status: READY, PROVISIONING, NOT STARTED, or DISABLED.",
+      "risk": "low",
+      "dataSensitivity": "pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "requiresSubAgent": false,
+      "privilegeClass": "read-only",
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "discoveryTerms": [
+        "check provisioning",
+        "provisioning status",
+        "mailbox ready",
+        "is mailbox ready",
+        "check mailbox provisioning",
+        "provisioning complete",
+        "is user ready",
+        "m365 ready",
+        "exchange mailbox status",
+        "user provisioning status",
+        "mailbox provisioned",
+        "exchange online ready"
+      ],
+      "useWhen": [
+        "checking whether a newly created user's Exchange Online mailbox has finished provisioning",
+        "verifying M365 services are active after license assignment",
+        "confirming provisioning is complete before sending email to a new employee",
+        "polling readiness status after entra_assign_license"
+      ],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "userIdOrUpn": {
+            "type": "string",
+            "description": "User object ID (GUID) or userPrincipalName (UPN) to check provisioning status for, e.g. 'alice@contoso.com'"
+          }
+        },
+        "required": ["userIdOrUpn"]
       }
     }
   ]
