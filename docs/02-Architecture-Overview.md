@@ -32,6 +32,7 @@ graph TD
 | **Safety & Verification Pipeline** | Multiple activities                     | Prompt shields, scoped tokens, executor agents, four-eyes verification | **0e** |
 | **Memory Manager + Hydra-Net**     | Cosmos DB Serverless + DiskANN          | Skill-specific vaults + multimodal embeddings with just-in-time injection | **0i + 0k** |
 | **Durable Hooks**                  | Durable entities + webhooks             | Long-running workflows & native delegation | **0h** |
+| **Intra-Session Agent Swarm**      | Durable sub-orchestration + Entities    | Parallel specialist agents (Helkin/Benjamin/Harper/Lucas) for complex multi-domain queries | **0ze–0zi + #631** |
 | **Virtual Employees**              | Future nested orchestrators             | Autonomous children (post-MVP) | **0j** |
 | **Observability**                  | App Insights + Correlation IDs          | Full tracing, health, cost tracking | 13-Observability-Monitoring.md |
 
@@ -57,7 +58,10 @@ graph TD
 5. **Declarative Capabilities (0a)**  
    All tools defined in JSON manifests under the modular `skills/` library. Includes risk level, data sensitivity, external automation capabilities, and long-term memory schema.
 
-6. **Self-Improvement Ready (0g + 0b)**  
+6. **Intra-Session Swarm (0ze–0zi)**  
+   Complex multi-domain queries activate a parallel swarm: 2–4 specialist agents (Benjamin/Harper/Lucas) execute concurrently, communicate via a chatroom entity, and the Leader (Helkin) synthesizes the final answer. Workers cannot call elevated tools directly — sub-session handoff routes them through an isolated activity boundary (sub-session pattern, 0zk).
+
+7. **Self-Improvement Ready (0g + 0b)**  
    Built-in bidirectional DevLoop channel and model-specific tool presentation tuning.
 
 ### One-Turn Data Flow (Updated)
@@ -68,9 +72,9 @@ graph TD
 4. Session context + relevant skill memory loaded (just-in-time from 0i)  
 5. Hydra-Net adds multimodal embeddings if needed (0k)  
 6. Prompt built with current model routing rules (global frontier default)  
-7. LLM call  
-8. Tool dispatch through safety pipeline (0e)  
+7. Planner classifies complexity + computes swarm eligibility score  
+8. **Sequential path** (simple/compound): LLM call → tool dispatch → safety pipeline (0e) → reply  
+   **Swarm path** (complex, score ≥ 3): decomposer → swarm sub-orchestrator (parallel agents) → leader synthesis → reply  
 9. Results verified, minimized, and durable hooks registered if long-running (0h)  
-10. Reply sent proactively  
-11. Memory updated  
-12. Token budget checked → summarize + `ContinueAsNew` if needed
+10. Memory updated (owner-scoped Cosmos; swarm turns: leader-only T3 commit)  
+11. Token budget checked → summarize + `ContinueAsNew` if needed

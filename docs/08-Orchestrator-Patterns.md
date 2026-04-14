@@ -53,6 +53,94 @@ Handles one complete turn:
 - Registers durable hooks for open-ended workflows (0h)
 - Returns the final result to the overseer
 
+### Intra-Session Agent Swarm (`src/orchestrator/swarm/`)
+
+For complex multi-domain queries, the session sub-orchestrator can activate a **parallel swarm execution** instead of the standard sequential tool loop. The swarm is an intra-session capability — all agents live and die within a single user turn. Epic: #631.
+
+#### Activation Gate
+
+`computeSwarmEligibilityScore()` in `planActivity.ts` scores the request 0–10 based on structural signals (multi-domain mentions, compound task indicators, geographic specificity, parallel sub-task potential). Score ≥ 3 triggers swarm activation. The planner outputs `swarmEligibilityScore` as telemetry for future threshold tuning. The decomposer also has a fallback: it returns `{fallback: true}` if it determines the query is too simple after seeing the planner context.
+
+#### Swarm Execution Flow
+
+```
+swarmDecomposerActivity (LLM call)
+  → SwarmPlan: {agents[{name, role, task, assignedTools, persona, tokenBudget, modelOverride}], leader}
+  swarmOrchestrator (Durable sub-orchestrator)
+  ├─ 1. Init SwarmChatroom Durable Entity (fire-and-forget)
+  ├─ 2. Fan-out: parallel swarmWorkerActivity × N agents (60 s timeout each)
+  │         Each agent: multi-turn LLM loop with assigned tools + chatroom_send + swarm_wait
+  ├─ 3. Fan-in: collect worker results + outbound chatroom messages
+  ├─ 3.4a. Sub-session interception: elevated tool (requiresSubAgent) requests
+  │         dispatched via swarmSubSessionActivity (isolated UAMI activity boundary)
+  ├─ 3.4.  Leader delegation pass: swarmLeaderActivity(delegationMode) reviews
+  │         first-pass transcript, sends targeted follow-up via chatroom_send (30 s)
+  ├─ 3.5.  Second-pass: agents with inbound messages / pending swarm_wait get
+  │         a brief follow-up activity (maxRounds: 2, 20 s timeout)
+  ├─ 4.    Leader synthesis: swarmLeaderActivity produces polished final answer
+  │         from full Durable Entity transcript
+  └─ 5.    persistSwarmResultActivity → sendReplyActivity → Teams
+              swarmMemoryCommitActivity (Leader-only T3 write, async)
+```
+
+#### Key Swarm Files
+
+| File | Responsibility |
+|------|----------------|
+| `src/orchestrator/swarm/swarmDecomposerActivity.ts` | LLM-driven task decomposition → SwarmPlan |
+| `src/orchestrator/swarm/swarmOrchestrator.ts` | Fan-out/fan-in sub-orchestrator |
+| `src/orchestrator/swarm/swarmWorkerActivity.ts` | Per-agent multi-turn tool loop |
+| `src/orchestrator/swarm/swarmLeaderActivity.ts` | Leader synthesis + delegation mode |
+| `src/orchestrator/swarm/swarmSubSessionActivity.ts` | Isolated execution of elevated tools |
+| `src/orchestrator/swarm/swarmChatroomEntity.ts` | Durable Entity for inter-agent messaging |
+| `src/orchestrator/swarm/swarmPersonas.ts` | System prompt builders — loads `src/persona/*.md` files |
+| `src/orchestrator/swarm/swarmMemoryCommitActivity.ts` | Leader-only T3 memory commit |
+| `src/orchestrator/swarm/swarmTypes.ts` | Zod schemas: SwarmPlan, ChatroomMessage, SwarmWorkerInput/Result |
+
+#### Swarm Personas
+
+Four canonical agent persona files live in `src/persona/`:
+
+| File | Agent | Role |
+|------|-------|------|
+| `agentOnePersona.md` | Helkin (Leader) | Team coordinator & final synthesizer |
+| `agentTwoPersona.md` | Benjamin | Research & verification specialist |
+| `agentThreePersona.md` | Harper | Tool orchestration & deep browsing |
+| `agentFourPersona.md` | Lucas | Data synthesis, rankings & code execution |
+
+`buildWorkerSystemPrompt()` loads persona files at runtime. Decomposer-assigned `agentPersona` fields (non-default) are appended as behavioral guidance. Per-model persona specialization is supported via `personaFile` override.
+
+#### Collaboration Primitives
+
+Workers have two virtual tools beyond their assigned domain tools:
+- **`chatroom_send`** — sends structured messages (text, delegation, question, status) to specific agents or broadcasts to `All`. Collected by the orchestrator and routed via second-pass injection.
+- **`swarm_wait`** — synthesis agents call this before ranking/comparing to yield and wait for peer data. Triggers the second-pass pass for that agent. If no peer messages arrive within the second-pass window, a graceful timeout context is injected.
+
+#### Elevated Tool Safety (Sub-Session Handoff)
+
+Tools with `requiresSubAgent: true` cannot be called directly by swarm workers. Workers emit a `sub_session_request` chatroom message; the orchestrator routes it to `swarmSubSessionActivity`, which executes the tool in an isolated activity boundary with UAMI auth, safety-mode check, and no token exposure to workers. The result is injected back as a `sub_session_result` message in the second-pass.
+
+Domains gated behind `requiresSubAgent`: `azuremcp`, `github`, `graphenterprise`, `outlook`, `research`, `teams`.
+
+#### Spec References
+
+- `docs/0ze` — Swarm Architecture and Chatroom Protocol
+- `docs/0zf` — Agent Specialization and Parallel Tool Surface
+- `docs/0zg` — Inter-Agent Communication Deep Dive
+- `docs/0zh` — Canonical Swarm Personas and System Prompts
+- `docs/0zi` — Swarm Memory Architecture
+- `docs/0zl` — Swarm Implementation Roadmap and Remaining Gaps
+
+#### Swarm-Specific Rules
+
+- ❌ Never put elevated tool execution inside `swarmWorkerActivity` — all such calls must go through `swarmSubSessionActivity`
+- ❌ Never import new Durable activities without adding them to `src/functions/index.ts` (silent hang — no error, no timeout message)
+- ❌ Never add entity reads/writes inside Durable Activities — Activities cannot interact with Durable Entities; only orchestrators can
+- ❌ Never have the Leader write to T3 memory directly — use `swarmMemoryCommitActivity`
+- ❌ Never spawn the swarm for a query that the decomposer classifies as `{fallback: true}` — the orchestrator re-routes to sequential on fallback
+
+---
+
 ### Critical Patterns & Rules
 
 **ContinueAsNew**  
@@ -95,14 +183,16 @@ This keeps multimodal and file workflows composable while preserving data minimi
 | File | Responsibility |
 |------|----------------|
 | `src/orchestrator/overseer.ts` | Eternal orchestrator loop + ContinueAsNew |
-| `src/orchestrator/sessionOrchestrator.ts` | One-turn sub-orchestration |
+| `src/orchestrator/sessionOrchestrator.ts` | One-turn sub-orchestration + swarm routing |
 | `src/orchestrator/buildPromptActivity.ts` | Prompt assembly with skill memory + Hydra-Net |
 | `src/orchestrator/llmActivity.ts` | LLM call (adapts to global/EU mode) |
 | `src/orchestrator/toolDispatchActivity.ts` | Routes tool_calls to handlers |
+| `src/orchestrator/planActivity.ts` | Request complexity scoring + swarm eligibility gate |
 | `src/orchestrator/sendReplyActivity.ts` | Proactive Teams replies |
 | `src/orchestrator/tokenBudget.ts` | 80% context threshold logic |
 | `src/orchestrator/stateManager.ts` | Loads session context from Cosmos (includes `recentHistory`, model, safetyMode) |
 | `src/orchestrator/durableHookActivity.ts` | Registers and manages long-running hooks (0h) |
+| `src/orchestrator/swarm/` | Swarm sub-system (decomposer, orchestrator, workers, leader, chatroom entity) — see swarm section above |
 | `src/bot/conversationStore.ts` | Canonical outbound-artifact idempotency claim store |
 
 ### What NOT to Do
