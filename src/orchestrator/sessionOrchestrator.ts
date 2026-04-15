@@ -843,7 +843,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         try {
           const swarmResult = swarmTask.result as SwarmOrchestratorResult;
           swarmResultData = swarmResult;
-          swarmResponse = swarmResult.response;
+          // Guard against empty synthesis (e.g. leader LLM threw after workers succeeded)
+          swarmResponse = swarmResult.response || '⚡ The swarm analysis completed but the final synthesis could not be produced. The team\'s research has been captured in the Swarm Activity tab.';
           swarmTokens += swarmResult.totalTokensUsed;
           swarmModel = swarmResult.leaderResult.model;
 

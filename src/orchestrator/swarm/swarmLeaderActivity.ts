@@ -292,8 +292,17 @@ df.app.activity('swarmLeaderActivity', {
         correlationId: input.correlationId,
         properties: { error: errorMessage },
       });
+      // Build a partial fallback from the chatroom transcript so the user gets
+      // the workers' research even when the leader synthesis call fails.
+      const partialResults = input.chatroomTranscript
+        .filter(m => m.contentType === 'partial_result' || m.contentType === 'text')
+        .map(m => `**${m.from}**: ${m.content}`)
+        .join('\n\n');
+      const fallbackSynthesis = partialResults
+        ? `⚡ Helkin's synthesis failed — here is what the team gathered:\n\n${partialResults}`
+        : '⚡ The swarm analysis could not complete. Please try again.';
       return {
-        synthesis: '',
+        synthesis: fallbackSynthesis,
         success: false,
         tokensUsed: 0,
         roundsUsed: 0,

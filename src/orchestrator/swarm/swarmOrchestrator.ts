@@ -493,7 +493,10 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
   //    the user response on memory persistence)
   //    Spec ref: docs/0zi §6 — Leader-Only Memory Commit
   // -----------------------------------------------------------------------
-  if (leaderResult.success && transcript.length > 0) {
+  // Commit memory when the leader succeeded, OR when workers found useful results
+  // even if the leader synthesis failed. This preserves research from partial swarms.
+  const anyWorkerSucceeded = workerResults.some(r => r.success);
+  if (transcript.length > 0 && (leaderResult.success || anyWorkerSucceeded)) {
     const commitInput: SwarmMemoryCommitInput = {
       userId,
       correlationId,
