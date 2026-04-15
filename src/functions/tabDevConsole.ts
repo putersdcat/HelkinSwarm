@@ -137,7 +137,7 @@ app.http('tab-dev-console', {
     }
 
     // --- Persona status (#487 AC4) -----------------------------------------
-    const personaFilePath = join(process.cwd(), 'src', 'persona', 'dronePersona.md');
+    const personaFilePath = join(process.cwd(), 'src', 'persona', 'helkinPersona.md');
     const cachedPersona = getCachedPersona();
     let personaFileExists = false;
     let personaFileModified: string | null = null;

@@ -16,8 +16,8 @@ const __dirname_local = dirname(fileURLToPath(import.meta.url));
 // In Docker the persona dir is copied to /home/site/wwwroot/src/persona/
 const PERSONA_PATHS: Record<string, string[]> = {
   Helkin: [
-    resolve(__dirname_local, '../../persona/agentOnePersona.md'),
-    resolve(__dirname_local, '../../../../src/persona/agentOnePersona.md'),
+    resolve(__dirname_local, '../../persona/helkinPersona.md'),
+    resolve(__dirname_local, '../../../../src/persona/helkinPersona.md'),
   ],
   Benjamin: [
     resolve(__dirname_local, '../../persona/agentTwoPersona.md'),

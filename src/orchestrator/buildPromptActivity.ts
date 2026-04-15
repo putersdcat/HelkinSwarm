@@ -63,7 +63,7 @@ export function clearPersonaCache(): void {
 export async function peekPersonaFromDisk(): Promise<string> {
   try {
     return await readFile(
-      join(process.cwd(), 'src', 'persona', 'dronePersona.md'),
+      join(process.cwd(), 'src', 'persona', 'helkinPersona.md'),
       'utf-8',
     );
   } catch {
@@ -80,7 +80,7 @@ async function loadPersona(): Promise<string> {
   if (cachedPersona) return cachedPersona;
   try {
     cachedPersona = await readFile(
-      join(process.cwd(), 'src', 'persona', 'dronePersona.md'),
+      join(process.cwd(), 'src', 'persona', 'helkinPersona.md'),
       'utf-8',
     );
   } catch {
