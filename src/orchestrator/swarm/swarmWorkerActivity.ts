@@ -11,6 +11,8 @@ import { getHandler } from '../../capabilities/capabilityLoader.js';
 import { trackEvent } from '../../observability/telemetry.js';
 import { recordOrchestratorStage } from '../../observability/orchestratorStageHealth.js';
 import { buildWorkerSystemPrompt } from './swarmPersonas.js';
+import { scopedTokenMinter } from '../../auth/scopedTokenMinter.js';
+import { mapPrivilegeClassToScopedTokenScope } from '../../auth/tokenScopeMapping.js';
 import type { ChatMessage, ToolDefinition } from '../../llm/foundryClient.js';
 import type { ChatroomMessage, SwarmWorkerInput, SwarmWorkerResult } from './swarmTypes.js';
 import { ChatroomMessageSchema } from './swarmTypes.js';
@@ -140,6 +142,9 @@ function buildWorkerToolSchemas(assignedToolNames: string[]): ToolDefinition[] {
 
 /**
  * Execute a single tool call and return the result string.
+ * Mirrors toolDispatchActivity's security surface (#656/#662):
+ *   - blocks requiresExecutor tools (workers cannot surface confirmation cards)
+ *   - mints least-privilege scoped tokens for every tool that has a scope mapping
  */
 async function executeToolCall(
   toolName: string,
@@ -147,7 +152,7 @@ async function executeToolCall(
   userId: string,
   correlationId: string,
 ): Promise<string> {
-  // Safety check
+  // Safety mode check
   if (!toolRegistry.isAllowedBySafetyMode(toolName)) {
     trackEvent({
       name: 'SwarmToolBlocked',
@@ -155,6 +160,19 @@ async function executeToolCall(
       properties: { toolName, reason: 'safety_mode' },
     });
     return `Tool ${toolName} blocked by safety mode`;
+  }
+
+  const toolDef = toolRegistry.get(toolName);
+
+  // Block tools that require executor approval — workers cannot surface confirmation cards.
+  // Only Helkin (the conscious orchestrator) can gate on executor approval (#656 §6).
+  if (toolDef?.requiresExecutor) {
+    trackEvent({
+      name: 'SwarmToolBlocked',
+      correlationId,
+      properties: { toolName, reason: 'requires_executor' },
+    });
+    return `Tool ${toolName} requires Helkin approval and cannot be used directly by swarm workers`;
   }
 
   const handler = getHandler(toolName);
@@ -170,6 +188,30 @@ async function executeToolCall(
   try {
     args['userId'] = userId;
     args['correlationId'] = correlationId;
+
+    // Mint least-privilege scoped token — same pattern as toolDispatchActivity (#317, #662).
+    // Non-fatal: if minting fails the handler falls back to legacy token acquisition.
+    if (toolDef) {
+      const tokenScope = mapPrivilegeClassToScopedTokenScope(toolDef.privilegeClass);
+      if (tokenScope) {
+        try {
+          const domain = toolDef.handlerModule?.replace('skills/', '') ?? 'core';
+          const scopedToken = await scopedTokenMinter.mint({
+            toolName,
+            scope: tokenScope,
+            targetResource: domain,
+            userId,
+            correlationId,
+          });
+          args['_scopedToken'] = scopedToken.token;
+          args['_scopedTokenScope'] = scopedToken.scope;
+          args['_scopedTokenMethod'] = scopedToken.method;
+        } catch {
+          // Non-fatal — handler falls back to legacy token acquisition
+        }
+      }
+    }
+
     const result = await handler(args);
     return typeof result === 'string' ? result : JSON.stringify(result);
   } catch (err) {
