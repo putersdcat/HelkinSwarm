@@ -24,6 +24,21 @@ import type { SwarmSubSessionInput, SwarmSubSessionResult } from './swarmSubSess
 const SWARM_WORKER_TIMEOUT_MS = 60_000;
 const SWARM_LEADER_TIMEOUT_MS = 60_000;
 
+function shouldRunLeaderDelegationPass(
+  workerResults: ReadonlyArray<SwarmWorkerResult>,
+  chatroomMessages: ReadonlyArray<ChatroomMessage>,
+): boolean {
+  if (workerResults.some((r) => r._requestsSecondPass === true)) {
+    return true;
+  }
+
+  return chatroomMessages.some((msg) =>
+    msg.contentType === 'question'
+    || msg.contentType === 'cross_verification'
+    || msg.contentType === 'sub_session_request',
+  );
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions generator
 df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task, SwarmOrchestratorResult, any> {
   const input = context.df.getInput() as SwarmOrchestratorInput;
@@ -154,13 +169,14 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
 
   // -----------------------------------------------------------------------
   // 3.4. Leader delegation pass (#644 Slice 2 / #645)
-  // After all first-pass workers finish, run Helkin in delegation mode so it
-  // can review initial findings and send targeted follow-up to agents.
-  // Leader's delegation messages are distributed alongside peer messages in
-  // the second-pass fan-out (3.5) below.
-  // Skipped when workers produced no chatroom messages (nothing for Leader to review).
+  // Reliability hardening (#632 / #654): do NOT run this just because normal
+  // first-pass results exist. Most swarms always emit partial_result messages,
+  // and unnecessary coordination rounds can strand final delivery.
+  // Only delegate when a worker explicitly asked for a second pass or when the
+  // transcript still contains unresolved verification / question signals.
   // -----------------------------------------------------------------------
-  if (allChatroomMessages.length > 0) {
+  const shouldRunDelegationPass = shouldRunLeaderDelegationPass(workerResults, allChatroomMessages);
+  if (shouldRunDelegationPass) {
     const LEADER_DELEGATION_TIMEOUT_MS = 30_000;
     const delegationInput: SwarmLeaderInput & { chatroomTranscript: ChatroomMessage[] } = {
       leaderName,

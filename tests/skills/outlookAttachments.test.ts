@@ -1,9 +1,22 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const runtimeAssetHarness = vi.hoisted(() => ({
+  persistRuntimeAsset: vi.fn(),
+  readRuntimeAssetContent: vi.fn(),
+}));
+
+vi.mock('../../src/integrations/runtimeAssetStore.js', () => ({
+  persistRuntimeAsset: runtimeAssetHarness.persistRuntimeAsset,
+  readRuntimeAssetContent: runtimeAssetHarness.readRuntimeAssetContent,
+}));
+
 async function loadHandlersModule() {
   vi.resetModules();
 
-  const persistRuntimeAsset = vi.fn(async (input: {
+  runtimeAssetHarness.persistRuntimeAsset.mockReset();
+  runtimeAssetHarness.readRuntimeAssetContent.mockReset();
+
+  runtimeAssetHarness.persistRuntimeAsset.mockImplementation(async (input: {
     userId: string;
     correlationId: string;
     contentType: string;
@@ -38,24 +51,16 @@ async function loadHandlersModule() {
       metadataBlobPath: `metadata/${input.fileName ?? 'asset'}.json`,
     },
   }));
-
-  // Provide an explicit stub without vi.importActual — the Azure SDK module-level
-  // side-effects in the real runtimeAssetStore contaminate module state in the full
-  // suite and cause persistRuntimeAsset to resolve to null (fix for full-suite flakiness).
-  vi.doMock('../../src/integrations/runtimeAssetStore.js', () => ({
-    persistRuntimeAsset,
-    readRuntimeAssetContent: vi.fn().mockResolvedValue(null),
-  }));
+  runtimeAssetHarness.readRuntimeAssetContent.mockResolvedValue(null);
 
   const mod = await import('../../skills/outlook/handlers.js');
-  return { ...mod, persistRuntimeAsset };
+  return { ...mod, persistRuntimeAsset: runtimeAssetHarness.persistRuntimeAsset };
 }
 
 describe('outlook attachment handlers', () => {
   afterEach(() => {
     vi.restoreAllMocks();
     vi.resetModules();
-    vi.doUnmock('../../src/integrations/runtimeAssetStore.js');
     delete process.env['AZURE_CONTENT_SAFETY_ENDPOINT'];
     delete process.env['AZURE_CONTENT_SAFETY_KEY'];
   });

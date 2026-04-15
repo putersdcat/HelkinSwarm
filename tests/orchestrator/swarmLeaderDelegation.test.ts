@@ -150,6 +150,10 @@ const workerSrc = readFileSync(
   join(process.cwd(), 'src', 'orchestrator', 'swarm', 'swarmWorkerActivity.ts'),
   'utf-8',
 );
+const orchestratorSrc = readFileSync(
+  join(process.cwd(), 'src', 'orchestrator', 'swarm', 'swarmOrchestrator.ts'),
+  'utf-8',
+);
 
 describe('swarmLeaderActivity — malformed tool-arg guard (#632 hardening)', () => {
   it('wraps JSON.parse in a try/catch in delegation mode', () => {
@@ -171,5 +175,19 @@ describe('swarmWorkerActivity — malformed tool-arg guard (#632 hardening)', ()
 
   it('returns an error tool response when JSON.parse fails (not void)', () => {
     expect(workerSrc).toContain("'Error: malformed tool arguments (not valid JSON)'");
+  });
+});
+
+describe('swarmOrchestrator — leader delegation gating (#632 hardening)', () => {
+  it('introduces a dedicated delegation gate helper instead of keying only on transcript length', () => {
+    expect(orchestratorSrc).toContain('function shouldRunLeaderDelegationPass');
+    expect(orchestratorSrc).toContain('const shouldRunDelegationPass = shouldRunLeaderDelegationPass');
+  });
+
+  it('only triggers leader delegation for explicit second-pass requests or unresolved verification signals', () => {
+    expect(orchestratorSrc).toContain('r._requestsSecondPass === true');
+    expect(orchestratorSrc).toContain("msg.contentType === 'question'");
+    expect(orchestratorSrc).toContain("msg.contentType === 'cross_verification'");
+    expect(orchestratorSrc).toContain("msg.contentType === 'sub_session_request'");
   });
 });
