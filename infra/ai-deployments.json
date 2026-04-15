@@ -24,7 +24,7 @@
     },
     "quotaMaxTPMCeiling": {
       "type": "int",
-      "defaultValue": 400000,
+      "defaultValue": 500000,
       "metadata": {
         "description": "Maximum TPM ceiling for AI model deployments. The summed requested deployment capacities stay within this ceiling."
       }
@@ -52,7 +52,7 @@
   "variables": {
     "effectiveQuotaMaxTPM": "[max(parameters('quotaMaxTPM'), parameters('quotaMaxTPMCeiling'))]",
     "quotaBudgetK": "[max(1, int(div(variables('effectiveQuotaMaxTPM'), 1000)))]",
-    "embeddingRequested": "[if(contains(parameters('modelQuotaOverrides'), 'text-embedding-3-large'), int(parameters('modelQuotaOverrides')['text-embedding-3-large']), if(equals(parameters('quotaStrategy'), 'minimize'), 50, if(equals(parameters('quotaStrategy'), 'manual'), 100, 100)))]",
+    "embeddingRequested": "[if(contains(parameters('modelQuotaOverrides'), 'text-embedding-3-large'), int(parameters('modelQuotaOverrides')['text-embedding-3-large']), if(equals(parameters('quotaStrategy'), 'minimize'), 50, if(equals(parameters('quotaStrategy'), 'manual'), 250, 250)))]",
     "grokReasoningRequested": "[if(contains(parameters('modelQuotaOverrides'), 'grok-4-1-fast-reasoning'), int(parameters('modelQuotaOverrides')['grok-4-1-fast-reasoning']), if(equals(parameters('quotaStrategy'), 'minimize'), 10, if(equals(parameters('quotaStrategy'), 'manual'), 20, 20)))]",
     "grokFastRequested": "[if(contains(parameters('modelQuotaOverrides'), 'grok-4-1-fast-non-reasoning'), int(parameters('modelQuotaOverrides')['grok-4-1-fast-non-reasoning']), if(equals(parameters('quotaStrategy'), 'minimize'), 10, if(equals(parameters('quotaStrategy'), 'manual'), 20, 20)))]",
     "gpt54Requested": "[if(contains(parameters('modelQuotaOverrides'), 'o4-mini'), int(parameters('modelQuotaOverrides')['o4-mini']), if(equals(parameters('quotaStrategy'), 'minimize'), 50, if(equals(parameters('quotaStrategy'), 'manual'), 202, 202)))]",

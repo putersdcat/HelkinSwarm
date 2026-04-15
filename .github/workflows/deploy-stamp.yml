@@ -123,7 +123,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: |
           STRATEGY="${{ github.event.inputs.QUOTA_STRATEGY || 'maximize' }}"
-          CEILING="${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '400000' }}"
+          CEILING="${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '500000' }}"
           OVERRIDES='${{ github.event.inputs.MODEL_QUOTA_OVERRIDES_JSON || '' }}'
           DEV_IPS='${{ github.event.inputs.DEVELOPER_ALLOWED_IP_CIDRS || '' }}'
 
@@ -335,7 +335,7 @@ jobs:
 
           CICD_PRINCIPAL_ID="${{ env.AZURE_CLIENT_OBJECT_ID }}"
           QUOTA_STRATEGY="${{ github.event.inputs.QUOTA_STRATEGY || 'maximize' }}"
-          QUOTA_MAX_TPM_CEILING="${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '400000' }}"
+          QUOTA_MAX_TPM_CEILING="${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '500000' }}"
           MODEL_QUOTA_OVERRIDES_JSON='${{ github.event.inputs.MODEL_QUOTA_OVERRIDES_JSON || '' }}'
           DEVELOPER_ALLOWED_IP_CIDRS='${{ github.event.inputs.DEVELOPER_ALLOWED_IP_CIDRS || '' }}'
           STAMP_POLICY_OUTLOOK_SEND_BYPASS="${{ (github.event.inputs.USER_ALIAS || vars.USER_ALIAS) == vars.USER_ALIAS && 'true' || 'false' }}"
@@ -426,7 +426,7 @@ jobs:
         run: |
           set -e
           QUOTA_STRATEGY="${{ github.event.inputs.QUOTA_STRATEGY || 'maximize' }}"
-          QUOTA_MAX_TPM_CEILING="${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '400000' }}"
+          QUOTA_MAX_TPM_CEILING="${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '500000' }}"
           MODEL_QUOTA_OVERRIDES_JSON='${{ github.event.inputs.MODEL_QUOTA_OVERRIDES_JSON || '' }}'
 
           DEPLOY_CMD=(az deployment group create
@@ -473,7 +473,7 @@ jobs:
 
           echo ""
           echo "📊 Total allocated: ${TOTAL}k TPM"
-          CEILING_TPM=${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '400000' }}
+          CEILING_TPM=${{ github.event.inputs.QUOTA_MAX_TPM_CEILING || '500000' }}
           CEILING=$((CEILING_TPM / 1000))
           if [ "$TOTAL" -gt "$CEILING" ]; then
             echo "⚠️ Total allocation (${TOTAL}k) exceeds ceiling (${CEILING}k)"

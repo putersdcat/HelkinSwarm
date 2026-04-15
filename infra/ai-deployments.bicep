@@ -7,7 +7,7 @@ param aiServicesName string
 param quotaMaxTPM int = 100000
 
 @description('Maximum TPM ceiling for AI model deployments. The summed requested deployment capacities stay within this ceiling.')
-param quotaMaxTPMCeiling int = 400000
+param quotaMaxTPMCeiling int = 500000
 
 @description('Quota allocation strategy. maximize = favor higher initial deployment capacities; minimize = conservative baseline; manual = rely primarily on modelQuotaOverrides.')
 @allowed([ 'maximize', 'minimize', 'manual' ])
@@ -21,7 +21,7 @@ var quotaBudgetK = max(1, int(effectiveQuotaMaxTPM / 1000))
 
 var embeddingRequested = contains(modelQuotaOverrides, 'text-embedding-3-large')
   ? int(modelQuotaOverrides['text-embedding-3-large'])
-  : (quotaStrategy == 'minimize' ? 50 : quotaStrategy == 'manual' ? 100 : 100)
+  : (quotaStrategy == 'minimize' ? 50 : quotaStrategy == 'manual' ? 250 : 250)
 var grokReasoningRequested = contains(modelQuotaOverrides, 'grok-4-1-fast-reasoning')
   ? int(modelQuotaOverrides['grok-4-1-fast-reasoning'])
   : (quotaStrategy == 'minimize' ? 10 : quotaStrategy == 'manual' ? 20 : 20)
