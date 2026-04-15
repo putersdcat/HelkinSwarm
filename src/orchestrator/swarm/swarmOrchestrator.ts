@@ -407,19 +407,26 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
   }
 
   // -----------------------------------------------------------------------
-  // 4. Signal chatroom entity with all collected messages
+  // 4. Signal chatroom entity with all collected messages (fire-and-forget,
+  //    kept for external reads / audit trail but not relied on for the
+  //    synthesis path — see step 5)
   // -----------------------------------------------------------------------
   for (const msg of allChatroomMessages) {
     context.df.signalEntity(chatroomEntityId, 'send', msg);
   }
 
   // -----------------------------------------------------------------------
-  // 5. Get full transcript from entity
+  // 5. Build transcript from the messages the orchestrator already collected.
+  //
+  //    IMPORTANT: Do NOT use context.df.callEntity(..., 'transcript') here.
+  //    The entity receives the same messages via the signals above, but Azure
+  //    Storage entity operations process signals sequentially. With 20-40
+  //    large sub-session results queued before the callEntity, the entity call
+  //    blocks for minutes and can hang indefinitely (seen when deep_research
+  //    results are injected into the transcript). The orchestrator owns
+  //    allChatroomMessages which is the canonical set — use it directly.
   // -----------------------------------------------------------------------
-  const transcript = (yield context.df.callEntity(
-    chatroomEntityId,
-    'transcript',
-  )) as ChatroomMessage[];
+  const transcript: ChatroomMessage[] = [...allChatroomMessages];
 
   // -----------------------------------------------------------------------
   // 6. Run the Leader to synthesize
