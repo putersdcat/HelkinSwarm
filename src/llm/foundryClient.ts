@@ -656,25 +656,30 @@ export class FoundryClient {
     }
 
     // Build combined tools array: function tools + OpenRouter server tools (#650).
-    // When on OpenRouter, inject openrouter:web_search server tool and remove the
-    // client-side web_search function tool to avoid duplication.
-    // xAI models: use engine "exa" because xAI's Chat Completions API rejects
-    // non-function tool types when mixed with function tools. Exa forces OpenRouter
-    // to handle search server-side and only forward clean function tools to xAI.
+    // When on OpenRouter, remove the client-side web_search function tool and inject
+    // openrouter:web_search server tool so OpenRouter handles search server-side.
+    // xAI models: use engine "exa" — OpenRouter intercepts the server tool and only
+    // forwards clean function tools to xAI (which rejects mixed tool types).
+    //
+    // IMPORTANT: Only inject openrouter:web_search when functionTools.length > 0.
+    // When there are no function tools (e.g., leader synthesis with no tools passed),
+    // allTools would contain ONLY the server tool. OpenRouter/exa does not fully
+    // strip a server-only tools list before forwarding, so xAI receives
+    // tools:[openrouter:web_search] + tool_choice:'auto' and rejects with 400.
+    // Pure text completions must omit body.tools entirely (#650 fix).
     const functionTools = (options.tools ?? []).filter((t) => t.function.name !== 'web_search');
     const isXai = routing.deploymentName.startsWith('x-ai/');
-    const serverSearchTool: Record<string, unknown> = {
-      type: 'openrouter:web_search',
-      parameters: {
-        engine: isXai ? 'exa' : 'auto',
-        max_results: 3,
-        max_total_results: 5,
-      },
-    };
-    const allTools: unknown[] = [...functionTools, serverSearchTool];
 
-    if (allTools.length > 0) {
-      body.tools = allTools;
+    if (functionTools.length > 0) {
+      const serverSearchTool: Record<string, unknown> = {
+        type: 'openrouter:web_search',
+        parameters: {
+          engine: isXai ? 'exa' : 'auto',
+          max_results: 3,
+          max_total_results: 5,
+        },
+      };
+      body.tools = [...functionTools, serverSearchTool];
       body.tool_choice = options.toolChoice ?? 'auto';
     }
 

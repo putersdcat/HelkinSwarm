@@ -61,21 +61,27 @@ app.http('tab-swarm-activity', {
         return { status: 200, headers: TAB_CORS_HEADERS, jsonBody: resource };
       }
 
-      // List mode — return recent swarm executions (summary only)
+      // List mode — return recent swarm executions (summary only).
+      // Explicitly target the user's partition (partitionKey option) so the SDK sends
+      // a single-partition query. Without this, ORDER BY + OFFSET/LIMIT in a
+      // cross-partition fan-out can silently return a partial result set.
       const { resources } = await container.items
-        .query({
-          query: `SELECT c.id, c.swarmId, c.correlationId, c.userQuery, c.executedAt,
-                         c.success, c.agentCount, c.totalTokensUsed, c.executionDurationMs,
-                         c.decomposerModel, c.leaderModel, c.leaderAgentsHeardFrom
-                  FROM c
-                  WHERE c.type = @type AND c.userId = @userId
-                  ORDER BY c.executedAt DESC
-                  OFFSET 0 LIMIT 50`,
-          parameters: [
-            { name: '@type', value: 'swarm-execution' },
-            { name: '@userId', value: userId },
-          ],
-        })
+        .query(
+          {
+            query: `SELECT c.id, c.swarmId, c.correlationId, c.userQuery, c.executedAt,
+                           c.success, c.agentCount, c.totalTokensUsed, c.executionDurationMs,
+                           c.decomposerModel, c.leaderModel, c.leaderAgentsHeardFrom
+                    FROM c
+                    WHERE c.type = @type AND c.userId = @userId
+                    ORDER BY c.executedAt DESC
+                    OFFSET 0 LIMIT 50`,
+            parameters: [
+              { name: '@type', value: 'swarm-execution' },
+              { name: '@userId', value: userId },
+            ],
+          },
+          { partitionKey: userId },
+        )
         .fetchAll();
 
       return {
