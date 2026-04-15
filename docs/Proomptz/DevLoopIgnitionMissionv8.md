@@ -14,7 +14,12 @@ The swarm is functional but architecturally unsound:
 - Limbic interrupts cannot reach Helkin while he is inside a swarm
 - Workers call tools directly without minting scoped tokens
 
-**One non-negotiable:** The keyword-scorer fork in `sessionOrchestrator.ts` lines 726-968 must be deleted before this epic closes. Everything else flows from that.
+Additional live regressions / proof gaps discovered after the initial closeout wave:
+- #657 was **reopened** — `activate_swarm` can fire without honestly proving the durable swarm path end-to-end
+- #666 is a live regression bug — removing the persona platform-tool guard caused a catastrophic `helkin_health_check` / `helkin_current_datetime` follow-up loop
+- #665 remains open as the architectural follow-on — the temporary persona hotfix is in place, but the real home for those rules still needs to be built
+
+**One non-negotiable:** the swarm path must be honestly proven live. Local-only closure is not enough. `activate_swarm` must deliver a real `🧠 Swarm engaged` ack, persist a new swarm execution, and return a final swarm response before #657 can close again.
 
 ## Delivery Order
 
@@ -27,10 +32,12 @@ Work issues in this exact order. Skip only if genuinely blocked by an upstream d
 | 3 | **#659** | ✅ CLOSED | Persistent session chains for Harper/Benjamin/Lucas — foundational for memory + chatroom |
 | 4 | **#663** | ✅ CLOSED | Per-agent RAG memory vaults — depends on #659 agentId concept |
 | 5 | **#661** | ✅ CLOSED | Chatroom routing to persistent sessions — depends on #659 |
-| 6 | **#657** | ✅ CLOSED | Remove keyword-scorer fork + add `activate_swarm` tool — largest change, needs stable persona + sessions |
-| 7 | **#660** | ⏳ OPEN | Limbic BRB protocol — can land any time after #657 removes the fork |
+| 6 | **#657** | 🔴 REOPENED | Remove keyword-scorer fork + add `activate_swarm` tool — code landed, but live proof failed; durable swarm path still not honestly proven |
+| 7 | **#660** | ⏳ OPEN | Limbic BRB protocol — can land any time after #657 is honestly proven |
+| 8 | **#666** | 🔥 OPEN BUG | Regression: platform-tool loop runaway after persona guard removal — hotfix landed, but keep in view until live evidence is clean |
+| 9 | **#665** | ⏳ OPEN FOLLOW-ON | Relocate brittle persona tool rules into safety / dispatch architecture after the temporary hotfix |
 
-**Epic #656 status: 6/7 closed. #660 is the last remaining issue.**
+**Epic #656 status: not honestly complete. #657 is reopened, #660 remains open, and #665/#666 are active supporting issues.**
 
 ## Key Files
 
@@ -41,13 +48,14 @@ Work issues in this exact order. Skip only if genuinely blocked by an upstream d
 | `src/persona/agentOnePersona.md` | **Swarm-mode Helkin leader** — loaded by `swarmPersonas.buildLeaderSystemPrompt()` via `HelkinLeader` key |
 | `src/orchestrator/buildPromptActivity.ts` lines 66, 83 | Loads `helkinPersona.md` for all Helkin turns |
 | `src/orchestrator/swarm/swarmPersonas.ts` lines 16-32 | Loads `agentOnePersona.md` for swarm leader; falls back to `helkinPersona.md` |
-| `src/orchestrator/sessionOrchestrator.ts` | Fork removed in #657; `activate_swarm` detection block at ~line 1220 |
+| `src/orchestrator/sessionOrchestrator.ts` | Fork removed in #657; `activate_swarm` detection block at ~line 1200 — but live proof gap remains |
 | `src/orchestrator/swarm/swarmOrchestrator.ts` | No `waitForExternalEvent` — needs BRB gate (#660) |
 | `src/orchestrator/swarm/swarmWorkerActivity.ts` `executeToolCall()` lines 143-180 | Scoped token parity done in #662 |
 | `src/orchestrator/toolDispatchActivity.ts` lines 132-149 | Scoped token pattern (reference) |
 | `src/orchestrator/swarm/swarmMemoryCommitActivity.ts` | Per-agent vault writes done in #663 |
 | `src/memory/memoryManager.ts` | AgentId scoping done in #663 |
 | `src/orchestrator/swarm/swarmChatroomEntity.ts` | Chatroom routing done in #661 |
+| `src/persona/helkinPersona.md` / `src/persona/dronePersona.md` | Temporary persona guard re-added in #666 hotfix; architectural relocation tracked by #665 |
 
 ## Stop-Loss Rules
 
@@ -58,9 +66,9 @@ Work issues in this exact order. Skip only if genuinely blocked by an upstream d
 
 ## End Condition
 
-**Epic #656 is 6/7 closed.** Only #660 (Limbic BRB protocol) remains.
+**Epic #656 is not yet honestly closed.** #657 is reopened and #660 remains open.
 
-Loop until you close #660 honestly or hit stop-loss. After #660 closes, the epic is complete.
+Loop until you close #657 and #660 honestly or hit stop-loss. Keep #666 / #665 visible as regression guardrails while doing so.
 
 ### Beyond #656
 
