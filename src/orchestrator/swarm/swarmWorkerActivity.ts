@@ -13,6 +13,7 @@ import { recordOrchestratorStage } from '../../observability/orchestratorStageHe
 import { buildWorkerSystemPrompt } from './swarmPersonas.js';
 import { scopedTokenMinter } from '../../auth/scopedTokenMinter.js';
 import { mapPrivilegeClassToScopedTokenScope } from '../../auth/tokenScopeMapping.js';
+import { MemoryManager } from '../../memory/memoryManager.js';
 import type { ChatMessage, ToolDefinition } from '../../llm/foundryClient.js';
 import type { ChatroomMessage, SwarmWorkerInput, SwarmWorkerResult } from './swarmTypes.js';
 import { ChatroomMessageSchema } from './swarmTypes.js';
@@ -245,6 +246,12 @@ df.app.activity('swarmWorkerActivity', {
 
     const tools = buildWorkerToolSchemas(input.assignedTools);
     const allAgentNames = input.allAgentNames ?? [input.agentName];
+
+    // Load prior session context for this agent from Cosmos (#659 — persistent session chains).
+    // Non-fatal: if Cosmos is unavailable, agent runs without prior context.
+    const mm = new MemoryManager(input.userId);
+    const priorSessions = await mm.loadRecentAgentSessions(input.agentName).catch(() => [] as string[]);
+
     const systemPrompt = buildWorkerSystemPrompt({
       agentName: input.agentName,
       agentRole: input.agentRole,
@@ -254,6 +261,7 @@ df.app.activity('swarmWorkerActivity', {
       userQuery: input.userQuery,
       agentPersona: input.agentPersona,
       personaFile: input.personaFile,
+      priorSessionSummaries: priorSessions.length > 0 ? priorSessions : undefined,
     });
 
     // Conversation history for this agent's isolated session
@@ -527,6 +535,21 @@ df.app.activity('swarmWorkerActivity', {
         // If swarm_wait was called in this round, exit the round loop immediately
         if (requestsSecondPass) break;
       }
+
+      // Persist a rolling session summary for this agent's Cosmos vault (#659).
+      // Gives the agent prior-turn context on its next activation.
+      // Non-fatal: if Cosmos write fails, the swarm result is unaffected.
+      const keyFindings = pendingChatroomMessages
+        .filter(m => m.contentType === 'partial_result')
+        .map(m => m.content.slice(0, 80))
+        .slice(0, 3)
+        .join('; ');
+      const sessionSummary =
+        `Swarm ${input.swarmId.slice(-8)} | Query: ${input.userQuery.slice(0, 80)} | ` +
+        `Task: ${input.task.slice(0, 80)} | Tools: ${[...toolsUsedSet].join(', ')} | ` +
+        `Rounds: ${messages.filter(m => m.role === 'assistant').length} | ` +
+        `Findings: ${keyFindings || 'sent to chatroom'}`;
+      await mm.storeAgentSessionSummary(input.agentName, sessionSummary).catch(() => { /* non-fatal */ });
 
       trackEvent({
         name: 'SwarmWorkerCompleted',

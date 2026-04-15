@@ -96,12 +96,18 @@ df.app.activity('swarmMemoryCommitActivity', {
         entriesStored++;
       }
 
-      // 3. Select and store high-value chatroom messages
+      // 3. Select and store high-value chatroom messages under each agent's own vault partition.
+      // Helkin's vault only receives synthesis + query; worker research goes to per-agent vaults (#659).
       const highValue = selectHighValueMessages(chatroomTranscript);
       for (const msg of highValue) {
+        // Route to the sending agent's vault (e.g. 'agent:harper') — not Helkin's default vault.
+        const agentSkillId = msg.from.toLowerCase() !== 'helkin'
+          ? `agent:${msg.from.toLowerCase()}`
+          : undefined;
         await mm.store({
           content: msg.content,
           tags: ['swarm', 'partial', msg.contentType],
+          skillId: agentSkillId,
           metadata: {
             source: 'swarm',
             type: 'partial',

@@ -310,6 +310,46 @@ export class MemoryManager {
   }
 
   /**
+   * Store a swarm session summary for a named swarm agent (Harper, Benjamin, Lucas, etc.).
+   * Keyed under skillId = 'agent:{agentName}' so their vault is segregated from Helkin's.
+   * Issue: #659
+   */
+  async storeAgentSessionSummary(agentName: string, content: string): Promise<void> {
+    await this.store({
+      content,
+      skillId: `agent:${agentName.toLowerCase()}`,
+      tags: ['agent-session', agentName.toLowerCase()],
+      metadata: { type: 'agent_session_summary', agentName },
+    });
+  }
+
+  /**
+   * Load the N most recent session summaries for a named swarm agent.
+   * Returns summaries newest-first for use as prior-session context at worker startup.
+   * Issue: #659
+   */
+  async loadRecentAgentSessions(agentName: string, limit = 3): Promise<string[]> {
+    const container = getContainer(MEMORY_CONTAINER);
+    const querySpec = {
+      query: 'SELECT TOP @limit c.content FROM c WHERE c.userId = @userId AND c.skillId = @skillId ORDER BY c.createdAt DESC',
+      parameters: [
+        { name: '@limit', value: limit },
+        { name: '@userId', value: this.userId },
+        { name: '@skillId', value: `agent:${agentName.toLowerCase()}` },
+      ],
+    };
+    try {
+      const { resources } = await container.items.query<{ content: string }>(
+        querySpec,
+        { abortSignal: AbortSignal.timeout(COSMOS_OP_ABORT_MS) },
+      ).fetchAll();
+      return resources.map(r => r.content);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Get summary of all skill vaults for the catalog (#67).
    */
   async getSkillCatalog(): Promise<Array<{ skillId: string; entryCount: number; lastUpdated: string }>> {

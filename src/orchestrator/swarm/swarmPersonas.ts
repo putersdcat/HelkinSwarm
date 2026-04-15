@@ -171,6 +171,8 @@ export function buildWorkerSystemPrompt(input: {
   agentPersona?: string;
   /** Alternate persona file stem — loads a specialization file instead of the default (#648). */
   personaFile?: string;
+  /** Prior session summaries loaded from agent's Cosmos vault — injected as memory context (#659). */
+  priorSessionSummaries?: string[];
 }): string {
   const toolList = input.assignedToolNames.join(', ');
   const teamList = input.allAgentNames.filter(n => n !== input.agentName).join(', ');
@@ -187,7 +189,13 @@ export function buildWorkerSystemPrompt(input: {
       ? `\n\n## Behavioral Guidance (Task-Specific)\n${input.agentPersona.trim()}`
       : '';
 
-  return `${identity}${behavioralNote}
+  // Inject prior session summaries when available (#659 — persistent session chains)
+  const priorSessionsNote =
+    input.priorSessionSummaries && input.priorSessionSummaries.length > 0
+      ? `\n\n## Memory — Prior Sessions\nYou have participated in recent swarms. Use this context to build on prior findings and avoid repeating work:\n${input.priorSessionSummaries.map((s, i) => `${i + 1}. ${s}`).join('\n')}`
+      : '';
+
+  return `${identity}${behavioralNote}${priorSessionsNote}
 
 ## Your Teammates
 ${teamList}, and Helkin (team leader who synthesizes the final answer)
