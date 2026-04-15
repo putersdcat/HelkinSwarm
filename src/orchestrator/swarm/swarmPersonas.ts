@@ -19,6 +19,11 @@ const PERSONA_PATHS: Record<string, string[]> = {
     resolve(__dirname_local, '../../persona/helkinPersona.md'),
     resolve(__dirname_local, '../../../../src/persona/helkinPersona.md'),
   ],
+  // Swarm-mode Helkin leader persona — delegation-focused, used by buildLeaderSystemPrompt (#656)
+  HelkinLeader: [
+    resolve(__dirname_local, '../../persona/agentOnePersona.md'),
+    resolve(__dirname_local, '../../../../src/persona/agentOnePersona.md'),
+  ],
   Benjamin: [
     resolve(__dirname_local, '../../persona/agentTwoPersona.md'),
     resolve(__dirname_local, '../../../../src/persona/agentTwoPersona.md'),
@@ -60,7 +65,9 @@ function loadPersona(name: string): string | null {
 
 /**
  * Build the Leader agent system prompt.
- * Uses the Helkin persona file as foundation, then appends task-specific context.
+ * Uses the HelkinLeader persona (agentOnePersona.md) — the swarm-mode delegation-focused
+ * variant — then appends task-specific context. Falls back to base Helkin if unavailable.
+ * Spec ref: docs/0zc §3, epic #656
  */
 export function buildLeaderSystemPrompt(input: {
   userQuery: string;
@@ -68,7 +75,8 @@ export function buildLeaderSystemPrompt(input: {
   agentNames: string[];
 }): string {
   const agentList = input.agentNames.join(', ');
-  const persona = loadPersona('Helkin');
+  // Prefer the swarm-mode leader persona (agentOnePersona.md), fall back to base Helkin
+  const persona = loadPersona('HelkinLeader') ?? loadPersona('Helkin');
 
   const base = persona
     ?? `You are Helkin, the team leader of a multi-agent swarm.

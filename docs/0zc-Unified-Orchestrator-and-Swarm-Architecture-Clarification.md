@@ -20,7 +20,19 @@ It resolves the current bifurcation in the codebase (old single-orchestrator pat
 - They are **not** directly addressable by the end user, DevLoop, or any external system — only Helkin can communicate with them.
 - When Helkin decides a task requires collaboration, he activates swarm mode. The four beings then collaborate via the intra-swarm chatroom protocol until consensus is reached.
 - Helkin remains the sole point of contact with the outside world and is responsible for delivering the final response.
+### 2b. Persona File Architecture
 
+Three persona files serve distinct roles in the system:
+
+| File | Role | Wired In |
+|------|------|----------|
+| `src/persona/dronePersona.md` | Canonical Helkin drone identity — the "body" prompt. Mirrors `helkinPersona.md` content. Reserved as the infinitively referential drone identity file. | Not directly wired — archival/reserve identity |
+| `src/persona/helkinPersona.md` | **Active orchestrator persona** — loaded by `buildPromptActivity.ts` for every Helkin LLM call. Contains the "Your specialist colleagues" section that triggers swarm awareness. | `buildPromptActivity.ts`, `swarmPersonas.ts` (fallback), `tabDevConsole.ts` |
+| `src/persona/agentOnePersona.md` | **Swarm-mode Helkin leader** — delegation-focused variant used only inside `swarmOrchestrator.ts` when Helkin has activated swarm. Loaded by `swarmPersonas.buildLeaderSystemPrompt()` via the `HelkinLeader` key. | `swarmPersonas.ts` → `swarmOrchestrator.ts` |
+
+**Design rationale:** The name `dronePersona.md` preserves the Culture-series drone identity concept and allows infinite referential flexibility if names change on a new stamp. `helkinPersona.md` is the current operational orchestrator persona. `agentOnePersona.md` is the tighter, delegation-focused swarm-leader variant — Helkin stepping into his team-leader role with the full "Your specialist colleagues" roster front-of-mind.
+
+**The "Tool usage rules:" section** in `helkinPersona.md` was removed as part of #656. It contained brittle, hackjob-style directives (URL follow-through, multilingual search, dealer locator workflows, platform tool bans) that belonged in safety config or tool-level validation, not in the persona prompt. A priority cleanup issue tracks the full audit of what was removed and where equivalent guards should live.
 ### 3. Helkin’s Role (The Primary Orchestrator)
 
 - Helkin owns the single conscious session.
