@@ -1,7 +1,7 @@
 import { app, HttpRequest, HttpResponseInit, InvocationContext } from '@azure/functions';
 import { randomUUID } from 'node:crypto';
 import { getEnvConfig } from '../config/envConfig.js';
-import { getDatabase } from '../memory/cosmosClient.js';
+import { getContainer, getDatabase } from '../memory/cosmosClient.js';
 import { APP_VERSION } from '../config/version.js';
 import { getMessagePathSnapshot } from '../observability/messagePathHealth.js';
 import { getLlmAggregateHealth, getLlmHealthSnapshot } from '../llm/llmHealthTracker.js';
@@ -12,6 +12,14 @@ import { getContainerAgeMs } from '../bot/lifecycleNotices.js';
 
 const POST_START_MESSAGE_READINESS_GRACE_MS = 15 * 60_000;
 const POST_IDLE_MESSAGE_READINESS_GAP_MS = 10 * 60_000;
+
+interface SwarmAuditSnapshot {
+  recentExecutions: number;
+  lastPersistedAt: string | null;
+  lastSuccessfulPersistedAt: string | null;
+  lastFailedPersistedAt: string | null;
+  lastPersistenceMode: 'full' | 'compact-fallback' | null;
+}
 
 interface HealthResponse {
   status: 'healthy' | 'degraded' | 'unhealthy';
@@ -61,6 +69,7 @@ interface HealthResponse {
       stalePendingAcks: number;
       oldestStalePendingAckAgeMs: number | null;
     };
+    swarmAudit: SwarmAuditSnapshot;
   };
 }
 
@@ -89,6 +98,45 @@ async function checkMemoryStatus(): Promise<'ok' | 'error'> {
   return cachedMemoryStatus;
 }
 
+async function getSwarmAuditSnapshot(): Promise<SwarmAuditSnapshot> {
+  try {
+    const container = getContainer('sessions');
+    const { resources } = await container.items.query({
+      query: `SELECT TOP 10 c.executedAt, c.success, c.persistenceMode
+              FROM c
+              WHERE c.type = @type
+              ORDER BY c.executedAt DESC`,
+      parameters: [
+        { name: '@type', value: 'swarm-execution' },
+      ],
+    }).fetchAll();
+
+    const latest = resources[0] as {
+      executedAt?: string;
+      success?: boolean;
+      persistenceMode?: 'full' | 'compact-fallback';
+    } | undefined;
+    const lastSuccess = resources.find((entry) => entry.success === true) as { executedAt?: string } | undefined;
+    const lastFailure = resources.find((entry) => entry.success === false) as { executedAt?: string } | undefined;
+
+    return {
+      recentExecutions: resources.length,
+      lastPersistedAt: latest?.executedAt ?? null,
+      lastSuccessfulPersistedAt: lastSuccess?.executedAt ?? null,
+      lastFailedPersistedAt: lastFailure?.executedAt ?? null,
+      lastPersistenceMode: latest?.persistenceMode ?? null,
+    };
+  } catch {
+    return {
+      recentExecutions: 0,
+      lastPersistedAt: null,
+      lastSuccessfulPersistedAt: null,
+      lastFailedPersistedAt: null,
+      lastPersistenceMode: null,
+    };
+  }
+}
+
 export async function healthHandler(
   _request: HttpRequest,
   _context: InvocationContext,
@@ -101,6 +149,7 @@ export async function healthHandler(
   const llmHealth = getLlmAggregateHealth();
   const llmSnapshot = getLlmHealthSnapshot();
   const orchestratorSnapshot = await getOrchestratorStageSnapshot();
+  const swarmAuditSnapshot = await getSwarmAuditSnapshot();
   const containerAgeMs = getContainerAgeMs();
 
   const startupAcceptanceGap =
@@ -164,6 +213,7 @@ export async function healthHandler(
         stalePendingAcks: pendingAckSnapshot.stalePendingAcks,
         oldestStalePendingAckAgeMs: pendingAckSnapshot.oldestStalePendingAgeMs,
       },
+      swarmAudit: swarmAuditSnapshot,
     },
   };
 

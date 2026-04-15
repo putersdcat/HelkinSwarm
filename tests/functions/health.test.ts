@@ -22,9 +22,20 @@ const { mockGetMessagePathSnapshot } = vi.hoisted(() => ({
   })),
 }));
 
+const { mockFetchAllSwarmExecutions } = vi.hoisted(() => ({
+  mockFetchAllSwarmExecutions: vi.fn(async () => ({ resources: [] })),
+}));
+
 vi.mock('../../src/memory/cosmosClient.js', () => ({
   getDatabase: () => ({
     read: async () => ({ ok: true }),
+  }),
+  getContainer: () => ({
+    items: {
+      query: () => ({
+        fetchAll: mockFetchAllSwarmExecutions,
+      }),
+    },
   }),
 }));
 
@@ -60,6 +71,8 @@ describe('healthHandler', () => {
       lastFailureAt: null,
       lastFailureReason: null,
     });
+    mockFetchAllSwarmExecutions.mockReset();
+    mockFetchAllSwarmExecutions.mockResolvedValue({ resources: [] });
     process.env['MICROSOFT_APP_ID'] = 'test-app-id';
     process.env['MICROSOFT_APP_TENANT_ID'] = 'test-tenant-id';
     process.env['COSMOS_ENDPOINT'] = 'https://cosmos.example.com';
@@ -157,5 +170,37 @@ describe('healthHandler', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('includes recent swarm audit persistence diagnostics for live viewer verification', async () => {
+    mockGetContainerAgeMs.mockReturnValue(20 * 60_000);
+    mockFetchAllSwarmExecutions.mockResolvedValue({
+      resources: [
+        { executedAt: '2026-03-31T20:10:00.000Z', success: false, persistenceMode: 'compact-fallback' },
+        { executedAt: '2026-03-31T20:09:00.000Z', success: true, persistenceMode: 'full' },
+      ],
+    });
+
+    const response = await healthHandler({} as never, {} as never);
+    expect(response.status).toBe(200);
+    const body = response.jsonBody as {
+      diagnostics: {
+        swarmAudit: {
+          recentExecutions: number;
+          lastPersistedAt: string | null;
+          lastSuccessfulPersistedAt: string | null;
+          lastFailedPersistedAt: string | null;
+          lastPersistenceMode: string | null;
+        };
+      };
+    };
+
+    expect(body.diagnostics.swarmAudit).toEqual({
+      recentExecutions: 2,
+      lastPersistedAt: '2026-03-31T20:10:00.000Z',
+      lastSuccessfulPersistedAt: '2026-03-31T20:09:00.000Z',
+      lastFailedPersistedAt: '2026-03-31T20:10:00.000Z',
+      lastPersistenceMode: 'compact-fallback',
+    });
   });
 });
