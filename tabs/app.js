@@ -96,6 +96,29 @@
     return 'User Stamp Runtime';
   }
 
+  // ─── Agent Emoji & CSS Class Mapping (#664) ──────────────────────────
+  var AGENT_EMOJI = {
+    Helkin: '\u{1F916}',     // 🤖
+    Benjamin: '\u{1F50D}',   // 🔍
+    Harper: '\u{1F9EA}',     // 🧪
+    Lucas: '\u{1F4CA}',      // 📊
+  };
+
+  function getAgentEmoji(name) {
+    if (!name) return '\u{2753}';
+    return AGENT_EMOJI[name] || '\u{1F464}';
+  }
+
+  function getAgentCssClass(name) {
+    if (!name) return 'agent-default';
+    var lower = (name || '').toLowerCase();
+    if (lower === 'helkin' || lower === 'leader') return 'agent-helkin';
+    if (lower === 'benjamin') return 'agent-benjamin';
+    if (lower === 'harper') return 'agent-harper';
+    if (lower === 'lucas') return 'agent-lucas';
+    return 'agent-default';
+  }
+
   function buildCostGroupBreakdown(breakdown) {
     var groups = {};
     (breakdown || []).forEach(function (item) {
@@ -1188,44 +1211,65 @@
                     '<p><strong>Correlation:</strong> <code>' + esc(detail.correlationId || "") + '</code></p>' +
                     '<p><strong>Duration:</strong> ' + ((detail.executionDurationMs || 0) / 1000).toFixed(1) + 's' +
                     ' \u00B7 <strong>Tokens:</strong> ' + (detail.totalTokensUsed || 0).toLocaleString() +
+                    (cost.totalCost != null ? ' \u00B7 <strong>Cost:</strong> ' + fmtMoney(cost.totalCost) : '') +
                     ' \u00B7 <strong>Status:</strong> <span class="badge badge-' + (detail.success ? "ok" : "error") + '">' + (detail.success ? "OK" : "FAIL") + '</span></p></div>';
 
-                  // Agent breakdown
+                  // Agent breakdown — with emoji and cost
                   html += '<div class="card"><h2>Agent Breakdown</h2>' +
-                    '<table><tr><th>Agent</th><th>Model</th><th>Tokens</th><th>Duration</th><th>Rounds</th><th>Tools</th><th>Status</th></tr>' +
+                    '<table><tr><th>Agent</th><th>Model</th><th>Tokens</th><th>Cost</th><th>Duration</th><th>Rounds</th><th>Tools</th><th>Status</th></tr>' +
                     agents.map(function (a) {
                       var ast = a.success ? "ok" : "error";
-                      return '<tr><td><strong>' + esc(a.agentName) + '</strong></td>' +
+                      var emoji = getAgentEmoji(a.agentName);
+                      var retryInfo = (a.retryAttempts || 0) > 0 ? ' \u21BB\xD7' + a.retryAttempts : '';
+                      var fatalMark = a.fatal ? ' \u2620\uFE0F' : '';
+                      return '<tr><td><strong>' + emoji + ' ' + esc(a.agentName) + (retryInfo || fatalMark ? '<span style="font-size:11px;color:var(--muted)">' + retryInfo + fatalMark + '</span>' : '') + '</strong></td>' +
                         '<td><code>' + esc(a.model || "\u2014") + '</code></td>' +
                         '<td>' + (a.tokensUsed || 0).toLocaleString() + '</td>' +
+                        '<td>' + (a.cost != null ? fmtMoney(a.cost) : '\u2014') + '</td>' +
                         '<td>' + ((a.durationMs || 0) / 1000).toFixed(1) + 's</td>' +
                         '<td>' + (a.roundsUsed || 0) + '</td>' +
                         '<td>' + esc((a.toolsUsed || []).join(", ") || "\u2014") + '</td>' +
                         '<td><span class="badge badge-' + ast + '">' + (a.success ? "\u2713" : "\u2717") + '</span></td></tr>';
                     }).join("") + '</table></div>';
 
-                  // Cost breakdown
+                  // Cost breakdown — with cost column
                   if (cost.totalTokens) {
                     html += '<div class="card"><h2>Cost Breakdown</h2>' +
-                      '<table><tr><th>Component</th><th>Tokens</th></tr>' +
-                      '<tr><td>Decomposer</td><td>' + (cost.decomposerTokens || 0).toLocaleString() + '</td></tr>' +
-                      '<tr><td>Workers</td><td>' + (cost.workerTokens || 0).toLocaleString() + '</td></tr>' +
-                      '<tr><td>Helkin (Leader)</td><td>' + (cost.leaderTokens || 0).toLocaleString() + '</td></tr>' +
-                      '<tr><td><strong>Total</strong></td><td><strong>' + (cost.totalTokens || 0).toLocaleString() + '</strong></td></tr>' +
+                      '<table><tr><th>Component</th><th>Tokens</th><th>Cost</th></tr>' +
+                      '<tr><td>Decomposer</td><td>' + (cost.decomposerTokens || 0).toLocaleString() + '</td><td>\u2014</td></tr>' +
+                      '<tr><td>Workers</td><td>' + (cost.workerTokens || 0).toLocaleString() + '</td><td>' + (cost.totalCost != null ? fmtMoney(cost.totalCost) : '\u2014') + '</td></tr>' +
+                      '<tr><td>Helkin (Leader)</td><td>' + (cost.leaderTokens || 0).toLocaleString() + '</td><td>\u2014</td></tr>' +
+                      '<tr><td><strong>Total</strong></td><td><strong>' + (cost.totalTokens || 0).toLocaleString() + '</strong></td><td><strong>' + (cost.totalCost != null ? fmtMoney(cost.totalCost) : '\u2014') + '</strong></td></tr>' +
                       '</table></div>';
                   }
 
-                  // Chatroom transcript
+                  // Chatroom transcript — chat-bubble layout with timestamps and emojis
                   if (transcript.length > 0) {
+                    var firstTs = transcript.length > 0 ? (transcript[0].timestamp || 0) : 0;
                     html += '<div class="card"><h2>Chatroom Transcript (' + transcript.length + ' messages)</h2>' +
-                      '<table><tr><th>From</th><th>To</th><th>Type</th><th>Content</th></tr>' +
+                      '<div class="chatroom-transcript">' +
                       transcript.map(function (m) {
-                        var content = (m.content || "").length > 200 ? m.content.substring(0, 200) + "\u2026" : (m.content || "");
-                        return '<tr><td><strong>' + esc(m.from || "\u2014") + '</strong></td>' +
-                          '<td>' + esc(m.to || "all") + '</td>' +
-                          '<td><span class="badge">' + esc(m.contentType || "text") + '</span></td>' +
-                          '<td><pre style="white-space:pre-wrap;max-width:600px;margin:0">' + esc(content) + '</pre></td></tr>';
-                      }).join("") + '</table></div>';
+                        var elapsed = m.timestamp && firstTs ? ((m.timestamp - firstTs) / 1000).toFixed(1) + 's' : '\u2014';
+                        var emoji = getAgentEmoji(m.from);
+                        var agentClass = getAgentCssClass(m.from);
+                        var typeLabel = m.contentType || 'text';
+                        var content = (m.content || "").length > 400 ? m.content.substring(0, 400) + "\u2026" : (m.content || "");
+                        var toLabel = typeof m.to === 'string' ? m.to : (m.to || []).join(', ');
+
+                        return '<div class="chat-bubble ' + agentClass + '">' +
+                          '<div class="bubble-avatar">' + emoji + '</div>' +
+                          '<div class="bubble-content">' +
+                          '<div class="bubble-header">' +
+                          '<span class="bubble-from">' + esc(m.from || '\u2014') + '</span>' +
+                          '<span class="bubble-to">\u2192 ' + esc(toLabel) + '</span>' +
+                          '<span class="bubble-type type-' + esc(typeLabel) + '">' + esc(typeLabel) + '</span>' +
+                          '<span class="bubble-time">' + elapsed + '</span>' +
+                          '</div>' +
+                          '<div class="bubble-body">' + esc(content) + '</div>' +
+                          '</div>' +
+                          '</div>';
+                      }).join("") +
+                      '</div></div>';
                   }
 
                   // Helkin (Leader) synthesis

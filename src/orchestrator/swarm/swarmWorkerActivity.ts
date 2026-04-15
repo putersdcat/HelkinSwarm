@@ -290,6 +290,7 @@ df.app.activity('swarmWorkerActivity', {
     ];
 
     let totalTokens = 0;
+    let totalCost = 0;
     let toolCallsMade = 0;
     let chatroomMessagesSent = 0;
     let tokenBudgetExceeded = false;
@@ -339,6 +340,9 @@ df.app.activity('swarmWorkerActivity', {
         });
 
         totalTokens += response.usage?.totalTokens ?? 0;
+        if (response.usage?.providerCost != null) {
+          totalCost += response.usage.providerCost;
+        }
 
         // Emit streaming observability event when tokens were streamed (#637 Phase 1)
         if (streamedTokenCount > 0) {
@@ -610,6 +614,7 @@ df.app.activity('swarmWorkerActivity', {
         model: agentDeploymentName,
         tokenBudget: input.tokenBudget,
         tokenBudgetExceeded,
+        cost: totalCost,
         // Pass pending chatroom messages back — orchestrator signals the entity
         _pendingChatroomMessages: pendingChatroomMessages,
         // swarm_wait state — orchestrator uses these to guarantee a second pass (#646)
@@ -636,6 +641,7 @@ df.app.activity('swarmWorkerActivity', {
         model: agentDeploymentName,
         tokenBudget: input.tokenBudget,
         tokenBudgetExceeded,
+        cost: totalCost,
       };
     }
   },

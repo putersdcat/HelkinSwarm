@@ -161,6 +161,12 @@ export interface SwarmWorkerResult {
   _requestsSecondPass?: boolean;
   /** Which agent(s) the worker was waiting for. Used for context-aware second-pass task. (#646) */
   _waitingFor?: string[];
+  /** Number of retry attempts made for this worker (#664). */
+  retryAttempts?: number;
+  /** True if the worker is fatally failed after retry (#664). */
+  fatal?: boolean;
+  /** Cost in USD for this worker's LLM calls (#664). */
+  cost?: number;
 }
 
 export interface SwarmLeaderInput {
@@ -206,6 +212,8 @@ export interface SwarmAgentCost {
   model: string;
   toolsUsed: string[];
   durationMs: number;
+  /** Actual cost in USD from the provider, if available (#664). */
+  cost?: number;
 }
 
 export interface SwarmCost {
@@ -214,6 +222,8 @@ export interface SwarmCost {
   leaderTokens: number;
   totalTokens: number;
   agentBreakdown: SwarmAgentCost[];
+  /** Total cost in USD across all agents (#664). */
+  totalCost?: number;
 }
 
 export interface SwarmOrchestratorResult {

@@ -97,17 +97,22 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
   }
 
   // -----------------------------------------------------------------------
-  // 3. Fan-in: wait for all workers (or timeout)
+  // 3. Fan-in: wait for all workers (or timeout) with retry logic (#664)
   // -----------------------------------------------------------------------
+  const MAX_WORKER_RETRIES = 1;
   const workerResults: SwarmWorkerResult[] = [];
   const allChatroomMessages: ChatroomMessage[] = [];
 
   for (let i = 0; i < workerTasks.length; i++) {
     const winner = yield context.df.Task.any([workerTasks[i], workerTimers[i]]) as df.Task;
+    let result: SwarmWorkerResult & { _pendingChatroomMessages?: ChatroomMessage[] };
+    let failed = false;
+    let retryCount = 0;
 
     if (winner === workerTimers[i]) {
-      // Worker timed out
-      workerResults.push({
+      // Worker timed out — attempt retry
+      failed = true;
+      result = {
         agentName: plan.agents[i].name,
         success: false,
         roundsUsed: 0,
@@ -118,22 +123,22 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
         durationMs: SWARM_WORKER_TIMEOUT_MS,
         error: `Worker timed out after ${SWARM_WORKER_TIMEOUT_MS}ms`,
         model: 'timeout',
-      });
+        retryAttempts: 0,
+        fatal: false,
+      };
     } else {
       workerTimers[i].cancel();
       try {
-        const result = workerTasks[i].result as SwarmWorkerResult & {
+        result = workerTasks[i].result as SwarmWorkerResult & {
           _pendingChatroomMessages?: ChatroomMessage[];
         };
-        workerResults.push(result);
-
-        // Collect chatroom messages from the worker
-        if (result._pendingChatroomMessages) {
-          allChatroomMessages.push(...result._pendingChatroomMessages);
+        if (!result.success) {
+          failed = true;
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        workerResults.push({
+        failed = true;
+        result = {
           agentName: plan.agents[i].name,
           success: false,
           roundsUsed: 0,
@@ -144,9 +149,112 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
           durationMs: SWARM_WORKER_TIMEOUT_MS,
           error: `Worker failed before returning a result: ${message.slice(0, 240)}`,
           model: 'error',
-        });
+          retryAttempts: 0,
+          fatal: false,
+        };
       }
     }
+
+    // Retry logic (#664): if worker failed, retry once before marking fatal
+    if (failed && retryCount < MAX_WORKER_RETRIES) {
+      // Attempt to re-summon the failed worker
+      const retryInput: SwarmWorkerInput = {
+        ...savedWorkerInputs[i],
+        task: `RETRY: Your previous execution failed or timed out. Attempt to complete your assignment again. Original task: ${savedWorkerInputs[i].task}`,
+      };
+      const retryTimer = context.df.createTimer(
+        new Date(context.df.currentUtcDateTime.getTime() + SWARM_WORKER_TIMEOUT_MS),
+      );
+      const retryTask = context.df.callActivity('swarmWorkerActivity', retryInput);
+      const retryWinner = yield context.df.Task.any([retryTask, retryTimer]) as df.Task;
+      retryTimer.cancel();
+      retryCount++;
+
+      if (retryWinner === retryTask) {
+        try {
+          const retryResult = retryTask.result as SwarmWorkerResult & {
+            _pendingChatroomMessages?: ChatroomMessage[];
+          };
+          if (retryResult.success) {
+            // Retry succeeded — use this result
+            retryResult.retryAttempts = retryCount;
+            retryResult.fatal = false;
+            result = retryResult;
+            failed = false;
+          } else {
+            // Retry also failed — mark fatal
+            retryResult.retryAttempts = retryCount;
+            retryResult.fatal = true;
+            result = retryResult;
+          }
+        } catch {
+          // Retry threw — mark fatal
+          result.retryAttempts = retryCount;
+          result.fatal = true;
+        }
+      } else {
+        // Retry timed out — mark fatal
+        result.retryAttempts = retryCount;
+        result.fatal = true;
+      }
+    }
+
+    // Collect chatroom messages from the worker (original or retry)
+    if (result._pendingChatroomMessages) {
+      allChatroomMessages.push(...result._pendingChatroomMessages);
+    }
+
+    // If fatally failed, abort the entire swarm (#664)
+    if (result.fatal) {
+      const failedAgent = result.agentName;
+      const retryInfo = result.retryAttempts ? ` after ${result.retryAttempts} retry` : '';
+      const errorMsg = result.error ? ` (${result.error.slice(0, 120)})` : '';
+
+      // Build a failure synthesis message
+      const failureSynthesis = `⚠️ **Swarm Failed — ${failedAgent} Could Not Be Summoned**\n\n` +
+        `${failedAgent} failed${retryInfo} and could not be revived${errorMsg}. ` +
+        `The swarm has been aborted. No partial answer will be provided. ` +
+        `Please check the backend logs for model/timeout details and try again.`;
+
+      // Build the final result with the failure
+      const failureResult: SwarmOrchestratorResult = {
+        response: failureSynthesis,
+        success: false,
+        totalTokensUsed: workerResults.reduce((s, r) => s + r.tokensUsed, 0),
+        agentResults: [...workerResults, result],
+        leaderResult: {
+          synthesis: failureSynthesis,
+          success: false,
+          tokensUsed: 0,
+          roundsUsed: 0,
+          agentsHeardFrom: workerResults.map(r => r.agentName),
+          model: 'swarm-fatal',
+          error: `${failedAgent} fatally failed${retryInfo}${errorMsg}`,
+        },
+        chatroomTranscript: [...allChatroomMessages],
+        swarmId: plan.swarmId,
+        swarmCost: {
+          decomposerTokens: 0,
+          workerTokens: workerResults.reduce((s, r) => s + r.tokensUsed, 0),
+          leaderTokens: 0,
+          totalTokens: workerResults.reduce((s, r) => s + r.tokensUsed, 0),
+          totalCost: workerResults.reduce((s, r) => s + ((r as SwarmWorkerResult & { cost?: number }).cost ?? 0), 0),
+          agentBreakdown: workerResults.map(r => ({
+            agent: r.agentName,
+            tokens: r.tokensUsed,
+            model: r.model,
+            toolsUsed: r.toolsUsed,
+            durationMs: r.durationMs,
+            cost: (r as SwarmWorkerResult & { cost?: number }).cost,
+          })),
+        },
+      };
+
+      return failureResult;
+    }
+
+    // Not fatal — record the result
+    workerResults.push(result);
 
     // Send progress update after each worker completes (#634)
     if (input.conversationReference) {
@@ -510,7 +618,7 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
   }
 
   // -----------------------------------------------------------------------
-  // 8. Build final result with cost tracking (#633 Task 4)
+  // 8. Build final result with cost tracking (#633 Task 4 / #664)
   // -----------------------------------------------------------------------
   const workerTokens = workerResults.reduce((sum, r) => sum + r.tokensUsed, 0);
   const totalTokens = workerTokens + leaderResult.tokensUsed;
@@ -528,12 +636,14 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
       workerTokens,
       leaderTokens: leaderResult.tokensUsed,
       totalTokens,
+      totalCost: workerResults.reduce((s, r) => s + ((r as SwarmWorkerResult & { cost?: number }).cost ?? 0), 0),
       agentBreakdown: workerResults.map(r => ({
         agent: r.agentName,
         tokens: r.tokensUsed,
         model: r.model,
         toolsUsed: r.toolsUsed,
         durationMs: r.durationMs,
+        cost: (r as SwarmWorkerResult & { cost?: number }).cost,
       })),
     },
   };
