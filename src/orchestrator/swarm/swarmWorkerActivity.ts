@@ -252,6 +252,22 @@ df.app.activity('swarmWorkerActivity', {
     const mm = new MemoryManager(input.userId);
     const priorSessions = await mm.loadRecentAgentSessions(input.agentName).catch(() => [] as string[]);
 
+    // Semantic RAG recall from this agent's vault (#663 — per-agent RAG memory).
+    // Finds relevant prior findings from this exact agent's vault based on the current task.
+    // Injected alongside session summaries so the agent can avoid repeating known work.
+    const priorKnowledge = await mm.recall(input.task, {
+      skillId: `agent:${input.agentName.toLowerCase()}`,
+      topK: 3,
+      minScore: 0.7,
+    }).catch(() => [] as { content: string; score: number; skillId?: string; tags: string[]; createdAt: string }[]);
+
+    // Merge: session summaries (recency) + semantic recall (task-relevance)
+    const allPriorContext: string[] = [
+      ...priorSessions,
+      ...priorKnowledge.map(r =>
+        `[relevant prior finding] ${r.content.slice(0, 200)}`),
+    ];
+
     const systemPrompt = buildWorkerSystemPrompt({
       agentName: input.agentName,
       agentRole: input.agentRole,
@@ -261,7 +277,7 @@ df.app.activity('swarmWorkerActivity', {
       userQuery: input.userQuery,
       agentPersona: input.agentPersona,
       personaFile: input.personaFile,
-      priorSessionSummaries: priorSessions.length > 0 ? priorSessions : undefined,
+      priorSessionSummaries: allPriorContext.length > 0 ? allPriorContext : undefined,
     });
 
     // Conversation history for this agent's isolated session
