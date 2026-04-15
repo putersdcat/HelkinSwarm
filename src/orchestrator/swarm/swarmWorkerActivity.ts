@@ -449,6 +449,20 @@ df.app.activity('swarmWorkerActivity', {
               chatroomMessagesSent++;
             }
 
+            // Route to target agent's Cosmos session partition (#661).
+            // The recipient loads this message via loadRecentAgentSessions on their next activation.
+            // Only route to named worker agents (not "Helkin", "Leader", "All").
+            const EXCLUDED_TARGETS = new Set(['helkin', 'leader', 'all']);
+            const recipients = Array.isArray(to) ? to : [to];
+            for (const recipient of recipients) {
+              if (!EXCLUDED_TARGETS.has(recipient.toLowerCase())) {
+                await mm.storeAgentSessionSummary(
+                  recipient,
+                  `[Chatroom from ${input.agentName} | ${new Date().toISOString()}] ${msgContent.slice(0, 300)}`,
+                ).catch(() => { /* non-fatal */ });
+              }
+            }
+
             // Tool response back to LLM
             messages.push({
               role: 'tool',

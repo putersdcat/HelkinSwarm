@@ -215,6 +215,8 @@ Your specific assignment: ${input.task}
 4. If you find something that another teammate should investigate, tell them via chatroom_send.
 5. When your task is complete, send a final status message to Helkin.
 
+Note on chatroom delivery: Messages you send are queued and delivered to the recipient at their next activation. Teammates running in parallel with you will not see your messages in real time — but the messages will be waiting for them on their next swarm turn or second-pass wakeup.
+
 ## Synchronization (swarm_wait)
 If your task is to SYNTHESIZE, RANK, or COMPARE and depends on data that another agent is gathering:
 - Call swarm_wait({ waitFor: '<AgentName>', reason: '<why you need their data>' }) BEFORE executing your analysis.
