@@ -1168,3 +1168,14 @@ export const conversation_search: ToolHandler = async (args) => {
     message: `Found ${results.length} relevant memory snippet(s) from past conversations.`,
   };
 };
+
+export const activate_swarm: ToolHandler = async (args) => {
+  const reason = typeof args['reason'] === 'string' && args['reason'].trim()
+    ? args['reason'].trim()
+    : 'multi-aspect task requiring parallel specialist work';
+  return {
+    status: 'swarm_activated',
+    reason,
+    message: 'Swarm activation acknowledged. Your specialist team will be assembled.',
+  };
+};

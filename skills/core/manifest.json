@@ -526,6 +526,29 @@
       },
       "privilegeClass": "read-only",
       "requiresSubAgent": false
+    },
+    {
+      "name": "activate_swarm",
+      "description": "Activate the multi-agent swarm. Call this when the task genuinely benefits from parallel specialist work — multi-faceted research, comparative analysis, or complex multi-domain queries where Benjamin (research), Harper (deep web), and Lucas (analysis) would each add distinct value. Do NOT call for simple single-domain requests. The swarm takes longer than a solo response — only activate when the quality gain is worth it.",
+      "risk": "low",
+      "dataSensitivity": "non-pii",
+      "allowedModelLane": "any",
+      "requiresConfirmation": false,
+      "requiresExecutor": false,
+      "externalAutomationCapabilities": [],
+      "longTermMemorySchema": [],
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string",
+            "description": "Brief reasoning for why swarm mode is being activated (e.g. 'multi-aspect research requiring parallel web coverage')."
+          }
+        },
+        "required": []
+      },
+      "privilegeClass": "read-only",
+      "requiresSubAgent": false
     }
   ],
   "shortName": "core",

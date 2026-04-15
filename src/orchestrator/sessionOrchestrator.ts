@@ -722,272 +722,24 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
     spans.push({ label: 'plan', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
   }
 
-  // ---------------------------------------------------------------------------
-  // 1c. Swarm routing — swarm-eligible requests bypass the planner's simple/compound
-  // classification (#632). classifyComplexity() only checks sequential connectors
-  // (then, after that, first…) which misses compound research queries like
-  // "compare tradeoffs between X and Y". swarmComplexityZone is pre-computed in
-  // planActivity (deterministic activity context) — using it here avoids reading
-  // env vars inside the orchestrator body (Durable Functions replay safety).
-  // ---------------------------------------------------------------------------
-  if (
-    planResult.swarmEnabled
-    && planResult.swarmComplexityZone !== 'always-sequential'
+  // [#657] Keyword-scorer swarm fork removed. Helkin decides swarm activation via
+  // the activate_swarm tool call inside his LLM turn. Swarm eligibility score is
+  // injected as a prompt hint below for Helkin to use when deciding.
+
+  // Inject plan guidance and swarm eligibility hint into prompt (#320, #657)
+  const swarmEligHint = (planResult.swarmEligibilityScore ?? 0) > 25
     && !input.devLoopContext?.isDevLoop
     && !input.skillForgeRequest
-  ) {
-    // Try the swarm decomposer — use only tools with wired handlers to avoid
-    // assigning agents tools that return "No handler" at runtime.
-    const executableTools = getExecutableToolNames();
-
-    // Derive active skill domains from executable tool name prefixes (#640).
-    const activeSkillDomains = [...new Set(
-      executableTools
-        .map(name => name.split('_')[0])
-        .filter((prefix): prefix is string => !!prefix && prefix !== 'helkin'),
-    )];
-
-    const decomposerInput: SwarmDecomposerInput = {
-      userMessage: userMessageForLlm,
-      correlationId,
-      userId: input.state.userId,
-      availableToolNames: executableTools,
-      complexityClass: planResult.complexity,
-      swarmEligibilityScore: planResult.swarmEligibilityScore,
-      conversationSummary: input.state.summary || undefined,
-      activeSkillDomains,
-    };
-
-    const decomposerResult: SwarmDecomposerResult = yield context.df.callActivity(
-      'swarmDecomposerActivity',
-      decomposerInput,
-    );
-
-    if (!decomposerResult.plan) {
-      // Decomposer chose sequential fallback — log why for remote diagnosis
-      yield* emitOrchestratorTelemetry(context, {
-        name: 'SwarmDecomposerFallback',
-        correlationId,
-        userId: input.state.userId,
-        properties: {
-          reason: decomposerResult.fallbackReason ?? 'unknown',
-          decomposerModel: decomposerResult.decomposerModel,
-          tokensUsed: decomposerResult.tokensUsed,
-          complexityClass: planResult.complexity,
-          swarmEligibilityScore: planResult.swarmEligibilityScore,
-          swarmComplexityZone: planResult.swarmComplexityZone,
-        },
-      });
-    }
-
-    if (decomposerResult.plan) {
-      // Execute the swarm
-      yield* emitOrchestratorTelemetry(context, {
-        name: 'SwarmExecutionStarted',
-        correlationId,
-        userId: input.state.userId,
-        properties: {
-          agentCount: decomposerResult.plan.agents.length,
-          swarmId: decomposerResult.plan.swarmId,
-          decomposerModel: decomposerResult.decomposerModel,
-          decomposerTokens: decomposerResult.tokensUsed,
-          complexityClass: planResult.complexity,
-          swarmEligibilityScore: planResult.swarmEligibilityScore,
-          swarmComplexityZone: planResult.swarmComplexityZone,
-          activeSkillDomains: activeSkillDomains.join(','),
-        },
-      });
-
-      const swarmInput: SwarmOrchestratorInput = {
-        plan: decomposerResult.plan,
-        correlationId,
-        userId: input.state.userId,
-        conversationReference: input.conversationReference,
-        userMessage: userMessageForLlm,
-      };
-
-      // Send immediate acknowledgment so the user knows a swarm is running (#634)
-      const ackSpanStart = context.df.currentUtcDateTime.getTime();
-      const PERSONA_EMOJI: Record<string, string> = { Helkin: '🤖', Benjamin: '🔍', Harper: '🧪', Lucas: '📊' };
-      const agentNames = decomposerResult.plan.agents.map((a: { name: string }) => a.name);
-      const agentTags = agentNames.map(n => `${PERSONA_EMOJI[n] ?? '🔹'} ${n}`).join(' • ');
-      const ackMessage = `🧠 Swarm engaged → ${PERSONA_EMOJI['Helkin']} Helkin • ${agentTags}`;
-      const ackInput: SendReplyInput = {
-        userId: input.state.userId,
-        message: ackMessage,
-        correlationId,
-        conversationReference: input.conversationReference,
-        skipOutboundClaim: true,
-      };
-      yield context.df.callActivity('sendReplyActivity', ackInput);
-      spans.push({ label: 'swarm-ack', durationMs: context.df.currentUtcDateTime.getTime() - ackSpanStart });
-
-      // Outer timer must exceed inner worker+leader timeouts. Workers run parallel (60s max),
-      // leader runs after (60s max), plus entity overhead (~10s). Total inner ≤ 130s.
-      const swarmOuterTimeoutMs = Math.max(decomposerResult.plan.timeoutMs * 3, 180_000);
-      const swarmTimer = context.df.createTimer(
-        new Date(context.df.currentUtcDateTime.getTime() + swarmOuterTimeoutMs),
-      );
-      const swarmTask = context.df.callSubOrchestrator('swarmOrchestrator', swarmInput);
-      const swarmWinner: df.Task = yield context.df.Task.any([swarmTask, swarmTimer]);
-
-      let swarmResponse: string;
-      let swarmTokens = decomposerResult.tokensUsed;
-      let swarmModel = decomposerResult.decomposerModel;
-      let swarmResultData: SwarmOrchestratorResult | undefined;
-
-      if (swarmWinner === swarmTimer) {
-        swarmResponse = '⚡ The multi-agent analysis timed out. Please try a simpler query or try again.';
-      } else {
-        swarmTimer.cancel();
-        try {
-          const swarmResult = swarmTask.result as SwarmOrchestratorResult;
-          swarmResultData = swarmResult;
-          // Guard against empty synthesis (e.g. leader LLM threw after workers succeeded)
-          swarmResponse = swarmResult.response || '⚡ The swarm analysis completed but the final synthesis could not be produced. The team\'s research has been captured in the Swarm Activity tab.';
-          swarmTokens += swarmResult.totalTokensUsed;
-          swarmModel = swarmResult.leaderResult.model;
-
-          yield* emitOrchestratorTelemetry(context, {
-            name: 'SwarmExecutionCompleted',
-            correlationId,
-            userId: input.state.userId,
-            properties: {
-              swarmId: swarmResult.swarmId,
-              success: swarmResult.success,
-              totalTokens: swarmResult.totalTokensUsed,
-              agentCount: swarmResult.agentResults.length,
-              chatroomMessages: swarmResult.chatroomTranscript.length,
-              leaderAgentsHeardFrom: swarmResult.leaderResult.agentsHeardFrom.join(', '),
-              decomposerTokens: decomposerResult.tokensUsed,
-              workerTokens: swarmResult.swarmCost?.workerTokens ?? 0,
-              leaderTokens: swarmResult.swarmCost?.leaderTokens ?? 0,
-              agentCostBreakdown: swarmResult.swarmCost?.agentBreakdown
-                ?.map(a => `${a.agent}:${a.tokens}`)
-                .join(', ') ?? '',
-              agentToolsUsed: swarmResult.agentResults
-                .map(r => `${r.agentName}:[${r.toolsUsed.join(',')}]`)
-                .join('; '),
-              agentDurations: swarmResult.agentResults
-                .map(r => `${r.agentName}:${r.durationMs}ms`)
-                .join(', '),
-            },
-          });
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          swarmResponse = '⚡ The multi-agent analysis failed before the final synthesis completed. The failure has been captured for audit in the Swarm Activity tab.';
-          swarmModel = 'swarm-error';
-
-          yield* emitOrchestratorTelemetry(context, {
-            name: 'SwarmExecutionCompleted',
-            correlationId,
-            userId: input.state.userId,
-            properties: {
-              swarmId: decomposerResult.plan!.swarmId,
-              error: message.slice(0, 240),
-              decomposerTokens: decomposerResult.tokensUsed,
-            },
-          });
-        }
-      }
-
-      // Append telemetry footer to swarm response
-      const swarmTurnEndTime = context.df.currentUtcDateTime.getTime();
-      const swarmTelemetryMode = 'verbose' as const;
-      const swarmTimedOut = swarmWinner === swarmTimer;
-
-      // Persist swarm execution data for the Swarm Activity viewer (#635).
-      // Always persist — both successful and timed-out swarms should appear in the
-      // Control Center so operators can see what happened even when things fail.
-      {
-        const persistInput: PersistSwarmResultInput = {
-          userId: input.state.userId,
-          correlationId,
-          swarmId: decomposerResult.plan!.swarmId,
-          userQuery: input.userMessage,
-          decomposerTokens: decomposerResult.tokensUsed,
-          decomposerModel: decomposerResult.decomposerModel,
-          executionDurationMs: context.df.currentUtcDateTime.getTime() - turnStartTime,
-          result: swarmResultData ?? {
-            response: swarmTimedOut ? swarmResponse : '',
-            success: false,
-            totalTokensUsed: swarmTokens,
-            agentResults: [],
-            leaderResult: {
-              synthesis: swarmResponse,
-              success: false,
-              tokensUsed: 0,
-              roundsUsed: 0,
-              agentsHeardFrom: [],
-              model: swarmModel,
-              error: swarmTimedOut ? 'swarm timed out' : 'orchestrator error',
-            },
-            chatroomTranscript: [],
-            swarmId: decomposerResult.plan!.swarmId,
-            swarmCost: undefined,
-          },
-        };
-        yield context.df.callActivity('persistSwarmResultActivity', persistInput);
-      }
-      swarmResponse += formatTelemetryFooter(swarmTelemetryMode, {
-        correlationId,
-        timestampIso: new Date(swarmTurnEndTime).toISOString(),
-        totalMs: swarmTurnEndTime - turnStartTime,
-        model: `swarm:${swarmModel}`,
-        promptTokens: 0,
-        completionTokens: swarmTokens,
-        spans,
-        toolCalls: swarmResultData ? swarmResultData.agentResults.map((a) => `${a.agentName}:${a.toolCallsMade}t${a.success ? '✓' : '✗'}`) : [],
-        safetyPassed: true,
-        planComplexity: planResult.complexity,
-        subAgentCount: swarmResultData ? swarmResultData.agentResults.length : 0,
-        decomposerTokens: decomposerResult.tokensUsed,
-        leaderTokens: swarmResultData?.leaderResult.tokensUsed,
-        swarmAgentBreakdown: swarmResultData?.agentResults.map((a) => ({
-          agent: a.agentName,
-          tokens: a.tokensUsed,
-          durationMs: a.durationMs,
-          toolCalls: a.toolCallsMade,
-          success: a.success,
-          tokenBudget: a.tokenBudget,
-          tokenBudgetExceeded: a.tokenBudgetExceeded,
-        })),
-      });
-
-      // Deliver the swarm result
-      const swarmReplyInput: SendReplyInput = {
-        userId: input.state.userId,
-        message: swarmResponse,
-        correlationId,
-        conversationReference: input.conversationReference,
-      };
-      const replyResult: SendReplyResult = yield context.df.callActivity('sendReplyActivity', swarmReplyInput);
-
-      return {
-        response: swarmResponse,
-        cleanResponse: swarmResponse,
-        tokensUsed: swarmTokens,
-        promptTokens: 0,
-        model: `swarm:${swarmModel}`,
-        toolCalls: [],
-        toolResults: null,
-        replySent: replyResult.success,
-        safetyPassed: true,
-        pendingClarification: pendingClarificationUpdate,
-      } satisfies SessionResult;
-    }
-    // If decomposer returned null (fallback), continue with normal sequential path
-  }
-
-  // Inject plan guidance into prompt messages for compound/complex requests (#320)
-  const promptWithPlan: PromptResult = planResult.steps
+    ? `\n\n[Swarm suitability: ${planResult.swarmEligibilityScore}/100. Your specialist team (Benjamin, Harper, Lucas) may add significant value here. If parallel expert work would produce a materially better answer, call activate_swarm.]`
+    : '';
+  const promptWithPlan: PromptResult = (planResult.steps || swarmEligHint)
     ? {
         ...prompt,
         messages: [
           ...prompt.messages,
           {
             role: 'system' as const,
-            content: `[Plan] Complexity: ${planResult.complexity}. Execute these steps in order:\n${planResult.steps.map(s => `${s.order}. ${s.description}${s.toolHint ? ` (use ${s.toolHint})` : ''}`).join('\n')}`,
+            content: `[Plan] Complexity: ${planResult.complexity}.${planResult.steps ? ` Execute these steps in order:\n${planResult.steps.map(s => `${s.order}. ${s.description}${s.toolHint ? ` (use ${s.toolHint})` : ''}`).join('\n')}` : ''}${swarmEligHint}`,
           },
         ],
       }
@@ -1446,6 +1198,216 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       );
       scopedTokenMintCount += mergedResults.filter((result) => result.scopedTokenMinted).length;
       spans.push({ label: 'tools', durationMs: context.df.currentUtcDateTime.getTime() - toolDispatchStart });
+
+      // [#657] Detect activate_swarm tool call — Helkin consciously decided to engage the swarm
+      const swarmActivationCall = toolResults.results.find(r => r.toolName === 'activate_swarm' && r.success);
+      if (swarmActivationCall && !input.devLoopContext?.isDevLoop && !input.skillForgeRequest) {
+        const swarmExecTools = getExecutableToolNames();
+        const swarmSkillDomains = [...new Set(
+          swarmExecTools
+            .map(name => name.split('_')[0])
+            .filter((prefix): prefix is string => !!prefix && prefix !== 'helkin'),
+        )];
+        const swarmDecomposerInput: SwarmDecomposerInput = {
+          userMessage: userMessageForLlm,
+          correlationId,
+          userId: input.state.userId,
+          availableToolNames: swarmExecTools,
+          complexityClass: planResult.complexity,
+          swarmEligibilityScore: planResult.swarmEligibilityScore,
+          conversationSummary: input.state.summary || undefined,
+          activeSkillDomains: swarmSkillDomains,
+        };
+        const swarmDecomposerResult: SwarmDecomposerResult = yield context.df.callActivity(
+          'swarmDecomposerActivity',
+          swarmDecomposerInput,
+        );
+        if (swarmDecomposerResult.plan) {
+          yield* emitOrchestratorTelemetry(context, {
+            name: 'SwarmExecutionStarted',
+            correlationId,
+            userId: input.state.userId,
+            properties: {
+              agentCount: swarmDecomposerResult.plan.agents.length,
+              swarmId: swarmDecomposerResult.plan.swarmId,
+              decomposerModel: swarmDecomposerResult.decomposerModel,
+              decomposerTokens: swarmDecomposerResult.tokensUsed,
+              complexityClass: planResult.complexity,
+              swarmEligibilityScore: planResult.swarmEligibilityScore,
+              activeSkillDomains: swarmSkillDomains.join(','),
+              trigger: 'activate_swarm_tool',
+            },
+          });
+          const swarmInput: SwarmOrchestratorInput = {
+            plan: swarmDecomposerResult.plan,
+            correlationId,
+            userId: input.state.userId,
+            conversationReference: input.conversationReference,
+            userMessage: userMessageForLlm,
+          };
+          const ackSpanStart = context.df.currentUtcDateTime.getTime();
+          const SWARM_PERSONA_EMOJI: Record<string, string> = { Helkin: '🤖', Benjamin: '🔍', Harper: '🧪', Lucas: '📊' };
+          const swarmAgentNames = swarmDecomposerResult.plan.agents.map((a: { name: string }) => a.name);
+          const swarmAgentTags = swarmAgentNames.map(n => `${SWARM_PERSONA_EMOJI[n] ?? '🔹'} ${n}`).join(' • ');
+          const swarmAckMessage = `🧠 Swarm engaged → ${SWARM_PERSONA_EMOJI['Helkin']} Helkin • ${swarmAgentTags} [corr:${correlationId.slice(0, 8)}]`;
+          yield context.df.callActivity('sendReplyActivity', {
+            userId: input.state.userId,
+            message: swarmAckMessage,
+            correlationId,
+            conversationReference: input.conversationReference,
+            skipOutboundClaim: true,
+          } satisfies SendReplyInput);
+          spans.push({ label: 'swarm-ack', durationMs: context.df.currentUtcDateTime.getTime() - ackSpanStart });
+          const swarmOuterTimeoutMs = Math.max(swarmDecomposerResult.plan.timeoutMs * 3, 180_000);
+          const swarmTimer = context.df.createTimer(
+            new Date(context.df.currentUtcDateTime.getTime() + swarmOuterTimeoutMs),
+          );
+          const swarmTask = context.df.callSubOrchestrator('swarmOrchestrator', swarmInput);
+          const swarmWinner: df.Task = yield context.df.Task.any([swarmTask, swarmTimer]);
+          let swarmResponse: string;
+          let swarmTokens = cumulativeTokensUsed + swarmDecomposerResult.tokensUsed;
+          let swarmModel = swarmDecomposerResult.decomposerModel;
+          let swarmResultData: SwarmOrchestratorResult | undefined;
+          if (swarmWinner === swarmTimer) {
+            swarmResponse = '⚡ The multi-agent analysis timed out. Please try a simpler query or try again.';
+          } else {
+            swarmTimer.cancel();
+            try {
+              const swarmResult = swarmTask.result as SwarmOrchestratorResult;
+              swarmResultData = swarmResult;
+              swarmResponse = swarmResult.response || '⚡ The swarm analysis completed but the final synthesis could not be produced. The team\'s research has been captured in the Swarm Activity tab.';
+              swarmTokens += swarmResult.totalTokensUsed;
+              swarmModel = swarmResult.leaderResult.model;
+              yield* emitOrchestratorTelemetry(context, {
+                name: 'SwarmExecutionCompleted',
+                correlationId,
+                userId: input.state.userId,
+                properties: {
+                  swarmId: swarmResult.swarmId,
+                  success: swarmResult.success,
+                  totalTokens: swarmResult.totalTokensUsed,
+                  agentCount: swarmResult.agentResults.length,
+                  chatroomMessages: swarmResult.chatroomTranscript.length,
+                  leaderAgentsHeardFrom: swarmResult.leaderResult.agentsHeardFrom.join(', '),
+                  decomposerTokens: swarmDecomposerResult.tokensUsed,
+                  workerTokens: swarmResult.swarmCost?.workerTokens ?? 0,
+                  leaderTokens: swarmResult.swarmCost?.leaderTokens ?? 0,
+                  agentCostBreakdown: swarmResult.swarmCost?.agentBreakdown
+                    ?.map(a => `${a.agent}:${a.tokens}`)
+                    .join(', ') ?? '',
+                  agentToolsUsed: swarmResult.agentResults
+                    .map(r => `${r.agentName}:[${r.toolsUsed.join(',')}]`)
+                    .join('; '),
+                  agentDurations: swarmResult.agentResults
+                    .map(r => `${r.agentName}:${r.durationMs}ms`)
+                    .join(', '),
+                },
+              });
+            } catch (err) {
+              const errMsg = err instanceof Error ? err.message : String(err);
+              swarmResponse = '⚡ The multi-agent analysis failed before the final synthesis completed. The failure has been captured for audit in the Swarm Activity tab.';
+              swarmModel = 'swarm-error';
+              yield* emitOrchestratorTelemetry(context, {
+                name: 'SwarmExecutionCompleted',
+                correlationId,
+                userId: input.state.userId,
+                properties: {
+                  swarmId: swarmDecomposerResult.plan!.swarmId,
+                  error: errMsg.slice(0, 240),
+                  decomposerTokens: swarmDecomposerResult.tokensUsed,
+                },
+              });
+            }
+          }
+          const swarmTurnEndTime = context.df.currentUtcDateTime.getTime();
+          const swarmTimedOut = swarmWinner === swarmTimer;
+          {
+            const persistInput: PersistSwarmResultInput = {
+              userId: input.state.userId,
+              correlationId,
+              swarmId: swarmDecomposerResult.plan!.swarmId,
+              userQuery: input.userMessage,
+              decomposerTokens: swarmDecomposerResult.tokensUsed,
+              decomposerModel: swarmDecomposerResult.decomposerModel,
+              executionDurationMs: context.df.currentUtcDateTime.getTime() - turnStartTime,
+              result: swarmResultData ?? {
+                response: swarmTimedOut ? swarmResponse : '',
+                success: false,
+                totalTokensUsed: swarmTokens,
+                agentResults: [],
+                leaderResult: {
+                  synthesis: swarmResponse,
+                  success: false,
+                  tokensUsed: 0,
+                  roundsUsed: 0,
+                  agentsHeardFrom: [],
+                  model: swarmModel,
+                  error: swarmTimedOut ? 'swarm timed out' : 'orchestrator error',
+                },
+                chatroomTranscript: [],
+                swarmId: swarmDecomposerResult.plan!.swarmId,
+                swarmCost: undefined,
+              },
+            };
+            yield context.df.callActivity('persistSwarmResultActivity', persistInput);
+          }
+          swarmResponse += formatTelemetryFooter('verbose' as const, {
+            correlationId,
+            timestampIso: new Date(swarmTurnEndTime).toISOString(),
+            totalMs: swarmTurnEndTime - turnStartTime,
+            model: `swarm:${swarmModel}`,
+            promptTokens: 0,
+            completionTokens: swarmTokens,
+            spans,
+            toolCalls: swarmResultData ? swarmResultData.agentResults.map((a) => `${a.agentName}:${a.toolCallsMade}t${a.success ? '✓' : '✗'}`) : [],
+            safetyPassed: true,
+            planComplexity: planResult.complexity,
+            subAgentCount: swarmResultData ? swarmResultData.agentResults.length : 0,
+            decomposerTokens: swarmDecomposerResult.tokensUsed,
+            leaderTokens: swarmResultData?.leaderResult.tokensUsed,
+            swarmAgentBreakdown: swarmResultData?.agentResults.map((a) => ({
+              agent: a.agentName,
+              tokens: a.tokensUsed,
+              durationMs: a.durationMs,
+              toolCalls: a.toolCallsMade,
+              success: a.success,
+              tokenBudget: a.tokenBudget,
+              tokenBudgetExceeded: a.tokenBudgetExceeded,
+            })),
+          });
+          const swarmFinalReply: SendReplyResult = yield context.df.callActivity('sendReplyActivity', {
+            userId: input.state.userId,
+            message: swarmResponse,
+            correlationId,
+            conversationReference: input.conversationReference,
+          } satisfies SendReplyInput);
+          return {
+            response: swarmResponse,
+            cleanResponse: swarmResponse,
+            tokensUsed: swarmTokens,
+            promptTokens: 0,
+            model: `swarm:${swarmModel}`,
+            toolCalls: [],
+            toolResults: null,
+            replySent: swarmFinalReply.success,
+            safetyPassed: true,
+            pendingClarification: pendingClarificationUpdate,
+          } satisfies SessionResult;
+        } else {
+          yield* emitOrchestratorTelemetry(context, {
+            name: 'SwarmDecomposerFallback',
+            correlationId,
+            userId: input.state.userId,
+            properties: {
+              reason: swarmDecomposerResult.fallbackReason ?? 'unknown',
+              decomposerModel: swarmDecomposerResult.decomposerModel,
+              tokensUsed: swarmDecomposerResult.tokensUsed,
+              trigger: 'activate_swarm_tool_fallback',
+            },
+          });
+          // Decomposer chose sequential fallback — continue to normal follow-up LLM loop
+        }
+      }
 
       if (isExplicitReadOnlyDiscoveryRequest) {
         responseContent = buildReadOnlyDiscoveryResponse(toolResults.results, effectiveTaskMessage);
