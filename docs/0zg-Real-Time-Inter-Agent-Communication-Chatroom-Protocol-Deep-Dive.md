@@ -6,7 +6,56 @@
 
 **Status:** Implementation Blueprint — Communication backbone of 0ze  
 **Owner:** Principal Developer  
-**Last Updated:** 2026-04-12
+**Last Updated:** 2026-04-16
+
+---
+
+### 0. Native canonical behavior vs HelkinSwarm adaptation
+
+> Source of truth for native behavior: `docs/master-azure-grok-swarm-replication-package/`
+> (especially Docs 01, 08, 09, 10, 11 and `swarm_agent_reasoning_mechanism.md`).
+> HelkinSwarm preserves the native application-level protocol and adds
+> enterprise-grade transport, schema, and audit on top.
+
+#### 0.1 Canonical `chatroom_send` tool (native xAI swarm)
+
+Natively, **one and only one** tool parameter schema exists, and it is
+shared by all four agents:
+
+```json
+{
+  "name": "chatroom_send",
+  "description": "Send a message to other agents in your team. If another agent sends you a message while you are thinking, it will be directly inserted into your context as a function turn. If another agent sends you a message while you are making a function call, the message will be appended to the function response of the tool call that you make.",
+  "parameters": {
+    "properties": {
+      "message": { "type": "string" },
+      "to":      { "anyOf": [
+        { "type": "string", "enum": ["Grok","Benjamin","Harper","Lucas","All"] },
+        { "type": "array",  "items": { "type": "string", "enum": ["Grok","Benjamin","Harper","Lucas","All"] } }
+      ] }
+    },
+    "required": ["message", "to"]
+  }
+}
+```
+
+The **whole application-level protocol** (messageType, confidence,
+sender, parse-on-receive) is enforced by a **mandatory system-prompt
+shard** — *not* by the tool schema. The shard (see §3.2) is the only
+thing that teaches the agents the JSON convention.
+
+#### 0.2 HelkinSwarm production refinements (explicit deltas)
+
+| Native canonical | HelkinSwarm adaptation | Rationale |
+|---|---|---|
+| Single shared schema with self-recipient included in the enum. Agents never choose to self-send because the shard tells them who the teammates are. | **Per-agent differentiated schemas** — each agent’s `to` enum excludes the agent’s own name (see §3.3). | Strictly stronger for production; prevents accidental self-message at the schema layer. Confirmed by the gold-standard package (`10-chatroom-send-architecture-clarification.md`) as a legitimate enterprise refinement, not a deviation. |
+| `message` is a raw string carrying a JSON payload the agents agree to produce. | `ChatroomMessage` Zod schema (§3) with `id`, `correlationId`, `replyTo`, `contentType`. | Durable-Functions entity routing and DevLoop transcript auditing require structured transport metadata. The **payload content** still follows the native JSON convention; the Zod fields are transport wrapping. |
+| Recipient sees `Chat with [Sender]: From [Sender]: [timestamp] <raw JSON string>`. | Recipient sees formatted `[From {name}]` block with the canonical JSON preserved inline; delivered through Durable Entity drain rather than direct context mutation. | Deterministic orchestration (no side-effects in orchestrator code) per `.github/instructions/orchestrator-patterns.instructions.md`. |
+| Chatroom is in-process to the orchestration engine, ephemeral for the duration of the conversation thread. | `SwarmChatroomEntity` Durable Entity, **explicitly destroyed** at end of swarm turn (see §10). | Single-threaded, serialized entity state removes race conditions; lifetime cap enforces the ephemeral invariant. |
+| No acknowledgements; no transcript persistence. | Transcript is emitted as telemetry; Leader may promote high-value messages to T3 long-term memory (0zi §6). | Institutional learning across sessions is a HelkinSwarm requirement. |
+
+Everything below this section is HelkinSwarm-specific unless it explicitly
+references §0.
 
 ---
 
@@ -273,7 +322,72 @@ This formatted block is appended to the worker's conversation as a **system turn
 
 Both produce the same effect: the LLM sees teammate messages as part of its natural context flow.
 
-> **Confirmed by Grok team (April 2026)**: LLM inference calls are **atomic** — there is no mid-stream token injection during an in-flight generation. Messages are always delivered at a turn boundary (either between LLM calls or appended to a tool result). This is architecturally guaranteed by our Durable Functions model: each LLM call is an activity, and entity drain happens between activities.
+#### 5.4 Canonical native injection semantics (authoritative)
+
+From the gold-standard package (Docs 01, 08, 11), the exact native
+behavior that HelkinSwarm replicates at turn boundaries is:
+
+1. **Recipient is currently thinking (no tool call outstanding)** →
+   incoming message is inserted as a **function turn** in the
+   recipient’s context before the next inference step. In HelkinSwarm
+   this maps to the drain-between-activities boundary (§5.2).
+2. **Recipient has a tool call in flight** → incoming message is
+   **appended to the function response** of that tool call. If the
+   recipient has **multiple parallel tool calls outstanding**, the
+   message is appended to the **first tool response that returns** —
+   it never interrupts mid-execution, and it is never duplicated to
+   every parallel result. HelkinSwarm reproduces this by draining the
+   entity inside the first returning tool-result handler and prepending
+   the formatted team-messages block to that single result string.
+3. **Sender’s own context is not updated with its own outbound message**
+   — the model already knows what it sent. HelkinSwarm preserves this:
+   we never echo `send` back into the sender’s queue.
+4. **User Info + Current time shards are re-injected at the start of
+   every turn** for every agent (see 0zh §3.4 for the shard body). This
+   is a native invariant, not an optional optimization.
+
+> LLM inference calls are **atomic** — there is no mid-stream token
+> injection during an in-flight generation. Messages are always
+> delivered at a turn boundary (either between LLM calls or appended to
+> a tool result). This is architecturally guaranteed by our Durable
+> Functions model: each LLM call is an activity, and entity drain
+> happens between activities.
+
+---
+
+### 5.5 Canonical JSON payload convention (native application layer)
+
+The `message` field of every `chatroom_send` call natively carries a
+**valid JSON string** with the following fields (see package Doc 08):
+
+```json
+{
+  "messageType": "thinking" | "tool_summary" | "analysis" | "response" | "question" | "contribution" | "final_contribution",
+  "content":     "your full text",
+  "confidence":  92,
+  "sender":      "Helkin" | "Benjamin" | "Harper" | "Lucas",
+  "timestamp":   "optional ISO-or-relative",
+  "data":        { "optional": "rich payload" }
+}
+```
+
+- `messageType` is drawn from the canonical seven-value enum. Additional
+  values may be added but the seven above cover ~99% of real traffic.
+- `confidence` is **always** included (0–100). Downstream agents weigh
+  contributions by it.
+- Pretty-printed or minified are both valid.
+
+This payload convention is **injected via a mandatory system-prompt
+shard on every agent** (see 0zh §3.2). It is not enforced by the
+tool schema — the tool simply carries opaque string content.
+
+HelkinSwarm mapping: the canonical JSON payload is carried inside
+`ChatroomMessage.content`. The Zod wrapper fields (`id`, `from`, `to`,
+`correlationId`, `replyTo`, `contentType`) are **transport metadata**,
+not payload. `ChatroomMessage.contentType` MAY shadow the canonical
+`messageType` at the transport level for entity routing, but agents
+MUST still parse the JSON payload in `content` to get confidence,
+sender attribution, and the full messageType taxonomy.
 
 ---
 

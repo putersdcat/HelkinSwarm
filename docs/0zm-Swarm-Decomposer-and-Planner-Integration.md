@@ -1,11 +1,51 @@
 # HelkinSwarm Project Specification – Addendum Series
 ## 0zm. Swarm Decomposer and Planner Integration
 
-**Version:** 1.0 (Unchained Edition)
+**Version:** 2.0 (Gold-standard aligned)
 **Status:** Phase 1 Implemented, Phase 2 Architectural Pattern Documented
 **Owner:** Principal Developer
-**Last Updated:** 2026-04-13
+**Last Updated:** 2026-04-16
 **Issue:** #640
+
+---
+
+### 0. Native canonical vs HelkinSwarm adaptation
+
+> Canonical source: `docs/master-azure-grok-swarm-replication-package/`
+> main package \u00a71\u20132, `swarm_agent_reasoning_mechanism.md`,
+> `swarm_internal_tool_usage_patterns.md`.
+
+The native xAI swarm does **not** have a separate planner or
+decomposer activity. Routing is fully baked into the **leader\u2019s first
+inference turn**:
+
+- The user query arrives in Grok\u2019s (Helkin\u2019s) context.
+- Grok decides \u2014 inside that single inference step, using the
+  mandatory Core Reasoning shard (0zh \u00a73.3) \u2014 whether to reason alone,
+  delegate via `chatroom_send`, or call external tools in parallel.
+- Delegations are just `chatroom_send` calls. There is no explicit
+  \u201cSwarmPlan\u201d object, no decomposer LLM, no complexity classifier.
+- The swarm-vs-sequential decision is emergent from the leader\u2019s
+  prompt + reasoning, not a separate routing stage.
+
+HelkinSwarm\u2019s current implementation (Phase 1) keeps an **explicit
+planner + decomposer** in front of the swarm because it has to enforce
+cost guardrails, safety gates, and tenant-scoped sub-session rules
+that the native swarm doesn\u2019t need. Phase 2 (below) deliberately
+moves toward the native pattern: a unified orchestrator where routing
+is a planner-visible decision rather than a pre-routing heuristic wall.
+
+| Aspect | Canonical native | HelkinSwarm Phase 1 (shipped) | HelkinSwarm Phase 2 target |
+|---|---|---|---|
+| Routing decision | Leader\u2019s first inference turn, prompt-driven | Heuristic score + decomposer LLM, pre-routing | Planner LLM sees all modes, chooses as part of reasoning |
+| Complexity classifier | None (prompt-driven) | `computeSwarmEligibilityScore()` (0\u201310) | Kept as **signal**, not as gate |
+| Retroactive escalation | Implicit (leader can always broadcast mid-turn) | Not supported | Explicit: sequential result \u2192 quality gate \u2192 optional swarm escalation |
+| Cost guard | N/A | `SWARM_ELIGIBILITY_THRESHOLD`, `SWARM_ALWAYS_THRESHOLD`, per-turn budgets | Required (#647) before unlocking Phase 2 |
+
+This is the reconciliation called out in issue #671: HelkinSwarm keeps
+its planner/decomposer strengths for enterprise control, but
+acknowledges that the canonical swarm is **leader-first** and commits
+to moving toward it in Phase 2.
 
 ---
 

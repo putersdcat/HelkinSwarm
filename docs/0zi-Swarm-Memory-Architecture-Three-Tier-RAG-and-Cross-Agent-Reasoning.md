@@ -6,7 +6,25 @@
 
 **Status:** Memory Architecture Extension — Completes the Swarm cognition model  
 **Owner:** Principal Developer  
-**Last Updated:** 2026-04-12
+**Last Updated:** 2026-04-16
+
+---
+
+### 0. Native canonical vs HelkinSwarm adaptation
+
+> Canonical source: `docs/master-azure-grok-swarm-replication-package/`
+> (especially the main package `master-azure-grok-swarm-replication-package.md.md`,
+> Doc 11 for per-agent context management, and `swarm_internal_tool_usage_patterns.md`
+> for `conversation_search` usage).
+
+| Aspect | Canonical native | HelkinSwarm adaptation |
+|---|---|---|
+| Per-agent context isolation | Each agent maintains a fully independent conversation thread (system prompt + user messages + its own tool calls + received chatroom messages). No shared global memory except via explicit `chatroom_send`. Azure implication: **4 parallel `chat.completions` streams**. | Preserved verbatim. Each swarm agent is a dedicated sub-orchestrator with its own LLM context; no cross-agent context sharing except through the chatroom entity. |
+| `conversation_search` tool name | Native tool is `conversation_search`. Vector-DB-backed, one document per completed query (user query + final answer + curated partials), pure cosine similarity ranking. | HelkinSwarm exposes it as **`swarm_conversation_search`** and binds it to `MemoryManager.recall()` over Cosmos DB + DiskANN. The native semantics are preserved; only the tool name is namespaced to avoid collision with non-swarm memory tools. |
+| Write authority to persistent memory | **Leader-only commit.** Workers never write to the persistent vector DB. | Preserved verbatim. Only the Leader activity (Helkin) invokes `swarmMemoryCommitActivity`. |
+| Leader identity | `Grok` | **`Helkin`** in all HelkinSwarm agent prompts. |
+| Reasoning parameters across agents | All agents run the **same base model** with the **same inference parameters** (temperature ~0.7, top_p ~0.95, reasoning mode on). | Preserved verbatim for swarm-eligible turns; all agents run at `"high"` capacity through `modelRouter.ts`. No per-agent model variation. |
+| `wait` tool for synchronization | Native primitive that blocks an agent\u2019s reasoning until a teammate responds or a timeout fires. | Preserved as **`swarm_wait`**, mapped to Durable Functions `waitForExternalEvent`. |
 
 ---
 

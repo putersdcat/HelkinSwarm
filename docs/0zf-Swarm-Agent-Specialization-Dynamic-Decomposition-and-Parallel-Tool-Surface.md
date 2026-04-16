@@ -6,7 +6,32 @@
 
 **Status:** Companion Design — Implements agent layer of 0ze  
 **Owner:** Principal Developer  
-**Last Updated:** 2026-04-12
+**Last Updated:** 2026-04-16
+
+---
+
+### 0. Native canonical behavior vs HelkinSwarm adaptation
+
+> This doc incorporates the gold-standard replication package at
+> `docs/master-azure-grok-swarm-replication-package/` (Docs 01–14 + master).
+> That package is the **canonical xAI 4-agent swarm spec** and is the
+> source of truth for native behavior. HelkinSwarm **does not blindly
+> mirror** it; HelkinSwarm deliberately ships a superset / hardened variant.
+
+| Aspect | Canonical native swarm (gold-standard package) | HelkinSwarm adaptation |
+|---|---|---|
+| Team composition | Fixed 4-agent quartet: **Grok (leader) + Benjamin + Harper + Lucas**. Always instantiated, even if some agents go idle. | **Dynamic decomposer** produces 2–6 task-specific agents per turn. The canonical quartet is the **default archetype** when the query matches its shape (see 0zh §2). Single-agent sequential path still wins for simple queries. |
+| Leader identity | `Grok` (model-family name) | Renamed to **`Helkin`** in prompts. All leader semantics (synthesis-only, sole user-facing output, sole Render Components holder) are preserved verbatim. |
+| Worker identities | `Benjamin`, `Harper`, `Lucas` | Preserved verbatim when the quartet archetype is selected. Dynamic archetypes (Domain Expert, Memory Specialist, etc.) coexist for non-quartet query shapes. |
+| Leader tools | Empty. Leader synthesizes only; never executes. | Preserved verbatim. Leader’s `assignedTools` is always `[]`. |
+| Cognitive profile | All agents run the **same base model** with the **same inference parameters** (see 0zi §9). Specialization is pure prompt engineering. | Preserved verbatim for swarm-eligible turns (all agents = `"high"` capacity). |
+| Decomposition trigger | Implicit — leader’s first inference turn decides delegation via prompt; no separate classifier (see 0zm §3). | Explicit hybrid: planner scoring + decomposer LLM call (Phase 1 shipped). Phase 2 moves toward native pattern (unified orchestrator). |
+| Recursive swarms | Not defined natively. | **Forbidden** in HelkinSwarm — one swarm level per turn, no nested decomposition. |
+
+The rest of this doc is HelkinSwarm’s decomposer / persona-framework spec.
+Where it extends native behavior (dynamic N-agent, validation, scoring, fallback),
+those extensions are explicit. Where it mirrors native behavior, it does so
+faithfully down to the agent names.
 
 ---
 
