@@ -1018,13 +1018,13 @@ export const helkin_persona_eval: ToolHandler = async (args) => {
   let personaText: string;
   try {
     personaText = await readFile(
-      join(process.cwd(), 'src', 'persona', 'dronePersona.md'),
+      join(process.cwd(), 'src', 'persona', 'helkinPersona.md'),
       'utf-8',
     );
   } catch {
     return {
       status: 'error',
-      message: 'Could not load persona file (src/persona/dronePersona.md).',
+      message: 'Could not load persona file (src/persona/helkinPersona.md).',
     };
   }
 

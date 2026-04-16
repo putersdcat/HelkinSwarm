@@ -57,7 +57,7 @@ describe('helkin_persona_eval', () => {
     const result = await helkin_persona_eval({ userId: 'user-1' });
     expect(result).toEqual({
       status: 'error',
-      message: 'Could not load persona file (src/persona/dronePersona.md).',
+      message: 'Could not load persona file (src/persona/helkinPersona.md).',
     });
   });
 
