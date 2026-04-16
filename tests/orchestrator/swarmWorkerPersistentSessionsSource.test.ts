@@ -34,13 +34,17 @@ describe('MemoryManager — agent session vault methods (#659)', () => {
     expect(memorySrc).toContain('async loadRecentAgentSessions(');
   });
 
-  it('stores agent sessions under agent:{agentName} skillId', () => {
-    expect(memorySrc).toContain("skillId: `agent:${agentName.toLowerCase()}`");
+  it('stores agent sessions in the real sessions container', () => {
+    expect(memorySrc).toContain("const SESSIONS_CONTAINER = 'sessions'");
+    expect(memorySrc).toContain("type: 'agent-session-summary'");
+    expect(memorySrc).toContain('agentName: normalizedAgentName');
   });
 
-  it('loads sessions using agent: skillId with TOP limit', () => {
+  it('loads sessions using agentName + type filter with TOP limit', () => {
     expect(memorySrc).toContain('SELECT TOP @limit c.content');
-    expect(memorySrc).toContain("agent:${agentName.toLowerCase()}");
+    expect(memorySrc).toContain('c.type = @type');
+    expect(memorySrc).toContain('c.agentName = @agentName');
+    expect(memorySrc).toContain('partitionKey: this.userId');
   });
 
   it('loadRecentAgentSessions defaults to limit=3', () => {

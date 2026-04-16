@@ -14,6 +14,8 @@ import { getModelRouting } from '../llm/modelRouter.js';
 
 const MEMORY_CONTAINER = 'multimodalMemory';
 const CATALOG_CONTAINER = 'longRunningCatalog';
+const SESSIONS_CONTAINER = 'sessions';
+const SESSION_TTL_SECONDS = 72 * 60 * 60;
 
 export const MemoryEntrySchema = z.object({
   id: z.string(),
@@ -49,6 +51,16 @@ export interface RecallResult {
   skillId?: string;
   tags: string[];
   createdAt: string;
+}
+
+interface AgentSessionSummaryDocument {
+  id: string;
+  userId: string;
+  type: 'agent-session-summary';
+  agentName: string;
+  content: string;
+  createdAt: string;
+  ttl: number;
 }
 
 // Hard abort on every Cosmos operation — prevents orphaned background requests
@@ -311,16 +323,23 @@ export class MemoryManager {
 
   /**
    * Store a swarm session summary for a named swarm agent (Harper, Benjamin, Lucas, etc.).
-   * Keyed under skillId = 'agent:{agentName}' so their vault is segregated from Helkin's.
+   * Stored in the real sessions container (72h TTL) as a rolling per-agent session chain.
    * Issue: #659
    */
   async storeAgentSessionSummary(agentName: string, content: string): Promise<void> {
-    await this.store({
+    const container = getContainer(SESSIONS_CONTAINER);
+    const normalizedAgentName = agentName.toLowerCase();
+    const entry: AgentSessionSummaryDocument = {
+      id: `agent-session-${normalizedAgentName}-${crypto.randomUUID()}`,
+      userId: this.userId,
+      type: 'agent-session-summary',
+      agentName: normalizedAgentName,
       content,
-      skillId: `agent:${agentName.toLowerCase()}`,
-      tags: ['agent-session', agentName.toLowerCase()],
-      metadata: { type: 'agent_session_summary', agentName },
-    });
+      createdAt: new Date().toISOString(),
+      ttl: SESSION_TTL_SECONDS,
+    };
+
+    await container.items.upsert(entry, { abortSignal: AbortSignal.timeout(COSMOS_OP_ABORT_MS) });
   }
 
   /**
@@ -329,19 +348,24 @@ export class MemoryManager {
    * Issue: #659
    */
   async loadRecentAgentSessions(agentName: string, limit = 3): Promise<string[]> {
-    const container = getContainer(MEMORY_CONTAINER);
+    const container = getContainer(SESSIONS_CONTAINER);
+    const normalizedAgentName = agentName.toLowerCase();
     const querySpec = {
-      query: 'SELECT TOP @limit c.content FROM c WHERE c.userId = @userId AND c.skillId = @skillId ORDER BY c.createdAt DESC',
+      query: 'SELECT TOP @limit c.content FROM c WHERE c.userId = @userId AND c.type = @type AND c.agentName = @agentName ORDER BY c.createdAt DESC',
       parameters: [
         { name: '@limit', value: limit },
         { name: '@userId', value: this.userId },
-        { name: '@skillId', value: `agent:${agentName.toLowerCase()}` },
+        { name: '@type', value: 'agent-session-summary' },
+        { name: '@agentName', value: normalizedAgentName },
       ],
     };
     try {
       const { resources } = await container.items.query<{ content: string }>(
         querySpec,
-        { abortSignal: AbortSignal.timeout(COSMOS_OP_ABORT_MS) },
+        {
+          partitionKey: this.userId,
+          abortSignal: AbortSignal.timeout(COSMOS_OP_ABORT_MS),
+        },
       ).fetchAll();
       return resources.map(r => r.content);
     } catch {

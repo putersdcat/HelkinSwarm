@@ -247,7 +247,7 @@ df.app.activity('swarmWorkerActivity', {
     const tools = buildWorkerToolSchemas(input.assignedTools);
     const allAgentNames = input.allAgentNames ?? [input.agentName];
 
-    // Load prior session context for this agent from Cosmos (#659 — persistent session chains).
+    // Load prior session context for this agent from Cosmos sessions container (#659).
     // Non-fatal: if Cosmos is unavailable, agent runs without prior context.
     const mm = new MemoryManager(input.userId);
     const priorSessions = await mm.loadRecentAgentSessions(input.agentName).catch(() => [] as string[]);
@@ -453,7 +453,7 @@ df.app.activity('swarmWorkerActivity', {
               chatroomMessagesSent++;
             }
 
-            // Route to target agent's Cosmos session partition (#661).
+            // Route to target agent's Cosmos session chain (#661).
             // The recipient loads this message via loadRecentAgentSessions on their next activation.
             // Only route to named worker agents (not "Helkin", "Leader", "All").
             const EXCLUDED_TARGETS = new Set(['helkin', 'leader', 'all']);
@@ -570,7 +570,7 @@ df.app.activity('swarmWorkerActivity', {
         if (requestsSecondPass) break;
       }
 
-      // Persist a rolling session summary for this agent's Cosmos vault (#659).
+      // Persist a rolling session summary for this agent's Cosmos session chain (#659).
       // Gives the agent prior-turn context on its next activation.
       // Non-fatal: if Cosmos write fails, the swarm result is unaffected.
       const keyFindings = pendingChatroomMessages
