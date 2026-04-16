@@ -1349,7 +1349,19 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
                 swarmCost: undefined,
               },
             };
-            yield context.df.callActivity('persistSwarmResultActivity', persistInput);
+            const persistResult: { stored: boolean; error?: string } =
+              yield context.df.callActivity('persistSwarmResultActivity', persistInput);
+            if (!persistResult?.stored) {
+              yield* emitOrchestratorTelemetry(context, {
+                name: 'SwarmPersistenceFailure',
+                correlationId,
+                userId: input.state.userId,
+                properties: {
+                  swarmId: swarmDecomposerResult.plan!.swarmId,
+                  error: persistResult?.error ?? 'unknown',
+                },
+              });
+            }
           }
           swarmResponse += formatTelemetryFooter('verbose' as const, {
             correlationId,

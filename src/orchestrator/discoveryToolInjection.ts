@@ -61,7 +61,7 @@ type ReadOnlyDiscoverySearchResultShape = {
 type DiscoveryModelOverride = 'primary' | 'secondary';
 
 function isCoreTool(name: string): boolean {
-  return name.startsWith('helkin_');
+  return name.startsWith('helkin_') || name === 'activate_swarm';
 }
 
 function shouldRetainCoreToolInActionableFollowUp(name: string): boolean {
