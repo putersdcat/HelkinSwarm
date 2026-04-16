@@ -106,15 +106,16 @@ describe('swarmPersonas — injects prior session context into system prompt (#6
 });
 
 describe('swarmMemoryCommitActivity — per-agent vault scoping (#659)', () => {
-  it('routes worker messages to agent-scoped skillId', () => {
-    expect(commitSrc).toContain('agent:${msg.from.toLowerCase()}');
+  it('routes worker messages away from the global manager toward agent-scoped managers', () => {
+    expect(commitSrc).toContain('const agentMm = new MemoryManager(userId, msg.from);');
   });
 
-  it('Helkin messages do not get agent: skillId (undefined for leader)', () => {
-    expect(commitSrc).toContain("msg.from.toLowerCase() !== 'helkin'");
+  it('Helkin messages are skipped so only worker research enters agent vaults', () => {
+    expect(commitSrc).toContain("if (msg.from.toLowerCase() === 'helkin') {");
+    expect(commitSrc).toContain('continue;');
   });
 
-  it('stores agentSkillId in skillId field', () => {
-    expect(commitSrc).toContain('skillId: agentSkillId');
+  it('no longer relies on skillId-based agent routing in the global manager', () => {
+    expect(commitSrc).not.toContain('skillId: agentSkillId');
   });
 });

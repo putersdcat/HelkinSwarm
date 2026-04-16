@@ -249,14 +249,14 @@ df.app.activity('swarmWorkerActivity', {
 
     // Load prior session context for this agent from Cosmos sessions container (#659).
     // Non-fatal: if Cosmos is unavailable, agent runs without prior context.
-    const mm = new MemoryManager(input.userId);
-    const priorSessions = await mm.loadRecentAgentSessions(input.agentName).catch(() => [] as string[]);
+    const sessionMm = new MemoryManager(input.userId);
+    const agentMm = new MemoryManager(input.userId, input.agentName);
+    const priorSessions = await sessionMm.loadRecentAgentSessions(input.agentName).catch(() => [] as string[]);
 
     // Semantic RAG recall from this agent's vault (#663 — per-agent RAG memory).
     // Finds relevant prior findings from this exact agent's vault based on the current task.
     // Injected alongside session summaries so the agent can avoid repeating known work.
-    const priorKnowledge = await mm.recall(input.task, {
-      skillId: `agent:${input.agentName.toLowerCase()}`,
+    const priorKnowledge = await agentMm.recall(input.task, {
       topK: 3,
       minScore: 0.7,
     }).catch(() => [] as { content: string; score: number; skillId?: string; tags: string[]; createdAt: string }[]);
@@ -460,7 +460,7 @@ df.app.activity('swarmWorkerActivity', {
             const recipients = Array.isArray(to) ? to : [to];
             for (const recipient of recipients) {
               if (!EXCLUDED_TARGETS.has(recipient.toLowerCase())) {
-                await mm.storeAgentSessionSummary(
+                await sessionMm.storeAgentSessionSummary(
                   recipient,
                   `[Chatroom from ${input.agentName} | ${new Date().toISOString()}] ${msgContent.slice(0, 300)}`,
                 ).catch(() => { /* non-fatal */ });
@@ -583,7 +583,7 @@ df.app.activity('swarmWorkerActivity', {
         `Task: ${input.task.slice(0, 80)} | Tools: ${[...toolsUsedSet].join(', ')} | ` +
         `Rounds: ${messages.filter(m => m.role === 'assistant').length} | ` +
         `Findings: ${keyFindings || 'sent to chatroom'}`;
-      await mm.storeAgentSessionSummary(input.agentName, sessionSummary).catch(() => { /* non-fatal */ });
+      await sessionMm.storeAgentSessionSummary(input.agentName, sessionSummary).catch(() => { /* non-fatal */ });
 
       trackEvent({
         name: 'SwarmWorkerCompleted',

@@ -20,6 +20,7 @@ const SESSION_TTL_SECONDS = 72 * 60 * 60;
 export const MemoryEntrySchema = z.object({
   id: z.string(),
   userId: z.string(),
+  agentId: z.string().optional(),
   content: z.string(),
   skillId: z.string().optional(),
   tags: z.array(z.string()).default([]),
@@ -76,9 +77,11 @@ const COSMOS_OP_ABORT_MS = 8_000;
 
 export class MemoryManager {
   private userId: string;
+  private agentId?: string;
 
-  constructor(userId: string) {
+  constructor(userId: string, agentId?: string) {
     this.userId = userId;
+    this.agentId = agentId?.toLowerCase();
   }
 
   /**
@@ -101,6 +104,7 @@ export class MemoryManager {
     const entry: MemoryEntry = {
       id,
       userId: this.userId,
+      agentId: this.agentId,
       content: options.content,
       skillId: options.skillId,
       tags: options.tags ?? [],
@@ -133,6 +137,9 @@ export class MemoryManager {
     }
 
     const container = getContainer(MEMORY_CONTAINER);
+    const agentFilter = this.agentId
+      ? 'AND c.agentId = @agentId'
+      : 'AND NOT IS_DEFINED(c.agentId)';
 
     // Cosmos DB vector search query using VectorDistance()
     // The WHERE clause filters by userId (partition key) and optionally skillId.
@@ -141,11 +148,12 @@ export class MemoryManager {
       : '';
 
     const querySpec = {
-      query: `SELECT TOP @topK c.content, c.skillId, c.tags, c.createdAt, VectorDistance(c.vector, @queryVector) AS score FROM c WHERE c.userId = @userId ${skillFilter} ORDER BY VectorDistance(c.vector, @queryVector)`,
+      query: `SELECT TOP @topK c.content, c.skillId, c.tags, c.createdAt, VectorDistance(c.vector, @queryVector) AS score FROM c WHERE c.userId = @userId ${agentFilter} ${skillFilter} ORDER BY VectorDistance(c.vector, @queryVector)`,
       parameters: [
         { name: '@topK', value: topK },
         { name: '@queryVector', value: queryVector },
         { name: '@userId', value: this.userId },
+        ...(this.agentId ? [{ name: '@agentId', value: this.agentId }] : []),
         ...(options?.skillId ? [{ name: '@skillId', value: options.skillId }] : []),
       ],
     };
@@ -192,10 +200,14 @@ export class MemoryManager {
    */
   async getSkillVault(skillId: string): Promise<RecallResult[]> {
     const container = getContainer(MEMORY_CONTAINER);
+    const agentFilter = this.agentId
+      ? 'AND c.agentId = @agentId'
+      : 'AND NOT IS_DEFINED(c.agentId)';
     const querySpec = {
-      query: 'SELECT c.content, c.skillId, c.tags, c.createdAt FROM c WHERE c.userId = @userId AND c.skillId = @skillId ORDER BY c.createdAt DESC',
+      query: `SELECT c.content, c.skillId, c.tags, c.createdAt FROM c WHERE c.userId = @userId ${agentFilter} AND c.skillId = @skillId ORDER BY c.createdAt DESC`,
       parameters: [
         { name: '@userId', value: this.userId },
+        ...(this.agentId ? [{ name: '@agentId', value: this.agentId }] : []),
         { name: '@skillId', value: skillId },
       ],
     };
@@ -235,6 +247,7 @@ export class MemoryManager {
     await container.items.upsert({
       id,
       userId: this.userId,
+      agentId: this.agentId,
       content: data.value,
       skillId,
       tags: ['skill-memory', data.key],
@@ -254,10 +267,14 @@ export class MemoryManager {
    */
   async forgetSkillMemory(skillId: string): Promise<number> {
     const container = getContainer(MEMORY_CONTAINER);
+    const agentFilter = this.agentId
+      ? 'AND c.agentId = @agentId'
+      : 'AND NOT IS_DEFINED(c.agentId)';
     const querySpec = {
-      query: 'SELECT c.id FROM c WHERE c.userId = @userId AND c.skillId = @skillId',
+      query: `SELECT c.id FROM c WHERE c.userId = @userId ${agentFilter} AND c.skillId = @skillId`,
       parameters: [
         { name: '@userId', value: this.userId },
+        ...(this.agentId ? [{ name: '@agentId', value: this.agentId }] : []),
         { name: '@skillId', value: skillId },
       ],
     };
@@ -404,9 +421,10 @@ export class MemoryManager {
 
     // Count entries for this skill
     const countSpec = {
-      query: 'SELECT VALUE COUNT(1) FROM c WHERE c.userId = @userId AND c.skillId = @skillId',
+      query: `SELECT VALUE COUNT(1) FROM c WHERE c.userId = @userId ${this.agentId ? 'AND c.agentId = @agentId' : 'AND NOT IS_DEFINED(c.agentId)'} AND c.skillId = @skillId`,
       parameters: [
         { name: '@userId', value: this.userId },
+        ...(this.agentId ? [{ name: '@agentId', value: this.agentId }] : []),
         { name: '@skillId', value: skillId },
       ],
     };
@@ -415,8 +433,9 @@ export class MemoryManager {
     const entryCount = resources[0] ?? 0;
 
     await catalogContainer.items.upsert({
-      id: `vault-${this.userId}-${skillId}`,
+      id: `vault-${this.userId}-${this.agentId ?? 'global'}-${skillId}`,
       userId: this.userId,
+      agentId: this.agentId,
       skillId,
       type: 'skill-vault-summary',
       entryCount,
@@ -430,7 +449,7 @@ export class MemoryManager {
   private async removeCatalogEntry(skillId: string): Promise<void> {
     const container = getContainer(CATALOG_CONTAINER);
     try {
-      await container.item(`vault-${this.userId}-${skillId}`, this.userId).delete();
+      await container.item(`vault-${this.userId}-${this.agentId ?? 'global'}-${skillId}`, this.userId).delete();
     } catch {
       // Document may not exist
     }
