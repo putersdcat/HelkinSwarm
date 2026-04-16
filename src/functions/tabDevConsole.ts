@@ -19,6 +19,7 @@ import { MemoryManager } from '../memory/memoryManager.js';
 import { validateTabTokenFromRequest } from '../auth/tabTokenValidator.js';
 import { getLlmHealthSnapshot } from '../llm/llmHealthTracker.js';
 import { getCachedPersona, peekPersonaFromDisk } from '../orchestrator/buildPromptActivity.js';
+import { markIntentExpired } from '../orchestrator/pendingIntentStore.js';
 import { getRecentPersonaEvents } from '../persona/personaEventStore.js';
 import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -240,6 +241,16 @@ app.http('tab-session-terminate', {
     const client = df.getClient(context);
     try {
       await client.terminate(instanceId, 'Terminated via Dev Console');
+
+      const pendingIntentMatch = instanceId.match(/pending-intent-([0-9a-f-]{36})/i);
+      if (pendingIntentMatch?.[1]) {
+        await markIntentExpired(
+          pendingIntentMatch[1],
+          userId,
+          'Terminated via Control Center session kill',
+        ).catch(() => { /* non-fatal cleanup */ });
+      }
+
       return {
         status: 200,
         headers: TAB_CORS_HEADERS,

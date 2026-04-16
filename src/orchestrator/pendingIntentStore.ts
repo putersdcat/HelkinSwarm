@@ -201,6 +201,20 @@ export async function markIntentFailed(id: string, userId: string, reason: strin
   ]);
 }
 
+/** Mark an intent as expired so it will not be replayed again. */
+export async function markIntentExpired(id: string, userId: string, reason?: string): Promise<void> {
+  const container = getContainer(CONTAINER_NAME);
+  const operations: Array<{ op: 'replace' | 'add'; path: string; value: string }> = [
+    { op: 'replace', path: '/status', value: 'expired' },
+  ];
+
+  if (reason) {
+    operations.push({ op: 'add', path: '/failureReason', value: reason });
+  }
+
+  await container.item(id, userId).patch(operations);
+}
+
 /** Check if an idempotency key already exists (dedup). */
 export async function hasIdempotencyKey(key: string): Promise<boolean> {
   const container = getContainer(CONTAINER_NAME);
