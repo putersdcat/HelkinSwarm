@@ -26,6 +26,8 @@ export interface PersistSwarmResultInput {
   decomposerModel: string;
   executionDurationMs: number;
   result: SwarmOrchestratorResult;
+  statusOverride?: 'running' | 'ok' | 'fail';
+  agentCountOverride?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -40,6 +42,7 @@ interface SwarmExecutionDocument {
   swarmId: string;
   userQuery: string;
   executedAt: string;
+  status: 'running' | 'ok' | 'fail';
   success: boolean;
   executionDurationMs: number;
   agentCount: number;
@@ -92,6 +95,7 @@ export function buildSwarmExecutionDocument(
   const result = input.result;
   const transcript = compactTranscript(result.chatroomTranscript);
   const compact = options?.compact ?? false;
+  const status = input.statusOverride ?? (result.success ? 'ok' : 'fail');
 
   return {
     id: `swarm-${input.swarmId}`,
@@ -101,9 +105,10 @@ export function buildSwarmExecutionDocument(
     swarmId: input.swarmId,
     userQuery: truncateText(input.userQuery, MAX_QUERY_CHARS),
     executedAt: new Date().toISOString(),
+    status,
     success: result.success,
     executionDurationMs: input.executionDurationMs,
-    agentCount: result.agentResults.length,
+    agentCount: input.agentCountOverride ?? result.agentResults.length,
     totalTokensUsed: result.totalTokensUsed + input.decomposerTokens,
     decomposerTokens: input.decomposerTokens,
     decomposerModel: input.decomposerModel,

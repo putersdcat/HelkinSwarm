@@ -138,6 +138,28 @@ describe('persistSwarmResultActivity', () => {
     expect(doc.persistenceMode).toBe('full');
   });
 
+  it('can mark a swarm execution as running before the final result arrives', () => {
+    const result = makeMockResult();
+    result.success = false;
+
+    const input: PersistSwarmResultInput = {
+      userId: 'test-user-123',
+      correlationId: 'corr-running',
+      swarmId: '00000000-0000-4000-8000-000000000889',
+      userQuery: 'Running status test',
+      decomposerTokens: 125,
+      decomposerModel: 'grok-4-1-fast',
+      executionDurationMs: 1200,
+      result,
+      statusOverride: 'running',
+      agentCountOverride: 3,
+    };
+
+    const doc = buildSwarmExecutionDocument(input);
+    expect(doc.status).toBe('running');
+    expect(doc.agentCount).toBe(3);
+  });
+
   it('can produce a compact fallback document when full persistence fails', () => {
     const result = makeMockResult();
     result.leaderResult.synthesis = 'y'.repeat(10000);

@@ -69,7 +69,7 @@ app.http('tab-swarm-activity', {
         .query(
           {
             query: `SELECT c.id, c.swarmId, c.correlationId, c.userQuery, c.executedAt,
-                           c.success, c.agentCount, c.totalTokensUsed, c.executionDurationMs,
+                           c.status, c.success, c.agentCount, c.totalTokensUsed, c.executionDurationMs,
                            c.decomposerModel, c.leaderModel, c.leaderAgentsHeardFrom
                     FROM c
                     WHERE c.type = @type AND c.userId = @userId

@@ -1066,7 +1066,7 @@
       swarm: function (d) {
         var execs = (d.swarm && d.swarm.executions) || [];
         var totalRuns = execs.length;
-        var successRuns = execs.filter(function (e) { return e.success; }).length;
+        var successRuns = execs.filter(function (e) { return (e.status || (e.success ? "ok" : "fail")) === "ok"; }).length;
         var totalTokens = execs.reduce(function (sum, e) { return sum + (e.totalTokensUsed || 0); }, 0);
 
         return '<div class="kpi-row">' +
@@ -1078,7 +1078,9 @@
           (execs.length > 0 ?
             '<table><tr><th>Time</th><th>Query</th><th>Agents</th><th>Tokens</th><th>Duration</th><th>Status</th><th></th></tr>' +
             execs.map(function (e) {
-              var st = e.success ? "ok" : "error";
+              var state = e.status || (e.success ? "ok" : "fail");
+              var st = state === "running" ? "info" : (state === "ok" ? "ok" : "error");
+              var label = state === "running" ? "RUNNING" : (state === "ok" ? "OK" : "FAIL");
               var query = (e.userQuery || "").length > 80 ? e.userQuery.substring(0, 80) + "\u2026" : (e.userQuery || "\u2014");
               var dur = e.executionDurationMs ? (e.executionDurationMs / 1000).toFixed(1) + "s" : "\u2014";
               return '<tr>' +
@@ -1087,7 +1089,7 @@
                 '<td>' + (e.agentCount || 0) + '</td>' +
                 '<td>' + (e.totalTokensUsed || 0).toLocaleString() + '</td>' +
                 '<td>' + dur + '</td>' +
-                '<td><span class="badge badge-' + st + '">' + (e.success ? "OK" : "FAIL") + '</span></td>' +
+                '<td><span class="badge badge-' + st + '">' + label + '</span></td>' +
                 '<td><button class="cmd-btn swarm-detail-btn" data-swarm-id="' + esc(e.swarmId) + '">Details</button></td>' +
                 '</tr>';
             }).join("") + '</table>' :

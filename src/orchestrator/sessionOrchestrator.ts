@@ -1238,6 +1238,49 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
               trigger: 'activate_swarm_tool',
             },
           });
+          const runningPersistInput: PersistSwarmResultInput = {
+            userId: input.state.userId,
+            correlationId,
+            swarmId: swarmDecomposerResult.plan.swarmId,
+            userQuery: input.userMessage,
+            decomposerTokens: swarmDecomposerResult.tokensUsed,
+            decomposerModel: swarmDecomposerResult.decomposerModel,
+            executionDurationMs: 0,
+            statusOverride: 'running',
+            agentCountOverride: swarmDecomposerResult.plan.agents.length,
+            result: {
+              response: '',
+              success: false,
+              totalTokensUsed: 0,
+              agentResults: [],
+              leaderResult: {
+                synthesis: '',
+                success: false,
+                tokensUsed: 0,
+                roundsUsed: 0,
+                agentsHeardFrom: [],
+                model: swarmDecomposerResult.decomposerModel,
+              },
+              chatroomTranscript: [],
+              swarmId: swarmDecomposerResult.plan.swarmId,
+              swarmCost: undefined,
+            },
+          };
+          const runningPersistResult: { stored: boolean; error?: string } =
+            yield context.df.callActivity('persistSwarmResultActivity', runningPersistInput);
+          if (!runningPersistResult?.stored) {
+            yield* emitOrchestratorTelemetry(context, {
+              name: 'SwarmPersistenceFailure',
+              correlationId,
+              userId: input.state.userId,
+              properties: {
+                swarmId: swarmDecomposerResult.plan.swarmId,
+                error: runningPersistResult?.error ?? 'unknown',
+                phase: 'start',
+              },
+            });
+          }
+
           const swarmInput: SwarmOrchestratorInput = {
             plan: swarmDecomposerResult.plan,
             correlationId,
