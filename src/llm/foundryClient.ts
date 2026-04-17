@@ -683,9 +683,19 @@ export class FoundryClient {
       body.tool_choice = options.toolChoice ?? 'auto';
     }
 
+    // OpenRouter provider-routing hint (#677). `require_parameters: true` makes
+    // OpenRouter reject requests where an upstream provider would silently drop
+    // a parameter (e.g. a provider that does not support tools would otherwise
+    // be selected and return degraded responses). Failing loud is healthier.
+    body.provider = { require_parameters: true };
+
     const requestBody = JSON.stringify(body);
 
-    const raw = await new Promise<RawApiResponse>((resolve, reject) => {
+    // Gate all OpenRouter requests behind a per-process concurrency limiter
+    // (#677). Without this, a swarm of 3-4 worker activities fires parallel
+    // requests that share a single API key and trip upstream provider
+    // per-key concurrency caps (observed with minimax during PROBE-SWARM-TAB-004).
+    const raw = await withOpenRouterConcurrencySlot(correlationId, routing.deploymentName, () => new Promise<RawApiResponse>((resolve, reject) => {
       let settled = false;
       const settle = (fn: () => void) => {
         if (!settled) { settled = true; fn(); }
@@ -710,6 +720,11 @@ export class FoundryClient {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${config.openrouterApiKey}`,
             'x-correlation-id': correlationId,
+            // OpenRouter attribution headers (#677) — documented at
+            // https://openrouter.ai/docs/quickstart. Used for rankings and
+            // credit attribution.
+            'HTTP-Referer': config.openrouterReferer,
+            'X-Title': config.openrouterTitle,
             'Content-Length': Buffer.byteLength(requestBody),
           },
           agent: new https.Agent({ keepAlive: false }),
@@ -720,6 +735,9 @@ export class FoundryClient {
           res.on('end', () => {
             clearTimeout(wallClockTimer);
             const responseText = Buffer.concat(chunks).toString('utf-8');
+            // Parse OpenRouter rate-limit headers on every response and surface
+            // to telemetry. Feeds future proactive-throttling logic. (#677)
+            emitOpenRouterRateLimitSnapshot(res.headers, routing.deploymentName, correlationId);
             if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
               const errorText = sanitizeRemoteErrorText(responseText);
               const retryAfterRaw = res.headers['retry-after'] ?? res.headers['retry-after-ms'];
@@ -764,7 +782,7 @@ export class FoundryClient {
 
       req.write(requestBody);
       req.end();
-    });
+    }));
 
     return mapApiResponse(raw);
   }
@@ -790,14 +808,14 @@ export class FoundryClient {
 
 /**
  * Builds the ordered fallback chain for OpenRouter calls.
- * Chain: requested model → lane.primary (cross-provider) → fallbackPrimary (minimax)
- *   → fallbackSecondary → lane.secondary.
+ * Chain: primary (grok-4.1-fast, reasoning) → fallbackPrimary (minimax) → fallbackSecondary.
  * All entries share the same apiBase and usesObo=false from the base routing.
  *
- * #676: Always include `routing.lane.primary` so agents whose `deploymentName` was
- * overridden to the minimax family (e.g. Lucas) still retain a cross-provider fallback
- * to grok-4.1-fast when minimax is circuit-broken. Previously Lucas collapsed to a
- * single-entry chain of [minimax] and aborted the whole swarm on any minimax outage.
+ * Deliberately does NOT add cross-provider fallback for minimax-pinned agents
+ * (e.g. Lucas). Silent cross-model failover for specialised agents is an
+ * anti-pattern — the specialisation reason is lost. Proper handling of
+ * upstream OpenRouter errors (429/502/524) belongs in the typed error
+ * classification work in #677, not in the fallback chain.
  */
 function buildOpenRouterFallbackChain(
   routing: ModelRouting,
@@ -812,8 +830,7 @@ function buildOpenRouterFallbackChain(
     chain.push({ ...routing, deploymentName, isReasoning });
   };
 
-  add(routing.deploymentName, routing.isReasoning);             // requested model (may be minimax override)
-  add(routing.lane.primary, true);                              // lane primary (grok-4.1-fast, reasoning) — cross-provider fallback (#676)
+  add(routing.deploymentName, routing.isReasoning);             // requested model (e.g. grok, or minimax if overridden)
   add(config.openrouterFallbackPrimary, false);                 // minimax/minimax-m2.7
   add(config.openrouterFallbackSecondary, false);               // tertiary fallback
   add(routing.lane.secondary, false);                           // lane secondary (if different)
@@ -946,6 +963,115 @@ export function shouldPageOutForLlmFailure(err: unknown): boolean {
   }
 
   return false;
+}
+
+// ---------------------------------------------------------------------------
+// OpenRouter best-practice helpers (#677)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse OpenRouter / upstream-provider rate-limit headers and emit telemetry.
+ * OpenRouter mirrors common rate-limit headers from upstream providers:
+ *   X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset
+ * See https://openrouter.ai/docs/api-reference/limits
+ */
+function emitOpenRouterRateLimitSnapshot(
+  headers: Record<string, string | string[] | undefined>,
+  deploymentName: string,
+  correlationId: string,
+): void {
+  const pick = (name: string): string | undefined => {
+    const raw = headers[name] ?? headers[name.toLowerCase()];
+    if (Array.isArray(raw)) return raw[0];
+    return raw;
+  };
+  const limit = pick('x-ratelimit-limit');
+  const remaining = pick('x-ratelimit-remaining');
+  const reset = pick('x-ratelimit-reset');
+  // Skip telemetry when all three headers are absent — most responses.
+  if (!limit && !remaining && !reset) return;
+  trackEvent({
+    name: 'OpenRouterRateLimitSnapshot',
+    correlationId,
+    properties: {
+      model: deploymentName,
+      ...(limit !== undefined && { limit }),
+      ...(remaining !== undefined && { remaining }),
+      ...(reset !== undefined && { reset }),
+    },
+  });
+}
+
+/**
+ * Per-process concurrency limiter for OpenRouter calls. Prevents a swarm of
+ * parallel worker activities from bursting past upstream-provider per-key
+ * concurrency caps (e.g. xAI, minimax). Default slot count is
+ * `OPENROUTER_MAX_CONCURRENCY` (3).
+ */
+interface OpenRouterGateState {
+  active: number;
+  queue: Array<() => void>;
+  maxConcurrency: number;
+}
+
+let _openRouterGate: OpenRouterGateState | undefined;
+
+function getOpenRouterGate(): OpenRouterGateState {
+  if (!_openRouterGate) {
+    _openRouterGate = {
+      active: 0,
+      queue: [],
+      maxConcurrency: getEnvConfig().openrouterMaxConcurrency,
+    };
+  }
+  return _openRouterGate;
+}
+
+/** Test-only reset hook so unit tests can re-seed the gate between scenarios. */
+export function _resetOpenRouterGateForTests(): void {
+  _openRouterGate = undefined;
+}
+
+async function withOpenRouterConcurrencySlot<T>(
+  correlationId: string,
+  deploymentName: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const gate = getOpenRouterGate();
+  if (gate.active >= gate.maxConcurrency) {
+    const queueStart = Date.now();
+    trackEvent({
+      name: 'OpenRouterConcurrencyGate',
+      correlationId,
+      properties: {
+        action: 'queued',
+        model: deploymentName,
+        active: gate.active,
+        max: gate.maxConcurrency,
+        queueDepth: gate.queue.length,
+      },
+    });
+    await new Promise<void>((resolve) => {
+      gate.queue.push(resolve);
+    });
+    trackEvent({
+      name: 'OpenRouterConcurrencyGate',
+      correlationId,
+      properties: {
+        action: 'admitted',
+        model: deploymentName,
+        queueWaitMs: Date.now() - queueStart,
+      },
+    });
+  }
+  gate.active++;
+  try {
+    return await fn();
+  } finally {
+    gate.active--;
+    const next = gate.queue.shift();
+    if (next) next();
+  }
 }
 
 // ---------------------------------------------------------------------------

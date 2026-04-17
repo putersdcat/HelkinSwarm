@@ -63,6 +63,13 @@ const EnvConfigSchema = z.object({
   openrouterApiKey: z.string().optional(),
   openrouterFallbackPrimary: z.string().default('minimax/minimax-m2.7'),
   openrouterFallbackSecondary: z.string().default('minimax/minimax-m2.7'),
+  // OpenRouter attribution headers — per https://openrouter.ai/docs/quickstart (#677)
+  openrouterReferer: z.string().default('https://github.com/putersdcat/HelkinSwarm'),
+  openrouterTitle: z.string().default('HelkinSwarm'),
+  // Max concurrent in-flight OpenRouter requests per process (#677).
+  // Swarm workers + Helkin can otherwise burst 4+ parallel requests which
+  // triggers upstream-provider rate limits (e.g. xAI per-key concurrency caps).
+  openrouterMaxConcurrency: z.coerce.number().int().positive().default(3),
 
   // Web search (Brave Search API) — key from Key Vault (#190)
   braveSearchApiKey: z.string().optional(),
@@ -114,6 +121,9 @@ function loadFromEnv(): EnvConfig {
     openrouterApiKey: process.env['OPENROUTER_API_KEY'] || undefined,
     openrouterFallbackPrimary: process.env['OPENROUTER_FALLBACK_PRIMARY'] || undefined,
     openrouterFallbackSecondary: process.env['OPENROUTER_FALLBACK_SECONDARY'] || undefined,
+    openrouterReferer: process.env['OPENROUTER_REFERER'] || undefined,
+    openrouterTitle: process.env['OPENROUTER_TITLE'] || undefined,
+    openrouterMaxConcurrency: process.env['OPENROUTER_MAX_CONCURRENCY'] || undefined,
     braveSearchApiKey: process.env['BRAVE_SEARCH_API_KEY'] || undefined,
     azureSubscriptionId: process.env['AZURE_SUBSCRIPTION_ID'] || undefined,
     azureResourceGroup: process.env['AZURE_RESOURCE_GROUP'] || undefined,
