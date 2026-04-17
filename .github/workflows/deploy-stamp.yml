@@ -935,20 +935,12 @@ jobs:
       - name: Login to ACR
         run: az acr login --name ${{ needs.deploy-infra.outputs.acr-name }}
 
-      - name: Check if Python REPL files changed
-        id: python-changes
-        run: |
-          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
-          if echo "$CHANGED_FILES" | grep -qE '^(python-repl/|Dockerfile\.python-repl$)'; then
-            echo "pythonChanged=true" >> "$GITHUB_OUTPUT"
-            echo "✅ Python REPL files changed — will rebuild Python image."
-          else
-            echo "pythonChanged=false" >> "$GITHUB_OUTPUT"
-            echo "ℹ️ Python REPL files unchanged — skipping Python image rebuild."
-          fi
+      # The outer job-level gate (needs.deploy-infra.outputs.python-image-changed == 'true')
+      # already guarantees this job only runs when python-repl files changed, so no inner
+      # re-check is required. (#674) The previous inner `git diff HEAD~1 HEAD` silently failed
+      # on actions/checkout@v6's default shallow fetch and skipped the build and update steps.
 
       - name: Build and push Python REPL image
-        if: steps.python-changes.outputs.pythonChanged == 'true'
         run: |
           set -euo pipefail
           ACR_SERVER=${{ needs.deploy-infra.outputs.acr-login-server }}
@@ -985,7 +977,6 @@ jobs:
           done
 
       - name: Update Python REPL Container App image
-        if: steps.python-changes.outputs.pythonChanged == 'true'
         run: |
           set -euo pipefail
           ACR_SERVER=${{ needs.deploy-infra.outputs.acr-login-server }}
