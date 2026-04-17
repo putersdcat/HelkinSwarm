@@ -739,10 +739,10 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // organic swarm activation. (#675)
   const rawEligScore = planResult.swarmEligibilityScore ?? 0;
   const swarmHintEligible = !input.devLoopContext?.isDevLoop && !input.skillForgeRequest;
-  const userWantsSwarmExplicitly = hasExplicitSwarmOverride(input.userMessage);
+  const userRequestedSwarmInPrompt = hasExplicitSwarmOverride(input.userMessage);
   let swarmEligHint = '';
   if (swarmHintEligible) {
-    if (userWantsSwarmExplicitly) {
+    if (userRequestedSwarmInPrompt) {
       swarmEligHint = `\n\n[Swarm explicitly requested by the user. Call activate_swarm now — this is a direct user directive, not a heuristic.]`;
     } else if (rawEligScore >= 5) {
       swarmEligHint = `\n\n[Swarm suitability: ${rawEligScore}/10. Your specialist team (Benjamin, Harper, Lucas) may add significant value here. If parallel expert work would produce a materially better answer, call activate_swarm.]`;
@@ -920,6 +920,42 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   let toolResults: ToolDispatchResult | null = null;
   let safetyPassed = true;
   let responseContent = llmResult.content;
+
+  // [#675] Deterministic swarm activation on explicit user intent.
+  // If the user explicitly requested the swarm ("use the swarm", "ask the swarm", etc.)
+  // but Helkin's LLM turn did not emit an `activate_swarm` tool call, inject a synthetic
+  // activation call so the normal activate_swarm dispatch + decomposer + swarm execution
+  // path runs naturally. This preserves #657 organic-activation semantics for ambiguous
+  // queries while honoring direct user directives. Gated off DevLoop and SkillForge paths.
+  const userWantsSwarmExplicitly = hasExplicitSwarmOverride(input.userMessage)
+    && !input.devLoopContext?.isDevLoop
+    && !input.skillForgeRequest;
+  if (userWantsSwarmExplicitly) {
+    const existingToolCalls = llmResult.toolCalls ?? [];
+    const alreadyHasActivate = existingToolCalls.some((tc) => tc.name === 'activate_swarm');
+    if (!alreadyHasActivate) {
+      // Mutate llmResult.toolCalls — array contents are mutable even on const binding.
+      llmResult.toolCalls = [
+        {
+          id: `synthetic-swarm-${correlationId}`,
+          name: 'activate_swarm',
+          arguments: '{}',
+        },
+        ...existingToolCalls,
+      ];
+      yield* emitOrchestratorTelemetry(context, {
+        name: 'SwarmDeterministicActivation',
+        correlationId,
+        userId: input.state.userId,
+        properties: {
+          reason: 'explicit_user_intent',
+          trigger: 'explicit_swarm_signal',
+          swarmEligibilityScore: planResult.swarmEligibilityScore ?? 0,
+          hadPriorToolCalls: existingToolCalls.length > 0,
+        },
+      });
+    }
+  }
 
   if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
     let completedPlanStepOrders: number[] = [];
@@ -1217,43 +1253,11 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       scopedTokenMintCount += mergedResults.filter((result) => result.scopedTokenMinted).length;
       spans.push({ label: 'tools', durationMs: context.df.currentUtcDateTime.getTime() - toolDispatchStart });
 
-      // [#657] Detect activate_swarm tool call — Helkin consciously decided to engage the swarm
-      let swarmActivationCall = toolResults.results.find(r => r.toolName === 'activate_swarm' && r.success);
-      // [#675] Deterministic fallback — if the user explicitly requested the swarm
-      // ("use the swarm", "ask the swarm", etc.) but Helkin's LLM turn did not emit
-      // the tool call, synthesize a successful activation so explicit user intent
-      // always engages the swarm. This preserves Helkin's organic activation path
-      // (#657) for ambiguous queries while honoring direct user directives.
-      if (
-        !swarmActivationCall
-        && userWantsSwarmExplicitly
-        && !input.devLoopContext?.isDevLoop
-        && !input.skillForgeRequest
-      ) {
-        const syntheticActivation: (typeof toolResults.results)[number] = {
-          toolCallId: `synthetic-swarm-${correlationId}`,
-          toolName: 'activate_swarm',
-          success: true,
-          requiresExecutor: false,
-          result: {
-            status: 'swarm_activated',
-            reason: 'explicit_user_intent',
-            message: 'Swarm activated deterministically because the user explicitly requested it.',
-          },
-        };
-        toolResults.results.push(syntheticActivation);
-        swarmActivationCall = syntheticActivation;
-        yield* emitOrchestratorTelemetry(context, {
-          name: 'SwarmDeterministicActivation',
-          correlationId,
-          userId: input.state.userId,
-          properties: {
-            reason: 'explicit_user_intent',
-            trigger: 'explicit_swarm_signal',
-            swarmEligibilityScore: planResult.swarmEligibilityScore ?? 0,
-          },
-        });
-      }
+      // [#657] Detect activate_swarm tool call — Helkin consciously decided to engage the swarm.
+      // For explicit-user-intent requests, the synthetic activate_swarm tool call was already
+      // injected upstream (#675) so the swarm still activates even if Helkin's LLM turn chose
+      // not to emit any tool calls.
+      const swarmActivationCall = toolResults.results.find(r => r.toolName === 'activate_swarm' && r.success);
       if (swarmActivationCall && !input.devLoopContext?.isDevLoop && !input.skillForgeRequest) {
         const swarmExecTools = getExecutableToolNames();
         const swarmSkillDomains = [...new Set(
