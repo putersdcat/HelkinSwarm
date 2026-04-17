@@ -1557,7 +1557,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       const maxToolRounds = swarmDeclinedAfterActivation
         ? 1
         : Math.min(input.toolBudget ?? 5, 10);
-      const selectiveFollowUpSchemas = deriveSelectiveFollowUpToolSchemas(toolResults?.results ?? []);
+      const selectiveFollowUpSchemas = swarmDeclinedAfterActivation
+        ? []
+        : deriveSelectiveFollowUpToolSchemas(toolResults?.results ?? []);
       const discoveryFollowUpModelOverride = getDiscoveryFollowUpModelOverride(toolResults?.results ?? []);
       const effectiveFollowUpModelOverride = resolvedModelOverride ?? discoveryFollowUpModelOverride;
       const followUpToolSurfaceModelId = resolveToolSurfaceModelId(effectiveFollowUpModelOverride);
