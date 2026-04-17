@@ -127,7 +127,8 @@ export type TelemetryEventName =
   | 'SwarmMemoryCommitCompleted'
   | 'SwarmMemoryCommitError'
   | 'SwarmPersistenceFailure'
-  | 'SwarmChatroomSend';
+  | 'SwarmChatroomSend'
+  | 'ModelOverrideIgnored';
 
 // ---------------------------------------------------------------------------
 // Session Tracer — maps events to trace phases for Dev Console (#140)

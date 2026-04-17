@@ -127,8 +127,12 @@ describe('swarmWorkerActivity — model override routing (#648)', () => {
     expect(workerSrc).toContain('agentDeploymentName');
   });
 
-  it('falls back to routing.lane.primary when modelOverride is absent', () => {
-    expect(workerSrc).toContain('input.modelOverride ?? routing.lane.primary');
+  it('falls back to routing.lane.primary when modelOverride is absent or gate is off (#685)', () => {
+    // #685 gated modelOverride behind SWARM_MODEL_OVERRIDE_ENABLED; the resolution
+    // expression now consults both the env flag and the requestedOverride.
+    expect(workerSrc).toContain('SWARM_MODEL_OVERRIDE_ENABLED');
+    expect(workerSrc).toContain('routing.lane.primary');
+    expect(workerSrc).toContain('modelOverrideEnabled && requestedOverride');
   });
 
   it('uses agentDeploymentName (not routing.lane.primary) for FoundryClient construction', () => {
@@ -169,8 +173,11 @@ describe('swarmDecomposerActivity — modelOverride guidance in system prompt (#
     expect(decomposerSrc).toContain('modelOverride');
   });
 
-  it('restricts modelOverride guidance to minimax for Lucas data synthesis', () => {
-    expect(decomposerSrc).toContain('minimax/minimax-m2.7');
+  it('no longer suggests minimax for Lucas because cross-model swarm is gated off (#685)', () => {
+    // #685 — cross-model swarm is unsupported until per-model personas ship.
+    // The decomposer prompt must not advertise minimax as a viable override.
+    expect(decomposerSrc).not.toContain('minimax/minimax-m2.7');
+    expect(decomposerSrc).toContain('#685');
   });
 });
 

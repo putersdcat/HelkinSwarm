@@ -240,8 +240,27 @@ df.app.activity('swarmWorkerActivity', {
     await recordOrchestratorStage(input.correlationId, 'swarm-workers', input.userId);
 
     const routing = getModelRouting();
-    // Per-agent model specialization: use modelOverride if provided, else primary (#648)
-    const agentDeploymentName = input.modelOverride ?? routing.lane.primary;
+    // Per-agent model specialization: use modelOverride if provided, else primary (#648).
+    // #685 — cross-model swarm is not yet safe: Lucas has no minimax-specific persona,
+    // so routing him to minimax-m2.7 produces raw JSON envelopes and degraded tool-calling
+    // behaviour. Gated behind SWARM_MODEL_OVERRIDE_ENABLED=true (default off) until a
+    // proper per-model persona ships. When gated off, any modelOverride is ignored and a
+    // ModelOverrideIgnored telemetry event is emitted for observability.
+    const modelOverrideEnabled = process.env.SWARM_MODEL_OVERRIDE_ENABLED === 'true';
+    const requestedOverride = input.modelOverride;
+    if (requestedOverride && !modelOverrideEnabled) {
+      trackEvent({
+        name: 'ModelOverrideIgnored',
+        correlationId: input.correlationId,
+        properties: {
+          agentName: input.agentName,
+          requestedModel: requestedOverride,
+          appliedModel: routing.lane.primary,
+          reason: 'SWARM_MODEL_OVERRIDE_ENABLED not set',
+        },
+      });
+    }
+    const agentDeploymentName = (modelOverrideEnabled && requestedOverride) ? requestedOverride : routing.lane.primary;
     const client = new FoundryClient({
       ...routing,
       deploymentName: agentDeploymentName,
