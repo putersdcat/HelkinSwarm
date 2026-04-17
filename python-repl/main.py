@@ -42,6 +42,123 @@ import seaborn as sns         # noqa: F401
 import plotly.express as px   # noqa: F401
 import statsmodels.api as sm  # noqa: F401
 
+# -----------------------------------------------------------------------------
+# Canonical library inventory probe (#674)
+# -----------------------------------------------------------------------------
+# The gold-standard swarm sandbox (docs/0zj) enumerates a broader Python library
+# set than this REPL image ships. The block below probes each canonical library
+# at startup and records a structured inventory so:
+#   1. /health exposes an honest loaded-vs-missing report
+#   2. Deferred libraries are surfaced explicitly instead of failing at runtime
+#   3. Agents can read /health and know what tools are actually available
+#
+# Each entry is (module_name_to_import, package_name_in_pypi, optional_alias).
+# Libraries that import cleanly are exposed in the sandbox namespace by alias.
+# -----------------------------------------------------------------------------
+
+CANONICAL_LIBRARIES: list[tuple[str, str, str | None]] = [
+    # Core numerical (always expected)
+    ("numpy", "numpy", "np"),
+    ("scipy", "scipy", None),
+    ("pandas", "pandas", "pd"),
+    ("sympy", "sympy", "sp"),
+    ("mpmath", "mpmath", None),
+    ("statsmodels.api", "statsmodels", "sm"),
+    ("networkx", "networkx", "nx"),
+    # Plotting
+    ("matplotlib.pyplot", "matplotlib", "plt"),
+    ("seaborn", "seaborn", "sns"),
+    ("plotly.express", "plotly", "px"),
+    # Utilities
+    ("tqdm", "tqdm", None),
+    ("requests", "requests", None),
+    ("ecdsa", "ecdsa", None),
+    # Optimization
+    ("pulp", "PuLP", None),
+    # Astronomy / physics
+    ("astropy", "astropy", None),
+    ("qutip", "qutip", None),
+    ("control", "control", None),
+    # Biology / chemistry
+    ("Bio", "biopython", None),
+    ("pubchempy", "pubchempy", None),
+    ("dendropy", "dendropy", None),
+    # Games / media
+    ("chess", "chess", None),
+    ("mido", "mido", None),
+    ("midiutil", "MIDIUtil", None),
+]
+
+# Libraries intentionally deferred — reported as "deferred" (not "missing")
+# so callers know the absence is a design decision, not a bug.
+DEFERRED_LIBRARIES: dict[str, str] = {
+    "rdkit": "Requires Boost + curated wheels; material image-size impact.",
+    "pyscf": "Requires gfortran/BLAS build chain.",
+    "pygame": "Requires SDL2 system libraries.",
+    "polygon": "Ambiguous PyPI package name; no stable wheel set.",
+    "torch": "~2GB image bloat; not justified for current swarm tasks.",
+    "snappy": "Requires libsnappy-dev apt package.",
+}
+
+
+def _probe_canonical_inventory() -> dict[str, Any]:
+    """Import every canonical library and record status.
+
+    Returns a dict with 'loaded' (list[str]), 'missing' (list[dict]),
+    'deferred' (list[dict]), and 'loaded_aliases' (dict[str, str]).
+    """
+    loaded: list[str] = []
+    missing: list[dict[str, str]] = []
+    aliases: dict[str, Any] = {}
+    for module_name, package_name, alias in CANONICAL_LIBRARIES:
+        try:
+            mod = __import__(module_name, fromlist=["*"])
+            loaded.append(package_name)
+            if alias:
+                aliases[alias] = mod
+            aliases[package_name] = mod
+        except Exception as exc:  # noqa: BLE001 — record the failure verbatim
+            missing.append({
+                "package": package_name,
+                "module": module_name,
+                "error": f"{type(exc).__name__}: {exc}",
+            })
+    deferred_report = [
+        {"package": pkg, "reason": reason}
+        for pkg, reason in DEFERRED_LIBRARIES.items()
+    ]
+    return {
+        "loaded": loaded,
+        "missing": missing,
+        "deferred": deferred_report,
+        "_aliases": aliases,  # private, stripped before returning to callers
+    }
+
+
+_INVENTORY = _probe_canonical_inventory()
+
+# Log inventory at startup so Container Apps log stream shows what's available.
+_loaded = _INVENTORY["loaded"]
+_missing = _INVENTORY["missing"]
+print(
+    f"[repl] Canonical library inventory: {len(_loaded)} loaded, "
+    f"{len(_missing)} missing, {len(_INVENTORY['deferred'])} deferred",
+    file=sys.stderr,
+    flush=True,
+)
+if _missing:
+    print(
+        "[repl] Missing libraries (unexpected): "
+        + ", ".join(m["package"] for m in _missing),
+        file=sys.stderr,
+        flush=True,
+    )
+print(
+    "[repl] Loaded: " + ", ".join(_loaded),
+    file=sys.stderr,
+    flush=True,
+)
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -183,6 +300,16 @@ def _create_sandbox_globals() -> dict[str, Any]:
         "seaborn": _sns,
         "plotly": __import__("plotly"),
         "statsmodels": __import__("statsmodels"),
+        # Canonical parity libraries (#674) — injected only if they loaded
+        # successfully at startup. Missing ones stay absent so agents see a
+        # NameError rather than a silently-nil reference.
+        **{
+            alias: mod
+            for alias, mod in _INVENTORY["_aliases"].items()
+            if alias not in {"np", "pd", "sp", "sns", "px", "sm", "numpy",
+                             "pandas", "sympy", "matplotlib", "seaborn",
+                             "plotly", "statsmodels"}
+        },
         "__builtins__": safe_builtins,
         "__name__": "__sandbox__",
     }
@@ -230,8 +357,24 @@ class ExecuteResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, Any]:
+    """Runtime health + canonical library inventory (#674).
+
+    Exposes which libraries from the gold-standard swarm sandbox loaded,
+    which are missing unexpectedly, and which are honestly deferred.
+    Agents can call this endpoint to understand what is actually available
+    before attempting to use a given library.
+    """
+    return {
+        "status": "ok",
+        "python_version": sys.version.split()[0],
+        "inventory": {
+            "loaded": _INVENTORY["loaded"],
+            "loaded_count": len(_INVENTORY["loaded"]),
+            "missing": _INVENTORY["missing"],
+            "deferred": _INVENTORY["deferred"],
+        },
+    }
 
 
 @app.post("/execute", response_model=ExecuteResponse)
