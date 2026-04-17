@@ -18,6 +18,8 @@ on:
       - 'infra/*.bicep'
       - 'infra/*.parameters.json'
       - 'Dockerfile'
+      - 'Dockerfile.python-repl'
+      - 'python-repl/**'
       - 'package.json'
       - 'pnpm-lock.yaml'
       - 'tsconfig.json'
