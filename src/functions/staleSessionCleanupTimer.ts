@@ -63,7 +63,22 @@ app.timer('staleSessionCleanupTimer', {
       const ageMs = now - (candidate.lastUpdatedTime ? new Date(candidate.lastUpdatedTime).getTime() : 0);
       context.log(`[staleSessionCleanup] Terminating ${candidate.instanceId} (name=${candidate.name}, status=${candidate.runtimeStatus}, staleMs=${ageMs})`);
       try {
-        await client.terminate(candidate.instanceId, `Stale session cleanup — idle for ${Math.round(ageMs / 1000)}s (threshold: ${Math.round(STALE_THRESHOLD_MS / 1000)}s)`);
+        // #686 — Durable Entity instance ids (e.g. "@swarmchatroom@swarm-...") cannot
+        // be killed via client.terminate — that API is orchestration-only. For entities
+        // we must signal destroy + purge history so the Sessions row actually clears.
+        const entityMatch = candidate.instanceId.match(/^@([^@]+)@(.+)$/);
+        if (entityMatch) {
+          const [, entityName, entityKey] = entityMatch;
+          const entityId = new df.EntityId(entityName, entityKey);
+          try {
+            await client.signalEntity(entityId, 'destroy');
+          } catch (signalErr) {
+            context.log(`[staleSessionCleanup] signalEntity destroy failed for ${candidate.instanceId}: ${signalErr instanceof Error ? signalErr.message : String(signalErr)}`);
+          }
+          await client.purgeInstanceHistory(candidate.instanceId);
+        } else {
+          await client.terminate(candidate.instanceId, `Stale session cleanup — idle for ${Math.round(ageMs / 1000)}s (threshold: ${Math.round(STALE_THRESHOLD_MS / 1000)}s)`);
+        }
         terminated++;
         terminatedInstanceIds.push(candidate.instanceId);
       } catch (err) {
