@@ -357,6 +357,27 @@ jobs:
             echo "ℹ️ Developer debug CIDRs reserved for future network-hardening enforcement: $DEVELOPER_ALLOWED_IP_CIDRS"
           fi
 
+          # Resolve the python-repl ContainerApp image for this Bicep deploy. (#674)
+          # On fresh stamps the custom image has not yet been pushed to ACR, so
+          # Bicep provisions with a public bootstrap image. Once the ACR tag
+          # exists (from the build-and-push-python job of a prior deploy), the
+          # parameter sticks to the ACR image so Bicep does not flap the
+          # revision back to bootstrap on every subsequent deploy.
+          ACR_NAME_LOCAL="helkinswarmacr${{ env.USER_ALIAS }}"
+          PYTHON_REPL_BOOTSTRAP="mcr.microsoft.com/k8se/quickstart:latest"
+          PYTHON_REPL_ACR_IMAGE="${ACR_NAME_LOCAL}.azurecr.io/helkinswarm-python-repl:latest"
+          if az acr repository show-tags \
+              --name "$ACR_NAME_LOCAL" \
+              --repository "helkinswarm-python-repl" \
+              --query "contains(@, 'latest')" \
+              -o tsv 2>/dev/null | grep -qi true; then
+            PYTHON_REPL_IMAGE="$PYTHON_REPL_ACR_IMAGE"
+            echo "ℹ️ python-repl:latest exists in ACR — Bicep will pin to $PYTHON_REPL_IMAGE"
+          else
+            PYTHON_REPL_IMAGE="$PYTHON_REPL_BOOTSTRAP"
+            echo "ℹ️ python-repl:latest not yet in ACR — Bicep bootstrap with $PYTHON_REPL_IMAGE (deploy-stamp will swap after build)"
+          fi
+
           DEPLOY_CMD=(az deployment group create
             --subscription "${{ env.AZURE_SUBSCRIPTION_ID }}"
             --resource-group "${{ env.RESOURCE_GROUP }}"
@@ -379,6 +400,7 @@ jobs:
             developerAllowedIpCidrs="${DEVELOPER_ALLOWED_IP_CIDRS:-[]}"
             stampPolicyAllowOutlookSendWithoutConfirmation=${STAMP_POLICY_OUTLOOK_SEND_BYPASS}
             stampPolicyAllowVaultWriteWithoutConfirmation=${STAMP_POLICY_VAULT_WRITE_BYPASS}
+            pythonReplImage="${PYTHON_REPL_IMAGE}"
           )
 
           DEPLOY_CMD+=(--output json)

@@ -115,6 +115,9 @@ param stampPolicyAllowOutlookSendWithoutConfirmation bool = false
 @description('Enable the stamp-local vault write confirmation bypass policy for the primary developer stamp only.')
 param stampPolicyAllowVaultWriteWithoutConfirmation bool = false
 
+@description('Python REPL container image reference (#674). Defaults to a public bootstrap image so first-time Bicep deploys succeed before the custom image has been pushed to ACR. The workflow passes the real ACR image once it exists so subsequent deploys stay on the production image instead of flapping back to bootstrap.')
+param pythonReplImage string = 'mcr.microsoft.com/k8se/quickstart:latest'
+
 
 // ─── Variables ──────────────────────────────────────────────────────────────
 
@@ -761,13 +764,16 @@ resource pythonReplApp 'Microsoft.App/containerApps@2024-03-01' = {
     template: {
       containers: [
         {
-          // deploy-stamp.yml updates this tag after image build.
-          // Use the static ACR hostname (acrName + azurecr.io) rather than
-          // acr.properties.loginServer so that ARM template validation can
-          // evaluate the image reference string at submit time; the
-          // reference() function is not resolved during Container App image
-          // format validation and causes ContainerAppInvalidImageFormat.
-          image: '${acrName}.azurecr.io/helkinswarm-python-repl:latest'
+          // Image is passed by deploy-stamp.yml as a Bicep parameter (#674).
+          // Workflow chooses:
+          //   - '<acrName>.azurecr.io/helkinswarm-python-repl:latest' when that
+          //     tag already exists in ACR (every subsequent deploy)
+          //   - 'mcr.microsoft.com/k8se/quickstart:latest' bootstrap image when
+          //     the ACR tag does not yet exist (first-ever provision)
+          // This avoids the chicken-and-egg where Bicep provisions the Container
+          // App BEFORE the build-and-push-python job runs, and also avoids
+          // revision flap on established stamps.
+          image: pythonReplImage
           name: 'python-repl'
           resources: {
             cpu: json('0.5')
