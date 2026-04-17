@@ -10,12 +10,15 @@ import { trackEvent } from '../../observability/telemetry.js';
 import { recordOrchestratorStage } from '../../observability/orchestratorStageHealth.js';
 import { buildLeaderSystemPrompt, buildLeaderDelegationPrompt } from './swarmPersonas.js';
 import { resolveSwarmUserInfo } from './swarmUserInfo.js';
+import { parseChatroomSendMessage, stripSelfEchoRecipients } from './chatroomEnvelope.js';
 import type { ChatMessage, ToolDefinition } from '../../llm/foundryClient.js';
 import type { ChatroomMessage, SwarmLeaderInput, SwarmLeaderResult } from './swarmTypes.js';
 import { ChatroomMessageSchema } from './swarmTypes.js';
 
 /**
  * Format the chatroom transcript into LLM-readable context.
+ * When the canonical envelope is present (#673), surface messageType and confidence
+ * so the Leader can weight contributions and spot low-confidence claims.
  */
 function formatTranscriptForLeader(messages: ChatroomMessage[]): string {
   if (messages.length === 0) {
@@ -24,7 +27,11 @@ function formatTranscriptForLeader(messages: ChatroomMessage[]): string {
 
   return messages.map(m => {
     const typeTag = m.contentType !== 'text' ? ` [${m.contentType}]` : '';
-    return `[${m.from}${typeTag}] ${m.content}`;
+    const metaParts: string[] = [];
+    if (m.messageType) metaParts.push(`type=${m.messageType}`);
+    if (typeof m.confidence === 'number') metaParts.push(`confidence=${m.confidence}`);
+    const meta = metaParts.length ? ` (${metaParts.join(', ')})` : '';
+    return `[${m.from}${typeTag}${meta}] ${m.content}`;
   }).join('\n\n');
 }
 
@@ -64,19 +71,19 @@ df.app.activity('swarmLeaderActivity', {
         type: 'function',
         function: {
           name: 'chatroom_send',
-          description: 'Send a delegation, follow-up question, or status message to a team member.',
+          description: 'Send a delegation, follow-up question, or status message to a team member. The `message` parameter MUST be a JSON string matching the canonical envelope: {"messageType": "thinking"|"tool_summary"|"analysis"|"response"|"question"|"contribution"|"final_contribution", "content": "...", "confidence": 0-100, "sender": "Helkin"}.',
           parameters: {
             type: 'object',
             properties: {
-              message: { type: 'string', description: 'Delegation or coordination message content' },
+              message: { type: 'string', description: 'Canonical JSON envelope (see tool description).' },
               to: {
-                description: 'Recipient agent name (e.g. "Benjamin", "Harper", "Lucas") or "All"',
+                description: 'Recipient agent name (e.g. "Benjamin", "Harper", "Lucas") or "All". Never list "Helkin" — the orchestrator strips self-echo recipients.',
                 anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }],
               },
               contentType: {
                 type: 'string',
                 enum: ['delegation', 'question', 'status', 'text'],
-                description: 'Type of coordination message',
+                description: 'Transport-layer type. Orthogonal to the canonical messageType inside the payload.',
               },
             },
             required: ['message', 'to'],
@@ -165,24 +172,47 @@ df.app.activity('swarmLeaderActivity', {
               });
               continue;
             }
-            const msgContent = String(args['message'] ?? '');
-            const to = (args['to'] ?? 'All') as string | string[];
+            // Canonical chatroom_send wire contract (#673). Parse the JSON envelope.
+            const rawMessage = String(args['message'] ?? '');
+            const rawTo = (args['to'] ?? 'All') as string | string[];
             const contentType = String(args['contentType'] ?? 'delegation');
+            const parsedEnvelope = parseChatroomSendMessage(rawMessage, input.leaderName);
+
+            // Echo guard: leader must never appear in its own recipient list.
+            const to = stripSelfEchoRecipients(input.leaderName, rawTo);
 
             const msg: ChatroomMessage = {
               id: crypto.randomUUID(),
               from: input.leaderName,
               to,
-              content: msgContent,
+              content: parsedEnvelope.displayContent,
               contentType: contentType as ChatroomMessage['contentType'],
               timestamp: Date.now(),
               correlationId: input.swarmCorrelationId,
+              messageType: parsedEnvelope.payload?.messageType,
+              confidence: parsedEnvelope.payload?.confidence,
+              sender: parsedEnvelope.payload?.sender ?? input.leaderName,
             };
 
             const validated = ChatroomMessageSchema.safeParse(msg);
             if (validated.success) {
               pendingDelegations.push(validated.data);
             }
+
+            trackEvent({
+              name: 'SwarmChatroomSend',
+              correlationId: input.correlationId,
+              userId: input.userId,
+              properties: {
+                from: input.leaderName,
+                to: Array.isArray(to) ? to.join(',') : to,
+                contentType,
+                messageType: parsedEnvelope.payload?.messageType ?? '',
+                confidence: parsedEnvelope.payload?.confidence ?? -1,
+                legacy: parsedEnvelope.legacy,
+                swarmId: input.swarmId,
+              },
+            });
 
             convoHeight.push({
               role: 'tool',

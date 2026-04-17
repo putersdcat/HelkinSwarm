@@ -12,6 +12,7 @@ import { trackEvent } from '../../observability/telemetry.js';
 import { recordOrchestratorStage } from '../../observability/orchestratorStageHealth.js';
 import { buildWorkerSystemPrompt, stripRenderTags } from './swarmPersonas.js';
 import { resolveSwarmUserInfo } from './swarmUserInfo.js';
+import { parseChatroomSendMessage, stripSelfEchoRecipients } from './chatroomEnvelope.js';
 import { scopedTokenMinter } from '../../auth/scopedTokenMinter.js';
 import { mapPrivilegeClassToScopedTokenScope } from '../../auth/tokenScopeMapping.js';
 import { MemoryManager } from '../../memory/memoryManager.js';
@@ -89,16 +90,16 @@ function buildWorkerToolSchemas(assignedToolNames: string[]): ToolDefinition[] {
     type: 'function',
     function: {
       name: CHATROOM_SEND_TOOL,
-      description: 'Send a message to other agents in your team. Messages appear in their context on the next turn.',
+      description: 'Send a message to other agents in your team. The `message` parameter MUST be a JSON string matching the canonical envelope: {"messageType": "thinking"|"tool_summary"|"analysis"|"response"|"question"|"contribution"|"final_contribution", "content": "...", "confidence": 0-100, "sender": "<YourName>"}. Messages are delivered to the recipient on their next turn.',
       parameters: {
         type: 'object',
         properties: {
           message: {
             type: 'string',
-            description: 'Message content (partial results, questions, status updates, etc.)',
+            description: 'Canonical JSON envelope (see tool description). Legacy plain-text messages are still accepted for backwards compatibility but should not be used.',
           },
           to: {
-            description: 'Recipient: agent name (e.g. "Helkin", "Benjamin", "Harper", "Lucas") or "All" for broadcast',
+            description: 'Recipient: agent name (e.g. "Helkin", "Benjamin", "Harper", "Lucas") or "All" for broadcast. Never list yourself — the orchestrator strips self-echo recipients.',
             anyOf: [
               { type: 'string' },
               { type: 'array', items: { type: 'string' } },
@@ -107,7 +108,7 @@ function buildWorkerToolSchemas(assignedToolNames: string[]): ToolDefinition[] {
           contentType: {
             type: 'string',
             enum: ['text', 'partial_result', 'cross_verification', 'question', 'status', 'error'],
-            description: 'Type of message (default: text)',
+            description: 'Transport-layer type (default: text). Orthogonal to the canonical messageType inside the payload.',
           },
         },
         required: ['message', 'to'],
@@ -436,19 +437,27 @@ df.app.activity('swarmWorkerActivity', {
           }
 
           if (tc.function.name === CHATROOM_SEND_TOOL) {
-            // Virtual tool — create chatroom message
-            const msgContent = String(parsedArgs['message'] ?? '');
-            const to = (parsedArgs['to'] ?? 'Leader') as string | string[];
+            // Canonical chatroom_send wire contract (#673). Parse the JSON envelope
+            // in the `message` field; fall back to legacy freeform on malformed input.
+            const rawMessage = String(parsedArgs['message'] ?? '');
+            const rawTo = (parsedArgs['to'] ?? 'Helkin') as string | string[];
             const contentType = String(parsedArgs['contentType'] ?? 'text');
+            const parsedEnvelope = parseChatroomSendMessage(rawMessage, input.agentName);
+
+            // Echo guard: sender must never appear in its own recipient list.
+            const to = stripSelfEchoRecipients(input.agentName, rawTo);
 
             const chatroomMsg: ChatroomMessage = {
               id: crypto.randomUUID(),
               from: input.agentName,
               to,
-              content: msgContent,
+              content: parsedEnvelope.displayContent,
               contentType: contentType as ChatroomMessage['contentType'],
               timestamp: Date.now(),
               correlationId: input.swarmCorrelationId,
+              messageType: parsedEnvelope.payload?.messageType,
+              confidence: parsedEnvelope.payload?.confidence,
+              sender: parsedEnvelope.payload?.sender ?? input.agentName,
             };
 
             // Validate
@@ -458,16 +467,38 @@ df.app.activity('swarmWorkerActivity', {
               chatroomMessagesSent++;
             }
 
+            // Structured telemetry: surface parsed messageType + confidence for
+            // downstream observability. Legacy freeform messages still land with
+            // legacy=true so gaps are visible.
+            trackEvent({
+              name: 'SwarmChatroomSend',
+              correlationId: input.correlationId,
+              userId: input.userId,
+              properties: {
+                from: input.agentName,
+                to: Array.isArray(to) ? to.join(',') : to,
+                contentType,
+                messageType: parsedEnvelope.payload?.messageType ?? '',
+                confidence: parsedEnvelope.payload?.confidence ?? -1,
+                legacy: parsedEnvelope.legacy,
+                swarmId: input.swarmId,
+              },
+            });
+
             // Route to target agent's Cosmos session chain (#661).
             // The recipient loads this message via loadRecentAgentSessions on their next activation.
             // Only route to named worker agents (not "Helkin", "Leader", "All").
             const EXCLUDED_TARGETS = new Set(['helkin', 'leader', 'all']);
             const recipients = Array.isArray(to) ? to : [to];
             for (const recipient of recipients) {
-              if (!EXCLUDED_TARGETS.has(recipient.toLowerCase())) {
+              if (
+                !EXCLUDED_TARGETS.has(recipient.toLowerCase()) &&
+                // echo guard again at routing layer for safety
+                recipient.toLowerCase() !== input.agentName.toLowerCase()
+              ) {
                 await sessionMm.storeAgentSessionSummary(
                   recipient,
-                  `[Chatroom from ${input.agentName} | ${new Date().toISOString()}] ${msgContent.slice(0, 300)}`,
+                  `[Chatroom from ${input.agentName} | ${new Date().toISOString()}] ${parsedEnvelope.displayContent.slice(0, 300)}`,
                 ).catch(() => { /* non-fatal */ });
               }
             }

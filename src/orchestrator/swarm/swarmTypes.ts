@@ -18,6 +18,33 @@ export const SwarmUserInfoSchema = z.object({
 export type SwarmUserInfoPayload = z.infer<typeof SwarmUserInfoSchema>;
 
 // ---------------------------------------------------------------------------
+// Canonical chatroom_send JSON envelope (#673)
+// Reproduced from docs/0zh §3.2 (canonical package Doc 08). Every agent is
+// instructed to send a JSON string in the `message` parameter with exactly
+// these four fields. The orchestrator parses, validates, and uses them for
+// confidence-weighted handling and structured telemetry.
+// ---------------------------------------------------------------------------
+
+export const CANONICAL_MESSAGE_TYPES = [
+  'thinking',
+  'tool_summary',
+  'analysis',
+  'response',
+  'question',
+  'contribution',
+  'final_contribution',
+] as const;
+
+export const CanonicalChatroomPayloadSchema = z.object({
+  messageType: z.enum(CANONICAL_MESSAGE_TYPES),
+  content: z.string(),
+  confidence: z.number().int().min(0).max(100),
+  sender: z.string().min(1),
+});
+
+export type CanonicalChatroomPayload = z.infer<typeof CanonicalChatroomPayloadSchema>;
+
+// ---------------------------------------------------------------------------
 // ChatroomMessage — the sole inter-agent communication primitive
 // ---------------------------------------------------------------------------
 
@@ -46,6 +73,12 @@ export const ChatroomMessageSchema = z.object({
   timestamp: z.number(),
   correlationId: z.string(),
   replyTo: z.string().uuid().optional(),
+  /** Canonical envelope parsed from the raw JSON message string (#673). Optional for
+   *  backwards compatibility with older transport-only messages. When present, the
+   *  transcript and telemetry surface messageType, confidence, and sender. */
+  messageType: z.enum(CANONICAL_MESSAGE_TYPES).optional(),
+  confidence: z.number().int().min(0).max(100).optional(),
+  sender: z.string().min(1).optional(),
 });
 
 export type ChatroomMessage = z.infer<typeof ChatroomMessageSchema>;
