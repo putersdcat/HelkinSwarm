@@ -1385,6 +1385,25 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         return { outcome: 'started' };
       }
 
+      // [#687] If a sibling overseer is alive for this user but was deemed non-routable
+      // (e.g. mid-turn rather than awaiting-ingress), starting a new overseer creates a
+      // multi-overseer condition. Surface this as telemetry so the rate is visible and
+      // future remediation can target the worst offenders.
+      if (hasActiveGuard && effectiveActiveInstanceId && effectiveActiveInstanceId !== identity.instanceId) {
+        trackEvent({
+          name: 'OverseerStartedDespiteLiveSibling',
+          correlationId: eventCorrelationId,
+          userId,
+          properties: {
+            newInstanceId: identity.instanceId,
+            siblingInstanceId: effectiveActiveInstanceId,
+            siblingActiveCount: String(activeSummary.activeCount),
+            interruptionDepth: String(interruptionDepth),
+            ingressDecision: ingressDecision.decision,
+            ingressReason: ingressDecision.reason ?? '',
+          },
+        });
+      }
       console.info(`[HelkinSwarmBot] DEDUP-PASS durable — starting ${identity.instanceId} bucket=${identity.timeBucket}`);
       await client.startNew('overseer', { instanceId: identity.instanceId, input: event });
       await signalMindSessionAcquire(client, userId, {
