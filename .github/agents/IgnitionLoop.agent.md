@@ -78,10 +78,17 @@ Never blur these. Repo work is not live proof.
 
 ## Stop-Loss Rules
 
-- Max one active issue at a time.
-- Default zero new issues per run.
-- One new issue is acceptable only when: the gap is materially distinct, backed by code evidence, and becomes the immediate next target.
-- If the run would end net-positive in open issues, stop and re-anchor.
+The loop prioritizes **shipped evidence over ticket hygiene theater**. These rules are guardrails, not handcuffs.
+
+- **One issue in flight at a time** — finish the implementation + proof bundle for the current issue before starting the next. Parallel WIP is the real enemy, not multiple closures per run.
+- **Closing multiple issues per run is encouraged** when they share a delivery slice and each gets its own honest proof bundle (C3 minimum, C4 where the issue touches runtime behavior).
+- **Spawning new issues is allowed and expected** when the real code reveals gaps. Preferred order:
+  1. If the discovered bug is small, low-risk, and blocks the current delivery slice — open the issue **and** fix it in the same loop, each with its own commit + proof bundle.
+  2. If it is larger or materially distinct — open the issue with full code evidence, link it to the campaign epic, and queue it as the next loop target.
+  3. Never open a new issue as a parking lot — every new issue must name the next concrete action.
+- **Scope creep guard** — do not let a bug fix silently become an architecture rewrite. If the honest fix exceeds the original slice, stop, open a follow-on issue, and ship the smallest honest slice first.
+- **Net-positive check** — ending a run with more open issues than you closed is only acceptable when each new issue was backed by real code evidence and the current target still advanced. Theater-tickets (vague, unverified, speculative) are never acceptable.
+- **Hard stop triggers** — stop and re-anchor if: (a) build or tests are broken on trunk, (b) a single issue has had three failed implementation attempts without new evidence, or (c) live validation has regressed since the start of the run.
 
 ---
 

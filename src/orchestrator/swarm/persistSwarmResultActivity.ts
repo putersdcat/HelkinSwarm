@@ -5,6 +5,7 @@
 
 import * as df from 'durable-functions';
 import { getContainer } from '../../memory/cosmosClient.js';
+import { recordOrchestratorStage } from '../../observability/orchestratorStageHealth.js';
 
 import type {
   SwarmOrchestratorResult,
@@ -134,22 +135,49 @@ export function buildSwarmExecutionDocument(
 
 const SESSIONS_CONTAINER = 'sessions';
 const SWARM_EXECUTION_TTL_SECONDS = 72 * 60 * 60; // 72 hours
+// #681 — defensive ceiling so a throttled Cosmos cannot hang the orchestrator
+// turn. The SDK's default retry policy can otherwise retry for minutes under
+// 429s, leaving the post-swarm orchestrator path with no visible stall point.
+const COSMOS_UPSERT_TIMEOUT_MS = 15_000;
+
+async function upsertWithTimeout(container: ReturnType<typeof getContainer>, doc: unknown, label: string): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      container.items.upsert(doc as Record<string, unknown>),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`cosmos upsert (${label}) exceeded ${COSMOS_UPSERT_TIMEOUT_MS}ms`));
+        }, COSMOS_UPSERT_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
 
 df.app.activity('persistSwarmResultActivity', {
   handler: async (input: PersistSwarmResultInput): Promise<{ stored: boolean; error?: string }> => {
+    // #681 — stamp the stage immediately so a hang here is visible in
+    // correlate_runtime instead of masquerading as a generic post-swarm stall.
+    try {
+      await recordOrchestratorStage(input.correlationId, 'swarm-persist', input.userId);
+    } catch {
+      // stage health is best-effort; never fail the activity on telemetry
+    }
     try {
       const container = getContainer(SESSIONS_CONTAINER);
       const doc = buildSwarmExecutionDocument(input);
 
       try {
-        await container.items.upsert(doc);
+        await upsertWithTimeout(container, doc, 'primary');
       } catch (firstErr) {
         const firstMessage = firstErr instanceof Error ? firstErr.message : String(firstErr);
         const compactDoc = buildSwarmExecutionDocument(input, {
           compact: true,
           warning: `Stored compact fallback after primary persistence failure: ${truncateText(firstMessage, 240)}`,
         });
-        await container.items.upsert(compactDoc);
+        await upsertWithTimeout(container, compactDoc, 'compact');
       }
 
       return { stored: true };
