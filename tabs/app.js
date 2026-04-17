@@ -1271,7 +1271,25 @@
                         var emoji = getAgentEmoji(m.from);
                         var agentClass = getAgentCssClass(m.from);
                         var typeLabel = m.contentType || 'text';
-                        var content = (m.content || "").length > 400 ? m.content.substring(0, 400) + "\u2026" : (m.content || "");
+                        var rawContent = m.content || "";
+                        // #684 — some models (e.g. minimax-m2.7 without a model-specific persona)
+                        // emit the internal chatroom envelope as raw JSON inside content. Sniff
+                        // and unwrap so the bubble shows the human-readable text, not the struct.
+                        var envelopeLabel = "";
+                        if (rawContent.length > 1 && (rawContent.charAt(0) === '{' || rawContent.charAt(0) === '[')) {
+                          try {
+                            var parsed = JSON.parse(rawContent);
+                            if (parsed && typeof parsed === 'object' && typeof parsed.content === 'string' &&
+                                (typeof parsed.messageType === 'string' || typeof parsed.sender === 'string')) {
+                              rawContent = parsed.content;
+                              if (parsed.messageType) typeLabel = parsed.messageType;
+                              envelopeLabel = ' unwrapped';
+                            }
+                          } catch (jsonErr) {
+                            // Not valid JSON — render as-is.
+                          }
+                        }
+                        var content = rawContent.length > 400 ? rawContent.substring(0, 400) + "\u2026" : rawContent;
                         var toLabel = typeof m.to === 'string' ? m.to : (m.to || []).join(', ');
 
                         return '<div class="chat-bubble ' + agentClass + '">' +
@@ -1280,7 +1298,7 @@
                           '<div class="bubble-header">' +
                           '<span class="bubble-from">' + esc(m.from || '\u2014') + '</span>' +
                           '<span class="bubble-to">\u2192 ' + esc(toLabel) + '</span>' +
-                          '<span class="bubble-type type-' + esc(typeLabel) + '">' + esc(typeLabel) + '</span>' +
+                          '<span class="bubble-type type-' + esc(typeLabel) + '">' + esc(typeLabel) + (envelopeLabel ? esc(envelopeLabel) : "") + '</span>' +
                           '<span class="bubble-time">' + elapsed + '</span>' +
                           '</div>' +
                           '<div class="bubble-body">' + esc(content) + '</div>' +
