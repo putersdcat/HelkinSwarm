@@ -726,12 +726,23 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // the activate_swarm tool call inside his LLM turn. Swarm eligibility score is
   // injected as a prompt hint below for Helkin to use when deciding.
 
-  // Inject plan guidance and swarm eligibility hint into prompt (#320, #657)
-  const swarmEligHint = (planResult.swarmEligibilityScore ?? 0) > 25
-    && !input.devLoopContext?.isDevLoop
-    && !input.skillForgeRequest
-    ? `\n\n[Swarm suitability: ${planResult.swarmEligibilityScore}/100. Your specialist team (Benjamin, Harper, Lucas) may add significant value here. If parallel expert work would produce a materially better answer, call activate_swarm.]`
-    : '';
+  // [#669] Eligibility score is an informational hint, not a visibility wall.
+  // Per docs/0zm §3 (feasibility hints, not routing walls) and docs/0zc §4
+  // (swarm activation is organic — Helkin decides via planning), the hint is
+  // always surfaced for non-DevLoop / non-SkillForge turns so Helkin can reason
+  // about swarm fit for comparative queries that do not hit the prior >25
+  // keyword threshold. The tone scales with the score so low scores stay quiet
+  // nudges instead of loud prompts.
+  const rawEligScore = planResult.swarmEligibilityScore ?? 0;
+  const swarmHintEligible = !input.devLoopContext?.isDevLoop && !input.skillForgeRequest;
+  let swarmEligHint = '';
+  if (swarmHintEligible) {
+    if (rawEligScore > 25) {
+      swarmEligHint = `\n\n[Swarm suitability: ${rawEligScore}/100. Your specialist team (Benjamin, Harper, Lucas) may add significant value here. If parallel expert work would produce a materially better answer, call activate_swarm.]`;
+    } else {
+      swarmEligHint = `\n\n[Swarm suitability: ${rawEligScore}/100. Heuristic score is low, but this is a hint — not a gate. If this turn would genuinely benefit from parallel specialist work (comparative analysis, multi-faceted research, cross-domain synthesis), you may still call activate_swarm.]`;
+    }
+  }
   const promptWithPlan: PromptResult = (planResult.steps || swarmEligHint)
     ? {
         ...prompt,
