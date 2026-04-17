@@ -151,6 +151,7 @@ df.app.activity('swarmDecomposerActivity', {
           correlationId: input.correlationId,
           properties: { snippet: content.slice(0, 200) },
         });
+        await recordOrchestratorStage(input.correlationId, 'swarm-decompose-declined', input.userId);
         return {
           plan: null,
           tokensUsed,
@@ -163,6 +164,7 @@ df.app.activity('swarmDecomposerActivity', {
 
       // Check if decomposer says fallback
       if ('fallback' in raw && raw.fallback === true) {
+        await recordOrchestratorStage(input.correlationId, 'swarm-decompose-declined', input.userId);
         return {
           plan: null,
           tokensUsed,
@@ -189,6 +191,7 @@ df.app.activity('swarmDecomposerActivity', {
             snippet: content.slice(0, 300),
           },
         });
+        await recordOrchestratorStage(input.correlationId, 'swarm-decompose-declined', input.userId);
         return {
           plan: null,
           tokensUsed,
@@ -200,6 +203,7 @@ df.app.activity('swarmDecomposerActivity', {
       // Filter agent tools to only executable tools, with web_search fallback
       const validAgents = filterAgentTools(parsed.data.agents, input.availableToolNames);
       if (validAgents.length === 0) {
+        await recordOrchestratorStage(input.correlationId, 'swarm-decompose-declined', input.userId);
         return {
           plan: null,
           tokensUsed,
@@ -237,6 +241,7 @@ df.app.activity('swarmDecomposerActivity', {
         correlationId: input.correlationId,
         properties: { error: errorMessage },
       });
+      await recordOrchestratorStage(input.correlationId, 'swarm-decompose-declined', input.userId);
       return {
         plan: null,
         tokensUsed: 0,
