@@ -172,6 +172,7 @@ jobs:
       managed-identity-client-id: ${{ steps.query.outputs.managedIdentityClientId }}
       managed-identity-resource-id: ${{ steps.query.outputs.managedIdentityResourceId }}
       image-changed: ${{ steps.changes.outputs.imageChanged }}
+      python-image-changed: ${{ steps.changes.outputs.pythonImageChanged }}
 
     steps:
       - name: Checkout
@@ -188,6 +189,7 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "infraChanged=true" >> "$GITHUB_OUTPUT"
             echo "imageChanged=true" >> "$GITHUB_OUTPUT"
+            echo "pythonImageChanged=true" >> "$GITHUB_OUTPUT"
             echo "ℹ️ Manual dispatch — running full infra and image deployment."
             exit 0
           fi
@@ -199,6 +201,7 @@ jobs:
           if echo "$COMMIT_MSG" | grep -qi '\[skip-infra\]'; then
             echo "infraChanged=false" >> "$GITHUB_OUTPUT"
             echo "imageChanged=true" >> "$GITHUB_OUTPUT"
+            echo "pythonImageChanged=true" >> "$GITHUB_OUTPUT"
             echo "ℹ️ [skip-infra] detected in commit message — skipping Bicep deployment, rebuilding image."
             exit 0
           fi
@@ -207,6 +210,7 @@ jobs:
           if [ -z "$BEFORE_SHA" ] || [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ]; then
             echo "infraChanged=true" >> "$GITHUB_OUTPUT"
             echo "imageChanged=true" >> "$GITHUB_OUTPUT"
+            echo "pythonImageChanged=true" >> "$GITHUB_OUTPUT"
             echo "ℹ️ No reliable before-SHA available — running full deployment."
             exit 0
           fi
@@ -232,6 +236,16 @@ jobs:
           else
             echo "imageChanged=false" >> "$GITHUB_OUTPUT"
             echo "ℹ️ No image-affecting files changed — will skip Docker rebuild (infra-only deploy)."
+          fi
+
+          # Python REPL image change detection is separate (#674) so python-repl
+          # rebuilds are not gated on Node.js image changes.
+          if echo "$CHANGED_FILES" | grep -qE '^(python-repl/|Dockerfile\.python-repl$)'; then
+            echo "pythonImageChanged=true" >> "$GITHUB_OUTPUT"
+            echo "✅ Python REPL files changed — will rebuild Python image."
+          else
+            echo "pythonImageChanged=false" >> "$GITHUB_OUTPUT"
+            echo "ℹ️ No Python REPL files changed — will skip Python image rebuild."
           fi
 
           # When EARLY_DEV_COST_GUARD is active, log that guard assertions will
@@ -901,7 +915,7 @@ jobs:
   build-and-push-python:
     name: Build & Push Python REPL
     needs: deploy-infra
-    if: needs.deploy-infra.outputs.image-changed == 'true'
+    if: needs.deploy-infra.outputs.python-image-changed == 'true'
     runs-on: ubuntu-latest
 
     steps:
