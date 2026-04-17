@@ -21,9 +21,12 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # Pre-warm matplotlib font cache so the runtime container doesn't need net
-# access to download fonts on first use
+# access to download fonts on first use. matplotlib.font_manager must be
+# imported explicitly — it is a submodule, not an attribute lazily resolved
+# from `matplotlib`. (#674)
 RUN python -c "\
 import matplotlib; \
+import matplotlib.font_manager; \
 matplotlib.font_manager._load_fontmanager(try_read_cache=False); \
 print('Matplotlib font cache warmed')"
 
