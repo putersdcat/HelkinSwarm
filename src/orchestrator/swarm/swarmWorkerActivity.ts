@@ -10,7 +10,8 @@ import { toolRegistry } from '../../tools/toolRegistry.js';
 import { getHandler } from '../../capabilities/capabilityLoader.js';
 import { trackEvent } from '../../observability/telemetry.js';
 import { recordOrchestratorStage } from '../../observability/orchestratorStageHealth.js';
-import { buildWorkerSystemPrompt } from './swarmPersonas.js';
+import { buildWorkerSystemPrompt, stripRenderTags } from './swarmPersonas.js';
+import { resolveSwarmUserInfo } from './swarmUserInfo.js';
 import { scopedTokenMinter } from '../../auth/scopedTokenMinter.js';
 import { mapPrivilegeClassToScopedTokenScope } from '../../auth/tokenScopeMapping.js';
 import { MemoryManager } from '../../memory/memoryManager.js';
@@ -35,8 +36,10 @@ const CONVERSATION_SEARCH_TOOL = 'conversation_search';
 export function buildInitialUserTurn(task: string, inboundMessages?: ChatroomMessage[]): string {
   const base = `Execute your task now. Your assignment: ${task}`;
   if (!inboundMessages?.length) return base;
+  // Strip leader-only Render Components from any inbound content (#672).
+  // Workers must never see <render_*> tags in internal chatroom traffic.
   const teamContext = inboundMessages
-    .map(m => `**From ${m.from}** (to ${typeof m.to === 'string' ? m.to : m.to.join(', ')}): ${m.content}`)
+    .map(m => `**From ${m.from}** (to ${typeof m.to === 'string' ? m.to : m.to.join(', ')}): ${stripRenderTags(m.content)}`)
     .join('\n\n');
   return `${base}\n\n[TEAM MESSAGES — RECEIVED FROM TEAMMATES]\n${teamContext}\n[END TEAM MESSAGES]\n\nReview these teammate messages and send any additional insights or corrections to Helkin.`;
 }
@@ -278,6 +281,8 @@ df.app.activity('swarmWorkerActivity', {
       agentPersona: input.agentPersona,
       personaFile: input.personaFile,
       priorSessionSummaries: allPriorContext.length > 0 ? allPriorContext : undefined,
+      userInfo: input.userInfo ?? await resolveSwarmUserInfo(input.userId).catch(() => undefined),
+      nowISO: new Date().toISOString(),
     });
 
     // Conversation history for this agent's isolated session

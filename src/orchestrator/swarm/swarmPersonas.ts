@@ -1,11 +1,92 @@
 // Swarm agent personas — system prompt builders for Leader and Worker agents.
 // Loads persona definitions from src/persona/*.md and augments with task context.
 // Spec ref: docs/0zh, docs/0zf §3
-// Epic: #631
+// Epic: #631, #672 (canonical prompt-shard parity)
 
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+// ---------------------------------------------------------------------------
+// Canonical prompt shards (#672)
+// Reproduced verbatim from docs/0zh §3.2, §3.3, §3.4 — these are correctness
+// invariants of the canonical swarm, not stylistic choices. Every swarm agent
+// system prompt (leader and worker) receives all three shards when userInfo
+// and nowISO are supplied by the activity layer.
+// ---------------------------------------------------------------------------
+
+/** Per-turn user info shard fields — supplied by the activity layer. */
+export interface SwarmUserInfo {
+  displayName: string;
+  handle: string;
+  /** Subscription / role tier (e.g. "owner", "guest"). */
+  tier: string;
+  location?: string;
+}
+
+/**
+ * Format the ## User Info + Current time block.
+ * Per docs/0zh §3.4 this is re-injected at the start of every agent turn.
+ */
+export function formatUserInfoShard(info: SwarmUserInfo, nowISO: string): string {
+  const location = info.location ?? 'Unknown';
+  return `## User Info
+(This section is provided in every conversation with this user. It may be irrelevant to most queries; use it only when directly relevant.)
+- Display Name: ${info.displayName}
+- Handle: ${info.handle}
+- Subscription Level: ${info.tier}
+- Location: ${location}
+
+Current time: ${nowISO}`;
+}
+
+/**
+ * Format the mandatory Internal Messaging Convention shard.
+ * Reproduced verbatim from docs/0zh §3.2 (canonical package Doc 08).
+ * The sender field is templated per agent.
+ */
+export function formatMessagingShard(senderName: string): string {
+  return `**Internal Messaging Convention (MANDATORY)**
+For every chatroom_send call, the "message" parameter MUST be a valid JSON string with this exact structure:
+{
+  "messageType": "thinking" | "tool_summary" | "analysis" | "response" | "question" | "contribution" | "final_contribution",
+  "content":     "your full text",
+  "confidence":  integer 0-100,
+  "sender":      "${senderName}"
+}
+Always include "confidence". When you receive a message from another agent, parse the JSON string and use the fields to understand intent and weight the contribution. Never send plain text in chatroom_send.`;
+}
+
+/**
+ * Format the mandatory Core Reasoning & Tool Selection shard.
+ * Reproduced verbatim from docs/0zh §3.3 (canonical swarm_agent_reasoning_mechanism).
+ */
+export function formatReasoningShard(): string {
+  return `**Core Reasoning & Tool Selection Guidelines (MANDATORY)**
+On every turn you MUST follow this structure before outputting:
+1. Assess information sufficiency.
+2. If insufficient, choose the single best tool. Preference order:
+   - \`code_execution\` for any computation, math, simulation, analysis
+   - \`swarm_conversation_search\` for recall of prior swarm messages
+   - external knowledge tools (\`web_search\`, \`browse_page\`) only when truly external facts are needed
+   - \`wait\` only when explicit synchronization is required
+3. After any tool result, immediately decide next action:
+   - If you have enough, emit a \`chatroom_send\` with proper messageType
+   - Otherwise continue reasoning or call another tool.`;
+}
+
+/**
+ * Strip leader-only Render Components from inbound chatroom content.
+ * Per docs/0zh §0 these XML-like tags are leader-only and must be removed
+ * from any internal chatroom traffic before it is injected into another
+ * agent's context window.
+ */
+const RENDER_TAG_PATTERN =
+  /<\/?render_(inline_citation|searched_image|generated_image|edited_image|file)\b[^>]*>/gi;
+
+export function stripRenderTags(content: string): string {
+  return content.replace(RENDER_TAG_PATTERN, '').replace(/[ \t]+\n/g, '\n');
+}
 
 // ---------------------------------------------------------------------------
 // Persona file loading — cached at module init
@@ -67,6 +148,10 @@ export function buildLeaderSystemPrompt(input: {
   userQuery: string;
   synthesisInstructions: string;
   agentNames: string[];
+  /** Per-turn user info shard (#672). Omit only in unit tests. */
+  userInfo?: SwarmUserInfo;
+  /** ISO 8601 timestamp for the per-turn `Current time:` line (#672). */
+  nowISO?: string;
 }): string {
   const agentList = input.agentNames.join(', ');
   const persona = loadPersona('Helkin');
@@ -76,7 +161,12 @@ export function buildLeaderSystemPrompt(input: {
 Your job is to synthesize a single, polished, high-quality final answer from your team's findings.
 Never do deep research yourself — delegate it.`;
 
-  return `${base}
+  const userInfoBlock =
+    input.userInfo && input.nowISO
+      ? `\n\n${formatUserInfoShard(input.userInfo, input.nowISO)}`
+      : '';
+
+  return `${base}${userInfoBlock}
 
 ## Current Team
 ${agentList}
@@ -98,6 +188,14 @@ Synthesis instructions: ${input.synthesisInstructions}
 - Use chatroom_send to send delegation, clarifications, or "wrap up" messages to specific agents.
 - Use chatroom_send with to="All" for broadcasts.
 
+${formatMessagingShard('Helkin')}
+
+${formatReasoningShard()}
+
+**Render Components (Helkin-only)**
+\`render_inline_citation\`, \`render_searched_image\`, \`render_generated_image\`, \`render_edited_image\`, \`render_file\`.
+These are parsed ONLY when they appear in your final non-tool response to the user. They are stripped from any internal chatroom_send message. Workers MUST NOT emit them.
+
 ## Output
 When you are ready to produce the final answer, output it directly as your response content.
 Do NOT wrap it in a tool call. Just write the answer.
@@ -117,12 +215,21 @@ Format it cleanly in markdown with citations where possible.`;
 export function buildLeaderDelegationPrompt(input: {
   userQuery: string;
   agentNames: string[];
+  /** Per-turn user info shard (#672). Omit only in unit tests. */
+  userInfo?: SwarmUserInfo;
+  /** ISO 8601 timestamp for the per-turn `Current time:` line (#672). */
+  nowISO?: string;
 }): string {
   const agentList = input.agentNames.join(', ');
   const persona = loadPersona('Helkin');
   const base = persona ?? `You are Helkin, the team coordinator of a multi-agent swarm.`;
 
-  return `${base}
+  const userInfoBlock =
+    input.userInfo && input.nowISO
+      ? `\n\n${formatUserInfoShard(input.userInfo, input.nowISO)}`
+      : '';
+
+  return `${base}${userInfoBlock}
 
 ## Phase: Active Coordination (NOT final synthesis)
 
@@ -146,7 +253,11 @@ delegation messages via chatroom_send.
 - Address agents by EXACT NAME: ${agentList}
 - Use contentType: "delegation" for work assignments, "question" for specific gaps
 - If results are already comprehensive, send one broadcast "wrap up" message to "All"
-- DO NOT write a final answer now — only delegation and coordination messages`;
+- DO NOT write a final answer now — only delegation and coordination messages
+
+${formatMessagingShard('Helkin')}
+
+${formatReasoningShard()}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +285,10 @@ export function buildWorkerSystemPrompt(input: {
   personaFile?: string;
   /** Prior session summaries loaded from agent's Cosmos vault — injected as memory context (#659). */
   priorSessionSummaries?: string[];
+  /** Per-turn user info shard (#672). Omit only in unit tests. */
+  userInfo?: SwarmUserInfo;
+  /** ISO 8601 timestamp for the per-turn `Current time:` line (#672). */
+  nowISO?: string;
 }): string {
   const toolList = input.assignedToolNames.join(', ');
   const teamList = input.allAgentNames.filter(n => n !== input.agentName).join(', ');
@@ -196,7 +311,13 @@ export function buildWorkerSystemPrompt(input: {
       ? `\n\n## Memory — Prior Sessions\nYou have participated in recent swarms. Use this context to build on prior findings and avoid repeating work:\n${input.priorSessionSummaries.map((s, i) => `${i + 1}. ${s}`).join('\n')}`
       : '';
 
-  return `${identity}${behavioralNote}${priorSessionsNote}
+  // Per-turn user info + current time shard (#672)
+  const userInfoBlock =
+    input.userInfo && input.nowISO
+      ? `\n\n${formatUserInfoShard(input.userInfo, input.nowISO)}`
+      : '';
+
+  return `${identity}${behavioralNote}${priorSessionsNote}${userInfoBlock}
 
 ## Your Teammates
 ${teamList}, and Helkin (team leader who synthesizes the final answer)
@@ -231,6 +352,13 @@ If your task is to SYNTHESIZE, RANK, or COMPARE and depends on data that another
 - Prefix structured data clearly (e.g., "FOUND: [shop name] | [address] | [certification]").
 - If a tool call fails, report the failure to Helkin immediately.
 - If you find contradictory information, flag it explicitly.
+
+${formatMessagingShard(input.agentName)}
+
+${formatReasoningShard()}
+
+**Render Components are leader-only.**
+Never emit \`render_inline_citation\`, \`render_searched_image\`, \`render_generated_image\`, \`render_edited_image\`, or \`render_file\` in chatroom_send. Only Helkin may emit these in the final user-facing response.
 
 ## Important
 - Stay focused on YOUR task. Don't expand scope without Helkin's direction.

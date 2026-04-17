@@ -5,6 +5,19 @@
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
+// Per-turn User Info shard (#672) — re-injected in every agent system prompt
+// per docs/0zh §3.4. Resolved once at activity start from user-map.json + roles.
+// ---------------------------------------------------------------------------
+
+export const SwarmUserInfoSchema = z.object({
+  displayName: z.string().min(1),
+  handle: z.string().min(1),
+  tier: z.string().min(1),
+  location: z.string().optional(),
+});
+export type SwarmUserInfoPayload = z.infer<typeof SwarmUserInfoSchema>;
+
+// ---------------------------------------------------------------------------
 // ChatroomMessage — the sole inter-agent communication primitive
 // ---------------------------------------------------------------------------
 
@@ -140,6 +153,8 @@ export interface SwarmWorkerInput {
   /** Inbound messages from teammate agents — injected as context at the start of execution.
    *  Populated by the orchestrator for second-pass activities only (#644 Slice 1). */
   inboundMessages?: ChatroomMessage[];
+  /** Per-turn user info shard (#672). Resolved once by the orchestrator from user-map + roles. */
+  userInfo?: SwarmUserInfoPayload;
 }
 
 export interface SwarmWorkerResult {
@@ -183,6 +198,8 @@ export interface SwarmLeaderInput {
   /** If true, Leader acts as active coordinator — reviews transcript and sends delegation messages
    *  via chatroom_send. Does NOT produce final synthesis. (#644 Slice 2 / #645) */
   delegationMode?: boolean;
+  /** Per-turn user info shard (#672). Resolved once by the orchestrator from user-map + roles. */
+  userInfo?: SwarmUserInfoPayload;
 }
 
 export interface SwarmLeaderResult {

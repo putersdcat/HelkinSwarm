@@ -291,4 +291,21 @@ describe('buildInitialUserTurn — functional behaviour (#644 AC5)', () => {
     expect(result).toContain('Price data');
     expect(result).toContain('Quality data');
   });
+
+  it('strips leader-only render tags from inbound message content (#672)', () => {
+    const inbound = [{
+      id: '00000000-0000-4000-8000-000000000094',
+      from: 'Benjamin',
+      to: 'Lucas',
+      content: 'Finding: <render_inline_citation id="s1"/> and <render_searched_image url="x"/> stays hidden from workers',
+      contentType: 'partial_result' as const,
+      timestamp: Date.now(),
+      correlationId: 'corr-test',
+    }];
+    const result = buildInitialUserTurn('Synthesize', inbound);
+    expect(result).not.toContain('render_inline_citation');
+    expect(result).not.toContain('render_searched_image');
+    expect(result).toContain('Finding:');
+    expect(result).toContain('stays hidden from workers');
+  });
 });

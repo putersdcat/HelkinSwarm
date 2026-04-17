@@ -9,6 +9,7 @@ import { getModelRouting, isReasoningModel } from '../../llm/modelRouter.js';
 import { trackEvent } from '../../observability/telemetry.js';
 import { recordOrchestratorStage } from '../../observability/orchestratorStageHealth.js';
 import { buildLeaderSystemPrompt, buildLeaderDelegationPrompt } from './swarmPersonas.js';
+import { resolveSwarmUserInfo } from './swarmUserInfo.js';
 import type { ChatMessage, ToolDefinition } from '../../llm/foundryClient.js';
 import type { ChatroomMessage, SwarmLeaderInput, SwarmLeaderResult } from './swarmTypes.js';
 import { ChatroomMessageSchema } from './swarmTypes.js';
@@ -39,6 +40,10 @@ df.app.activity('swarmLeaderActivity', {
 
     const agentsHeardFrom = [...new Set(input.chatroomTranscript.map(m => m.from))];
 
+    // Per-turn user info shard (#672) — resolved once at activity entry.
+    // Never fatal: falls back to guest labels if user-map is missing.
+    const userInfo = input.userInfo ?? await resolveSwarmUserInfo(input.userId).catch(() => undefined);
+
     // -----------------------------------------------------------------------
     // Delegation mode (#644 Slice 2 / #645): Leader reviews initial transcript,
     // identifies gaps, and sends targeted follow-up via chatroom_send.
@@ -50,6 +55,8 @@ df.app.activity('swarmLeaderActivity', {
       const delegationPrompt = buildLeaderDelegationPrompt({
         userQuery: input.userQuery,
         agentNames: input.agentNames,
+        userInfo,
+        nowISO: new Date().toISOString(),
       });
 
       // Leader only has chatroom_send in delegation mode
@@ -231,6 +238,8 @@ df.app.activity('swarmLeaderActivity', {
       userQuery: input.userQuery,
       synthesisInstructions: input.synthesisInstructions,
       agentNames: input.agentNames,
+      userInfo,
+      nowISO: new Date().toISOString(),
     });
 
     const transcript = formatTranscriptForLeader(input.chatroomTranscript);
