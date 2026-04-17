@@ -140,13 +140,33 @@ const SWARM_EXECUTION_TTL_SECONDS = 72 * 60 * 60; // 72 hours
 // 429s, leaving the post-swarm orchestrator path with no visible stall point.
 const COSMOS_UPSERT_TIMEOUT_MS = 15_000;
 
-async function upsertWithTimeout(container: ReturnType<typeof getContainer>, doc: unknown, label: string): Promise<void> {
+// #683 — Cosmos has a 2 MB hard limit on individual documents. The SDK's serializer
+// is synchronous and blocks the event loop, so a setTimeout-based race cannot fire
+// when stringification itself is the slow step. We pre-measure the doc size and:
+//   - skip primary entirely if it's already over budget (forces compact path),
+//   - throw a typed error if even compact is over budget (surfaced as stored:false).
+const COSMOS_MAX_DOC_BYTES = 1_900_000; // ~1.9 MB safety margin under Cosmos 2 MB limit
+
+export async function upsertWithTimeout(container: ReturnType<typeof getContainer>, doc: unknown, label: string): Promise<void> {
+  // Pre-measure (synchronous, but bounded by leaderSynthesis/transcript caps in
+  // buildSwarmExecutionDocument). If oversized, fail fast — do not enter the
+  // SDK's internal serializer where the event loop will be blocked beyond the
+  // setTimeout horizon.
+  const serialized = JSON.stringify(doc);
+  if (serialized.length > COSMOS_MAX_DOC_BYTES) {
+    throw new Error(`cosmos upsert (${label}) payload too large: ${serialized.length} bytes > ${COSMOS_MAX_DOC_BYTES}`);
+  }
+
+  // Belt + suspenders: AbortController for the SDK's own network layer, plus
+  // Promise.race against a setTimeout in case the SDK ignores the abort.
+  const controller = new AbortController();
   let timer: NodeJS.Timeout | undefined;
   try {
     await Promise.race([
-      container.items.upsert(doc as Record<string, unknown>),
+      container.items.upsert(doc as Record<string, unknown>, { abortSignal: controller.signal }),
       new Promise<never>((_, reject) => {
         timer = setTimeout(() => {
+          controller.abort();
           reject(new Error(`cosmos upsert (${label}) exceeded ${COSMOS_UPSERT_TIMEOUT_MS}ms`));
         }, COSMOS_UPSERT_TIMEOUT_MS);
       }),

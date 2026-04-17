@@ -185,4 +185,53 @@ describe('persistSwarmResultActivity', () => {
     expect(doc.leaderSynthesis.length).toBeLessThanOrEqual(1500);
     expect(doc.chatroomTranscript.length).toBeLessThanOrEqual(20);
   });
+
+  describe('upsertWithTimeout (#683)', () => {
+    it('rejects within the timeout window when upsert hangs', async () => {
+      const { upsertWithTimeout } = await import('../../src/orchestrator/swarm/persistSwarmResultActivity.js');
+      const hangingContainer = {
+        items: { upsert: () => new Promise(() => { /* never resolves */ }) },
+      } as unknown as ReturnType<typeof import('../../src/memory/cosmosClient.js').getContainer>;
+      const start = Date.now();
+      await expect(
+        // Use a tiny doc so the size guard does NOT short-circuit; we want to
+        // verify the setTimeout-based race actually fires when upsert hangs.
+        upsertWithTimeout(hangingContainer, { id: 'tiny', userId: 'u' }, 'primary'),
+      ).rejects.toThrow(/exceeded \d+ms/);
+      const elapsed = Date.now() - start;
+      // Honest bound: must fail well inside the 15s ceiling. Allow 16s for test
+      // scheduler jitter on slow CI.
+      expect(elapsed).toBeLessThan(16_000);
+    }, 20_000);
+
+    it('fails fast when the doc exceeds the Cosmos size guard', async () => {
+      const { upsertWithTimeout } = await import('../../src/orchestrator/swarm/persistSwarmResultActivity.js');
+      const upsertCalled = vi.fn();
+      const oversizeContainer = {
+        items: { upsert: upsertCalled },
+      } as unknown as ReturnType<typeof import('../../src/memory/cosmosClient.js').getContainer>;
+      // 2 MB string of valid JSON-safe characters → > COSMOS_MAX_DOC_BYTES (1.9 MB).
+      const oversizeDoc = { id: 'big', userId: 'u', payload: 'x'.repeat(2_000_000) };
+      const start = Date.now();
+      await expect(upsertWithTimeout(oversizeContainer, oversizeDoc, 'primary'))
+        .rejects.toThrow(/payload too large/);
+      const elapsed = Date.now() - start;
+      // Must fail synchronously-ish, not after the 15s timer.
+      expect(elapsed).toBeLessThan(2_000);
+      expect(upsertCalled).not.toHaveBeenCalled();
+    });
+
+    it('passes an abortSignal to the SDK so the request can be cancelled', async () => {
+      const { upsertWithTimeout } = await import('../../src/orchestrator/swarm/persistSwarmResultActivity.js');
+      const upsertCalled = vi.fn().mockResolvedValue({});
+      const container = {
+        items: { upsert: upsertCalled },
+      } as unknown as ReturnType<typeof import('../../src/memory/cosmosClient.js').getContainer>;
+      await upsertWithTimeout(container, { id: 'tiny', userId: 'u' }, 'primary');
+      expect(upsertCalled).toHaveBeenCalledTimes(1);
+      const opts = upsertCalled.mock.calls[0][1];
+      expect(opts).toBeDefined();
+      expect(opts.abortSignal).toBeInstanceOf(AbortSignal);
+    });
+  });
 });
