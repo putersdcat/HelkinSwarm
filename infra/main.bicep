@@ -761,8 +761,13 @@ resource pythonReplApp 'Microsoft.App/containerApps@2024-03-01' = {
     template: {
       containers: [
         {
-          // deploy-stamp.yml updates this tag after image build
-          image: '${acr.properties.loginServer}/helkinswarm-python-repl:latest'
+          // deploy-stamp.yml updates this tag after image build.
+          // Use the static ACR hostname (acrName + azurecr.io) rather than
+          // acr.properties.loginServer so that ARM template validation can
+          // evaluate the image reference string at submit time; the
+          // reference() function is not resolved during Container App image
+          // format validation and causes ContainerAppInvalidImageFormat.
+          image: '${acrName}.azurecr.io/helkinswarm-python-repl:latest'
           name: 'python-repl'
           resources: {
             cpu: json('0.5')
