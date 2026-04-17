@@ -790,8 +790,14 @@ export class FoundryClient {
 
 /**
  * Builds the ordered fallback chain for OpenRouter calls.
- * Chain: primary (grok-4.1-fast, reasoning) → fallbackPrimary (minimax) → fallbackSecondary.
+ * Chain: requested model → lane.primary (cross-provider) → fallbackPrimary (minimax)
+ *   → fallbackSecondary → lane.secondary.
  * All entries share the same apiBase and usesObo=false from the base routing.
+ *
+ * #676: Always include `routing.lane.primary` so agents whose `deploymentName` was
+ * overridden to the minimax family (e.g. Lucas) still retain a cross-provider fallback
+ * to grok-4.1-fast when minimax is circuit-broken. Previously Lucas collapsed to a
+ * single-entry chain of [minimax] and aborted the whole swarm on any minimax outage.
  */
 function buildOpenRouterFallbackChain(
   routing: ModelRouting,
@@ -806,7 +812,8 @@ function buildOpenRouterFallbackChain(
     chain.push({ ...routing, deploymentName, isReasoning });
   };
 
-  add(routing.deploymentName, routing.isReasoning);             // x-ai/grok-4.1-fast reasoning
+  add(routing.deploymentName, routing.isReasoning);             // requested model (may be minimax override)
+  add(routing.lane.primary, true);                              // lane primary (grok-4.1-fast, reasoning) — cross-provider fallback (#676)
   add(config.openrouterFallbackPrimary, false);                 // minimax/minimax-m2.7
   add(config.openrouterFallbackSecondary, false);               // tertiary fallback
   add(routing.lane.secondary, false);                           // lane secondary (if different)
