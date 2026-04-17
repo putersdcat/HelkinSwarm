@@ -14,6 +14,7 @@ import {
 } from '../llm/modelRouter.js';
 import {
   hasIdempotencyKey,
+  markIntentExpired,
   markIntentFailed,
   markIntentProcessed,
   markIntentProcessing,
@@ -44,12 +45,24 @@ export interface PendingIntentReplayResult {
   instanceId?: string;
 }
 
-export function shouldAutoReplay(intent: PendingIntent): PendingIntentReplayDecision {
+export function shouldAutoReplay(intent: PendingIntent, now: number = Date.now()): PendingIntentReplayDecision {
   if (intent.riskLevel === 'high' || intent.riskLevel === 'critical') {
     return { replay: false, reason: 'High-risk intent requires live confirmation' };
   }
   if (intent.status === 'failed' && intent.failureReason) {
     return { replay: false, reason: `Previously failed: ${intent.failureReason}` };
+  }
+  // #670 — freshness gate. Stale queued intents must not replay across deploy restarts
+  // after the operator has moved on or manually killed the original session. Default
+  // cutoff is 2 hours; overridable via PENDING_INTENT_MAX_AGE_HOURS.
+  const maxAgeHours = Number.parseFloat(process.env.PENDING_INTENT_MAX_AGE_HOURS ?? '2');
+  if (Number.isFinite(maxAgeHours) && maxAgeHours > 0) {
+    const maxAgeMs = maxAgeHours * 60 * 60 * 1000;
+    const createdMs = Date.parse(intent.timestamp);
+    if (Number.isFinite(createdMs) && now - createdMs > maxAgeMs) {
+      const ageHours = ((now - createdMs) / 3_600_000).toFixed(1);
+      return { replay: false, reason: `Intent expired (age ${ageHours}h > max ${maxAgeHours}h)` };
+    }
   }
   return { replay: true, reason: 'Low-risk, eligible for auto-replay' };
 }
@@ -75,6 +88,22 @@ export async function replayPendingIntent(
 
   const decision = shouldAutoReplay(intent);
   if (!decision.replay) {
+    // #670 — if the skip reason is age-based expiry, tombstone the intent so it will
+    // not keep being picked up by getUnprocessedIntents on every subsequent sweep.
+    if (decision.reason.startsWith('Intent expired')) {
+      try {
+        await markIntentExpired(intent.id, intent.userId, decision.reason);
+      } catch (tombstoneErr) {
+        // Non-fatal: the replay is still suppressed for this turn; worst case the
+        // intent gets evaluated again on the next sweep and stays skipped.
+        const msg = tombstoneErr instanceof Error ? tombstoneErr.message : String(tombstoneErr);
+        trackEvent({
+          name: 'PendingIntentRecovered',
+          correlationId: intent.correlationId ?? intent.id,
+          properties: { phase: 'expired-tombstone-failed', source, error: msg.slice(0, 200) },
+        });
+      }
+    }
     return { outcome: 'skipped', reason: decision.reason };
   }
 

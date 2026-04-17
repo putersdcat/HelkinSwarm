@@ -15,7 +15,9 @@ import {
 import {
   getUnprocessedIntents,
   hasIdempotencyKey,
+  markIntentExpired,
 } from '../orchestrator/pendingIntentStore.js';
+import { shouldAutoReplay } from '../orchestrator/pendingIntentReplay.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { recoverStaleAcks } from './staleAckRecovery.js';
 
@@ -63,15 +65,23 @@ export async function runStartupRecovery(): Promise<void> {
         continue;
       }
 
-      // Safety: skip high-risk intents — they need live confirmation
-      if (intent.riskLevel === 'high' || intent.riskLevel === 'critical') {
+      // #670 — reuse the shared auto-replay decision so we do not notify the
+      // user about a queued replay that the timer will just refuse (high-risk,
+      // previously-failed, or expired by age). When the intent is age-expired,
+      // tombstone it here so it is not re-surfaced on every deploy restart.
+      const decision = shouldAutoReplay(intent);
+      if (!decision.replay) {
         stats.intentsSkipped++;
-        continue;
-      }
-
-      // Skip previously failed intents
-      if (intent.status === 'failed' && intent.failureReason) {
-        stats.intentsSkipped++;
+        if (decision.reason.startsWith('Intent expired')) {
+          try {
+            await markIntentExpired(intent.id, intent.userId, decision.reason);
+          } catch (tombstoneErr) {
+            console.warn(
+              `[startupRecovery] Failed to tombstone expired intent ${intent.trackingId}:`,
+              tombstoneErr,
+            );
+          }
+        }
         continue;
       }
 
