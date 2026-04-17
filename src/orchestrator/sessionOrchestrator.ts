@@ -25,6 +25,7 @@ import { buildSuccessfulFailoverNotices } from '../llm/foundryClient.js';
 import { recoverOperationalNoticesFromTrace } from './failoverNoticeRecovery.js';
 import type { PlanInput, PlanResult } from './planActivity.js';
 import type { SwarmDecomposerInput, SwarmDecomposerResult, SwarmOrchestratorInput, SwarmOrchestratorResult } from './swarm/swarmTypes.js';
+import { hasExplicitSwarmOverride } from './swarm/swarmTypes.js';
 import type { PersistSwarmResultInput } from './swarm/persistSwarmResultActivity.js';
 import { getExecutableToolNames } from '../capabilities/capabilityLoader.js';
 import { canonicalizeInput } from './inputCanonicalizer.js';
@@ -726,21 +727,27 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   // the activate_swarm tool call inside his LLM turn. Swarm eligibility score is
   // injected as a prompt hint below for Helkin to use when deciding.
 
-  // [#669] Eligibility score is an informational hint, not a visibility wall.
+  // [#669, #675] Eligibility score is an informational hint, not a visibility wall.
   // Per docs/0zm §3 (feasibility hints, not routing walls) and docs/0zc §4
   // (swarm activation is organic — Helkin decides via planning), the hint is
   // always surfaced for non-DevLoop / non-SkillForge turns so Helkin can reason
-  // about swarm fit for comparative queries that do not hit the prior >25
-  // keyword threshold. The tone scales with the score so low scores stay quiet
-  // nudges instead of loud prompts.
+  // about swarm fit. The score itself is on a 0-10 scale (see
+  // `computeSwarmEligibilityScore` and `SwarmComplexityGate`); earlier code
+  // compared this to `> 25` and formatted as `/100`, which meant no realistic
+  // request ever cleared the gate and explicit "use the swarm" intent scored 10
+  // but was labelled "low score" — a scale mismatch that effectively disabled
+  // organic swarm activation. (#675)
   const rawEligScore = planResult.swarmEligibilityScore ?? 0;
   const swarmHintEligible = !input.devLoopContext?.isDevLoop && !input.skillForgeRequest;
+  const userWantsSwarmExplicitly = hasExplicitSwarmOverride(input.userMessage);
   let swarmEligHint = '';
   if (swarmHintEligible) {
-    if (rawEligScore > 25) {
-      swarmEligHint = `\n\n[Swarm suitability: ${rawEligScore}/100. Your specialist team (Benjamin, Harper, Lucas) may add significant value here. If parallel expert work would produce a materially better answer, call activate_swarm.]`;
+    if (userWantsSwarmExplicitly) {
+      swarmEligHint = `\n\n[Swarm explicitly requested by the user. Call activate_swarm now — this is a direct user directive, not a heuristic.]`;
+    } else if (rawEligScore >= 5) {
+      swarmEligHint = `\n\n[Swarm suitability: ${rawEligScore}/10. Your specialist team (Benjamin, Harper, Lucas) may add significant value here. If parallel expert work would produce a materially better answer, call activate_swarm.]`;
     } else {
-      swarmEligHint = `\n\n[Swarm suitability: ${rawEligScore}/100. Heuristic score is low, but this is a hint — not a gate. If this turn would genuinely benefit from parallel specialist work (comparative analysis, multi-faceted research, cross-domain synthesis), you may still call activate_swarm.]`;
+      swarmEligHint = `\n\n[Swarm suitability: ${rawEligScore}/10. Heuristic score is low, but this is a hint — not a gate. If this turn would genuinely benefit from parallel specialist work (comparative analysis, multi-faceted research, cross-domain synthesis), you may still call activate_swarm.]`;
     }
   }
   const promptWithPlan: PromptResult = (planResult.steps || swarmEligHint)
@@ -1211,7 +1218,42 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       spans.push({ label: 'tools', durationMs: context.df.currentUtcDateTime.getTime() - toolDispatchStart });
 
       // [#657] Detect activate_swarm tool call — Helkin consciously decided to engage the swarm
-      const swarmActivationCall = toolResults.results.find(r => r.toolName === 'activate_swarm' && r.success);
+      let swarmActivationCall = toolResults.results.find(r => r.toolName === 'activate_swarm' && r.success);
+      // [#675] Deterministic fallback — if the user explicitly requested the swarm
+      // ("use the swarm", "ask the swarm", etc.) but Helkin's LLM turn did not emit
+      // the tool call, synthesize a successful activation so explicit user intent
+      // always engages the swarm. This preserves Helkin's organic activation path
+      // (#657) for ambiguous queries while honoring direct user directives.
+      if (
+        !swarmActivationCall
+        && userWantsSwarmExplicitly
+        && !input.devLoopContext?.isDevLoop
+        && !input.skillForgeRequest
+      ) {
+        const syntheticActivation: (typeof toolResults.results)[number] = {
+          toolCallId: `synthetic-swarm-${correlationId}`,
+          toolName: 'activate_swarm',
+          success: true,
+          requiresExecutor: false,
+          result: {
+            status: 'swarm_activated',
+            reason: 'explicit_user_intent',
+            message: 'Swarm activated deterministically because the user explicitly requested it.',
+          },
+        };
+        toolResults.results.push(syntheticActivation);
+        swarmActivationCall = syntheticActivation;
+        yield* emitOrchestratorTelemetry(context, {
+          name: 'SwarmDeterministicActivation',
+          correlationId,
+          userId: input.state.userId,
+          properties: {
+            reason: 'explicit_user_intent',
+            trigger: 'explicit_swarm_signal',
+            swarmEligibilityScore: planResult.swarmEligibilityScore ?? 0,
+          },
+        });
+      }
       if (swarmActivationCall && !input.devLoopContext?.isDevLoop && !input.skillForgeRequest) {
         const swarmExecTools = getExecutableToolNames();
         const swarmSkillDomains = [...new Set(

@@ -89,3 +89,7 @@ ResearchDocs/
 # Extensions — source is tracked, build artifacts are not
 extensions/*/node_modules/
 extensions/*/out/
+
+
+# All the Grok Swarm replication package docs
+docs/master-azure-grok-swarm-replication-package/

@@ -292,21 +292,42 @@ export interface SwarmOrchestratorResult {
 // ---------------------------------------------------------------------------
 
 /**
+/**
+ * Phrases that represent an explicit user directive to engage the swarm.
+ * Exported so the orchestrator can treat explicit intent as a deterministic
+ * forced-activation signal rather than merely a heuristic hint. (#675)
+ */
+export const EXPLICIT_SWARM_SIGNALS: readonly string[] = [
+  'use the swarm', 'use swarm', 'swarm mode', 'ask the swarm',
+  'send to swarm', 'with the swarm', 'try the swarm', 'activate swarm',
+  'swarm this', 'use your team', 'use the team', 'ask your team',
+] as const;
+
+/**
+ * Returns true when the user message contains an explicit request to engage
+ * the swarm. When this is true, the orchestrator deterministically activates
+ * the swarm instead of relying on Helkin's LLM tool-call discretion. (#675)
+ */
+export function hasExplicitSwarmOverride(message: string): boolean {
+  const lower = message.toLowerCase();
+  return EXPLICIT_SWARM_SIGNALS.some((s) => lower.includes(s));
+}
+
+/**
  * Compute a numeric swarm-eligibility score for a message.
  * Higher score = more likely to benefit from parallel multi-agent execution.
  * Returned separately from the boolean so the planner/decomposer can reason
  * about confidence levels, not just a binary gate (#640).
+ *
+ * Scale is 0-10. Explicit user override returns the maximum (10). Consumers
+ * MUST treat this as a /10 score, not /100 — the SwarmComplexityGate defaults
+ * (sequentialCeiling=3, swarmFloor=7) operate on the same scale. (#675)
  */
 export function computeSwarmEligibilityScore(message: string): number {
   const lower = message.toLowerCase();
 
   // Explicit override — user directly requests swarm execution
-  const explicitSwarmSignals = [
-    'use the swarm', 'use swarm', 'swarm mode', 'ask the swarm',
-    'send to swarm', 'with the swarm', 'try the swarm', 'activate swarm',
-    'swarm this', 'use your team', 'use the team', 'ask your team',
-  ];
-  if (explicitSwarmSignals.some(s => lower.includes(s))) return 10; // Explicit override = max score
+  if (hasExplicitSwarmOverride(message)) return 10; // Explicit override = max score
 
   // Multi-faceted research signals — verbs that imply gathering/exploring
   const researchSignals = [
