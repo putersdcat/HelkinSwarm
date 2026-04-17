@@ -1257,6 +1257,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       // For explicit-user-intent requests, the synthetic activate_swarm tool call was already
       // injected upstream (#675) so the swarm still activates even if Helkin's LLM turn chose
       // not to emit any tool calls.
+      let swarmDeclinedAfterActivation = false;
       const swarmActivationCall = toolResults.results.find(r => r.toolName === 'activate_swarm' && r.success);
       if (swarmActivationCall && !input.devLoopContext?.isDevLoop && !input.skillForgeRequest) {
         const swarmExecTools = getExecutableToolNames();
@@ -1517,6 +1518,20 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
               trigger: 'activate_swarm_tool_fallback',
             },
           });
+          // [#688] When Helkin explicitly called activate_swarm but the decomposer returned no
+          // plan, surface a user-visible note so the silent-fallback failure mode (probe
+          // bbd9dd30) is no longer invisible. Also flag the turn so the followup tool loop is
+          // clamped tight — without this, Helkin burns the remaining followup budget calling
+          // research tools and hits the Durable timer.
+          swarmDeclinedAfterActivation = true;
+          const declineReason = swarmDecomposerResult.fallbackReason ?? 'no plan returned';
+          yield context.df.callActivity('sendReplyActivity', {
+            userId: input.state.userId,
+            message: `\u26A1 Swarm activation declined by decomposer (${declineReason.slice(0, 120)}). Answering directly with the tools already gathered. [corr:${correlationId.slice(0, 8)}]`,
+            correlationId,
+            conversationReference: input.conversationReference,
+            skipOutboundClaim: true,
+          } satisfies SendReplyInput);
           // Decomposer chose sequential fallback — continue to normal follow-up LLM loop
         }
       }
@@ -1536,7 +1551,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       // The LLM can request additional tool calls after seeing results,
       // enabling chained reasoning (e.g. "find my latest email, then forward it").
       // Max rounds from toolBudget or default 5, capped at 10.
-      const maxToolRounds = Math.min(input.toolBudget ?? 5, 10);
+      // [#688] When the swarm was explicitly activated but declined by the decomposer, clamp
+      // followup rounds hard so Helkin can answer once with what was already gathered without
+      // burning the remaining turn budget into a Durable timeout.
+      const maxToolRounds = swarmDeclinedAfterActivation
+        ? 1
+        : Math.min(input.toolBudget ?? 5, 10);
       const selectiveFollowUpSchemas = deriveSelectiveFollowUpToolSchemas(toolResults?.results ?? []);
       const discoveryFollowUpModelOverride = getDiscoveryFollowUpModelOverride(toolResults?.results ?? []);
       const effectiveFollowUpModelOverride = resolvedModelOverride ?? discoveryFollowUpModelOverride;
