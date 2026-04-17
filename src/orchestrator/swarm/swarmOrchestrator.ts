@@ -61,6 +61,13 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
     agents: allNames,
   });
 
+  // Wrap the entire swarm body so the chatroom entity is ALWAYS destroyed
+  // on every exit path (success, fatal, thrown error). Without this, every
+  // swarm leaks a zombie Running @swarmchatroom@... entity (#680).
+  // signalEntity is a synchronous queued action (no yield), so it's safe to
+  // invoke inside a generator's finally block.
+  try {
+
   // -----------------------------------------------------------------------
   // 2. Fan-out: start all workers in parallel
   // -----------------------------------------------------------------------
@@ -649,4 +656,10 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
   };
 
   return result;
+  } finally {
+    // #680 — destroy the chatroom entity on every exit path so it doesn't
+    // linger as a zombie Running instance. signalEntity is a queued no-yield
+    // action, so running it in a generator finally is safe.
+    context.df.signalEntity(chatroomEntityId, 'destroy');
+  }
 });

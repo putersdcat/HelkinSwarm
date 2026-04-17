@@ -83,6 +83,15 @@ df.app.entity('SwarmChatroom', (ctx) => {
       });
       return;
     }
+
+    // Terminal operation: mark this entity for deletion after the current
+    // operation completes. The orchestrator MUST signal this on every exit
+    // path — otherwise the entity persists forever as a zombie Running
+    // instance in the Sessions tab (#680).
+    case 'destroy': {
+      ctx.df.destructOnExit();
+      return;
+    }
   }
 
   ctx.df.setState(state);
