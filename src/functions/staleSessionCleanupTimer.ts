@@ -16,6 +16,17 @@ import { trackEvent } from '../observability/telemetry.js';
 /** Sessions idle longer than this are considered stale. Default: 1 hour. */
 const STALE_THRESHOLD_MS = parseInt(process.env.STALE_SESSION_THRESHOLD_MS ?? '', 10) || 60 * 60 * 1000;
 
+/**
+ * #680 — Durable Entities (e.g. @swarmchatroom@swarm-...) should never live
+ * more than a few minutes naturally. The orchestrator signals `destroy` in
+ * its `finally`, but `destructOnExit()` does not always remove the underlying
+ * Running row promptly. Reap entity-shaped instances on a much tighter clock
+ * than orchestrations. Default: 10 minutes.
+ */
+const STALE_ENTITY_THRESHOLD_MS = parseInt(process.env.STALE_ENTITY_THRESHOLD_MS ?? '', 10) || 10 * 60 * 1000;
+
+const ENTITY_INSTANCE_ID_PATTERN = /^@([^@]+)@(.+)$/;
+
 /** Instance name prefixes that are expected to be long-running and should not be terminated. */
 const ALLOW_LONG_RUNNING = new Set([
   'maintenanceSweepTimer',
@@ -47,7 +58,11 @@ app.timer('staleSessionCleanupTimer', {
         return false;
       }
       const lastUpdated = s.lastUpdatedTime ? new Date(s.lastUpdatedTime).getTime() : 0;
-      return (now - lastUpdated) > STALE_THRESHOLD_MS;
+      // #680 — entities get a tighter age cutoff than orchestrations.
+      const threshold = ENTITY_INSTANCE_ID_PATTERN.test(s.instanceId)
+        ? STALE_ENTITY_THRESHOLD_MS
+        : STALE_THRESHOLD_MS;
+      return (now - lastUpdated) > threshold;
     });
 
     if (candidates.length === 0) {
@@ -66,7 +81,7 @@ app.timer('staleSessionCleanupTimer', {
         // #686 — Durable Entity instance ids (e.g. "@swarmchatroom@swarm-...") cannot
         // be killed via client.terminate — that API is orchestration-only. For entities
         // we must signal destroy + purge history so the Sessions row actually clears.
-        const entityMatch = candidate.instanceId.match(/^@([^@]+)@(.+)$/);
+        const entityMatch = candidate.instanceId.match(ENTITY_INSTANCE_ID_PATTERN);
         if (entityMatch) {
           const [, entityName, entityKey] = entityMatch;
           const entityId = new df.EntityId(entityName, entityKey);
