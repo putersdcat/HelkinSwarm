@@ -240,6 +240,32 @@ app.http('tab-session-terminate', {
 
     const client = df.getClient(context);
     try {
+      // #686 — Durable Entity instance ids look like "@<entityName>@<entityKey>".
+      // client.terminate is orchestration-only and will error on entity ids. For
+      // entities, signal destroy + purge history so the Sessions tab row actually
+      // goes away instead of lingering as a zombie Running @swarmchatroom@ entry.
+      const entityMatch = instanceId.match(/^@([^@]+)@(.+)$/);
+      if (entityMatch) {
+        const [, entityName, entityKey] = entityMatch;
+        const entityId = new df.EntityId(entityName, entityKey);
+        try {
+          await client.signalEntity(entityId, 'destroy');
+        } catch (signalErr) {
+          // Non-fatal: some entities may not implement destroy. Fall through to purge.
+          context.log(`[tab-session-terminate] signalEntity destroy failed for ${instanceId}: ${signalErr instanceof Error ? signalErr.message : String(signalErr)}`);
+        }
+        try {
+          await client.purgeInstanceHistory(instanceId);
+        } catch (purgeErr) {
+          context.log(`[tab-session-terminate] purgeInstanceHistory failed for ${instanceId}: ${purgeErr instanceof Error ? purgeErr.message : String(purgeErr)}`);
+        }
+        return {
+          status: 200,
+          headers: TAB_CORS_HEADERS,
+          jsonBody: { terminated: true, instanceId, kind: 'entity' },
+        };
+      }
+
       await client.terminate(instanceId, 'Terminated via Dev Console');
 
       const pendingIntentMatch = instanceId.match(/pending-intent-([0-9a-f-]{36})/i);
