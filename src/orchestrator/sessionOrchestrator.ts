@@ -1276,10 +1276,26 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           conversationSummary: input.state.summary || undefined,
           activeSkillDomains: swarmSkillDomains,
         };
-        const swarmDecomposerResult: SwarmDecomposerResult = yield context.df.callActivity(
+        const swarmDecomposerTimeoutMs = 45_000;
+        const swarmDecomposerTask = context.df.callActivity(
           'swarmDecomposerActivity',
           swarmDecomposerInput,
         );
+        const swarmDecomposerTimer = context.df.createTimer(
+          new Date(context.df.currentUtcDateTime.getTime() + swarmDecomposerTimeoutMs),
+        );
+        const swarmDecomposerWinner: df.Task = yield context.df.Task.any([swarmDecomposerTask, swarmDecomposerTimer]);
+        const swarmDecomposerResult: SwarmDecomposerResult = swarmDecomposerWinner === swarmDecomposerTimer
+          ? {
+              plan: null,
+              tokensUsed: 0,
+              decomposerModel: 'timeout',
+              fallbackReason: `Decomposer activity exceeded ${swarmDecomposerTimeoutMs}ms`,
+            }
+          : (swarmDecomposerTask.result as SwarmDecomposerResult);
+        if (swarmDecomposerWinner !== swarmDecomposerTimer) {
+          swarmDecomposerTimer.cancel();
+        }
         if (swarmDecomposerResult.plan) {
           yield* emitOrchestratorTelemetry(context, {
             name: 'SwarmExecutionStarted',
