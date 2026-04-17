@@ -1208,16 +1208,32 @@
                   var transcript = detail.chatroomTranscript || [];
                   var cost = detail.swarmCost || {};
 
+                  // Tri-state status: "running" | "ok" | "fail".
+                  // The list view uses detail.status; the detail view must do
+                  // the same, otherwise a running swarm (success=false by
+                  // default) renders as "FAIL · 0.0s" while the list shows
+                  // "RUNNING". (#678)
+                  var state = detail.status || (detail.success ? "ok" : "fail");
+                  var stBadge = state === "running" ? "info" : (state === "ok" ? "ok" : "error");
+                  var stLabel = state === "running" ? "RUNNING" : (state === "ok" ? "OK" : "FAIL");
+                  var isRunning = state === "running";
+                  var durationDisplay = isRunning && !detail.executionDurationMs
+                    ? "\u2014 (in progress)"
+                    : ((detail.executionDurationMs || 0) / 1000).toFixed(1) + "s";
+
                   var html = '<div class="card"><h2>Swarm Detail \u2014 ' + esc(detail.swarmId || swarmId) + '</h2>' +
                     '<p><strong>Query:</strong> ' + esc(detail.userQuery || "\u2014") + '</p>' +
                     '<p><strong>Correlation:</strong> <code>' + esc(detail.correlationId || "") + '</code></p>' +
-                    '<p><strong>Duration:</strong> ' + ((detail.executionDurationMs || 0) / 1000).toFixed(1) + 's' +
+                    '<p><strong>Duration:</strong> ' + durationDisplay +
                     ' \u00B7 <strong>Tokens:</strong> ' + (detail.totalTokensUsed || 0).toLocaleString() +
                     (cost.totalCost != null ? ' \u00B7 <strong>Cost:</strong> ' + fmtMoney(cost.totalCost) : '') +
-                    ' \u00B7 <strong>Status:</strong> <span class="badge badge-' + (detail.success ? "ok" : "error") + '">' + (detail.success ? "OK" : "FAIL") + '</span></p></div>';
+                    ' \u00B7 <strong>Status:</strong> <span class="badge badge-' + stBadge + '">' + stLabel + '</span></p></div>';
 
                   // Agent breakdown — with emoji and cost
                   html += '<div class="card"><h2>Agent Breakdown</h2>' +
+                    (agents.length === 0 && isRunning
+                      ? '<p class="empty-state">Agents are still executing. Refresh to see per-agent results as they complete.</p>'
+                      :
                     '<table><tr><th>Agent</th><th>Model</th><th>Tokens</th><th>Cost</th><th>Duration</th><th>Rounds</th><th>Tools</th><th>Status</th></tr>' +
                     agents.map(function (a) {
                       var ast = a.success ? "ok" : "error";
@@ -1232,7 +1248,7 @@
                         '<td>' + (a.roundsUsed || 0) + '</td>' +
                         '<td>' + esc((a.toolsUsed || []).join(", ") || "\u2014") + '</td>' +
                         '<td><span class="badge badge-' + ast + '">' + (a.success ? "\u2713" : "\u2717") + '</span></td></tr>';
-                    }).join("") + '</table></div>';
+                    }).join("") + '</table>') + '</div>';
 
                   // Cost breakdown — with cost column
                   if (cost.totalTokens) {
