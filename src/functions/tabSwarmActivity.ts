@@ -10,8 +10,9 @@ import {
   type InvocationContext,
 } from '@azure/functions';
 import { isOwnerUserId } from '../bot/maintenanceMode.js';
-import { getContainer } from '../memory/cosmosClient.js';
 import { validateTabTokenFromRequest } from '../auth/tabTokenValidator.js';
+import { getContainer } from '../memory/cosmosClient.js';
+import { getActiveTurnStagesForUser } from '../observability/orchestratorStageHealth.js';
 
 const TAB_CORS_HEADERS: Record<string, string> = {
   'Access-Control-Allow-Origin': 'https://helkinswarmtabsst.z20.web.core.windows.net',
@@ -20,6 +21,46 @@ const TAB_CORS_HEADERS: Record<string, string> = {
 };
 
 const SESSIONS_CONTAINER = 'sessions';
+const STALE_SWARM_RUNNING_RECONCILE_MS = parseInt(process.env.STALE_SWARM_RUNNING_RECONCILE_MS ?? '', 10) || 20 * 60 * 1000;
+
+interface SwarmExecutionSummaryLike {
+  id?: string;
+  correlationId?: string;
+  executedAt?: string;
+  status?: string;
+  success?: boolean;
+  executionDurationMs?: number;
+  persistenceWarning?: string;
+}
+
+export function reconcileSwarmExecutionForDisplay<T extends SwarmExecutionSummaryLike>(
+  execution: T,
+  activeCorrelationIds: ReadonlySet<string>,
+  nowMs = Date.now(),
+): T {
+  if (execution.status !== 'running') return execution;
+  const correlationId = execution.correlationId ?? '';
+  if (correlationId && activeCorrelationIds.has(correlationId)) {
+    return execution;
+  }
+
+  const executedMs = execution.executedAt ? Date.parse(execution.executedAt) : Number.NaN;
+  if (!Number.isFinite(executedMs)) {
+    return execution;
+  }
+
+  const ageMs = nowMs - executedMs;
+  if (ageMs < STALE_SWARM_RUNNING_RECONCILE_MS) {
+    return execution;
+  }
+
+  return {
+    ...execution,
+    status: 'fail',
+    success: false,
+    persistenceWarning: `Marked stale after ${Math.round(ageMs / 60_000)}m with no active orchestrator stage`,
+  };
+}
 
 // ---------------------------------------------------------------------------
 // GET /api/tab/swarm-activity — recent swarm executions (summary + optional detail)
@@ -51,6 +92,10 @@ app.http('tab-swarm-activity', {
     try {
       const container = getContainer(SESSIONS_CONTAINER);
       const swarmId = req.query.get('swarmId');
+      const nowMs = Date.now();
+      const activeCorrelationIds = new Set(
+        (await getActiveTurnStagesForUser(userId, nowMs)).map((entry) => entry.correlationId),
+      );
 
       if (swarmId) {
         // Detail mode — return full execution data for a specific swarm
@@ -58,7 +103,15 @@ app.http('tab-swarm-activity', {
         if (!resource) {
           return { status: 404, headers: TAB_CORS_HEADERS, jsonBody: { error: 'Swarm execution not found.' } };
         }
-        return { status: 200, headers: TAB_CORS_HEADERS, jsonBody: resource };
+        const reconciled = reconcileSwarmExecutionForDisplay(resource as SwarmExecutionSummaryLike, activeCorrelationIds, nowMs);
+        if (reconciled !== resource && resource.id) {
+          await container.item(resource.id as string, userId).patch([
+            { op: 'replace', path: '/status', value: 'fail' },
+            { op: 'replace', path: '/success', value: false },
+            { op: 'add', path: '/persistenceWarning', value: (reconciled.persistenceWarning ?? 'Marked stale running row') },
+          ]).catch(() => { /* best effort reconciliation */ });
+        }
+        return { status: 200, headers: TAB_CORS_HEADERS, jsonBody: reconciled };
       }
 
       // List mode — return recent swarm executions (summary only).
@@ -70,7 +123,7 @@ app.http('tab-swarm-activity', {
           {
             query: `SELECT c.id, c.swarmId, c.correlationId, c.userQuery, c.executedAt,
                            c.status, c.success, c.agentCount, c.totalTokensUsed, c.executionDurationMs,
-                           c.decomposerModel, c.leaderModel, c.leaderAgentsHeardFrom
+                           c.decomposerModel, c.leaderModel, c.leaderAgentsHeardFrom, c.persistenceWarning
                     FROM c
                     WHERE c.type = @type AND c.userId = @userId
                     ORDER BY c.executedAt DESC
@@ -84,10 +137,23 @@ app.http('tab-swarm-activity', {
         )
         .fetchAll();
 
+      const executions = resources.map((resource) =>
+        reconcileSwarmExecutionForDisplay(resource as SwarmExecutionSummaryLike, activeCorrelationIds, nowMs),
+      );
+      const staleRows = executions.filter((execution, index) => execution !== resources[index] && !!execution.id);
+      if (staleRows.length > 0) {
+        await Promise.allSettled(staleRows.map((execution) =>
+          container.item(execution.id as string, userId).patch([
+            { op: 'replace', path: '/status', value: 'fail' },
+            { op: 'replace', path: '/success', value: false },
+            { op: 'add', path: '/persistenceWarning', value: execution.persistenceWarning ?? 'Marked stale running row' },
+          ])));
+      }
+
       return {
         status: 200,
         headers: TAB_CORS_HEADERS,
-        jsonBody: { executions: resources, count: resources.length },
+        jsonBody: { executions, count: executions.length },
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
