@@ -1,7 +1,7 @@
 """HelkinSwarm Python REPL service — stateful per-session sandboxed execution.
 
 Spec: docs/0zj-Code-Execution-Skill-and-Math-Layer.md (Path B)
-Issue: #639
+Issue: #639, #674 (canonical library parity rollout)
 
 Security model: the container itself is the sandbox (no network, read-only fs
 where possible, CPU/memory limits set at Container Apps level). Code-level defense
