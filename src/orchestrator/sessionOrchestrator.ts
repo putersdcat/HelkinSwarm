@@ -106,6 +106,7 @@ function* emitOrchestratorTelemetry(
  * even when the activity worker's event loop is busy or JS timers are suppressed.
  */
 const FOLLOWUP_DURABLE_TIMEOUT_MS = 100_000; // 100s = 90s LLM budget + 10s overhead
+const SWARM_PERSIST_DURABLE_TIMEOUT_MS = 35_000; // 15s primary + 15s compact fallback + overhead (#683)
 
 /**
  * Maximum time to wait for a sub-agent activity via Durable timer (#591).
@@ -184,6 +185,29 @@ function* withSubAgentTimeout(
   }
   timer.cancel();
   return task.result as SubAgentResult;
+}
+
+function* withSwarmPersistTimeout(
+  context: df.OrchestrationContext,
+  input: PersistSwarmResultInput,
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions generator helper
+): Generator<df.Task, { stored: boolean; error?: string }, any> {
+  const timer = context.df.createTimer(
+    new Date(context.df.currentUtcDateTime.getTime() + SWARM_PERSIST_DURABLE_TIMEOUT_MS),
+  );
+  const task = context.df.callActivity('persistSwarmResultActivity', input);
+  const winner = yield context.df.Task.any([task, timer]) as df.Task;
+  if (winner === timer) {
+    console.error(
+      `[sessionOrchestrator] persistSwarmResultActivity timed out after ${SWARM_PERSIST_DURABLE_TIMEOUT_MS}ms via Durable timer (#683)`,
+    );
+    return {
+      stored: false,
+      error: `persistSwarmResultActivity timed out after ${SWARM_PERSIST_DURABLE_TIMEOUT_MS}ms`,
+    };
+  }
+  timer.cancel();
+  return task.result as { stored: boolean; error?: string };
 }
 
 const ConfirmationResponseSchema = z.object({
@@ -1347,7 +1371,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             },
           };
           const runningPersistResult: { stored: boolean; error?: string } =
-            yield context.df.callActivity('persistSwarmResultActivity', runningPersistInput);
+            yield* withSwarmPersistTimeout(context, runningPersistInput);
           if (!runningPersistResult?.stored) {
             yield* emitOrchestratorTelemetry(context, {
               name: 'SwarmPersistenceFailure',
@@ -1473,7 +1497,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
               },
             };
             const persistResult: { stored: boolean; error?: string } =
-              yield context.df.callActivity('persistSwarmResultActivity', persistInput);
+              yield* withSwarmPersistTimeout(context, persistInput);
             if (!persistResult?.stored) {
               yield* emitOrchestratorTelemetry(context, {
                 name: 'SwarmPersistenceFailure',
