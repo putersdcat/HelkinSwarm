@@ -129,7 +129,9 @@ export type TelemetryEventName =
   | 'SwarmPersistenceFailure'
   | 'SwarmChatroomSend'
   | 'ModelOverrideIgnored'
-  | 'OverseerStartedDespiteLiveSibling';
+  | 'OverseerStartedDespiteLiveSibling'
+  | 'OpenRouterGrok429Retry'
+  | 'OpenRouterSlotSkip';
 
 // ---------------------------------------------------------------------------
 // Session Tracer — maps events to trace phases for Dev Console (#140)

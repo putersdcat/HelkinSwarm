@@ -305,6 +305,14 @@ export class FoundryClient {
       const perModelTimeout = Math.max(MIN_PER_MODEL_TIMEOUT_MS, Math.min(baseTimeout, remaining));
 
       attemptedModels.push(routing.deploymentName);
+
+      // Retry Grok once on 429 before falling to minimax (#690).
+      // When 4 workers burst simultaneously and the 4th is queued behind the
+      // concurrency gate, Grok is often degraded by the time the 4th slot is
+      // admitted. Retrying on 429 gives Grok a real chance to recover and
+      // prevents the fallback chain from firing prematurely.
+      let grok429RetryDone = false;
+
       try {
         const forcedFailure = consumeForcedRetryableFailure(routing.deploymentName);
         if (forcedFailure) {
@@ -350,8 +358,80 @@ export class FoundryClient {
         return result;
       } catch (err) {
         lastError = err instanceof Error ? err : new Error(String(err));
-        const isRetryable = isRetryableError(err);
+
+        // Grok 429 retry before falling back: if Grok got a 429 and we have not
+        // retried it yet, honour Retry-After and retry once before minimax (#690).
+        // Only applies to OpenRouter paths (usesObo=false); Azure Foundry (usesObo=true)
+        // routes through a different error handler that already treats 429 as a standard
+        // retryable failure without Retry-After-aware retry.
+        if (
+          !grok429RetryDone
+          && err instanceof FoundryError
+          && err.statusCode === 429
+          && err.retryAfterMs !== undefined
+          && i === 0   // only retry the primary (Grok) slot
+          && routing.usesObo === false  // OpenRouter only
+        ) {
+          grok429RetryDone = true;
+          trackEvent({
+            name: 'OpenRouterGrok429Retry',
+            correlationId,
+            properties: {
+              model: routing.deploymentName,
+              retryAfterMs: err.retryAfterMs,
+              remainingBudgetMs: effectiveBudgetMs - (Date.now() - budgetStart),
+            },
+          });
+          // Wait for Retry-After then retry Grok; this iteration's chain entry is
+          // re-entered by decrementing i so it counts as the same position.
+          await new Promise<void>((resolve) => setTimeout(resolve, err.retryAfterMs));
+          i--;
+          continue;
+        }
+
         reportLlmFailure(routing.deploymentName);
+
+        // OpenRouterSlotSkipError: a degraded model was detected at the concurrency
+        // gate before we even entered the slot. Treat it as retryable so the
+        // fallback chain fires rather than throwing immediately (#690).
+        if (err instanceof OpenRouterSlotSkipError) {
+          trackEvent({
+            name: 'OpenRouterSlotSkip',
+            correlationId,
+            properties: {
+              model: routing.deploymentName,
+              reason: err.reason,
+            },
+          });
+          // Fall through to the retryable path with isRetryable=true.
+          // We push a synthetic failover step so the chain logs the skip.
+          const nextCandidate = chain.slice(i + 1).find((r) =>
+            !isModelDegraded(r.deploymentName) && !isModelTrackedDown(r.deploymentName),
+          );
+          if (nextCandidate) {
+            failoverSteps.push({
+              fromModel: routing.deploymentName,
+              toModel: nextCandidate.deploymentName,
+              reason: 'concurrency_gate_skip',
+              statusCode: undefined,
+            });
+          }
+          trackEvent({
+            name: 'LlmFallbackTriggered',
+            correlationId,
+            properties: {
+              originalModel: routing.deploymentName,
+              fallbackModel: nextCandidate?.deploymentName ?? 'none',
+              reason: 'concurrency_gate_skip',
+              chainPosition: i,
+              elapsedMs: Date.now() - budgetStart,
+            },
+          });
+          // Continue to next candidate in chain.
+          continue;
+        }
+
+        const isRetryable = isRetryableError(err);
 
         if (isRetryable) {
           const reason = err instanceof FoundryError
@@ -877,6 +957,21 @@ export class FoundryAllModelsDownError extends Error {
   }
 }
 
+/**
+ * Thrown from withOpenRouterConcurrencySlot when a degraded model is detected at the
+ * gate entrance — signals the caller to skip this model and go straight to its fallback
+ * without waiting in the queue (#690).
+ */
+export class OpenRouterSlotSkipError extends Error {
+  constructor(
+    public readonly deploymentName: string,
+    public readonly reason: string,
+  ) {
+    super(`OpenRouter slot skip: ${deploymentName} is degraded (${reason}) — bypass queue and go to fallback`);
+    this.name = 'OpenRouterSlotSkipError';
+  }
+}
+
 export function buildSuccessfulFailoverNotices(failoverSteps: readonly LlmFailoverStep[] | undefined): string[] {
   if (!failoverSteps || failoverSteps.length === 0) {
     return [];
@@ -1038,6 +1133,23 @@ async function withOpenRouterConcurrencySlot<T>(
   fn: () => Promise<T>,
 ): Promise<T> {
   const gate = getOpenRouterGate();
+
+  // Fix 3: if this model is degraded, skip the queue entirely and let the
+  // caller go straight to fallback. Prevents the 4th queued worker from
+  // waiting for a degraded Grok slot while the fallback chain fires (#690).
+  if (isModelDegraded(deploymentName)) {
+    trackEvent({
+      name: 'OpenRouterConcurrencyGate',
+      correlationId,
+      properties: {
+        action: 'degraded_skip',
+        model: deploymentName,
+        reason: 'model_degraded',
+      },
+    });
+    throw new OpenRouterSlotSkipError(deploymentName, 'degraded');
+  }
+
   if (gate.active >= gate.maxConcurrency) {
     const queueStart = Date.now();
     trackEvent({
