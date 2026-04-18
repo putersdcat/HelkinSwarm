@@ -26,6 +26,11 @@ import { recoverOperationalNoticesFromTrace } from './failoverNoticeRecovery.js'
 import type { PlanInput, PlanResult } from './planActivity.js';
 import type { SwarmDecomposerInput, SwarmDecomposerResult, SwarmOrchestratorInput, SwarmOrchestratorResult } from './swarm/swarmTypes.js';
 import { hasExplicitSwarmOverride } from './swarm/swarmTypes.js';
+import {
+  buildSwarmDeclineDirectResponse,
+  sanitizeSwarmDeclineFollowUpContext,
+  shouldShortCircuitSwarmDecline,
+} from './swarm/swarmDeclineFollowUp.js';
 import type { PersistSwarmResultInput } from './swarm/persistSwarmResultActivity.js';
 import { getExecutableToolNames } from '../capabilities/capabilityLoader.js';
 import { canonicalizeInput } from './inputCanonicalizer.js';
@@ -1258,6 +1263,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       // injected upstream (#675) so the swarm still activates even if Helkin's LLM turn chose
       // not to emit any tool calls.
       let swarmDeclinedAfterActivation = false;
+      let swarmDeclineReason: string | undefined;
       const swarmActivationCall = toolResults.results.find(r => r.toolName === 'activate_swarm' && r.success);
       if (swarmActivationCall && !input.devLoopContext?.isDevLoop && !input.skillForgeRequest) {
         const swarmExecTools = getExecutableToolNames();
@@ -1541,9 +1547,10 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           // research tools and hits the Durable timer.
           swarmDeclinedAfterActivation = true;
           const declineReason = swarmDecomposerResult.fallbackReason ?? 'no plan returned';
+          swarmDeclineReason = declineReason;
           yield context.df.callActivity('sendReplyActivity', {
             userId: input.state.userId,
-            message: `\u26A1 Swarm activation declined by decomposer (${declineReason.slice(0, 120)}). Answering directly with the tools already gathered. [corr:${correlationId.slice(0, 8)}]`,
+            message: `\u26A1 Swarm activation declined by decomposer (${declineReason.slice(0, 120)}). Answering directly only if I have enough verified evidence; otherwise I will ask you to retry. [corr:${correlationId.slice(0, 8)}]`,
             correlationId,
             conversationReference: input.conversationReference,
             skipOutboundClaim: true,
@@ -1561,6 +1568,20 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
       );
       if (deterministicExactToolResponse) {
         responseContent = deterministicExactToolResponse;
+      } else {
+      const followUpContext = swarmDeclinedAfterActivation
+        ? sanitizeSwarmDeclineFollowUpContext({
+            toolCalls: filteredInitialToolCalls,
+            toolResults: toolResults?.results ?? [],
+            declineReason: swarmDeclineReason,
+          })
+        : {
+            toolCalls: filteredInitialToolCalls,
+            toolResults: toolResults?.results ?? [],
+          };
+
+      if (swarmDeclinedAfterActivation && shouldShortCircuitSwarmDecline(followUpContext.toolResults)) {
+        responseContent = buildSwarmDeclineDirectResponse(swarmDeclineReason);
       } else {
 
       // 3b. Multi-round tool dispatch loop (#253)
@@ -1683,7 +1704,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           },
         });
       }
-      const initialResultCount = mergedResults.length;
+      const initialResultCount = followUpContext.toolResults.length;
 
       const followUpInput: LlmFollowUpInput = {
         // Preserve plan-injected system guidance across follow-up rounds (#340 regression).
@@ -1692,12 +1713,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         originalMessages: promptWithPlan.messages,
         assistantToolCallMessage: {
           content: llmResult.content,
-            toolCalls: filteredInitialToolCalls,
+            toolCalls: followUpContext.toolCalls,
         },
-        toolResults: toolResults?.results ?? [],
+        toolResults: followUpContext.toolResults,
         correlationId,
         modelOverride: effectiveFollowUpModelOverride,
-        enableRetry: true,
+        enableRetry: !swarmDeclinedAfterActivation,
         modelProfileTelemetry: followUpModelProfileTelemetry,
         tools: selectiveFollowUpSchemas ?? allToolSchemas,
         toolChoice: forcedFollowUpToolChoice,
@@ -1752,9 +1773,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             originalMessages: promptWithPlan.messages,
             assistantToolCallMessage: {
               content: llmResult.content,
-              toolCalls: filteredInitialToolCalls,
+              toolCalls: followUpContext.toolCalls,
             },
-            toolResults: toolResults?.results.slice(0, initialResultCount) ?? [],
+            toolResults: followUpContext.toolResults.slice(0, initialResultCount),
             correlationId,
             modelOverride: effectiveFollowUpModelOverride,
             enableRetry: false,
@@ -1885,9 +1906,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
               originalMessages: promptWithPlan.messages,
               assistantToolCallMessage: {
                 content: llmResult.content,
-                toolCalls: filteredInitialToolCalls,
+                toolCalls: followUpContext.toolCalls,
               },
-              toolResults: toolResults?.results.slice(0, initialResultCount) ?? [],
+              toolResults: followUpContext.toolResults.slice(0, initialResultCount),
               correlationId,
               modelOverride: effectiveFollowUpModelOverride,
               enableRetry: false,
@@ -2137,9 +2158,9 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           originalMessages: promptWithPlan.messages,
           assistantToolCallMessage: {
             content: llmResult.content,
-            toolCalls: filteredInitialToolCalls,
+            toolCalls: followUpContext.toolCalls,
           },
-          toolResults: toolResults?.results.slice(0, initialResultCount) ?? [],
+          toolResults: followUpContext.toolResults.slice(0, initialResultCount),
           correlationId,
           modelOverride: effectiveFollowUpModelOverride,
           enableRetry: allowMoreFollowUpTools,
@@ -2159,6 +2180,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
 
       responseContent = followUp.content;
       spans.push({ label: 'followup', durationMs: context.df.currentUtcDateTime.getTime() - spanStart });
+      }
       }
       }
     }
