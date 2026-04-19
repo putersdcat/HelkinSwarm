@@ -43,7 +43,59 @@ export function filterAgentTools(
   return agents.filter(a => a.assignedTools.length > 0);
 }
 
-const DECOMPOSER_SYSTEM_PROMPT = `You are a task decomposer for a multi-agent swarm. Given a user query and available tools, decide how to split the work across 2-4 specialized agents working in parallel.
+const REQUIRED_SWARM_SPECIALISTS = ['Benjamin', 'Harper', 'Lucas'] as const;
+
+type RequiredSwarmSpecialist = typeof REQUIRED_SWARM_SPECIALISTS[number];
+
+function buildFallbackSwarmAgent(
+  name: RequiredSwarmSpecialist,
+  userQuery: string,
+  availableToolNames: string[],
+): SwarmAgent {
+  const preferredTools = ['web_search', 'web_fetch_page', 'deep_research'];
+  const assignedTools = preferredTools.filter((tool) => availableToolNames.includes(tool));
+
+  switch (name) {
+    case 'Benjamin':
+      return {
+        name,
+        role: 'Research & Verification Specialist',
+        task: `Verify the core facts, primary sources, and hard evidence for this query: ${userQuery}`,
+        assignedTools,
+        persona: 'Precise and skeptical. Prioritize primary sources, official pages, and factual verification over summaries.',
+      };
+    case 'Harper':
+      return {
+        name,
+        role: 'Field Research & Browsing Specialist',
+        task: `Explore real-world examples, supporting context, and practical edge cases for this query: ${userQuery}`,
+        assignedTools,
+        persona: 'Fast-moving and pragmatic. Browse broadly, gather supporting examples, and surface operational details others might miss.',
+      };
+    case 'Lucas':
+      return {
+        name,
+        role: 'Comparative Synthesis Specialist',
+        task: `Build the comparative synthesis, ranking, or structured recommendation for this query: ${userQuery}`,
+        assignedTools,
+        persona: 'Structured and synthesis-focused. Pull the other specialists together into a clear recommendation or decision frame.',
+      };
+  }
+}
+
+export function ensureFullSwarmRoster(
+  agents: SwarmAgent[],
+  userQuery: string,
+  availableToolNames: string[],
+): SwarmAgent[] {
+  const byName = new Map(agents.map((agent) => [agent.name, agent]));
+
+  return REQUIRED_SWARM_SPECIALISTS.map((name) =>
+    byName.get(name) ?? buildFallbackSwarmAgent(name, userQuery, availableToolNames),
+  );
+}
+
+const DECOMPOSER_SYSTEM_PROMPT = `You are a task decomposer for a multi-agent swarm. Given a user query and available tools, decide how to split the work across the three fixed specialist agents working in parallel.
 
 Respond with ONLY a JSON object matching this schema:
 {
@@ -65,7 +117,7 @@ Respond with ONLY a JSON object matching this schema:
 }
 
 Rules:
-- Use 2-4 agents. Prefer FEWER agents with CLEARLY DISTINCT responsibilities.
+- Use EXACTLY 3 worker agents every time: Benjamin, Harper, and Lucas. Do NOT omit any of them.
 - **CRITICAL**: Each agent must research a DIFFERENT aspect of the query. Do NOT create agents with overlapping tasks.
   - BAD: Benjamin researches "performance of X", Harper researches "performance of Y" ← same dimension, different subjects
   - GOOD: Benjamin researches "technical performance benchmarks", Harper researches "ecosystem and community", Lucas researches "industry adoption and case studies" ← different dimensions
@@ -74,7 +126,7 @@ Rules:
   - "deep_research" is for multi-angle deep dives when available. Prefer web_search for breadth.
 - Beyond web_search, give each agent ONLY the additional tools relevant to their specific sub-task.
 - If there are only 1-2 tools available, use only 2 agents (more agents without tools just hallucinate).
-- Agent names MUST be exactly these persona names: Benjamin (research/verification), Harper (tool orchestration/deep browsing), Lucas (data synthesis/alternatives). Use 2-3 of them as needed. The Leader is always Helkin.
+- Agent names MUST be exactly these persona names: Benjamin (research/verification), Harper (tool orchestration/deep browsing), Lucas (data synthesis/alternatives). Use ALL THREE on every swarm turn. The Leader is always Helkin.
 - modelOverride: OMIT this field. Cross-model swarm is not yet supported — all agents must run on the swarm default model. Per #685, any modelOverride is ignored at the worker unless SWARM_MODEL_OVERRIDE_ENABLED=true, which is off by default until per-model personas land.
 - persona: Write 1-3 sentences of task-specific behavioral guidance for THIS agent on THIS query. What decision-making posture should they adopt? Examples: "Skeptical of marketing claims — verify pricing with direct site scraping. Prioritize primary sources over aggregators." or "Speed-focused: retrieve the top 5 results immediately and report, then dig deeper if time allows." This field is injected directly into the agent's system prompt, so make it actionable and specific to the sub-task, not generic.
 - Each agent's task must be specific and actionable — not vague "research this topic".
@@ -200,7 +252,8 @@ df.app.activity('swarmDecomposerActivity', {
         };
       }
 
-      // Filter agent tools to only executable tools, with web_search fallback
+      // Filter agent tools to only executable tools, with web_search fallback,
+      // then guarantee the full Benjamin/Harper/Lucas roster for every swarm turn (#692).
       const validAgents = filterAgentTools(parsed.data.agents, input.availableToolNames);
       if (validAgents.length === 0) {
         await recordOrchestratorStage(input.correlationId, 'swarm-decompose-declined', input.userId);
@@ -212,7 +265,10 @@ df.app.activity('swarmDecomposerActivity', {
         };
       }
 
-      const plan = { ...parsed.data, agents: validAgents };
+      const plan = {
+        ...parsed.data,
+        agents: ensureFullSwarmRoster(validAgents, input.userMessage, input.availableToolNames),
+      };
 
       trackEvent({
         name: 'SwarmPlanGenerated',

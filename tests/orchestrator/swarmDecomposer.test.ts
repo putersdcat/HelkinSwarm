@@ -3,7 +3,7 @@
 // Issue: #632
 
 import { describe, it, expect } from 'vitest';
-import { filterAgentTools } from '../../src/orchestrator/swarm/swarmDecomposerActivity.js';
+import { ensureFullSwarmRoster, filterAgentTools } from '../../src/orchestrator/swarm/swarmDecomposerActivity.js';
 import type { SwarmAgent } from '../../src/orchestrator/swarm/swarmTypes.js';
 
 function makeAgent(name: string, tools: string[]): SwarmAgent {
@@ -73,6 +73,20 @@ describe('filterAgentTools', () => {
   });
 });
 
+describe('ensureFullSwarmRoster', () => {
+  const available = ['web_search', 'web_fetch_page', 'deep_research'];
+
+  it('repairs a partial plan to the full Benjamin/Harper/Lucas roster (#692)', () => {
+    const repaired = ensureFullSwarmRoster([
+      makeAgent('Benjamin', ['web_search']),
+      makeAgent('Lucas', ['deep_research']),
+    ], 'compare frameworks', available);
+
+    expect(repaired.map((agent) => agent.name)).toEqual(['Benjamin', 'Harper', 'Lucas']);
+    expect(repaired.every((agent) => agent.assignedTools.length > 0)).toBe(true);
+  });
+});
+
 describe('DECOMPOSER_SYSTEM_PROMPT — source verification', () => {
   // Verify the prompt instructs the decomposer to write task-specific persona guidance (#651 follow-on)
   it('instructs decomposer to write task-specific behavioral personas', () => {
@@ -85,5 +99,7 @@ describe('DECOMPOSER_SYSTEM_PROMPT — source verification', () => {
     );
     expect(src).toContain('task-specific behavioral guidance');
     expect(src).toContain('injected directly into the agent\'s system prompt');
+    expect(src).toContain('Use EXACTLY 3 worker agents every time');
+    expect(src).toContain('Use ALL THREE on every swarm turn');
   });
 });
