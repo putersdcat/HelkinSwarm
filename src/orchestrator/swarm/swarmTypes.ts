@@ -338,6 +338,15 @@ export function computeSwarmEligibilityScore(message: string): number {
   const verificationSignals = [
     'verify', 'confirm', 'check', 'cross-check', 'validate',
   ];
+  // Non-comparative but still strongly multi-step work patterns.
+  const executionSignals = [
+    'calculate', 'compute', 'create', 'draft', 'write', 'merge',
+    'combine', 'generate', 'synthesize', 'summarize', 'show the full',
+  ];
+  const sequentialWorkflowSignals = [
+    ' then ', ' finally ', ' first ', ' second ', ' third ', ' next ',
+    ' after that ', 'step-by-step', 'full step-by-step',
+  ];
   // Connectors implying multiple domains or aspects
   const multiDomainSignals = [
     'and also', 'additionally', 'as well as', 'along with',
@@ -376,6 +385,14 @@ export function computeSwarmEligibilityScore(message: string): number {
   else if (researchMatches >= 1) score += 1;
   // Verification intent
   if (verificationSignals.some(s => lower.includes(s))) score += 1;
+  // Non-comparative execution verbs: research + calculation + synthesis should
+  // also surface as strong swarm candidates, not just compare/rank phrasing (#691).
+  const executionMatches = executionSignals.filter(s => lower.includes(s)).length;
+  if (executionMatches >= 3) score += 2;
+  else if (executionMatches >= 1) score += 1;
+  const sequentialMatches = sequentialWorkflowSignals.filter(s => lower.includes(s)).length;
+  if (sequentialMatches >= 2) score += 2;
+  else if (sequentialMatches >= 1) score += 1;
   // Multi-domain connectors
   if (multiDomainSignals.some(s => lower.includes(s))) score += 2;
   // Compound analysis

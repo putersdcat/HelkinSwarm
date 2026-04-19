@@ -773,6 +773,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   if (swarmHintEligible) {
     if (userRequestedSwarmInPrompt) {
       swarmEligHint = `\n\n[Swarm explicitly requested by the user. Call activate_swarm now — this is a direct user directive, not a heuristic.]`;
+    } else if (planResult.swarmComplexityZone === 'always-swarm') {
+      swarmEligHint = `\n\n[Swarm suitability: ${rawEligScore}/10. This is an always-swarm candidate: the task is multi-faceted enough that parallel specialist work is expected to materially improve the answer. Call activate_swarm now.]`;
     } else if (rawEligScore >= 5) {
       swarmEligHint = `\n\n[Swarm suitability: ${rawEligScore}/10. Your specialist team (Benjamin, Harper, Lucas) may add significant value here. If parallel expert work would produce a materially better answer, call activate_swarm.]`;
     } else {
@@ -959,7 +961,10 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   const userWantsSwarmExplicitly = hasExplicitSwarmOverride(input.userMessage)
     && !input.devLoopContext?.isDevLoop
     && !input.skillForgeRequest;
-  if (userWantsSwarmExplicitly) {
+  const plannerAlwaysWantsSwarm = planResult.swarmComplexityZone === 'always-swarm'
+    && !input.devLoopContext?.isDevLoop
+    && !input.skillForgeRequest;
+  if (userWantsSwarmExplicitly || plannerAlwaysWantsSwarm) {
     const existingToolCalls = llmResult.toolCalls ?? [];
     const alreadyHasActivate = existingToolCalls.some((tc) => tc.name === 'activate_swarm');
     if (!alreadyHasActivate) {
@@ -977,8 +982,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
         correlationId,
         userId: input.state.userId,
         properties: {
-          reason: 'explicit_user_intent',
-          trigger: 'explicit_swarm_signal',
+          reason: userWantsSwarmExplicitly ? 'explicit_user_intent' : 'planner_always_swarm',
+          trigger: userWantsSwarmExplicitly ? 'explicit_swarm_signal' : 'always_swarm_zone',
           swarmEligibilityScore: planResult.swarmEligibilityScore ?? 0,
           hadPriorToolCalls: existingToolCalls.length > 0,
         },

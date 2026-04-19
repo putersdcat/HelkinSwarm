@@ -66,10 +66,12 @@ const EnvConfigSchema = z.object({
   // OpenRouter attribution headers — per https://openrouter.ai/docs/quickstart (#677)
   openrouterReferer: z.string().default('https://github.com/putersdcat/HelkinSwarm'),
   openrouterTitle: z.string().default('HelkinSwarm'),
-  // Max concurrent in-flight OpenRouter requests per process (#677).
-  // Swarm workers + Helkin can otherwise burst 4+ parallel requests which
-  // triggers upstream-provider rate limits (e.g. xAI per-key concurrency caps).
-  openrouterMaxConcurrency: z.coerce.number().int().positive().default(3),
+  // Max concurrent in-flight OpenRouter requests per process (#677, #690).
+  // Temporary dev-phase headroom is set to 8 so overlapping swarm sessions,
+  // decomposer calls, and a leader lane can coexist while the session lifecycle
+  // hardening continues. This is intentionally higher than the old default 3,
+  // which was too low for a 4-member Grok swarm.
+  openrouterMaxConcurrency: z.coerce.number().int().positive().default(8),
 
   // Web search (Brave Search API) — key from Key Vault (#190)
   braveSearchApiKey: z.string().optional(),

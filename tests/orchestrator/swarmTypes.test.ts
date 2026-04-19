@@ -34,6 +34,13 @@ describe('computeSwarmEligibilityScore', () => {
     expect(score).toBeGreaterThanOrEqual(1);
   });
 
+  it('scores long multi-step research-plus-calculation prompts as always-swarm candidates (#691)', () => {
+    const prompt = 'Research the exact current population of Munich, Germany in April 2026 along with today\'s high temperature and weather conditions there. Using that population figure, calculate precisely how many standard 12-inch pizzas would be needed if every single resident ate exactly 3 slices for lunch today, showing the full step-by-step math and final total. Then create a hilarious 100-word sci-fi news headline plus opening paragraph about Munich\'s entire population simultaneously ordering pizza via a rogue Grok swarm. Finally, merge everything into one clean final response.';
+    const score = computeSwarmEligibilityScore(prompt);
+    expect(score).toBeGreaterThanOrEqual(7);
+    expect(classifySwarmZone(score)).toBe('always-swarm');
+  });
+
   it('isSwarmEligible threshold matches score >= 3', () => {
     // Score < 3 → not eligible
     const lowScoreMsg = 'find something';

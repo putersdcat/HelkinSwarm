@@ -34,11 +34,11 @@ describe('OpenRouter concurrency gate (#677)', () => {
     expect(getEnvConfig().openrouterMaxConcurrency).toBe(2);
   });
 
-  it('defaults to 3 concurrent slots when OPENROUTER_MAX_CONCURRENCY is unset', async () => {
+  it('defaults to 8 concurrent slots during the current dev hardening phase when OPENROUTER_MAX_CONCURRENCY is unset', async () => {
     delete process.env['OPENROUTER_MAX_CONCURRENCY'];
     vi.resetModules();
     const { getEnvConfig } = await import('../../src/config/envConfig.js');
-    expect(getEnvConfig().openrouterMaxConcurrency).toBe(3);
+    expect(getEnvConfig().openrouterMaxConcurrency).toBe(8);
   });
 
   it('exposes default attribution headers (HTTP-Referer / X-Title)', async () => {

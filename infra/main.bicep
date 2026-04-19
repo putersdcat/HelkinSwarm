@@ -669,10 +669,10 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'OPENROUTER_API_KEY', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=OpenRouterApiKey)' }
         { name: 'OPENROUTER_FALLBACK_PRIMARY', value: openrouterFallbackPrimary }
         { name: 'OPENROUTER_FALLBACK_SECONDARY', value: openrouterFallbackSecondary }
-        // Per-provider concurrency cap for OpenRouter — must be ≥ 5 for a 4-worker
-        // Grok swarm to avoid queuing the 4th worker while the first 3 burn Grok's
-        // rate-limit budget. Default 5 gives headroom for 4 workers + 1 decomposer (#690).
-        { name: 'OPENROUTER_MAX_CONCURRENCY', value: '5' }
+        // Temporary dev-phase OpenRouter concurrency headroom (#690, #691).
+        // 8 allows 4 workers + decomposer + leader + overlapping debug traffic without
+        // immediately queuing the 4th/5th Grok request while session lifecycle fixes land.
+        { name: 'OPENROUTER_MAX_CONCURRENCY', value: '8' }
 
         // ── Web search: Brave Search API key from Key Vault (#190) ──
         { name: 'BRAVE_SEARCH_API_KEY', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=BraveSearchApiKey)' }
