@@ -85,6 +85,28 @@ describe('orchestratorStageHealth', () => {
     expect(snapshot.turns).toEqual([]);
   });
 
+  it('does not resurrect a cleared turn when a late background stage write arrives after reply delivery (#681)', async () => {
+    const {
+      clearOrchestratorStage,
+      getOrchestratorStageSnapshot,
+      recordOrchestratorStage,
+      resetOrchestratorStageHealth,
+    } = await loadModule();
+    resetOrchestratorStageHealth();
+
+    await recordOrchestratorStage('corr-late-write', 'swarm-decompose', 'user-1', 10_000);
+    await clearOrchestratorStage('corr-late-write', 'user-1');
+
+    // Simulate a long-running decomposer or background retry that writes its stage late,
+    // after the user-visible reply already cleared the turn.
+    await recordOrchestratorStage('corr-late-write', 'swarm-decompose', 'user-1', 12_000);
+
+    const snapshot = await getOrchestratorStageSnapshot(13_000);
+    expect(snapshot.activeTurns).toBe(0);
+    expect(snapshot.oldestAgeMs).toBeNull();
+    expect(snapshot.turns).toEqual([]);
+  });
+
   it('filters out stale stage entries once they age beyond the stage TTL', async () => {
     const {
       getOrchestratorStageSnapshot,

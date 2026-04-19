@@ -25,6 +25,22 @@ const STAGE_IO_TIMEOUT_MS = 1_000;
 const STAGE_TTL_MS = STAGE_TTL_SECONDS * 1_000;
 const AWAITING_INGRESS_MAX_AGE_MS = 75 * 1_000;
 const activeTurns = new Map<string, ActiveTurnStage>();
+// #681: once a visible reply clears a correlation, suppress any late background
+// activity/retry stage writes for that same correlation. Correlation IDs are unique
+// per turn, so a short suppression window is safe and prevents stale-turn resurrection.
+const clearedTurns = new Map<string, number>();
+
+function isRecentlyCleared(correlationId: string, nowMs: number): boolean {
+  const expiryMs = clearedTurns.get(correlationId);
+  if (expiryMs === undefined) {
+    return false;
+  }
+  if (expiryMs <= nowMs) {
+    clearedTurns.delete(correlationId);
+    return false;
+  }
+  return true;
+}
 
 function isStageEntryFresh(
   entry: Pick<ActiveTurnStage, 'stage' | 'startedAtMs' | 'updatedAtMs'>,
@@ -61,7 +77,11 @@ function mergeFreshStageEntries(
   const merged = new Map<string, ActiveTurnStage>();
 
   const consider = (entry: ActiveTurnStage) => {
-    if (!isStageEntryFresh(entry, nowMs) || !isVisibleStage(entry)) {
+    if (
+      isRecentlyCleared(entry.correlationId, nowMs)
+      || !isStageEntryFresh(entry, nowMs)
+      || !isVisibleStage(entry)
+    ) {
       return;
     }
 
@@ -141,6 +161,10 @@ export async function recordOrchestratorStage(
   nowMs = Date.now(),
   instanceId?: string,
 ): Promise<void> {
+  if (isRecentlyCleared(correlationId, nowMs)) {
+    return;
+  }
+
   const existing = activeTurns.get(correlationId);
   const entry: ActiveTurnStage = {
     correlationId,
@@ -199,6 +223,7 @@ export function recordSubstage(
 
 export async function clearOrchestratorStage(correlationId: string, userId: string): Promise<void> {
   const existing = activeTurns.get(correlationId);
+  clearedTurns.set(correlationId, Date.now() + STAGE_TTL_MS);
   activeTurns.delete(correlationId);
   try {
     const container = getContainer(SESSIONS_CONTAINER);
@@ -287,6 +312,10 @@ export async function getOrchestratorStageForCorrelation(
   userId: string,
   nowMs = Date.now(),
 ): Promise<ActiveTurnStage | undefined> {
+  if (isRecentlyCleared(correlationId, nowMs)) {
+    return undefined;
+  }
+
   const inMemoryEntry = activeTurns.get(correlationId);
   if (
     inMemoryEntry
@@ -323,4 +352,5 @@ export async function getOrchestratorStageForCorrelation(
 
 export function resetOrchestratorStageHealth(): void {
   activeTurns.clear();
+  clearedTurns.clear();
 }
