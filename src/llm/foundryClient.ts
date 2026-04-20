@@ -1101,7 +1101,8 @@ function emitOpenRouterRateLimitSnapshot(
  * Per-process concurrency limiter for OpenRouter calls. Prevents a swarm of
  * parallel worker activities from bursting past upstream-provider per-key
  * concurrency caps (e.g. xAI, minimax). Default slot count is
- * `OPENROUTER_MAX_CONCURRENCY` (3).
+ * `OPENROUTER_MAX_CONCURRENCY` (10 during the current dev-hardening phase —
+ * see `envConfig.ts` and `infra/main.bicep`; #677, #690, #693).
  */
 interface OpenRouterGateState {
   active: number;

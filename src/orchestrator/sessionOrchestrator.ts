@@ -952,43 +952,94 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
   let safetyPassed = true;
   let responseContent = llmResult.content;
 
-  // [#675] Deterministic swarm activation on explicit user intent.
-  // If the user explicitly requested the swarm ("use the swarm", "ask the swarm", etc.)
-  // but Helkin's LLM turn did not emit an `activate_swarm` tool call, inject a synthetic
-  // activation call so the normal activate_swarm dispatch + decomposer + swarm execution
-  // path runs naturally. This preserves #657 organic-activation semantics for ambiguous
-  // queries while honoring direct user directives. Gated off DevLoop and SkillForge paths.
-  const userWantsSwarmExplicitly = hasExplicitSwarmOverride(input.userMessage)
-    && !input.devLoopContext?.isDevLoop
-    && !input.skillForgeRequest;
-  const plannerAlwaysWantsSwarm = planResult.swarmComplexityZone === 'always-swarm'
-    && !input.devLoopContext?.isDevLoop
-    && !input.skillForgeRequest;
-  if (userWantsSwarmExplicitly || plannerAlwaysWantsSwarm) {
+  // [#675, #691, #693] Deterministic swarm activation.
+  // Inject a synthetic `activate_swarm` tool call when any of the following are true
+  // and Helkin's LLM turn did not already emit one. This keeps #657 organic-activation
+  // semantics for ambiguous queries while ensuring multi-faceted prompts that should
+  // clearly benefit from parallel specialists actually reach the swarm path:
+  //   - explicit user override ("use the swarm", "ask the swarm", etc.) — #675
+  //   - planner classified the prompt as `always-swarm` (score >= swarmFloor) — #675
+  //   - heuristic eligibility score >= 6 AND complexity is compound/complex — #691, #693
+  //     (catches prompts that score near the always-swarm floor but were down-classified
+  //      to `maybe-swarm` because the live env raised the floor, or because Helkin chose
+  //      not to emit activate_swarm despite the hint — both regressions observed live)
+  // Gated off DevLoop and SkillForge paths.
+  const eligibilityScore = planResult.swarmEligibilityScore ?? 0;
+  const isMultiAgentEligible = !input.devLoopContext?.isDevLoop && !input.skillForgeRequest;
+  const userWantsSwarmExplicitly = isMultiAgentEligible
+    && hasExplicitSwarmOverride(input.userMessage);
+  const plannerAlwaysWantsSwarm = isMultiAgentEligible
+    && planResult.swarmComplexityZone === 'always-swarm';
+  const heuristicHighScoreCompound = isMultiAgentEligible
+    && !userWantsSwarmExplicitly
+    && !plannerAlwaysWantsSwarm
+    && eligibilityScore >= 6
+    && (planResult.complexity === 'compound' || planResult.complexity === 'complex');
+  const helkinAlreadyChoseSwarm = (llmResult.toolCalls ?? []).some((tc) => tc.name === 'activate_swarm');
+  const shouldSyntheticallyActivate = (userWantsSwarmExplicitly
+    || plannerAlwaysWantsSwarm
+    || heuristicHighScoreCompound)
+    && !helkinAlreadyChoseSwarm;
+
+  // Always emit a decision event so future regressions are diagnosable from
+  // App Insights without needing to re-instrument the code path. Captures the
+  // full input to the activation decision: explicit override, zone, score,
+  // complexity, whether Helkin emitted activate_swarm on his own, and whether
+  // we synthetically injected one.
+  if (isMultiAgentEligible) {
+    yield* emitOrchestratorTelemetry(context, {
+      name: 'SwarmActivationDecision',
+      correlationId,
+      userId: input.state.userId,
+      properties: {
+        explicitOverride: userWantsSwarmExplicitly,
+        zone: planResult.swarmComplexityZone,
+        eligibilityScore,
+        complexity: planResult.complexity,
+        helkinChoseActivate: helkinAlreadyChoseSwarm,
+        syntheticInjected: shouldSyntheticallyActivate,
+        injectionReason: shouldSyntheticallyActivate
+          ? (userWantsSwarmExplicitly
+              ? 'explicit_user_intent'
+              : plannerAlwaysWantsSwarm
+                ? 'planner_always_swarm'
+                : 'heuristic_high_score_compound')
+          : (helkinAlreadyChoseSwarm ? 'helkin_organic' : 'no_activation'),
+      },
+    });
+  }
+
+  if (shouldSyntheticallyActivate) {
     const existingToolCalls = llmResult.toolCalls ?? [];
-    const alreadyHasActivate = existingToolCalls.some((tc) => tc.name === 'activate_swarm');
-    if (!alreadyHasActivate) {
-      // Mutate llmResult.toolCalls — array contents are mutable even on const binding.
-      llmResult.toolCalls = [
-        {
-          id: `synthetic-swarm-${correlationId}`,
-          name: 'activate_swarm',
-          arguments: '{}',
-        },
-        ...existingToolCalls,
-      ];
-      yield* emitOrchestratorTelemetry(context, {
-        name: 'SwarmDeterministicActivation',
-        correlationId,
-        userId: input.state.userId,
-        properties: {
-          reason: userWantsSwarmExplicitly ? 'explicit_user_intent' : 'planner_always_swarm',
-          trigger: userWantsSwarmExplicitly ? 'explicit_swarm_signal' : 'always_swarm_zone',
-          swarmEligibilityScore: planResult.swarmEligibilityScore ?? 0,
-          hadPriorToolCalls: existingToolCalls.length > 0,
-        },
-      });
-    }
+    // Mutate llmResult.toolCalls — array contents are mutable even on const binding.
+    llmResult.toolCalls = [
+      {
+        id: `synthetic-swarm-${correlationId}`,
+        name: 'activate_swarm',
+        arguments: '{}',
+      },
+      ...existingToolCalls,
+    ];
+    yield* emitOrchestratorTelemetry(context, {
+      name: 'SwarmDeterministicActivation',
+      correlationId,
+      userId: input.state.userId,
+      properties: {
+        reason: userWantsSwarmExplicitly
+          ? 'explicit_user_intent'
+          : plannerAlwaysWantsSwarm
+            ? 'planner_always_swarm'
+            : 'heuristic_high_score_compound',
+        trigger: userWantsSwarmExplicitly
+          ? 'explicit_swarm_signal'
+          : plannerAlwaysWantsSwarm
+            ? 'always_swarm_zone'
+            : `score_ge_6_complexity_${planResult.complexity}`,
+        swarmEligibilityScore: eligibilityScore,
+        zone: planResult.swarmComplexityZone,
+        hadPriorToolCalls: existingToolCalls.length > 0,
+      },
+    });
   }
 
   if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {

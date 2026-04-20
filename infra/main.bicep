@@ -669,10 +669,11 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'OPENROUTER_API_KEY', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=OpenRouterApiKey)' }
         { name: 'OPENROUTER_FALLBACK_PRIMARY', value: openrouterFallbackPrimary }
         { name: 'OPENROUTER_FALLBACK_SECONDARY', value: openrouterFallbackSecondary }
-        // Temporary dev-phase OpenRouter concurrency headroom (#690, #691).
-        // 8 allows 4 workers + decomposer + leader + overlapping debug traffic without
-        // immediately queuing the 4th/5th Grok request while session lifecycle fixes land.
-        { name: 'OPENROUTER_MAX_CONCURRENCY', value: '8' }
+        // Temporary dev-phase OpenRouter concurrency headroom (#690, #691, #693).
+        // 10 allows 4 workers + decomposer + leader + overlapping debug traffic plus
+        // accidental session overlap (dedup-window / pending-intent replay) without
+        // immediately queuing requests while session lifecycle hardening continues.
+        { name: 'OPENROUTER_MAX_CONCURRENCY', value: '10' }
 
         // ── Web search: Brave Search API key from Key Vault (#190) ──
         { name: 'BRAVE_SEARCH_API_KEY', value: '@Microsoft.KeyVault(VaultName=${kvName};SecretName=BraveSearchApiKey)' }

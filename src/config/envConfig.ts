@@ -66,12 +66,14 @@ const EnvConfigSchema = z.object({
   // OpenRouter attribution headers — per https://openrouter.ai/docs/quickstart (#677)
   openrouterReferer: z.string().default('https://github.com/putersdcat/HelkinSwarm'),
   openrouterTitle: z.string().default('HelkinSwarm'),
-  // Max concurrent in-flight OpenRouter requests per process (#677, #690).
-  // Temporary dev-phase headroom is set to 8 so overlapping swarm sessions,
-  // decomposer calls, and a leader lane can coexist while the session lifecycle
-  // hardening continues. This is intentionally higher than the old default 3,
-  // which was too low for a 4-member Grok swarm.
-  openrouterMaxConcurrency: z.coerce.number().int().positive().default(8),
+  // Max concurrent in-flight OpenRouter requests per process (#677, #690, #693).
+  // Temporary dev-phase headroom is set to 10 so overlapping swarm sessions,
+  // decomposer calls, leader synthesis, and ad-hoc debug traffic can coexist
+  // while the session lifecycle / orphan reconciliation hardening continues.
+  // This is intentionally higher than the old default 3 (too low for a
+  // 4-member Grok swarm) and the previous bump to 8 (insufficient headroom
+  // when sessions overlap due to dedup-window / pending-intent replay).
+  openrouterMaxConcurrency: z.coerce.number().int().positive().default(10),
 
   // Web search (Brave Search API) — key from Key Vault (#190)
   braveSearchApiKey: z.string().optional(),

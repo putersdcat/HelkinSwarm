@@ -102,6 +102,8 @@ export type TelemetryEventName =
   | 'SwarmDecomposerError'
   | 'SwarmDecomposerFallback'
   | 'SwarmDeterministicActivation'
+  | 'SwarmActivationDecision'
+  | 'SwarmStaleRunningReconciled'
   | 'OpenRouterRateLimitSnapshot'
   | 'OpenRouterUpstreamRetry'
   | 'OpenRouterConcurrencyGate'

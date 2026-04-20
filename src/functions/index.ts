@@ -24,6 +24,7 @@ import './subscriptionRenewalTimer.js';
 import './maintenanceSweepTimer.js';
 import './staleSessionCleanupTimer.js';
 import './staleAckRecoveryTimer.js';
+import './staleSwarmRunningTimer.js';
 import './pendingIntentReplayTimer.js';
 import './bufferedIngressReplayTimer.js';
 import './selfAwakenTimer.js';
