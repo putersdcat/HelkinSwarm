@@ -73,6 +73,8 @@ export type TelemetryEventName =
   | 'BotMessageReceived'
   | 'PromptBuilt'
   | 'ReplySent'
+  | 'ReplySilentSkip'
+  | 'PendingAckClearFailed'
   | 'OrchestratorPlanCreated'
   | 'PlanClassification'
   | 'PlanGenerated'

@@ -248,7 +248,23 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
         input.correlationId,
       );
       if (!outboundClaimed) {
-        console.warn(`[sendReplyActivity] Duplicate reply suppressed for correlationId=${input.correlationId}`);
+        console.warn(`[sendReplyActivity] Duplicate reply suppressed for correlationId=${input.correlationId} userId=${input.userId} convId=${conversationId}`);
+        // [#700] Make this LOUD: a final-reply claim collision means the activity
+        // ran twice for the same correlationId. The first attempt either delivered
+        // (in which case this skip is correct) or crashed after claiming (in which
+        // case this skip silently drops the user-visible reply). Telemetry lets us
+        // tell which.
+        trackEvent({
+          name: 'ReplySilentSkip',
+          correlationId: input.correlationId,
+          userId: input.userId,
+          properties: {
+            reason: 'duplicate-final-reply-claim',
+            kind: 'reply',
+            skipOutboundClaim: 'false',
+            conversationId,
+          },
+        });
         // Clear the stage tracker so the health endpoint doesn't show a stale active turn
         try { await clearOrchestratorStage(input.correlationId, input.userId); } catch { /* best-effort */ }
         return { success: true };
@@ -262,7 +278,21 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
         input.correlationId,
       );
       if (finalReplyAlreadyClaimed) {
-        console.log(`[sendReplyActivity] Intermediate update skipped after final reply claim for correlationId=${input.correlationId}`);
+        console.log(`[sendReplyActivity] Intermediate update skipped after final reply claim for correlationId=${input.correlationId} userId=${input.userId} convId=${conversationId}`);
+        // [#700] Surface the silent skip so we can tell when an intermediate ack
+        // was suppressed because the FINAL reply already claimed. Expected to fire
+        // for late-arriving "Still thinking..." updates after the synthesis lands.
+        trackEvent({
+          name: 'ReplySilentSkip',
+          correlationId: input.correlationId,
+          userId: input.userId,
+          properties: {
+            reason: 'final-reply-already-claimed',
+            kind: 'reply',
+            skipOutboundClaim: 'true',
+            conversationId,
+          },
+        });
         return { success: true };
       }
     }
@@ -321,8 +351,24 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
                     // Intermediate ack (e.g. swarm engaged) — preserve original #329 behavior:
                     // assume the in-flight update will complete to avoid duplicate ack spam.
                     console.warn(
-                      `[sendReplyActivity] Ack update timed out for intermediate userId=${input.userId}; skipping fallback to avoid duplicate (#329)`,
+                      `[sendReplyActivity] Ack update timed out for intermediate userId=${input.userId} correlationId=${input.correlationId}; skipping fallback to avoid duplicate (#329)`,
                     );
+                    // [#700] Loud telemetry on the swallow: deliveredToUser is being
+                    // optimistically marked true even though we don't know if the
+                    // in-flight updateActivity actually landed.
+                    if (input.correlationId) {
+                      trackEvent({
+                        name: 'ReplySilentSkip',
+                        correlationId: input.correlationId,
+                        userId: input.userId,
+                        properties: {
+                          reason: 'ack-update-timeout-intermediate-swallowed',
+                          kind: 'reply',
+                          skipOutboundClaim: 'true',
+                          ackActivityId: String(ackActivityId),
+                        },
+                      });
+                    }
                     firstChunkSent = true;
                     deliveredToUser = true;
                   }
@@ -414,9 +460,26 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
           'pending ack clear',
         );
       } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
         console.warn(
-          `[sendReplyActivity] Pending ack clear timed out/failed for userId=${input.userId}; continuing because the reply send already completed: ${err instanceof Error ? err.message : err}`,
+          `[sendReplyActivity] Pending ack clear timed out/failed for userId=${input.userId} correlationId=${input.correlationId}; continuing because the reply send already completed: ${reason}`,
         );
+        // [#700] Loud telemetry: a swallowed pending-ack clear leaves the next
+        // sendReplyActivity for the same correlationId pointed at a stale ack id,
+        // which in the swarm engagement → final-reply sequence can cause the
+        // final reply to silently overwrite the engagement card or get dropped.
+        trackEvent({
+          name: 'PendingAckClearFailed',
+          correlationId: input.correlationId,
+          userId: input.userId,
+          properties: {
+            reason,
+            kind: 'reply',
+            skipOutboundClaim: input.skipOutboundClaim ? 'true' : 'false',
+            ackActivityId: String(ackActivityId),
+            conversationId,
+          },
+        });
       }
     }
 
