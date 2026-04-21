@@ -293,22 +293,33 @@ df.app.activity('swarmLeaderActivity', {
       },
     });
 
-    // [#699] Build a partial fallback from the chatroom transcript so the user
-    // gets the workers' research whenever the leader synthesis fails OR returns
-    // empty content. Previously only `partial_result` and `text` were included,
-    // which silently dropped `cross_verification` and `error` content — causing
-    // the user-visible "swarm analysis could not complete" message even when
-    // workers had produced useful findings.
+    // [#699/#698] Build a partial fallback from the chatroom transcript so the
+    // user gets the workers' research whenever the leader synthesis fails OR
+    // returns empty content.
+    //
+    // The previous inclusion-list (`partial_result|text|cross_verification|error`)
+    // silently dropped every other contentType the worker LLM chose for its
+    // chatroom_send envelope (e.g. `analysis`, `contribution`, `final_contribution`,
+    // `response`, `question`, `delegation`, `tool_summary`). For corr `268116c5`,
+    // workers produced ~40k tokens of useful content but the leader emitted 0t,
+    // and the fallback filter ate every worker message because they used
+    // `contentType: "analysis"` — user saw the canned "could not complete"
+    // message instead of the team's findings.
+    //
+    // Switching to EXCLUSION semantics: drop only operational chatter that is
+    // not itself synthesis material (`status` round-summaries from #695 and
+    // `sub_session_request` permission-elevation envelopes). Everything else
+    // a worker said is potentially useful for the user.
+    const NON_SYNTHESIS_CONTENT_TYPES = new Set(['status', 'sub_session_request']);
     const buildPartialFallback = (): string => {
       const partialResults = input.chatroomTranscript
-        .filter(m =>
-          m.contentType === 'partial_result'
-          || m.contentType === 'text'
-          || m.contentType === 'cross_verification'
-          || m.contentType === 'error',
-        )
         // Drop Leader's own previous posts — we're rebuilding the synthesis.
         .filter(m => m.from !== input.leaderName)
+        // Drop operational chatter that isn't synthesizable content.
+        .filter(m => !NON_SYNTHESIS_CONTENT_TYPES.has(m.contentType))
+        // Drop empty content (defensive — shouldn't happen, but the user must
+        // never see a half-formed bullet point with nothing in it).
+        .filter(m => m.content.trim().length > 0)
         .map(m => `**${m.from}**: ${m.content}`)
         .join('\n\n');
       return partialResults

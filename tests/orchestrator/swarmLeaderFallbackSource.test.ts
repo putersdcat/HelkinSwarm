@@ -7,15 +7,15 @@ const SOURCE = readFileSync(
   'utf8',
 );
 
-describe('swarmLeaderActivity fallback + empty-synthesis handling (#699)', () => {
-  it('fallback filter includes cross_verification and error in addition to partial_result and text', () => {
-    // Regression lock for the #699 root cause: the previous filter only matched
-    // partial_result and text, silently dropping worker findings emitted as
-    // cross_verification or error and causing "swarm analysis could not complete".
-    expect(SOURCE).toContain("m.contentType === 'partial_result'");
-    expect(SOURCE).toContain("m.contentType === 'text'");
-    expect(SOURCE).toContain("m.contentType === 'cross_verification'");
-    expect(SOURCE).toContain("m.contentType === 'error'");
+describe('swarmLeaderActivity fallback + empty-synthesis handling (#699/#698)', () => {
+  it('fallback filter uses exclusion semantics so any worker contentType survives (#698)', () => {
+    // #698: the previous inclusion list dropped 40k tokens of worker content
+    // when the LLM chose a contentType outside the allowed set (e.g. `analysis`,
+    // `contribution`). The new filter EXCLUDES only operational chatter.
+    expect(SOURCE).toContain("NON_SYNTHESIS_CONTENT_TYPES");
+    expect(SOURCE).toMatch(/new Set\(\[\s*'status'\s*,\s*'sub_session_request'\s*\]\)/);
+    // Regression lock: the old inclusion-list must NOT come back.
+    expect(SOURCE).not.toMatch(/m\.contentType\s*===\s*'partial_result'\s*\|\|\s*m\.contentType\s*===\s*'text'/);
   });
 
   it('fallback filter strips the leader\'s own posts before rebuilding partials', () => {
