@@ -421,14 +421,46 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
                 deliveredToUser = true;
               }
             } else {
-              // No ack stored (e.g. first reply after container restart) — fall back to new message
+              // No ack stored (e.g. first reply after container restart, or
+              // forceNewMessage path used by the swarm final-reply) — fall
+              // back to fresh message sends.
               for (const chunk of replyChunks) {
                 const response = await turnContext.sendActivity({
                   type: ActivityTypes.Message,
                   text: chunk.text,
                   textFormat: 'markdown',
                 });
-                await rememberSentMessage(input.userId, conversationId, response?.id, chunk.text);
+                // [#706] Loud telemetry: when sendActivity returns no id, the
+                // Bot Framework adapter swallowed the request. We must NOT
+                // optimistically flag deliveredToUser in that case — otherwise
+                // recordMessagePathSuccess fires while the user sees nothing
+                // (the residual swarm final-reply silent-drop after the #700
+                // forceNewMessage fix).
+                if (!response?.id) {
+                  console.warn(
+                    `[sendReplyActivity] sendActivity returned no id for userId=${input.userId} correlationId=${input.correlationId} forceNewMessage=${input.forceNewMessage ? 'true' : 'false'} skipOutboundClaim=${input.skipOutboundClaim ? 'true' : 'false'} convId=${conversationId} — bot adapter likely swallowed the message [#706]`,
+                  );
+                  if (input.correlationId) {
+                    trackEvent({
+                      name: 'ReplyDroppedSilently',
+                      correlationId: input.correlationId,
+                      userId: input.userId,
+                      properties: {
+                        kind: 'reply',
+                        path: 'no-ack-stored',
+                        forceNewMessage: input.forceNewMessage ? 'true' : 'false',
+                        skipOutboundClaim: input.skipOutboundClaim ? 'true' : 'false',
+                        conversationId,
+                        chunkLength: String(chunk.text.length),
+                      },
+                    });
+                  }
+                  // Intentionally DO NOT set deliveredToUser=true here — the
+                  // silent-drop must surface as a messagePath failure, not
+                  // hide behind a fake success.
+                  continue;
+                }
+                await rememberSentMessage(input.userId, conversationId, response.id, chunk.text);
                 deliveredToUser = true;
               }
 

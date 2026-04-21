@@ -74,6 +74,7 @@ export type TelemetryEventName =
   | 'PromptBuilt'
   | 'ReplySent'
   | 'ReplySilentSkip'
+  | 'ReplyDroppedSilently'
   | 'PendingAckClearFailed'
   | 'OrchestratorPlanCreated'
   | 'PlanClassification'
