@@ -10,7 +10,7 @@ import { z } from 'zod';
 import { MemoryManager } from '../memory/memoryManager.js';
 import { saveState } from './stateManager.js';
 import { saveChronoContinuity } from './chronoBackplane.js';
-import { recordSubstage } from '../observability/orchestratorStageHealth.js';
+import { recordSubstage, clearOrchestratorStage } from '../observability/orchestratorStageHealth.js';
 import { trackEvent } from '../observability/telemetry.js';
 import type { OverseerState } from './stateManager.js';
 import type { SaveChronoContinuityInput } from './chronoBackplane.js';
@@ -64,56 +64,72 @@ df.app.activity('postReplyBatchActivity', {
 
     recordSubstage(input.correlationId, 'post-reply-batch', input.userId);
 
-    const results = await Promise.allSettled([
-      // 1. Store memory
-      withTimeout(
-        (async () => {
-          const mm = new MemoryManager(input.userId);
-          await mm.storeConversationTurn(input.userMessage, input.assistantReply);
-          return true;
-        })(),
-        BATCH_TIMEOUT_MS,
-        'storeMemory',
-      ),
-      // 2. Save state
-      withTimeout(
-        saveState(state),
-        BATCH_TIMEOUT_MS,
-        'saveState',
-      ),
-      // 3. Save chrono continuity
-      withTimeout(
-        saveChronoContinuity({
-          userId: input.userId,
-          correlationId: input.correlationId,
-          userMessage: input.userMessage,
-          assistantReply: input.assistantReply,
-        } satisfies SaveChronoContinuityInput),
-        BATCH_TIMEOUT_MS,
-        'saveChronoContinuity',
-      ),
-    ]);
+    try {
+      const results = await Promise.allSettled([
+        // 1. Store memory
+        withTimeout(
+          (async () => {
+            const mm = new MemoryManager(input.userId);
+            await mm.storeConversationTurn(input.userMessage, input.assistantReply);
+            return true;
+          })(),
+          BATCH_TIMEOUT_MS,
+          'storeMemory',
+        ),
+        // 2. Save state
+        withTimeout(
+          saveState(state),
+          BATCH_TIMEOUT_MS,
+          'saveState',
+        ),
+        // 3. Save chrono continuity
+        withTimeout(
+          saveChronoContinuity({
+            userId: input.userId,
+            correlationId: input.correlationId,
+            userMessage: input.userMessage,
+            assistantReply: input.assistantReply,
+          } satisfies SaveChronoContinuityInput),
+          BATCH_TIMEOUT_MS,
+          'saveChronoContinuity',
+        ),
+      ]);
 
-    const memoryStored = results[0].status === 'fulfilled';
-    const stateSaved = results[1].status === 'fulfilled';
-    const chronoSaved = results[2].status === 'fulfilled';
+      const memoryStored = results[0].status === 'fulfilled';
+      const stateSaved = results[1].status === 'fulfilled';
+      const chronoSaved = results[2].status === 'fulfilled';
 
-    for (const [i, r] of results.entries()) {
-      if (r.status === 'rejected') {
-        const labels = ['storeMemory', 'saveState', 'saveChronoContinuity'];
+      for (const [i, r] of results.entries()) {
+        if (r.status === 'rejected') {
+          const labels = ['storeMemory', 'saveState', 'saveChronoContinuity'];
+          console.warn(
+            `[postReplyBatchActivity] ${labels[i]} failed: ${r.reason instanceof Error ? r.reason.message : r.reason}`,
+          );
+        }
+      }
+
+      trackEvent({
+        name: 'PostReplyBatchCompleted',
+        correlationId: input.correlationId,
+        userId: input.userId,
+        properties: { memoryStored, stateSaved, chronoSaved },
+      });
+
+      return { memoryStored, stateSaved, chronoSaved };
+    } finally {
+      // [#704] Clear the stage tracker on EVERY exit path so the in-memory
+      // activeTurns map cannot keep a phantom 'post-reply-batch' entry alive
+      // after the turn has actually completed. Without this, /api/health
+      // reports stale active turns for 14+ minutes (until scale-to-zero
+      // evicts the in-memory map), polluting overlap-pressure decisions and
+      // making C4 proof bundles unreliable.
+      try {
+        await clearOrchestratorStage(input.correlationId, input.userId);
+      } catch (err) {
         console.warn(
-          `[postReplyBatchActivity] ${labels[i]} failed: ${r.reason instanceof Error ? r.reason.message : r.reason}`,
+          `[postReplyBatchActivity] clearOrchestratorStage failed for correlationId=${input.correlationId}: ${err instanceof Error ? err.message : err}`,
         );
       }
     }
-
-    trackEvent({
-      name: 'PostReplyBatchCompleted',
-      correlationId: input.correlationId,
-      userId: input.userId,
-      properties: { memoryStored, stateSaved, chronoSaved },
-    });
-
-    return { memoryStored, stateSaved, chronoSaved };
   },
 });
