@@ -142,11 +142,11 @@
     },
     {
       "name": "github_create_issue",
-      "description": "Create a new issue in the HelkinSwarm repository. ALWAYS provide a descriptive body with context, acceptance criteria, and relevant details — never create issues with an empty body.",
-      "risk": "low",
+      "description": "Create a new issue in the HelkinSwarm repository. ALWAYS provide a descriptive body with context, acceptance criteria, and relevant details — never create issues with an empty body. The user MUST be confirmed via the safety pipeline before this fires; never invoke from probe/ping/diagnostic phrasing or implicit intent (#665, #703).",
+      "risk": "medium",
       "dataSensitivity": "non-pii",
       "allowedModelLane": "any",
-      "requiresConfirmation": false,
+      "requiresConfirmation": true,
       "requiresExecutor": false,
       "externalAutomationCapabilities": [
         {
