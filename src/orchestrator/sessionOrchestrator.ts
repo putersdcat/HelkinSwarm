@@ -1465,7 +1465,11 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             skipOutboundClaim: true,
           } satisfies SendReplyInput);
           spans.push({ label: 'swarm-ack', durationMs: context.df.currentUtcDateTime.getTime() - ackSpanStart });
-          const swarmOuterTimeoutMs = Math.max(swarmDecomposerResult.plan.timeoutMs * 3, 180_000);
+          // #688 2026-04-21: outer cap must exceed worker×2-retries + leader +
+          // buffer, otherwise the sub-orchestrator is killed mid-cascade.
+          // Worker outer timer = 240s, leader = 180s; allow one worker retry
+          // (~480s) + leader synthesis (~180s) + overhead → 720s floor.
+          const swarmOuterTimeoutMs = Math.max(swarmDecomposerResult.plan.timeoutMs * 6, 720_000);
           const swarmTimer = context.df.createTimer(
             new Date(context.df.currentUtcDateTime.getTime() + swarmOuterTimeoutMs),
           );

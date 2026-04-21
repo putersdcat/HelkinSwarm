@@ -21,8 +21,13 @@ import type { SwarmSubSessionInput, SwarmSubSessionResult } from './swarmSubSess
 // Timeout helpers (Durable timer pattern — same as #588/#591)
 // ---------------------------------------------------------------------------
 
-const SWARM_WORKER_TIMEOUT_MS = 60_000;
-const SWARM_LEADER_TIMEOUT_MS = 60_000;
+// Outer Durable timers race against activity completion in Task.any(). They MUST
+// exceed the inner FoundryClient budget plus overhead, otherwise the timer wins
+// before a legitimate cascade/retry can finish. Worker is per-round × maxRounds
+// (default 4), so a 90s cascade budget needs plenty of headroom.
+// #688 2026-04-21: previously 60_000, which preempted even a single cascade attempt.
+const SWARM_WORKER_TIMEOUT_MS = 240_000;
+const SWARM_LEADER_TIMEOUT_MS = 180_000;
 
 function shouldRunLeaderDelegationPass(
   workerResults: ReadonlyArray<SwarmWorkerResult>,
