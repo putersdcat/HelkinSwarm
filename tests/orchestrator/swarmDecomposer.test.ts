@@ -102,4 +102,22 @@ describe('DECOMPOSER_SYSTEM_PROMPT — source verification', () => {
     expect(src).toContain('Use EXACTLY 3 worker agents every time');
     expect(src).toContain('Use ALL THREE on every swarm turn');
   });
+
+  it('prepends critical research tools so the visibility cap never drops web_search (#694)', () => {
+    const { readFileSync } = require('node:fs');
+    const { join } = require('node:path');
+    const src = readFileSync(
+      join(process.cwd(), 'src', 'orchestrator', 'swarm', 'swarmDecomposerActivity.ts'),
+      'utf-8',
+    );
+    // Priority list must exist and include web_search as the first research tool
+    expect(src).toContain('PRIORITY_RESEARCH_TOOLS');
+    expect(src).toMatch(/PRIORITY_RESEARCH_TOOLS\s*=\s*\[[\s\S]*?'web_search'/);
+    expect(src).toContain("'web_fetch_page'");
+    expect(src).toContain("'deep_research'");
+    // Cap must be ≥ 100 (current catalogue is ~101 tools)
+    expect(src).toMatch(/slice\(0,\s*100\)/);
+    // The old bug — slice(0, 40) — must be gone
+    expect(src).not.toMatch(/availableToolNames\.slice\(0,\s*40\)/);
+  });
 });

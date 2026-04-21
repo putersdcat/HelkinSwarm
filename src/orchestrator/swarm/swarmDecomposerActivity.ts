@@ -153,7 +153,28 @@ df.app.activity('swarmDecomposerActivity', {
       isReasoning: isReasoningModel(routing.lane.primary),
     });
 
-    const toolList = input.availableToolNames.slice(0, 40).map(name => {
+    // Surface critical research tools first so they are NEVER truncated, even
+    // if the available list grows past the visibility cap in the future.
+    // Without this guarantee, an unlucky skill-load order can push web_search
+    // past position 40 and cause the decomposer to decline organically-routed
+    // compound prompts with "no suitable tools like web_..." (#694).
+    const PRIORITY_RESEARCH_TOOLS = [
+      'web_search',
+      'web_fetch_page',
+      'deep_research',
+      'web_interact',
+      'conversation_search',
+      'code_run',
+    ] as const;
+    const available = new Set(input.availableToolNames);
+    const prioritised = PRIORITY_RESEARCH_TOOLS.filter(t => available.has(t));
+    const rest = input.availableToolNames.filter(
+      (name): name is string => !PRIORITY_RESEARCH_TOOLS.includes(name as typeof PRIORITY_RESEARCH_TOOLS[number]),
+    );
+    // Cap the total at 100 — large enough to present the full current tool
+    // catalogue (~101 tools) without risking truncation of any critical entry.
+    const orderedToolNames = [...prioritised, ...rest].slice(0, 100);
+    const toolList = orderedToolNames.map(name => {
       const def = toolRegistry.get(name);
       return def ? `- ${name}: ${def.description.slice(0, 100)}` : `- ${name}`;
     }).join('\n');
