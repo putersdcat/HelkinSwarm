@@ -123,6 +123,7 @@ export type TelemetryEventName =
   | 'SwarmLeaderStarted'
   | 'SwarmLeaderCompleted'
   | 'SwarmLeaderError'
+  | 'SwarmLeaderEmptySynthesis'
   | 'SwarmLeaderDelegationStarted'
   | 'SwarmLeaderDelegated'
   | 'SwarmLeaderDelegationError'

@@ -293,6 +293,29 @@ df.app.activity('swarmLeaderActivity', {
       },
     });
 
+    // [#699] Build a partial fallback from the chatroom transcript so the user
+    // gets the workers' research whenever the leader synthesis fails OR returns
+    // empty content. Previously only `partial_result` and `text` were included,
+    // which silently dropped `cross_verification` and `error` content — causing
+    // the user-visible "swarm analysis could not complete" message even when
+    // workers had produced useful findings.
+    const buildPartialFallback = (): string => {
+      const partialResults = input.chatroomTranscript
+        .filter(m =>
+          m.contentType === 'partial_result'
+          || m.contentType === 'text'
+          || m.contentType === 'cross_verification'
+          || m.contentType === 'error',
+        )
+        // Drop Leader's own previous posts — we're rebuilding the synthesis.
+        .filter(m => m.from !== input.leaderName)
+        .map(m => `**${m.from}**: ${m.content}`)
+        .join('\n\n');
+      return partialResults
+        ? `⚡ Helkin's synthesis was unavailable — here is what the team gathered:\n\n${partialResults}`
+        : '⚡ The swarm analysis could not complete. Please try again.';
+    };
+
     try {
       const response = await client.chatCompletion({
         messages,
@@ -304,6 +327,37 @@ df.app.activity('swarmLeaderActivity', {
 
       const synthesis = textContent(response.choices[0]?.message?.content);
       const totalTokens = response.usage?.totalTokens ?? 0;
+
+      // [#699] Empty synthesis (LLM returned no content, or returned only
+      // tool_calls/reasoning with no final text) is functionally indistinguishable
+      // from a failed call — fall through to the partial fallback so the user
+      // sees what the workers gathered rather than an empty bubble.
+      if (!synthesis.trim()) {
+        const finishReason = response.choices[0]?.finishReason ?? 'unknown';
+        trackEvent({
+          name: 'SwarmLeaderEmptySynthesis',
+          correlationId: input.correlationId,
+          userId: input.userId,
+          properties: {
+            tokensUsed: totalTokens,
+            finishReason,
+            promptTokens: response.usage?.promptTokens ?? 0,
+            completionTokens: response.usage?.completionTokens ?? 0,
+            agentsHeardFrom: agentsHeardFrom.join(', '),
+            transcriptLength: input.chatroomTranscript.length,
+            swarmId: input.swarmId,
+          },
+        });
+        return {
+          synthesis: buildPartialFallback(),
+          success: false,
+          tokensUsed: totalTokens,
+          roundsUsed: 1,
+          agentsHeardFrom,
+          model: response.model,
+          error: `Leader returned empty synthesis (finishReason=${finishReason}, tokens=${totalTokens})`,
+        };
+      }
 
       trackEvent({
         name: 'SwarmLeaderCompleted',
@@ -329,19 +383,10 @@ df.app.activity('swarmLeaderActivity', {
       trackEvent({
         name: 'SwarmLeaderError',
         correlationId: input.correlationId,
-        properties: { error: errorMessage },
+        properties: { error: errorMessage.slice(0, 500) },
       });
-      // Build a partial fallback from the chatroom transcript so the user gets
-      // the workers' research even when the leader synthesis call fails.
-      const partialResults = input.chatroomTranscript
-        .filter(m => m.contentType === 'partial_result' || m.contentType === 'text')
-        .map(m => `**${m.from}**: ${m.content}`)
-        .join('\n\n');
-      const fallbackSynthesis = partialResults
-        ? `⚡ Helkin's synthesis failed — here is what the team gathered:\n\n${partialResults}`
-        : '⚡ The swarm analysis could not complete. Please try again.';
       return {
-        synthesis: fallbackSynthesis,
+        synthesis: buildPartialFallback(),
         success: false,
         tokensUsed: 0,
         roundsUsed: 0,
