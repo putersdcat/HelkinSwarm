@@ -1261,51 +1261,78 @@
                       '</table></div>';
                   }
 
-                  // Chatroom transcript — chat-bubble layout with timestamps and emojis
+                  // Chatroom transcript — chat-bubble layout with timestamps and emojis.
+                  // [#701] Split by contentType: intra-agent communication goes to the primary
+                  // Chatroom Transcript card; operational chatter ('status' per-round worker
+                  // activity from #695 and 'sub_session_request' elevated-tool requests) goes
+                  // to a collapsed Activity Log card so the chatroom view shows only genuine
+                  // inter-agent traffic, not per-round tool-call noise.
                   if (transcript.length > 0) {
                     var firstTs = transcript.length > 0 ? (transcript[0].timestamp || 0) : 0;
-                    html += '<div class="card"><h2>Chatroom Transcript (' + transcript.length + ' messages)</h2>' +
-                      '<div class="chatroom-transcript">' +
-                      transcript.map(function (m) {
-                        var elapsed = m.timestamp && firstTs ? ((m.timestamp - firstTs) / 1000).toFixed(1) + 's' : '\u2014';
-                        var emoji = getAgentEmoji(m.from);
-                        var agentClass = getAgentCssClass(m.from);
-                        var typeLabel = m.contentType || 'text';
-                        var rawContent = m.content || "";
-                        // #684 — some models (e.g. minimax-m2.7 without a model-specific persona)
-                        // emit the internal chatroom envelope as raw JSON inside content. Sniff
-                        // and unwrap so the bubble shows the human-readable text, not the struct.
-                        var envelopeLabel = "";
-                        if (rawContent.length > 1 && (rawContent.charAt(0) === '{' || rawContent.charAt(0) === '[')) {
-                          try {
-                            var parsed = JSON.parse(rawContent);
-                            if (parsed && typeof parsed === 'object' && typeof parsed.content === 'string' &&
-                                (typeof parsed.messageType === 'string' || typeof parsed.sender === 'string')) {
-                              rawContent = parsed.content;
-                              if (parsed.messageType) typeLabel = parsed.messageType;
-                              envelopeLabel = ' unwrapped';
-                            }
-                          } catch (jsonErr) {
-                            // Not valid JSON — render as-is.
+                    var OPERATIONAL_CONTENT_TYPES = { status: true, sub_session_request: true };
+                    function renderBubble(m) {
+                      var elapsed = m.timestamp && firstTs ? ((m.timestamp - firstTs) / 1000).toFixed(1) + 's' : '\u2014';
+                      var emoji = getAgentEmoji(m.from);
+                      var agentClass = getAgentCssClass(m.from);
+                      var typeLabel = m.contentType || 'text';
+                      var rawContent = m.content || "";
+                      // #684 — some models (e.g. minimax-m2.7 without a model-specific persona)
+                      // emit the internal chatroom envelope as raw JSON inside content. Sniff
+                      // and unwrap so the bubble shows the human-readable text, not the struct.
+                      var envelopeLabel = "";
+                      if (rawContent.length > 1 && (rawContent.charAt(0) === '{' || rawContent.charAt(0) === '[')) {
+                        try {
+                          var parsed = JSON.parse(rawContent);
+                          if (parsed && typeof parsed === 'object' && typeof parsed.content === 'string' &&
+                              (typeof parsed.messageType === 'string' || typeof parsed.sender === 'string')) {
+                            rawContent = parsed.content;
+                            if (parsed.messageType) typeLabel = parsed.messageType;
+                            envelopeLabel = ' unwrapped';
                           }
+                        } catch (jsonErr) {
+                          // Not valid JSON — render as-is.
                         }
-                        var content = rawContent.length > 400 ? rawContent.substring(0, 400) + "\u2026" : rawContent;
-                        var toLabel = typeof m.to === 'string' ? m.to : (m.to || []).join(', ');
+                      }
+                      var content = rawContent.length > 400 ? rawContent.substring(0, 400) + "\u2026" : rawContent;
+                      var toLabel = typeof m.to === 'string' ? m.to : (m.to || []).join(', ');
 
-                        return '<div class="chat-bubble ' + agentClass + '">' +
-                          '<div class="bubble-avatar">' + emoji + '</div>' +
-                          '<div class="bubble-content">' +
-                          '<div class="bubble-header">' +
-                          '<span class="bubble-from">' + esc(m.from || '\u2014') + '</span>' +
-                          '<span class="bubble-to">\u2192 ' + esc(toLabel) + '</span>' +
-                          '<span class="bubble-type type-' + esc(typeLabel) + '">' + esc(typeLabel) + (envelopeLabel ? esc(envelopeLabel) : "") + '</span>' +
-                          '<span class="bubble-time">' + elapsed + '</span>' +
-                          '</div>' +
-                          '<div class="bubble-body">' + esc(content) + '</div>' +
-                          '</div>' +
-                          '</div>';
-                      }).join("") +
-                      '</div></div>';
+                      return '<div class="chat-bubble ' + agentClass + '">' +
+                        '<div class="bubble-avatar">' + emoji + '</div>' +
+                        '<div class="bubble-content">' +
+                        '<div class="bubble-header">' +
+                        '<span class="bubble-from">' + esc(m.from || '\u2014') + '</span>' +
+                        '<span class="bubble-to">\u2192 ' + esc(toLabel) + '</span>' +
+                        '<span class="bubble-type type-' + esc(typeLabel) + '">' + esc(typeLabel) + (envelopeLabel ? esc(envelopeLabel) : "") + '</span>' +
+                        '<span class="bubble-time">' + elapsed + '</span>' +
+                        '</div>' +
+                        '<div class="bubble-body">' + esc(content) + '</div>' +
+                        '</div>' +
+                        '</div>';
+                    }
+                    var chatroomMessages = transcript.filter(function (m) {
+                      return !OPERATIONAL_CONTENT_TYPES[m.contentType || 'text'];
+                    });
+                    var activityLog = transcript.filter(function (m) {
+                      return !!OPERATIONAL_CONTENT_TYPES[m.contentType || 'text'];
+                    });
+
+                    if (chatroomMessages.length > 0) {
+                      html += '<div class="card"><h2>Chatroom Transcript (' + chatroomMessages.length + ' messages)</h2>' +
+                        '<div class="chatroom-transcript">' +
+                        chatroomMessages.map(renderBubble).join("") +
+                        '</div></div>';
+                    } else {
+                      html += '<div class="card"><h2>Chatroom Transcript (0 messages)</h2>' +
+                        '<p class="empty-state">No intra-agent messages recorded for this swarm turn.</p>' +
+                        '</div>';
+                    }
+
+                    if (activityLog.length > 0) {
+                      html += '<div class="card"><details><summary><h2 style="display:inline;margin:0">Activity Log (' + activityLog.length + ' events)</h2></summary>' +
+                        '<div class="chatroom-transcript" style="margin-top:12px">' +
+                        activityLog.map(renderBubble).join("") +
+                        '</div></details></div>';
+                    }
                   }
 
                   // Helkin (Leader) synthesis
