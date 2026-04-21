@@ -177,6 +177,9 @@ df.app.activity('swarmDecomposerActivity', {
       : '';
 
     try {
+      // Budget must be large enough for a real failover: grok primary ~55s timeout
+      // + minimax fallback ~20s + slack. Previously 30_000 would exhaust on a single
+      // grok timeout with no chance to try minimax — #688 / #693 repro.
       const response = await client.chatCompletion({
         messages: [
           { role: 'system', content: DECOMPOSER_SYSTEM_PROMPT },
@@ -188,7 +191,7 @@ df.app.activity('swarmDecomposerActivity', {
         temperature: 0.3,
         maxTokens: 1500,
         correlationId: input.correlationId,
-        maxBudgetMs: 30_000,
+        maxBudgetMs: 75_000,
       });
 
       const content = textContent(response.choices[0]?.message?.content);

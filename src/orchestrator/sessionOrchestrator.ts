@@ -1362,7 +1362,11 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           conversationSummary: input.state.summary || undefined,
           activeSkillDomains: swarmSkillDomains,
         };
-        const swarmDecomposerTimeoutMs = 45_000;
+        // Outer orchestrator timer must exceed the decomposer activity's internal
+        // maxBudgetMs (75s) so a real primary-then-fallback cascade can complete.
+        // Previously 45_000ms killed the activity before minimax could even be tried,
+        // manifesting as the #688 / #693 "decomposer exhausted chain" repro.
+        const swarmDecomposerTimeoutMs = 90_000;
         const swarmDecomposerTask = context.df.callActivity(
           'swarmDecomposerActivity',
           swarmDecomposerInput,
