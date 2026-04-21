@@ -295,12 +295,37 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
                 // Sending a fallback message would cause a duplicate if the update completes (#329).
                 const isTimeout = err instanceof Error && err.name === 'TimeoutError';
                 if (isTimeout) {
-                  console.warn(
-                    `[sendReplyActivity] Ack update timed out for userId=${input.userId}; skipping fallback to avoid duplicate reply (#329)`,
-                  );
-                  // The in-flight update will likely complete — treat the first chunk as sent.
-                  firstChunkSent = true;
-                  deliveredToUser = true;
+                  // [#696] When this is a FINAL reply (outbound claim was acquired by this
+                  // caller — `!skipOutboundClaim`), the claim guards against any other turn
+                  // re-sending for the same correlationId, so falling through to a fresh
+                  // sendActivity cannot produce a duplicate. Silently suppressing the
+                  // chunk on a stale ackActivityId (e.g. cross-deploy ack id) was
+                  // previously causing the message to be lost — `recordMessagePathSuccess`
+                  // would still fire while Teams saw nothing. Final replies must reach
+                  // the user even at the risk of an in-flight stale-ack update landing
+                  // late (the user would see updated placeholder text + the new chunk —
+                  // far better than nothing).
+                  if (!input.skipOutboundClaim) {
+                    console.warn(
+                      `[sendReplyActivity] Ack update timed out for FINAL reply userId=${input.userId}; falling through to fresh sendActivity (claim guards against duplicates) [#696]`,
+                    );
+                    const response = await turnContext.sendActivity({
+                      type: ActivityTypes.Message,
+                      text: replyChunks[0]!.text,
+                      textFormat: 'markdown',
+                    });
+                    await rememberSentMessage(input.userId, conversationId, response?.id, replyChunks[0]!.text);
+                    firstChunkSent = true;
+                    deliveredToUser = true;
+                  } else {
+                    // Intermediate ack (e.g. swarm engaged) — preserve original #329 behavior:
+                    // assume the in-flight update will complete to avoid duplicate ack spam.
+                    console.warn(
+                      `[sendReplyActivity] Ack update timed out for intermediate userId=${input.userId}; skipping fallback to avoid duplicate (#329)`,
+                    );
+                    firstChunkSent = true;
+                    deliveredToUser = true;
+                  }
                 } else {
                   console.warn(
                     `[sendReplyActivity] Ack update failed for userId=${input.userId}; falling back to new message send: ${err instanceof Error ? err.message : err}`,
