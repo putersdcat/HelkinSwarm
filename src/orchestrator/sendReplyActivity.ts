@@ -63,6 +63,13 @@ export interface SendReplyInput {
   /** Skip the outbound dedup claim. Use for intermediate messages (e.g. swarm ack)
    *  that share a correlationId with a later final reply. */
   skipOutboundClaim?: boolean;
+  /** Force a fresh message bubble — never call updateActivity on a stored ack id.
+   *  Used by the swarm final-reply path so the engagement card (which already
+   *  consumed the placeholder ack) is preserved and the synthesis appears as a
+   *  new chat bubble. Without this, a swallowed clearPendingAckId leaves the
+   *  final reply pointed at the engagement-card message id and the in-place
+   *  updateActivity is silently no-op'd by Teams (#700). */
+  forceNewMessage?: boolean;
 }
 
 export interface SendReplyResult {
@@ -297,8 +304,11 @@ export async function sendReply(input: SendReplyInput): Promise<SendReplyResult>
       }
     }
 
-    // In fast-path mode, skip Cosmos ack lookup and just send a new message
-    const ackActivityId = SENDREPLY_FAST_PATH ? null
+    // In fast-path mode, skip Cosmos ack lookup and just send a new message.
+    // [#700] forceNewMessage skips the ack lookup so the swarm final-reply path
+    // never tries to update the engagement-card message (which Teams silently
+    // no-ops after the placeholder→engagement-card first update).
+    const ackActivityId = (SENDREPLY_FAST_PATH || input.forceNewMessage) ? null
       : (input.correlationId ? await getPendingAckId(input.correlationId) : null);
 
     try {

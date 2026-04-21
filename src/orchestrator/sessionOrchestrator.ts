@@ -1603,6 +1603,12 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             message: swarmResponse,
             correlationId,
             conversationReference: input.conversationReference,
+            // [#700] Force a fresh message bubble so the engagement card stays
+            // intact and the synthesis is delivered as its own chat message.
+            // Without this, a stale ackActivityId from a swallowed
+            // clearPendingAckId in the engagement-card path causes Teams to
+            // silently no-op the second updateActivity, dropping the synthesis.
+            forceNewMessage: true,
           } satisfies SendReplyInput);
           return {
             response: swarmResponse,
