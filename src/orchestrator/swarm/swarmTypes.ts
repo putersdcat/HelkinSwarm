@@ -403,6 +403,18 @@ export function computeSwarmEligibilityScore(message: string): number {
   // Long messages are more likely to benefit from parallelism
   if (lower.length > 200) score += 1;
 
+  // [#691] Three-or-more-item enumerations ("X, Y, and Z" / "X, Y, or Z")
+  // are a strong organic signal of multi-deliverable / multi-target work.
+  // Each detected list contributes +2, capped at +4 (two distinct lists).
+  // This is what pushes prompts like "Compare PostgreSQL, MySQL, and SQLite —
+  // cover concurrent write performance, replication options, and JSON/document
+  // support" from score 4 (maybe-swarm) into the always-swarm zone where
+  // sessionOrchestrator deterministically injects activate_swarm.
+  // Pattern requires at least two commas before the trailing "and"/"or"
+  // (i.e. 3+ items) to avoid matching simple two-item conjunctions.
+  const enumerationMatches = (lower.match(/[a-z0-9][^,;.!?\n]*?,[^,;.!?\n]*?,[^,;.!?\n]*?\s+(?:and|or)\s+[a-z0-9]/gi) ?? []).length;
+  score += Math.min(enumerationMatches, 2) * 2;
+
   return score;
 }
 

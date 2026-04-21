@@ -41,6 +41,29 @@ describe('computeSwarmEligibilityScore', () => {
     expect(classifySwarmZone(score)).toBe('always-swarm');
   });
 
+  it('three-item-list compound prompts hit always-swarm via the enumeration signal (#691)', () => {
+    // Live regression repro corr f589723e (2026-04-21): organic compound prompt
+    // scored 4 (maybe-swarm) under the prior scorer and Helkin's LLM did not
+    // call activate_swarm. With the enumeration signal it must score >= 7.
+    const postgresProbe = 'Compare PostgreSQL, MySQL, and SQLite for a 2026 SaaS startup — cover concurrent write performance, replication options, and JSON/document support. Which would you pick and why?';
+    const postgresScore = computeSwarmEligibilityScore(postgresProbe);
+    expect(postgresScore).toBeGreaterThanOrEqual(7);
+    expect(classifySwarmZone(postgresScore)).toBe('always-swarm');
+
+    const rustProbe = 'Compare Rust, Go, and Zig for building a high-performance web server in 2026 — cover ecosystem maturity, async runtime options, and raw benchmark throughput. Which would you pick and why?';
+    const rustScore = computeSwarmEligibilityScore(rustProbe);
+    expect(rustScore).toBeGreaterThanOrEqual(7);
+    expect(classifySwarmZone(rustScore)).toBe('always-swarm');
+  });
+
+  it('enumeration signal does NOT push casual three-item lists into always-swarm (#691)', () => {
+    // Casual chat with a 3-item list but no other compound/research signals
+    // must NOT accidentally trigger always-swarm.
+    const casual = 'I have apples, oranges, and bananas at home';
+    const score = computeSwarmEligibilityScore(casual);
+    expect(classifySwarmZone(score)).not.toBe('always-swarm');
+  });
+
   it('isSwarmEligible threshold matches score >= 3', () => {
     // Score < 3 → not eligible
     const lowScoreMsg = 'find something';
