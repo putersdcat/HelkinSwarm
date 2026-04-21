@@ -353,6 +353,12 @@ df.app.activity('swarmWorkerActivity', {
         let streamedTokenCount = 0;
         const onToken = (_text: string) => { streamedTokenCount++; };
 
+        // Budget must be large enough to allow a real primary-then-fallback
+        // cascade on the FoundryClient chain. 20_000ms previously meant a single
+        // grok (or minimax) timeout consumed the whole budget and the next
+        // candidate was never tried, manifesting as the Harper/Lucas
+        // "All models in fallback chain exhausted" repro on 2026-04-21
+        // (corr 3e3b0ecd). 50_000ms gives primary ~30s and fallback ~18s.
         const response = await client.chatCompletion({
           messages,
           tools: tools.length > 0 ? tools : undefined,
@@ -360,7 +366,7 @@ df.app.activity('swarmWorkerActivity', {
           maxTokens: 2048,
           temperature: 0.7,
           correlationId: input.correlationId,
-          maxBudgetMs: 20_000,
+          maxBudgetMs: 50_000,
           onToken,
         });
 
