@@ -431,6 +431,12 @@ df.app.activity('swarmWorkerActivity', {
         const assistantMessage = choice.message;
         messages.push(assistantMessage);
 
+        // [#695] Track this round's external tool invocations so we can emit a
+        // 'status' chatroom message at the end of the round. Without this, the
+        // Swarm Activity tab only sees the worker's final wrap-up chatroom_send
+        // calls — the multi-round tool work is invisible to the user.
+        const roundToolNames: string[] = [];
+
         // If the model produced text content without tool calls, agent is done
         if (choice.finishReason === 'stop' || !assistantMessage.toolCalls?.length) {
           // If there's final text, send it to Leader as a final status
@@ -609,6 +615,7 @@ df.app.activity('swarmWorkerActivity', {
               // Non-elevated external tool — execute directly
               toolCallsMade++;
               toolsUsedSet.add(tc.function.name);
+              roundToolNames.push(tc.function.name);
               const result = await executeToolCall(
                 tc.function.name,
                 parsedArgs,
@@ -631,6 +638,35 @@ df.app.activity('swarmWorkerActivity', {
             });
           }
         }
+        // [#695] Emit a per-round 'status' chatroom message so the Swarm Activity
+        // tab shows the worker's tool work as it happens, not just the final
+        // chatroom_send wrap-up. Skip rounds where nothing observable happened
+        // (no tools and no assistant text), which would just be noise.
+        const roundAssistantText = textContent(assistantMessage.content).trim();
+        const roundHasObservableActivity = roundToolNames.length > 0 || roundAssistantText.length > 0;
+        if (roundHasObservableActivity) {
+          const toolSummary = roundToolNames.length > 0
+            ? `tools: ${roundToolNames.join(', ')}`
+            : 'no tools';
+          const textSnippet = roundAssistantText.length > 0
+            ? ` — ${roundAssistantText.slice(0, 160)}${roundAssistantText.length > 160 ? '…' : ''}`
+            : '';
+          const statusMsg: ChatroomMessage = {
+            id: crypto.randomUUID(),
+            from: input.agentName,
+            to: 'All',
+            content: `Round ${round + 1}: ${toolSummary}${textSnippet}`,
+            contentType: 'status',
+            timestamp: Date.now(),
+            correlationId: input.swarmCorrelationId,
+          };
+          const validatedStatus = ChatroomMessageSchema.safeParse(statusMsg);
+          if (validatedStatus.success) {
+            pendingChatroomMessages.push(validatedStatus.data);
+            chatroomMessagesSent++;
+          }
+        }
+
         // If swarm_wait was called in this round, exit the round loop immediately
         if (requestsSecondPass) break;
       }
