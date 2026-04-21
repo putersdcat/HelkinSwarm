@@ -9,7 +9,7 @@ import { getModelRouting, isReasoningModel } from '../../llm/modelRouter.js';
 import { toolRegistry } from '../../tools/toolRegistry.js';
 import { getHandler } from '../../capabilities/capabilityLoader.js';
 import { trackEvent } from '../../observability/telemetry.js';
-import { recordOrchestratorStage } from '../../observability/orchestratorStageHealth.js';
+import { recordOrchestratorStage, clearOrchestratorStage } from '../../observability/orchestratorStageHealth.js';
 import { buildWorkerSystemPrompt, stripRenderTags } from './swarmPersonas.js';
 import { resolveSwarmUserInfo } from './swarmUserInfo.js';
 import { parseChatroomSendMessage, stripSelfEchoRecipients } from './chatroomEnvelope.js';
@@ -744,6 +744,19 @@ df.app.activity('swarmWorkerActivity', {
         tokenBudgetExceeded,
         cost: totalCost,
       };
+    } finally {
+      // #705 — always clear the swarm-workers stage tracker entry. Without this,
+      // an aborted/timed-out worker leaves a phantom 'swarm-workers' entry in
+      // activeTurns for up to 15 min (STAGE_TTL_SECONDS), blocking new turns via
+      // overlap-pressure.
+      try {
+        await clearOrchestratorStage(input.correlationId, input.userId);
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        console.warn(
+          `[swarmWorkerActivity] clearOrchestratorStage failed for correlationId=${input.correlationId}: ${reason}`,
+        );
+      }
     }
   },
 });
