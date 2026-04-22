@@ -101,6 +101,16 @@ export interface FoundryClientOptions {
    * or not streaming is enabled — usage stats are synthesized from the SSE stream.
    */
   onToken?: (text: string) => void;
+  /**
+   * Must-fire mode (#698 structural fix). When `true`, the cascade does not
+   * silently skip degraded / tracked-down models — it gives every chain entry a
+   * real attempt. Used by the swarm leader synthesis stage, where the entire
+   * turn (often ~150k tokens) is wasted if the leader call doesn't fire because
+   * concurrent worker traffic just put every model into cooldown. The trade-off
+   * is one or two extra 429 attempts on the cooldown chain entries — far cheaper
+   * than discarding the turn.
+   */
+  bypassDegradedSkip?: boolean;
 }
 
 export interface ToolDefinition {
@@ -272,7 +282,9 @@ export class FoundryClient {
 
     // Circuit-open fast-fail: if ALL models in the chain are down, don't waste
     // 90 seconds cascading through guaranteed failures (#325).
-    if (isAllModelsDown()) {
+    // Must-fire mode (#698) bypasses the circuit so the leader synthesis still
+    // gets a real attempt rather than throwing instantly.
+    if (isAllModelsDown() && !options.bypassDegradedSkip) {
       throw new FoundryAllModelsDownError(chain.map(r => r.deploymentName));
     }
 
@@ -294,9 +306,29 @@ export class FoundryClient {
 
       // Re-check degraded status before EACH attempt — catches models degraded
       // by concurrent requests during the cascade (#313-B).
-      if (isModelDegraded(routing.deploymentName) || isModelTrackedDown(routing.deploymentName)) {
+      // Must-fire mode (#698): swarm leader synthesis cannot afford to skip every
+      // chain entry just because workers tripped cooldowns moments earlier — give
+      // every model a real attempt and let real failures push to the next slot.
+      if (
+        !options.bypassDegradedSkip
+        && (isModelDegraded(routing.deploymentName) || isModelTrackedDown(routing.deploymentName))
+      ) {
         // Skip silently; don't count as an "attempt" or waste budget.
         continue;
+      }
+      if (
+        options.bypassDegradedSkip
+        && (isModelDegraded(routing.deploymentName) || isModelTrackedDown(routing.deploymentName))
+      ) {
+        trackEvent({
+          name: 'LlmMustFireBypass',
+          correlationId,
+          properties: {
+            model: routing.deploymentName,
+            reason: isModelDegraded(routing.deploymentName) ? 'degraded' : 'tracked-down',
+            chainPosition: i,
+          },
+        });
       }
 
       // Budget accounting: how much time remains for the rest of the cascade?
@@ -795,7 +827,12 @@ export class FoundryClient {
     // (#677). Without this, a swarm of 3-4 worker activities fires parallel
     // requests that share a single API key and trip upstream provider
     // per-key concurrency caps (observed with minimax during PROBE-SWARM-TAB-004).
-    const raw = await withOpenRouterConcurrencySlot(correlationId, routing.deploymentName, () => new Promise<RawApiResponse>((resolve, reject) => {
+    // Must-fire mode (#698): the swarm leader synthesis bypasses the gate's
+    // pre-check so a degraded model still gets a real attempt.
+    const raw = await withOpenRouterConcurrencySlot(
+      correlationId,
+      routing.deploymentName,
+      () => new Promise<RawApiResponse>((resolve, reject) => {
       let settled = false;
       const settle = (fn: () => void) => {
         if (!settled) { settled = true; fn(); }
@@ -882,7 +919,9 @@ export class FoundryClient {
 
       req.write(requestBody);
       req.end();
-    }));
+    }),
+      options.bypassDegradedSkip ?? false,
+    );
 
     return mapApiResponse(raw);
   }
@@ -1184,13 +1223,16 @@ async function withOpenRouterConcurrencySlot<T>(
   correlationId: string,
   deploymentName: string,
   fn: () => Promise<T>,
+  bypassDegradedSkip = false,
 ): Promise<T> {
   const gate = getOpenRouterGate();
 
   // Fix 3: if this model is degraded, skip the queue entirely and let the
   // caller go straight to fallback. Prevents the 4th queued worker from
   // waiting for a degraded Grok slot while the fallback chain fires (#690).
-  if (isModelDegraded(deploymentName)) {
+  // Must-fire mode (#698): the swarm leader synthesis bypasses this skip so
+  // a degraded model still receives a real attempt.
+  if (isModelDegraded(deploymentName) && !bypassDegradedSkip) {
     trackEvent({
       name: 'OpenRouterConcurrencyGate',
       correlationId,

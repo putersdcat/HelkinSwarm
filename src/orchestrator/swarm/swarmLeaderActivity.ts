@@ -334,6 +334,13 @@ df.app.activity('swarmLeaderActivity', {
         temperature: 0.7,
         correlationId: input.correlationId,
         maxBudgetMs: 60_000,
+        // #698 structural fix: leader synthesis is the must-succeed terminal
+        // step of a swarm turn that has already burned ~150k worker tokens.
+        // If concurrent worker traffic just put every fallback model into
+        // cooldown, do NOT silently skip the cascade — give every chain entry
+        // a real attempt. Worst case: one extra 429. Best case: the turn
+        // produces a real synthesis instead of a fallback bullet list.
+        bypassDegradedSkip: true,
       });
 
       const synthesis = textContent(response.choices[0]?.message?.content);

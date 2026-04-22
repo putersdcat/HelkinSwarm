@@ -142,7 +142,8 @@ export type TelemetryEventName =
   | 'ModelOverrideIgnored'
   | 'OverseerStartedDespiteLiveSibling'
   | 'OpenRouterGrok429Retry'
-  | 'OpenRouterSlotSkip';
+  | 'OpenRouterSlotSkip'
+  | 'LlmMustFireBypass';
 
 // ---------------------------------------------------------------------------
 // Session Tracer — maps events to trace phases for Dev Console (#140)
