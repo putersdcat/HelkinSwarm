@@ -208,6 +208,42 @@ export function parseRetryAfterMs(headers: Headers): number | undefined {
 }
 
 /**
+ * Status codes for which an upstream-provided Retry-After header should be honoured
+ * by the fallback chain's cooldown. 429 is the canonical case; 502/503/524 cover
+ * upstream gateway congestion / origin overload that providers (e.g. OpenRouter,
+ * Cloudflare) commonly accompany with a Retry-After hint. (#677)
+ */
+const RETRY_AFTER_HONOURED_STATUSES: ReadonlySet<number> = new Set([429, 502, 503, 524]);
+
+/**
+ * Parse Retry-After / Retry-After-Ms from a Node IncomingHttpHeaders bag.
+ * Returns milliseconds, or undefined when status is non-honoured or header missing/invalid.
+ * Mirrors parseRetryAfterMs() but for the raw http(s) module path used by the
+ * direct-https Azure Foundry and OpenRouter request implementations. (#677)
+ */
+export function parseRetryAfterMsFromNodeHeaders(
+  headers: { [key: string]: string | string[] | undefined },
+  statusCode: number | undefined,
+): number | undefined {
+  if (statusCode === undefined || !RETRY_AFTER_HONOURED_STATUSES.has(statusCode)) {
+    return undefined;
+  }
+  const msRaw = headers['retry-after-ms'];
+  const msStr = Array.isArray(msRaw) ? msRaw[0] : msRaw;
+  if (msStr) {
+    const ms = Number(msStr);
+    if (Number.isFinite(ms) && ms > 0) return ms;
+  }
+  const secsRaw = headers['retry-after'];
+  const secsStr = Array.isArray(secsRaw) ? secsRaw[0] : secsRaw;
+  if (secsStr) {
+    const seconds = Number(secsStr);
+    if (Number.isFinite(seconds) && seconds > 0) return seconds * 1_000;
+  }
+  return undefined;
+}
+
+/**
  * Hard timeout wrapper for fetch.
  * We cannot trust runtime-specific `AbortSignal.timeout()` behavior in Azure Functions,
  * so we both abort the request AND locally reject the await path when the timer fires.
@@ -654,12 +690,7 @@ export class FoundryClient {
             const responseText = Buffer.concat(chunks).toString('utf-8');
             if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
               const errorText = sanitizeRemoteErrorText(responseText);
-              const retryAfterRaw = res.headers['retry-after'] ?? res.headers['retry-after-ms'];
-              const retryAfterStr = Array.isArray(retryAfterRaw) ? retryAfterRaw[0] : retryAfterRaw;
-              const retryAfterSecs = retryAfterStr ? Number(retryAfterStr) : NaN;
-              const retryAfterMs = res.statusCode === 429 && Number.isFinite(retryAfterSecs) && retryAfterSecs > 0
-                ? retryAfterSecs * 1_000
-                : undefined;
+              const retryAfterMs = parseRetryAfterMsFromNodeHeaders(res.headers, res.statusCode);
               settle(() => reject(new FoundryError(
                 `Chat completion failed: ${res.statusCode} ${res.statusMessage ?? ''} — ${errorText}`,
                 res.statusCode ?? 500,
@@ -877,12 +908,7 @@ export class FoundryClient {
             emitOpenRouterRateLimitSnapshot(res.headers, routing.deploymentName, correlationId);
             if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
               const errorText = sanitizeRemoteErrorText(responseText);
-              const retryAfterRaw = res.headers['retry-after'] ?? res.headers['retry-after-ms'];
-              const retryAfterStr = Array.isArray(retryAfterRaw) ? retryAfterRaw[0] : retryAfterRaw;
-              const retryAfterSecs = retryAfterStr ? Number(retryAfterStr) : NaN;
-              const retryAfterMs = res.statusCode === 429 && Number.isFinite(retryAfterSecs) && retryAfterSecs > 0
-                ? retryAfterSecs * 1_000
-                : undefined;
+              const retryAfterMs = parseRetryAfterMsFromNodeHeaders(res.headers, res.statusCode);
               settle(() => reject(new FoundryError(
                 `OpenRouter chat completion failed: ${res.statusCode} ${res.statusMessage ?? ''} — ${errorText}`,
                 res.statusCode ?? 500,

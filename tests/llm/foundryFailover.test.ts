@@ -464,3 +464,50 @@ describe('parseRetryAfterMs', () => {
     expect(parseRetryAfterMs(headers)).toBeUndefined();
   });
 });
+
+describe('parseRetryAfterMsFromNodeHeaders (#677)', () => {
+  it('honours Retry-After on 429', async () => {
+    const { parseRetryAfterMsFromNodeHeaders } = await loadFoundryClientModule();
+    expect(parseRetryAfterMsFromNodeHeaders({ 'retry-after': '30' }, 429)).toBe(30_000);
+  });
+
+  it('honours Retry-After on 502 (upstream gateway)', async () => {
+    const { parseRetryAfterMsFromNodeHeaders } = await loadFoundryClientModule();
+    expect(parseRetryAfterMsFromNodeHeaders({ 'retry-after': '15' }, 502)).toBe(15_000);
+  });
+
+  it('honours Retry-After on 503 (origin overload)', async () => {
+    const { parseRetryAfterMsFromNodeHeaders } = await loadFoundryClientModule();
+    expect(parseRetryAfterMsFromNodeHeaders({ 'retry-after': '20' }, 503)).toBe(20_000);
+  });
+
+  it('honours Retry-After on 524 (Cloudflare timeout)', async () => {
+    const { parseRetryAfterMsFromNodeHeaders } = await loadFoundryClientModule();
+    expect(parseRetryAfterMsFromNodeHeaders({ 'retry-after': '10' }, 524)).toBe(10_000);
+  });
+
+  it('prefers retry-after-ms (already milliseconds) over retry-after (seconds)', async () => {
+    const { parseRetryAfterMsFromNodeHeaders } = await loadFoundryClientModule();
+    expect(parseRetryAfterMsFromNodeHeaders(
+      { 'retry-after': '60', 'retry-after-ms': '2500' },
+      503,
+    )).toBe(2500);
+  });
+
+  it('does NOT honour Retry-After on non-honoured statuses (e.g. 500, 504)', async () => {
+    const { parseRetryAfterMsFromNodeHeaders } = await loadFoundryClientModule();
+    expect(parseRetryAfterMsFromNodeHeaders({ 'retry-after': '30' }, 500)).toBeUndefined();
+    expect(parseRetryAfterMsFromNodeHeaders({ 'retry-after': '30' }, 504)).toBeUndefined();
+    expect(parseRetryAfterMsFromNodeHeaders({ 'retry-after': '30' }, 400)).toBeUndefined();
+  });
+
+  it('handles array-shaped header values (Node IncomingHttpHeaders)', async () => {
+    const { parseRetryAfterMsFromNodeHeaders } = await loadFoundryClientModule();
+    expect(parseRetryAfterMsFromNodeHeaders({ 'retry-after': ['45'] }, 429)).toBe(45_000);
+  });
+
+  it('returns undefined when status is unknown', async () => {
+    const { parseRetryAfterMsFromNodeHeaders } = await loadFoundryClientModule();
+    expect(parseRetryAfterMsFromNodeHeaders({ 'retry-after': '30' }, undefined)).toBeUndefined();
+  });
+});
