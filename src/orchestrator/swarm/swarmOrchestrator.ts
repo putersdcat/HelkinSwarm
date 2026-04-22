@@ -228,57 +228,28 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
       allChatroomMessages.push(...result._pendingChatroomMessages);
     }
 
-    // If fatally failed, abort the entire swarm (#664)
+    // [#710 Gap 2] BEST-EFFORT FAN-IN: a single fatally-failed worker no
+    // longer aborts the whole swarm. Push the fatal result onto the worker
+    // results array (so the Failure Summary card from Gap 1 can render it)
+    // and continue. After the loop, an explicit guard checks whether ANY
+    // worker succeeded; if zero survived, only THEN is the swarm declared
+    // dead. The leader is given an in-transcript notice listing failed
+    // agents so its synthesis can honestly say which specialists could
+    // not contribute.
+    workerResults.push(result);
     if (result.fatal) {
-      const failedAgent = result.agentName;
       const retryInfo = result.retryAttempts ? ` after ${result.retryAttempts} retry` : '';
       const errorMsg = result.error ? ` (${result.error.slice(0, 120)})` : '';
-
-      // Build a failure synthesis message
-      const failureSynthesis = `⚠️ **Swarm Failed — ${failedAgent} Could Not Be Summoned**\n\n` +
-        `${failedAgent} failed${retryInfo} and could not be revived${errorMsg}. ` +
-        `The swarm has been aborted. No partial answer will be provided. ` +
-        `Please check the backend logs for model/timeout details and try again.`;
-
-      // Build the final result with the failure
-      const failureResult: SwarmOrchestratorResult = {
-        response: failureSynthesis,
-        success: false,
-        totalTokensUsed: workerResults.reduce((s, r) => s + r.tokensUsed, 0),
-        agentResults: [...workerResults, result],
-        leaderResult: {
-          synthesis: failureSynthesis,
-          success: false,
-          tokensUsed: 0,
-          roundsUsed: 0,
-          agentsHeardFrom: workerResults.map(r => r.agentName),
-          model: 'swarm-fatal',
-          error: `${failedAgent} fatally failed${retryInfo}${errorMsg}`,
-        },
-        chatroomTranscript: [...allChatroomMessages],
-        swarmId: plan.swarmId,
-        swarmCost: {
-          decomposerTokens: 0,
-          workerTokens: workerResults.reduce((s, r) => s + r.tokensUsed, 0),
-          leaderTokens: 0,
-          totalTokens: workerResults.reduce((s, r) => s + r.tokensUsed, 0),
-          totalCost: workerResults.reduce((s, r) => s + ((r as SwarmWorkerResult & { cost?: number }).cost ?? 0), 0),
-          agentBreakdown: workerResults.map(r => ({
-            agent: r.agentName,
-            tokens: r.tokensUsed,
-            model: r.model,
-            toolsUsed: r.toolsUsed,
-            durationMs: r.durationMs,
-            cost: (r as SwarmWorkerResult & { cost?: number }).cost,
-          })),
-        },
-      };
-
-      return failureResult;
+      allChatroomMessages.push({
+        id: context.df.newGuid(`${correlationId}:agent-fatal:${result.agentName}`),
+        from: 'System',
+        to: leaderName,
+        content: `⚠️ ${result.agentName} could not contribute to this swarm${retryInfo}${errorMsg}. Synthesize with the remaining agents and acknowledge the gap honestly in your final answer.`,
+        contentType: 'error',
+        timestamp: context.df.currentUtcDateTime.getTime(),
+        correlationId,
+      });
     }
-
-    // Not fatal — record the result
-    workerResults.push(result);
 
     // [#707] Internal deadline check — if the parent's outer `swarmTimer`
     // is about to win, abort the fan-in loop with a graceful partial result
@@ -349,6 +320,62 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
         skipOutboundClaim: true,
       });
     }
+  }
+
+  // -----------------------------------------------------------------------
+  // 3.3. [#710 Gap 2] All-workers-failed guard. Best-effort fan-in keeps
+  // a single fatal worker from killing the swarm, but if EVERY worker is
+  // dead there is nothing for the leader to synthesize. Skip the leader,
+  // skip the delegation/sub-session passes, and return a clean failure
+  // immediately so the user gets a fast honest error.
+  // -----------------------------------------------------------------------
+  const failedAgentNames = workerResults.filter(r => !r.success).map(r => r.agentName);
+  const anyWorkerOk = workerResults.some(r => r.success);
+  if (!anyWorkerOk) {
+    const reasons = workerResults
+      .map(r => `${r.agentName}: ${r.error?.slice(0, 120) ?? 'unknown error'}`)
+      .join('; ');
+    const totalFailedTokens = workerResults.reduce((s, r) => s + r.tokensUsed, 0);
+    const totalFailedCost = workerResults.reduce((s, r) => s + ((r as SwarmWorkerResult & { cost?: number }).cost ?? 0), 0);
+    return {
+      response: `⚠️ **Swarm Failed — All Specialists Could Not Be Summoned**\n\n` +
+        `Every agent in the swarm failed to return a usable result. Reasons:\n` +
+        failedAgentNames.map(n => {
+          const w = workerResults.find(r => r.agentName === n);
+          return `- **${n}** (${w?.model ?? 'unknown'}): ${w?.error?.slice(0, 240) ?? 'no error captured'}`;
+        }).join('\n') +
+        `\n\nNo synthesis was produced. The Failure Summary in the Swarm tab has the per-agent error strings.`,
+      success: false,
+      totalTokensUsed: totalFailedTokens,
+      agentResults: workerResults,
+      leaderResult: {
+        synthesis: '',
+        success: false,
+        tokensUsed: 0,
+        roundsUsed: 0,
+        agentsHeardFrom: [],
+        model: 'swarm-all-fatal',
+        error: `All ${workerResults.length} workers failed: ${reasons.slice(0, 400)}`,
+      },
+      chatroomTranscript: [...allChatroomMessages],
+      swarmId: plan.swarmId,
+      failedAgents: failedAgentNames,
+      swarmCost: {
+        decomposerTokens: 0,
+        workerTokens: totalFailedTokens,
+        leaderTokens: 0,
+        totalTokens: totalFailedTokens,
+        totalCost: totalFailedCost,
+        agentBreakdown: workerResults.map(r => ({
+          agent: r.agentName,
+          tokens: r.tokensUsed,
+          model: r.model,
+          toolsUsed: r.toolsUsed,
+          durationMs: r.durationMs,
+          cost: (r as SwarmWorkerResult & { cost?: number }).cost,
+        })),
+      },
+    };
   }
 
   // -----------------------------------------------------------------------
@@ -707,6 +734,9 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
     leaderResult,
     chatroomTranscript: transcript,
     swarmId: plan.swarmId,
+    // [#710 Gap 2] Surface fatal/failed worker names so the persistence
+    // layer and UI can tell the user which specialists could not contribute.
+    failedAgents: workerResults.filter(r => !r.success).map(r => r.agentName),
     swarmCost: {
       decomposerTokens: 0, // tracked in parent orchestrator
       workerTokens,

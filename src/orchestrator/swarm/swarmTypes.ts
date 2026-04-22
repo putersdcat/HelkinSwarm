@@ -295,6 +295,12 @@ export interface SwarmOrchestratorResult {
   chatroomTranscript: ChatroomMessage[];
   swarmId: string;
   swarmCost?: SwarmCost;
+  /**
+   * [#710 Gap 2] Names of workers that fatally failed (after retry).
+   * Empty array means a clean run; populated means leader was asked to
+   * synthesize with gaps and the user-facing response should mention them.
+   */
+  failedAgents?: string[];
 }
 
 // ---------------------------------------------------------------------------

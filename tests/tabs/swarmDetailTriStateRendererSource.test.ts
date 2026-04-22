@@ -15,12 +15,12 @@ describe('tabs/app.js — swarm detail renderer tri-state status (#679)', () => 
     expect(src).toContain('var state = detail.status || (detail.success ? "ok" : "fail");');
   });
 
-  it('maps state to the three badge classes (info/ok/error)', () => {
-    expect(src).toContain('var stBadge = state === "running" ? "info" : (state === "ok" ? "ok" : "error");');
+  it('maps state to the four badge classes (info/ok/warn/error) — #710 Gap 4 added partial', () => {
+    expect(src).toContain('var stBadge = state === "running" ? "info" : (state === "ok" ? "ok" : (state === "partial" ? "warn" : "error"));');
   });
 
-  it('maps state to the three labels (RUNNING/OK/FAIL)', () => {
-    expect(src).toContain('var stLabel = state === "running" ? "RUNNING" : (state === "ok" ? "OK" : "FAIL");');
+  it('maps state to the four labels (RUNNING/OK/PARTIAL/FAIL) — #710 Gap 4 added PARTIAL', () => {
+    expect(src).toContain('var stLabel = state === "running" ? "RUNNING" : (state === "ok" ? "OK" : (state === "partial" ? "PARTIAL" : "FAIL"));');
   });
 
   it('shows "— (in progress)" duration for a running swarm with no recorded duration', () => {

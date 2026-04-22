@@ -27,7 +27,7 @@ export interface PersistSwarmResultInput {
   decomposerModel: string;
   executionDurationMs: number;
   result: SwarmOrchestratorResult;
-  statusOverride?: 'running' | 'ok' | 'fail';
+  statusOverride?: 'running' | 'ok' | 'partial' | 'fail';
   agentCountOverride?: number;
 }
 
@@ -43,7 +43,7 @@ interface SwarmExecutionDocument {
   swarmId: string;
   userQuery: string;
   executedAt: string;
-  status: 'running' | 'ok' | 'fail';
+  status: 'running' | 'ok' | 'partial' | 'fail';
   success: boolean;
   executionDurationMs: number;
   agentCount: number;
@@ -59,6 +59,9 @@ interface SwarmExecutionDocument {
   // [#710 Gap 1] Persist the leader's error string so the Swarm tab can
   // render a failure-summary card without requiring App Insights access.
   leaderError?: string;
+  // [#710 Gap 2] Names of workers that fatally failed (after retry).
+  // Surfaced in the Failure Summary card and the agent breakdown.
+  failedAgents?: string[];
   transcriptTruncated: boolean;
   persistenceMode: 'full' | 'compact-fallback';
   persistenceWarning?: string;
@@ -99,7 +102,22 @@ export function buildSwarmExecutionDocument(
   const result = input.result;
   const transcript = compactTranscript(result.chatroomTranscript);
   const compact = options?.compact ?? false;
-  const status = input.statusOverride ?? (result.success ? 'ok' : 'fail');
+  // [#710 Gap 4] Honest status criterion. Three outcomes after run completes:
+  //   - 'ok'      \u2014 leader OK AND every worker OK (clean run, no gaps).
+  //   - 'partial' \u2014 leader OK but at least one worker failed; user got
+  //                  an answer but with explicit gaps.
+  //   - 'fail'    \u2014 leader did not produce a usable synthesis.
+  // Caller-supplied statusOverride still wins (e.g. 'running' on first persist).
+  const failedCount = (result.failedAgents ?? result.agentResults.filter(r => !r.success).map(r => r.agentName)).length;
+  let computedStatus: 'ok' | 'partial' | 'fail';
+  if (!result.success) {
+    computedStatus = 'fail';
+  } else if (failedCount > 0) {
+    computedStatus = 'partial';
+  } else {
+    computedStatus = 'ok';
+  }
+  const status = input.statusOverride ?? computedStatus;
 
   return {
     id: `swarm-${input.swarmId}`,
@@ -127,6 +145,8 @@ export function buildSwarmExecutionDocument(
     leaderAgentsHeardFrom: result.leaderResult.agentsHeardFrom,
     // [#710 Gap 1] Truncate to MAX_AGENT_ERROR_CHARS so a giant stack trace cannot blow the doc-size budget.
     leaderError: truncateText(result.leaderResult.error, MAX_AGENT_ERROR_CHARS) || undefined,
+    // [#710 Gap 2] Per-spec: ok if leader OK and majority of workers OK; partial if leader OK but some workers failed; fail otherwise.
+    failedAgents: result.failedAgents && result.failedAgents.length > 0 ? result.failedAgents : undefined,
     transcriptTruncated: compact || transcript.truncated,
     persistenceMode: compact ? 'compact-fallback' : 'full',
     persistenceWarning: options?.warning,

@@ -1067,11 +1067,13 @@
         var execs = (d.swarm && d.swarm.executions) || [];
         var totalRuns = execs.length;
         var successRuns = execs.filter(function (e) { return (e.status || (e.success ? "ok" : "fail")) === "ok"; }).length;
+        var partialRuns = execs.filter(function (e) { return e.status === "partial"; }).length;
         var totalTokens = execs.reduce(function (sum, e) { return sum + (e.totalTokensUsed || 0); }, 0);
 
         return '<div class="kpi-row">' +
           kpiTile("Swarm Runs", totalRuns) +
           kpiTile("Successful", successRuns + " / " + totalRuns, totalRuns > 0 && successRuns < totalRuns ? "kpi-warn" : "") +
+          (partialRuns > 0 ? kpiTile("Partial", partialRuns, "kpi-warn") : "") +
           kpiTile("Total Tokens", totalTokens.toLocaleString()) +
           '</div>' +
           '<div class="card"><h2>Recent Swarm Executions</h2>' +
@@ -1079,8 +1081,9 @@
             '<table><tr><th>Time</th><th>Query</th><th>Agents</th><th>Tokens</th><th>Duration</th><th>Status</th><th></th></tr>' +
             execs.map(function (e) {
               var state = e.status || (e.success ? "ok" : "fail");
-              var st = state === "running" ? "info" : (state === "ok" ? "ok" : "error");
-              var label = state === "running" ? "RUNNING" : (state === "ok" ? "OK" : "FAIL");
+              // [#710 Gap 4] Three-state badge: ok (green), partial (yellow), running (blue), fail (red).
+              var st = state === "running" ? "info" : (state === "ok" ? "ok" : (state === "partial" ? "warn" : "error"));
+              var label = state === "running" ? "RUNNING" : (state === "ok" ? "OK" : (state === "partial" ? "PARTIAL" : "FAIL"));
               var query = (e.userQuery || "").length > 80 ? e.userQuery.substring(0, 80) + "\u2026" : (e.userQuery || "\u2014");
               var dur = e.executionDurationMs ? (e.executionDurationMs / 1000).toFixed(1) + "s" : "\u2014";
               return '<tr>' +
@@ -1214,8 +1217,9 @@
                   // default) renders as "FAIL · 0.0s" while the list shows
                   // "RUNNING". (#678)
                   var state = detail.status || (detail.success ? "ok" : "fail");
-                  var stBadge = state === "running" ? "info" : (state === "ok" ? "ok" : "error");
-                  var stLabel = state === "running" ? "RUNNING" : (state === "ok" ? "OK" : "FAIL");
+                  // [#710 Gap 4] Three-state detail badge mirrors the list view.
+                  var stBadge = state === "running" ? "info" : (state === "ok" ? "ok" : (state === "partial" ? "warn" : "error"));
+                  var stLabel = state === "running" ? "RUNNING" : (state === "ok" ? "OK" : (state === "partial" ? "PARTIAL" : "FAIL"));
                   var isRunning = state === "running";
                   var durationDisplay = isRunning && !detail.executionDurationMs
                     ? "\u2014 (in progress)"
