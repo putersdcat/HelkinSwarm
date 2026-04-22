@@ -1199,14 +1199,58 @@
           wireCorrelationSearch();
         }
         if (key === "swarm") {
+          // [#714 follow-up] Auto-refresh while the selected swarm is running.
+          // The Cosmos doc is only updated on terminal status today, so without
+          // this poll the user has to manually reload to ever see RUNNING -> OK/FAIL.
+          // The interval is cleared as soon as the doc reaches a terminal status,
+          // when the user opens a different swarm, or when they leave the tab.
+          var SWARM_DETAIL_POLL_MS = 5000;
+          if (window.__swarmDetailPollTimer) {
+            clearInterval(window.__swarmDetailPollTimer);
+            window.__swarmDetailPollTimer = null;
+          }
           container.querySelectorAll(".swarm-detail-btn").forEach(function (btn) {
             btn.addEventListener("click", function () {
               var swarmId = btn.getAttribute("data-swarm-id");
               var panel = document.getElementById("swarm-detail-panel");
               if (!panel) return;
+              if (window.__swarmDetailPollTimer) {
+                clearInterval(window.__swarmDetailPollTimer);
+                window.__swarmDetailPollTimer = null;
+              }
+              window.__swarmDetailActiveId = swarmId;
               panel.innerHTML = '<p class="empty-state">Loading swarm details\u2026</p>';
-              apiCall("swarm-activity?swarmId=" + encodeURIComponent(swarmId))
-                .then(function (detail) {
+              function loadSwarmDetail(isPoll) {
+                if (window.__swarmDetailActiveId !== swarmId) return; // user navigated away
+                apiCall("swarm-activity?swarmId=" + encodeURIComponent(swarmId))
+                  .then(function (detail) {
+                    if (window.__swarmDetailActiveId !== swarmId) return;
+                    var pollState = (detail && detail.status) || (detail && detail.success ? "ok" : "fail");
+                    var stillRunning = pollState === "running";
+                    if (!stillRunning && window.__swarmDetailPollTimer) {
+                      clearInterval(window.__swarmDetailPollTimer);
+                      window.__swarmDetailPollTimer = null;
+                    }
+                    if (stillRunning && !window.__swarmDetailPollTimer) {
+                      window.__swarmDetailPollTimer = setInterval(function () { loadSwarmDetail(true); }, SWARM_DETAIL_POLL_MS);
+                    }
+                    renderSwarmDetail(detail, swarmId, panel, stillRunning);
+                  })
+                  .catch(function (err) {
+                    if (window.__swarmDetailActiveId !== swarmId) return;
+                    panel.innerHTML = '<p class="error-msg">Failed to load swarm details: ' + esc(err.message) + '</p>';
+                    if (window.__swarmDetailPollTimer) {
+                      clearInterval(window.__swarmDetailPollTimer);
+                      window.__swarmDetailPollTimer = null;
+                    }
+                  });
+              }
+              loadSwarmDetail(false);
+            });
+          });
+          // Original render block extracted into a named function so the poll
+          // path can call it with fresh data on every tick.
+          function renderSwarmDetail(detail, swarmId, panel, polling) {
                   var agents = detail.agentResults || [];
                   var transcript = detail.chatroomTranscript || [];
                   var cost = detail.swarmCost || {};
@@ -1225,7 +1269,9 @@
                     ? "\u2014 (in progress)"
                     : ((detail.executionDurationMs || 0) / 1000).toFixed(1) + "s";
 
-                  var html = '<div class="card"><h2>Swarm Detail \u2014 ' + esc(detail.swarmId || swarmId) + '</h2>' +
+                  var html = '<div class="card"><h2>Swarm Detail \u2014 ' + esc(detail.swarmId || swarmId) +
+                    (polling ? ' <span class="badge badge-info" style="font-size:11px;vertical-align:middle">\u21BB auto-refresh 5s</span>' : '') +
+                    '</h2>' +
                     '<p><strong>Query:</strong> ' + esc(detail.userQuery || "\u2014") + '</p>' +
                     '<p><strong>Correlation:</strong> <code>' + esc(detail.correlationId || "") + '</code></p>' +
                     '<p><strong>Duration:</strong> ' + durationDisplay +
@@ -1394,12 +1440,7 @@
                   }
 
                   panel.innerHTML = html;
-                })
-                .catch(function (err) {
-                  panel.innerHTML = '<p class="error-msg">Failed to load swarm details: ' + esc(err.message) + '</p>';
-                });
-            });
-          });
+          }
         }
       }
     });
