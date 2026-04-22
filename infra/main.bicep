@@ -152,7 +152,7 @@ var funcInstanceMin         = 1
 var effectiveTelemetryMode  = effectiveDirtyDevMode ? 'minimal' : effectiveLowCostDevMode ? 'minimal' : devTelemetryMode
 var lawDailyCapGb           = effectiveLowCostDevMode ? json('0.1') : json('-1')  // -1 = no cap
 var appInsSamplingPct       = effectiveLowCostDevMode ? 10  : 100
-var appLogsDestination      = effectiveDirtyDevMode ? 'none' : 'log-analytics'
+var appLogsDestination      = effectiveDirtyDevMode ? '' : 'log-analytics'
 var earlyDevBudgetName      = 'helkinswarm-earlydev-budget-${userAlias}'
 
 var roleKvSecretsUser           = '4633458b-17de-408a-b874-0445c86b69e6'
@@ -583,9 +583,7 @@ resource containerAppsEnv 'Microsoft.App/managedEnvironments@2024-03-01' = {
   location: location
   properties: {
     appLogsConfiguration: effectiveDirtyDevMode
-      ? {
-          destination: appLogsDestination
-        }
+      ? null
       : {
           destination: appLogsDestination
           logAnalyticsConfiguration: {

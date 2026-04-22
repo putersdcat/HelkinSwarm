@@ -7,7 +7,9 @@ describe('router early-dev cost guard bicep wiring', () => {
 
     expect(source).toContain('param earlyDevCostGuard bool = true');
     expect(source).toContain('param earlyDevMonthlyBudgetUsd int = 10');
-    expect(source).toContain("var routerLogsDestination   = earlyDevCostGuard ? 'none' : 'log-analytics'");
+    expect(source).toContain("var routerLogsDestination   = earlyDevCostGuard ? '' : 'log-analytics'");
+    expect(source).toContain('appLogsConfiguration: earlyDevCostGuard');
+    expect(source).toContain('? null');
     expect(source).toContain("resource routerLaw 'Microsoft.OperationalInsights/workspaces@2023-09-01' = if (!earlyDevCostGuard) {");
     expect(source).toContain("resource routerAppi 'Microsoft.Insights/components@2020-02-02' = if (!earlyDevCostGuard) {");
     expect(source).toContain("resource routerBudget 'Microsoft.Consumption/budgets@2024-08-01' = if (earlyDevCostGuard && alertEmail != '') {");

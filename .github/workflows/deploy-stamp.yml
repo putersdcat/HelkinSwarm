@@ -772,8 +772,8 @@ jobs:
             --api-version 2024-03-01 \
             --query 'properties.appLogsConfiguration.destination' -o tsv)
 
-          if [ "$CAE_DEST" != "none" ]; then
-            echo "❌ EARLY_DEV_COST_GUARD violation: Container Apps environment logs destination is '$CAE_DEST' instead of 'none'."
+          if [ -n "$CAE_DEST" ] && [ "$CAE_DEST" != "None" ]; then
+            echo "❌ EARLY_DEV_COST_GUARD violation: Container Apps environment logs destination is '$CAE_DEST' instead of empty/none."
             exit 1
           fi
 
