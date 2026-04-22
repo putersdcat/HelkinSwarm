@@ -923,7 +923,17 @@ export class FoundryClient {
       options.bypassDegradedSkip ?? false,
     );
 
-    return mapApiResponse(raw);
+    const mapped = mapApiResponse(raw);
+
+    // #677: empty-completion detection. A 200 OK that yields zero completion
+    // tokens, zero tool calls, and zero text content is NOT a provider outage —
+    // it is an upstream model rejection (validation refusal, content filter,
+    // refusal-to-answer) that must surface as a distinct, non-retryable failure.
+    // Without this guard, the response is silently returned and the caller sees
+    // a mysterious blank turn (the original symptom in #677).
+    detectOpenRouterEmptyCompletion(mapped, routing.deploymentName);
+
+    return mapped;
   }
 
   /**
@@ -981,16 +991,61 @@ function buildOpenRouterFallbackChain(
 // Error
 // ---------------------------------------------------------------------------
 
+/**
+ * Classified failure modes for OpenRouter (and Azure AI Foundry) calls (#677).
+ *
+ * Drives the retry policy in `isRetryableError`:
+ *   retryable  : rate_limit, upstream_timeout, upstream_down, server_error
+ *   fail-fast  : credits, auth, validation, empty_response, unknown (default conservative)
+ *
+ * `empty_response` is the synthetic class for 200 OK responses that yield zero
+ * completion tokens, zero tool calls, and zero text content. These are NOT
+ * provider outages — they are upstream model rejections that must surface as
+ * a distinct, non-retryable failure rather than being silently re-attempted
+ * against the same prompt (issue #677 root cause).
+ */
+export type OpenRouterErrorClass =
+  | 'rate_limit'
+  | 'credits'
+  | 'upstream_timeout'
+  | 'upstream_down'
+  | 'auth'
+  | 'validation'
+  | 'empty_response'
+  | 'server_error'
+  | 'unknown';
+
+/**
+ * Map an HTTP status code to a default OpenRouter error class.
+ * Pure helper; exported for tests and call-site overrides (#677).
+ */
+export function classifyOpenRouterStatus(statusCode: number): OpenRouterErrorClass {
+  if (statusCode === 401 || statusCode === 403) return 'auth';
+  if (statusCode === 402) return 'credits';
+  if (statusCode === 429) return 'rate_limit';
+  if (statusCode === 408 || statusCode === 504 || statusCode === 524) return 'upstream_timeout';
+  if (statusCode === 502 || statusCode === 503) return 'upstream_down';
+  if (statusCode === 500) return 'server_error';
+  if (statusCode === 400 || statusCode === 422) return 'validation';
+  return 'unknown';
+}
+
 export class FoundryError extends Error {
+  /** Classified failure mode (#677). Auto-derived from statusCode when not supplied. */
+  public readonly errorClass: OpenRouterErrorClass;
+
   constructor(
     message: string,
     public readonly statusCode: number,
     public readonly deploymentName: string,
     /** Parsed Retry-After value in ms from 429 response headers (Azure AI Foundry, #313). */
     public readonly retryAfterMs?: number,
+    /** Optional explicit classification (overrides the statusCode-derived default). #677 */
+    errorClass?: OpenRouterErrorClass,
   ) {
     super(message);
     this.name = 'FoundryError';
+    this.errorClass = errorClass ?? classifyOpenRouterStatus(statusCode);
   }
 }
 
@@ -1295,11 +1350,23 @@ export function needsNewTokenParam(deploymentName: string): boolean {
 // Retryable error detection (#152, #218)
 // ---------------------------------------------------------------------------
 
-const RETRYABLE_STATUS_CODES = new Set([404, 429, 500, 502, 503, 504]);
+const RETRYABLE_STATUS_CODES = new Set([404, 408, 429, 500, 502, 503, 504, 524]);
+const RETRYABLE_ERROR_CLASSES = new Set<OpenRouterErrorClass>([
+  'rate_limit',
+  'upstream_timeout',
+  'upstream_down',
+  'server_error',
+]);
 
 /** Determine if an error is retryable (throttle, timeout, server error). */
 function isRetryableError(err: unknown): boolean {
   if (err instanceof FoundryError) {
+    // #677: classified error class is the source of truth when present.
+    // empty_response, validation, credits, auth are explicitly non-retryable
+    // even if their underlying statusCode would historically have qualified.
+    if (err.errorClass) {
+      return RETRYABLE_ERROR_CLASSES.has(err.errorClass);
+    }
     return RETRYABLE_STATUS_CODES.has(err.statusCode);
   }
   // AbortSignal.timeout() throws a DOMException with name "TimeoutError"
@@ -1501,6 +1568,37 @@ function mapOutgoingMessage(msg: ChatMessage): Record<string, unknown> {
     }));
   }
   return out;
+}
+
+/**
+ * Detect 200 OK responses that yielded zero completion tokens, zero tool calls,
+ * and zero text content. Throws a classified `empty_response` FoundryError so
+ * the caller surfaces a distinct non-retryable failure instead of silently
+ * returning a blank turn (#677).
+ *
+ * Exported for unit tests.
+ */
+export function detectOpenRouterEmptyCompletion(
+  response: ChatCompletionResponse,
+  deploymentName: string,
+): void {
+  const completionTokens = response.usage.completionTokens ?? 0;
+  const choice = response.choices[0];
+  const toolCallCount = choice?.message.toolCalls?.length ?? 0;
+  const rawContent = choice?.message.content ?? '';
+  const contentLen = typeof rawContent === 'string'
+    ? rawContent.trim().length
+    : rawContent.length; // ContentPart[] — non-empty array counts as content
+
+  if (completionTokens === 0 && toolCallCount === 0 && contentLen === 0) {
+    throw new FoundryError(
+      `OpenRouter empty completion: 0 tokens, 0 tool calls, 0 content (model=${deploymentName}, finish_reason=${choice?.finishReason ?? 'unknown'})`,
+      422,
+      deploymentName,
+      undefined,
+      'empty_response',
+    );
+  }
 }
 
 /**
