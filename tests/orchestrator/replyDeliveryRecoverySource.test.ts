@@ -18,4 +18,29 @@ describe('reply delivery recovery source guards', () => {
 
     expect(indexSource).toContain("import '../orchestrator/replyDeliveryRecoveryActivity.js';");
   });
+
+  it('[#711] recovered branch performs inline finalization (no reliance on post-loop continuation)', () => {
+    const overseerSource = readFileSync('src/orchestrator/overseer.ts', 'utf8');
+
+    // Locate the recovered branch.
+    const branchStart = overseerSource.indexOf('if (replyDeliveryRecovery.recovered) {');
+    expect(branchStart, 'recovered branch must exist').toBeGreaterThan(-1);
+    // Take a generous slice — branch ends at the closing brace + return.
+    const branchSlice = overseerSource.slice(branchStart, branchStart + 4000);
+
+    // Inline-finalization required actions, all WITHIN the recovered branch.
+    expect(branchSlice).toContain("'terminateOrchestrationActivity'");
+    expect(branchSlice).toContain("'PolicyOverrideApplied'");
+    expect(branchSlice).toContain("'ingressWindowStageActivity'");
+    expect(branchSlice).toContain("action: 'clear',");
+    expect(branchSlice).toContain('signalEntity');
+    expect(branchSlice).toContain('MIND_SESSION_GUARD_ENTITY_NAME');
+    expect(branchSlice).toContain("'release'");
+    expect(branchSlice).toContain("'TurnCompleted'");
+    expect(branchSlice).toContain('recoveredViaReplyDelivery: true');
+    // Must return directly from the branch — no `break` to fall through to
+    // the post-loop continuation path that was silently parking.
+    expect(branchSlice).toMatch(/return\s+\{[\s\S]*completedCorrelationId:\s*correlationId/);
+    expect(branchSlice).not.toMatch(/^\s*break;\s*$/m);
+  });
 });

@@ -595,6 +595,16 @@ function* processTurn(
           sessionTimer.cancel();
           spinnerTimer.cancel();
 
+          // [#711] INLINE COMPLETE FINALIZATION — do NOT trust the loop+post-loop
+          // continuation. Forensic trace from the legacy hub (rg-helkinswarm-a7f2,
+          // April 2026) showed the recovered branch reaching TaskCompleted with
+          // recovered=true and then the orchestrator silently parking
+          // (OrchestratorCompleted IsPlayed=False, zero further yields, no
+          // ExecutionCompleted) — leaving the instance Running indefinitely and
+          // holding MindSessionGuard against the user. Whatever the underlying
+          // replay anomaly was, perform every finalization yield + entity signal
+          // RIGHT HERE inside the recovered branch so a malformed continuation
+          // cannot leave us as a Running orphan.
           try {
             yield context.df.callActivity('terminateOrchestrationActivity', {
               instanceId: sessionInstanceId,
@@ -615,20 +625,44 @@ function* processTurn(
             },
           } satisfies EmitOrchestratorTelemetryInput);
 
-          sessionDone = true;
-          sessionResult = {
-            response: '(reply-delivered recovery after missing sub-orchestrator completion)',
-            cleanResponse: '(reply-delivered recovery after missing sub-orchestrator completion)',
-            tokensUsed: 0,
-            promptTokens: 0,
-            model: 'reply-delivery-recovered',
-            toolCalls: [],
-            toolResults: null,
-            replySent: true,
-            safetyPassed: true,
-            duplicateReplaySuppressed: true,
-          } satisfies SessionResult;
-          break;
+          // Clear the ingress window stage so the next user message for this
+          // correlation is not silently swallowed as duplicate-active.
+          yield context.df.callActivity('ingressWindowStageActivity', {
+            action: 'clear',
+            correlationId: sessionInput.correlationId,
+            userId: state.userId,
+          } satisfies IngressWindowStageInput);
+
+          // Release the mind-session guard so the user is not stuck holding a
+          // dead-instance lock. Done before the final telemetry yield so even
+          // a telemetry failure cannot keep the guard pinned.
+          context.df.signalEntity(
+            new df.EntityId(MIND_SESSION_GUARD_ENTITY_NAME, state.userId),
+            'release',
+            MindSessionGuardReleaseInputSchema.parse({
+              instanceId: context.df.instanceId,
+              correlationId: sessionInput.correlationId,
+            }),
+          );
+
+          yield context.df.callActivity('emitOrchestratorTelemetryActivity', {
+            name: 'TurnCompleted',
+            correlationId,
+            userId: state.userId,
+            properties: {
+              instanceId: context.df.instanceId,
+              replySent: true,
+              safetyPassed: true,
+              model: 'reply-delivery-recovered',
+              duplicateReplaySuppressed: true,
+              recoveredViaReplyDelivery: true,
+            },
+          } satisfies EmitOrchestratorTelemetryInput);
+
+          return {
+            completedCorrelationId: correlationId,
+            bufferedIngressSignals,
+          } satisfies ProcessTurnResult;
         }
 
         if (spinnerTicks < MAX_SPINNER_TICKS) {
