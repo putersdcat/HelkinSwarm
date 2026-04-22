@@ -47,7 +47,7 @@ function shouldRunLeaderDelegationPass(
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Durable Functions generator
 df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task, SwarmOrchestratorResult, any> {
   const input = context.df.getInput() as SwarmOrchestratorInput;
-  const { plan, correlationId, userId, userMessage } = input;
+  const { plan, correlationId, userId, userMessage, parentBudgetMs } = input;
   const allAgentNames = plan.agents.map(a => a.name);
   const leaderName = plan.leader.name;
   const allNames = [leaderName, ...allAgentNames];
@@ -76,6 +76,18 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
   // -----------------------------------------------------------------------
   // 2. Fan-out: start all workers in parallel
   // -----------------------------------------------------------------------
+  // [#707] Internal self-deadline. The parent (sessionOrchestrator) races
+  // this sub-orchestrator against its own `swarmTimer` and forwards the same
+  // budget here as `parentBudgetMs`. We arm an internal deadline a few
+  // seconds shorter so the swarm can self-abort with a graceful partial
+  // result BEFORE the parent's timer wins, eliminating the silent-orphan
+  // race documented in #706 / #707. When `parentBudgetMs` is omitted (legacy
+  // callers), no internal deadline is enforced.
+  const SWARM_INTERNAL_DEADLINE_GRACE_MS = 30_000;
+  const swarmStartUtcMs = context.df.currentUtcDateTime.getTime();
+  const internalDeadlineUtcMs = typeof parentBudgetMs === 'number' && parentBudgetMs > SWARM_INTERNAL_DEADLINE_GRACE_MS
+    ? swarmStartUtcMs + (parentBudgetMs - SWARM_INTERNAL_DEADLINE_GRACE_MS)
+    : Number.POSITIVE_INFINITY;
   const workerTasks: df.Task[] = [];
   const workerTimers: df.TimerTask[] = [];
   // Save inputs so the second-pass block can reuse them for follow-up activities (#644 Slice 1)
@@ -267,6 +279,54 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
 
     // Not fatal — record the result
     workerResults.push(result);
+
+    // [#707] Internal deadline check — if the parent's outer `swarmTimer`
+    // is about to win, abort the fan-in loop with a graceful partial result
+    // so the parent observes a clean return instead of a silently-orphaned
+    // sub-orchestrator. The leader synthesis is intentionally SKIPPED here:
+    // invoking it would burn another ≤180s and likely tip us past the
+    // parent's hard cap.
+    if (context.df.currentUtcDateTime.getTime() >= internalDeadlineUtcMs) {
+      const completedAgents = workerResults.map(r => r.agentName).join(', ');
+      const partialSynthesis = `⚡ **Swarm aborted by internal deadline (#707)**\n\n` +
+        `The swarm reached its internal time budget (~${Math.round((parentBudgetMs ?? 0) / 1000)}s) ` +
+        `before all workers and Helkin's synthesis could complete. ` +
+        `Workers that returned: ${completedAgents || '(none)'}. ` +
+        `No final synthesis was produced. Please retry, or break the request into a smaller question.`;
+      const partialResult: SwarmOrchestratorResult = {
+        response: partialSynthesis,
+        success: false,
+        totalTokensUsed: workerResults.reduce((s, r) => s + r.tokensUsed, 0),
+        agentResults: [...workerResults],
+        leaderResult: {
+          synthesis: partialSynthesis,
+          success: false,
+          tokensUsed: 0,
+          roundsUsed: 0,
+          agentsHeardFrom: workerResults.map(r => r.agentName),
+          model: 'swarm-internal-deadline',
+          error: 'Internal deadline exceeded before leader synthesis (#707)',
+        },
+        chatroomTranscript: [...allChatroomMessages],
+        swarmId: plan.swarmId,
+        swarmCost: {
+          decomposerTokens: 0,
+          workerTokens: workerResults.reduce((s, r) => s + r.tokensUsed, 0),
+          leaderTokens: 0,
+          totalTokens: workerResults.reduce((s, r) => s + r.tokensUsed, 0),
+          totalCost: workerResults.reduce((s, r) => s + ((r as SwarmWorkerResult & { cost?: number }).cost ?? 0), 0),
+          agentBreakdown: workerResults.map(r => ({
+            agent: r.agentName,
+            tokens: r.tokensUsed,
+            model: r.model,
+            toolsUsed: r.toolsUsed,
+            durationMs: r.durationMs,
+            cost: (r as SwarmWorkerResult & { cost?: number }).cost,
+          })),
+        },
+      };
+      return partialResult;
+    }
 
     // Send progress update after each worker completes (#634)
     if (input.conversationReference) {

@@ -1452,12 +1452,22 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             });
           }
 
+          // #688 2026-04-21: outer cap must exceed worker×2-retries + leader +
+          // buffer, otherwise the sub-orchestrator is killed mid-cascade.
+          // Worker outer timer = 240s, leader = 180s; allow one worker retry
+          // (∼480s) + leader synthesis (∼180s) + overhead → 720s floor.
+          const swarmOuterTimeoutMs = Math.max(swarmDecomposerResult.plan.timeoutMs * 6, 720_000);
           const swarmInput: SwarmOrchestratorInput = {
             plan: swarmDecomposerResult.plan,
             correlationId,
             userId: input.state.userId,
             conversationReference: input.conversationReference,
             userMessage: userMessageForLlm,
+            // [#707] Hand the parent’s wall-clock budget to the sub-orchestrator
+            // so it can self-abort gracefully a few seconds before this timer
+            // preempts. Without this, retried-worker chains can run ≫720s and
+            // be silently orphaned when the parent’s swarmTimer wins.
+            parentBudgetMs: swarmOuterTimeoutMs,
           };
           const ackSpanStart = context.df.currentUtcDateTime.getTime();
           const SWARM_PERSONA_EMOJI: Record<string, string> = { Helkin: '🤖', Benjamin: '🔍', Harper: '🧪', Lucas: '📊' };
@@ -1473,11 +1483,6 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             expectedInstanceId: input.overseerInstanceId,
           } satisfies SendReplyInput);
           spans.push({ label: 'swarm-ack', durationMs: context.df.currentUtcDateTime.getTime() - ackSpanStart });
-          // #688 2026-04-21: outer cap must exceed worker×2-retries + leader +
-          // buffer, otherwise the sub-orchestrator is killed mid-cascade.
-          // Worker outer timer = 240s, leader = 180s; allow one worker retry
-          // (~480s) + leader synthesis (~180s) + overhead → 720s floor.
-          const swarmOuterTimeoutMs = Math.max(swarmDecomposerResult.plan.timeoutMs * 6, 720_000);
           const swarmTimer = context.df.createTimer(
             new Date(context.df.currentUtcDateTime.getTime() + swarmOuterTimeoutMs),
           );

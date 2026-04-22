@@ -254,6 +254,16 @@ export interface SwarmOrchestratorInput {
   userId: string;
   conversationReference?: unknown;
   userMessage: string;
+  /**
+   * [#707] Wall-clock budget the parent (sessionOrchestrator) has allocated
+   * to this swarm sub-orchestration before it preempts via its outer
+   * `swarmTimer`. The sub-orchestrator self-aborts with a graceful partial
+   * result a few seconds before this deadline so the parent never observes a
+   * race-lost orphaned sub-orchestrator (the silent-drop pattern documented in
+   * #706 / #707). Optional and backward-compatible: when omitted, the swarm
+   * runs without an internal deadline (legacy behaviour).
+   */
+  parentBudgetMs?: number;
 }
 
 export interface SwarmAgentCost {
