@@ -337,6 +337,14 @@ Your specific assignment: ${input.task}
 4. If you find something that another teammate should investigate, tell them via chatroom_send.
 5. When your task is complete, send a final status message to Helkin.
 
+## Per-Round Chatroom Mandate (#710 Gap 3)
+The chatroom IS your shared cognition. Silent rounds make Helkin synthesize blind.
+**EVERY round in which you call a tool, you MUST also call chatroom_send** with a short \`interim_finding\` message describing what the tool result told you (or what is still missing). One sentence is enough. Examples:
+- chatroom_send(to="Helkin", contentType="interim_finding"): "web_fetch_page returned the menu — the chocolate ganache uses 70% cocoa, no nuts. Still verifying allergen statement."
+- chatroom_send(to="Helkin", contentType="interim_finding"): "places_search returned 4 candidates in 5km. Filtering by rating > 4.3 next."
+
+Do NOT batch findings to the final round. Helkin and your teammates need them as they happen.
+
 Note on chatroom delivery: Messages you send are queued and delivered to the recipient at their next activation. Teammates running in parallel with you will not see your messages in real time — but the messages will be waiting for them on their next swarm turn or second-pass wakeup.
 
 ## Synchronization (swarm_wait)

@@ -65,6 +65,8 @@ export const ChatroomMessageSchema = z.object({
     'vote',
     'error',
     'status',
+    /** Worker mid-round summary of what the latest tool result revealed (#710 Gap 3) */
+    'interim_finding',
     /** Worker requests orchestrator to execute a requiresSubAgent tool in an isolated sub-session (#638) */
     'sub_session_request',
     /** Orchestrator returns the result of a sub-session execution to the requesting agent (#638) */

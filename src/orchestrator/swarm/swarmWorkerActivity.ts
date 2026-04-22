@@ -107,7 +107,7 @@ function buildWorkerToolSchemas(assignedToolNames: string[]): ToolDefinition[] {
           },
           contentType: {
             type: 'string',
-            enum: ['text', 'partial_result', 'cross_verification', 'question', 'status', 'error'],
+            enum: ['text', 'partial_result', 'cross_verification', 'question', 'status', 'interim_finding', 'error'],
             description: 'Transport-layer type (default: text). Orthogonal to the canonical messageType inside the payload.',
           },
         },
@@ -685,6 +685,38 @@ df.app.activity('swarmWorkerActivity', {
         `Rounds: ${messages.filter(m => m.role === 'assistant').length} | ` +
         `Findings: ${keyFindings || 'sent to chatroom'}`;
       await sessionMm.storeAgentSessionSummary(input.agentName, sessionSummary).catch(() => { /* non-fatal */ });
+
+      // [#710 Gap 3] Low-chatter detection. If the worker burned multiple
+      // tool-using rounds but barely posted to the chatroom, the leader is
+      // synthesizing partly-blind. Append a System notice so Helkin can
+      // explicitly call out the silent contributor in the final answer,
+      // and emit a telemetry event so we can track the rate over time.
+      const toolRoundCount = messages.filter(m => m.role === 'assistant').length;
+      const lowChatter = toolCallsMade >= 3 && chatroomMessagesSent < Math.ceil(toolRoundCount / 2);
+      if (lowChatter) {
+        trackEvent({
+          name: 'SwarmWorkerLowChatter',
+          correlationId: input.correlationId,
+          userId: input.userId,
+          properties: {
+            agentName: input.agentName,
+            toolCallsMade,
+            chatroomMessagesSent,
+            toolRoundCount,
+            swarmId: input.swarmId,
+          },
+        });
+        pendingChatroomMessages.push({
+          id: crypto.randomUUID(),
+          from: 'System',
+          to: 'Helkin',
+          content: `\u26A0\uFE0F ${input.agentName} executed ${toolCallsMade} tool calls across ${toolRoundCount} rounds but only posted ${chatroomMessagesSent} chatroom message(s). Their contribution may be incomplete \u2014 weight it accordingly and consider asking a follow-up if their findings look thin.`,
+          contentType: 'status',
+          timestamp: Date.now(),
+          correlationId: input.swarmCorrelationId,
+        });
+        chatroomMessagesSent++;
+      }
 
       trackEvent({
         name: 'SwarmWorkerCompleted',

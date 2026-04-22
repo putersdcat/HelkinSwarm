@@ -115,6 +115,7 @@ export type TelemetryEventName =
   | 'OpenRouterConcurrencyGate'
   | 'SwarmWorkerStarted'
   | 'SwarmWorkerCompleted'
+  | 'SwarmWorkerLowChatter'
   | 'SwarmWorkerBudgetExceeded'
   | 'SwarmWorkerError'
   | 'SwarmWorkerWaitRequested'
