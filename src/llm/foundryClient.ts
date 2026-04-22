@@ -282,6 +282,13 @@ export class FoundryClient {
     const budgetStart = Date.now();
     const effectiveBudgetMs = options.maxBudgetMs ?? FALLBACK_BUDGET_MS;
 
+    // Retry Grok once on 429 before falling to minimax (#690 / #708).
+    // CHAIN-SCOPED: this flag must NOT be re-declared inside the for-loop
+    // body. If it is, every `i--; continue;` re-enters the iteration with
+    // a fresh `false`, allowing Grok to be retried on every 429 in a row
+    // until the FALLBACK_BUDGET_MS runs out — never reaching minimax.
+    let grok429RetryDone = false;
+
     for (let i = 0; i < chain.length; i++) {
       const routing = chain[i];
 
@@ -305,13 +312,6 @@ export class FoundryClient {
       const perModelTimeout = Math.max(MIN_PER_MODEL_TIMEOUT_MS, Math.min(baseTimeout, remaining));
 
       attemptedModels.push(routing.deploymentName);
-
-      // Retry Grok once on 429 before falling to minimax (#690).
-      // When 4 workers burst simultaneously and the 4th is queued behind the
-      // concurrency gate, Grok is often degraded by the time the 4th slot is
-      // admitted. Retrying on 429 gives Grok a real chance to recover and
-      // prevents the fallback chain from firing prematurely.
-      let grok429RetryDone = false;
 
       try {
         const forcedFailure = consumeForcedRetryableFailure(routing.deploymentName);
