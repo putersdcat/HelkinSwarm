@@ -107,6 +107,8 @@ export type TelemetryEventName =
   | 'SwarmDeterministicActivation'
   | 'SwarmActivationDecision'
   | 'SwarmStaleRunningReconciled'
+  | 'SwarmStaleRunningRecoveryNotified'
+  | 'SwarmStaleRunningRecoveryNotifyFailed'
   | 'OpenRouterRateLimitSnapshot'
   | 'OpenRouterUpstreamRetry'
   | 'OpenRouterConcurrencyGate'
