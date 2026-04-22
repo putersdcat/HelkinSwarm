@@ -114,6 +114,7 @@ export type TelemetryEventName =
   | 'OpenRouterUpstreamRetry'
   | 'OpenRouterConcurrencyGate'
   | 'OpenRouterEmptyCompletion'
+  | 'OpenRouterFinishReasonFailure'
   | 'SwarmWorkerStarted'
   | 'SwarmWorkerCompleted'
   | 'SwarmWorkerLowChatter'

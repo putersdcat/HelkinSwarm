@@ -6,6 +6,7 @@ vi.mock('../../src/observability/telemetry.js', () => ({ trackEvent: trackEventM
 import {
   classifyOpenRouterStatus,
   detectOpenRouterEmptyCompletion,
+  detectOpenRouterFinishReasonFailure,
   FoundryError,
   type OpenRouterErrorClass,
 } from '../../src/llm/foundryClient.js';
@@ -159,5 +160,77 @@ describe('detectOpenRouterEmptyCompletion (#677)', () => {
     )).not.toThrow();
 
     expect(trackEventMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('detectOpenRouterFinishReasonFailure (#677)', () => {
+  it('classifies finish_reason="content_filter" as moderation (fail-fast, 422)', () => {
+    let caught: FoundryError | undefined;
+    try {
+      detectOpenRouterFinishReasonFailure(
+        makeResponse({ completionTokens: 0, content: '', finishReason: 'content_filter' }),
+        'x-ai/grok-4.1-fast',
+        'corr-mod',
+      );
+    } catch (err) {
+      caught = err as FoundryError;
+    }
+    expect(caught).toBeInstanceOf(FoundryError);
+    expect(caught?.errorClass).toBe('moderation');
+    expect(caught?.statusCode).toBe(422);
+
+    expect(trackEventMock).toHaveBeenCalledTimes(1);
+    expect(trackEventMock).toHaveBeenCalledWith({
+      name: 'OpenRouterFinishReasonFailure',
+      correlationId: 'corr-mod',
+      properties: {
+        model: 'x-ai/grok-4.1-fast',
+        finishReason: 'content_filter',
+        errorClass: 'moderation',
+        promptTokens: 100,
+        completionTokens: 0,
+      },
+    });
+  });
+
+  it('classifies finish_reason="error" as upstream_down (retryable, 502)', () => {
+    let caught: FoundryError | undefined;
+    try {
+      detectOpenRouterFinishReasonFailure(
+        makeResponse({ completionTokens: 0, content: '', finishReason: 'error' }),
+        'x-ai/grok-4.1-fast',
+        'corr-err',
+      );
+    } catch (err) {
+      caught = err as FoundryError;
+    }
+    expect(caught).toBeInstanceOf(FoundryError);
+    expect(caught?.errorClass).toBe('upstream_down');
+    expect(caught?.statusCode).toBe(502);
+
+    expect(trackEventMock).toHaveBeenCalledTimes(1);
+    expect(trackEventMock.mock.calls[0]?.[0].properties).toMatchObject({
+      finishReason: 'error',
+      errorClass: 'upstream_down',
+    });
+  });
+
+  it('does NOT throw on benign finish_reason values (stop, tool_calls, length)', () => {
+    for (const reason of ['stop', 'tool_calls', 'length'] as const) {
+      expect(() => detectOpenRouterFinishReasonFailure(
+        makeResponse({ completionTokens: 5, content: 'hi', finishReason: reason }),
+        'x-ai/grok-4.1-fast',
+        'corr-ok',
+      )).not.toThrow();
+    }
+    expect(trackEventMock).not.toHaveBeenCalled();
+  });
+
+  it('falls back to correlationId="unknown" when not provided', () => {
+    expect(() => detectOpenRouterFinishReasonFailure(
+      makeResponse({ finishReason: 'content_filter' }),
+      'x-ai/grok-4.1-fast',
+    )).toThrowError(FoundryError);
+    expect(trackEventMock.mock.calls[0]?.[0].correlationId).toBe('unknown');
   });
 });

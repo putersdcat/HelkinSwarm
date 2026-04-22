@@ -48,7 +48,9 @@ export function textContent(content: string | ContentPart[] | undefined): string
 
 export interface ChatCompletionChoice {
   message: ChatMessage;
-  finishReason: 'stop' | 'tool_calls' | 'length' | 'content_filter' | 'function_call';
+  // 'error' is OpenRouter-specific (#677): provider-side failure surfaced via finish_reason
+  // instead of an HTTP error. Caught + classified by detectOpenRouterFinishReasonFailure.
+  finishReason: 'stop' | 'tool_calls' | 'length' | 'content_filter' | 'function_call' | 'error';
   index: number;
 }
 
@@ -951,6 +953,13 @@ export class FoundryClient {
 
     const mapped = mapApiResponse(raw);
 
+    // #677: finish_reason classification. OpenRouter (and underlying providers)
+    // sometimes return 200 OK with finish_reason='content_filter' (moderation
+    // refusal) or finish_reason='error' (upstream provider failure). Catch these
+    // BEFORE the empty-completion detector so they map to the more specific
+    // 'moderation' / 'upstream_down' error classes instead of 'empty_response'.
+    detectOpenRouterFinishReasonFailure(mapped, routing.deploymentName, correlationId);
+
     // #677: empty-completion detection. A 200 OK that yields zero completion
     // tokens, zero tool calls, and zero text content is NOT a provider outage —
     // it is an upstream model rejection (validation refusal, content filter,
@@ -1038,6 +1047,7 @@ export type OpenRouterErrorClass =
   | 'auth'
   | 'validation'
   | 'empty_response'
+  | 'moderation'
   | 'server_error'
   | 'unknown';
 
@@ -1594,6 +1604,69 @@ function mapOutgoingMessage(msg: ChatMessage): Record<string, unknown> {
     }));
   }
   return out;
+}
+
+/**
+ * Detect 200 OK responses whose finish_reason signals a provider-level outcome
+ * that should not be treated as a normal stop. Maps:
+ *   - `content_filter` -> moderation (fail-fast, distinct from empty_response)
+ *   - `error`          -> upstream_down (retryable; OpenRouter signals provider failure here)
+ *
+ * Throws a classified FoundryError so callers (and the fallback chain) see the
+ * specific class instead of falling through to the generic empty-completion
+ * detector. (#677)
+ *
+ * Exported for unit tests.
+ */
+export function detectOpenRouterFinishReasonFailure(
+  response: ChatCompletionResponse,
+  deploymentName: string,
+  correlationId?: string,
+): void {
+  const choice = response.choices[0];
+  const finishReason = choice?.finishReason;
+
+  if (finishReason === 'content_filter') {
+    trackEvent({
+      name: 'OpenRouterFinishReasonFailure',
+      correlationId: correlationId ?? 'unknown',
+      properties: {
+        model: deploymentName,
+        finishReason,
+        errorClass: 'moderation',
+        promptTokens: response.usage.promptTokens ?? 0,
+        completionTokens: response.usage.completionTokens ?? 0,
+      },
+    });
+    throw new FoundryError(
+      `OpenRouter response refused by content filter (model=${deploymentName}, finish_reason=content_filter)`,
+      422,
+      deploymentName,
+      undefined,
+      'moderation',
+    );
+  }
+
+  if (finishReason === 'error') {
+    trackEvent({
+      name: 'OpenRouterFinishReasonFailure',
+      correlationId: correlationId ?? 'unknown',
+      properties: {
+        model: deploymentName,
+        finishReason,
+        errorClass: 'upstream_down',
+        promptTokens: response.usage.promptTokens ?? 0,
+        completionTokens: response.usage.completionTokens ?? 0,
+      },
+    });
+    throw new FoundryError(
+      `OpenRouter upstream provider error reported via finish_reason=error (model=${deploymentName})`,
+      502,
+      deploymentName,
+      undefined,
+      'upstream_down',
+    );
+  }
 }
 
 /**
