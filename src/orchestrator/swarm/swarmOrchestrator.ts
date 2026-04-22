@@ -754,7 +754,9 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
       workerTokens,
       leaderTokens: leaderResult.tokensUsed,
       totalTokens,
-      totalCost: workerResults.reduce((s, r) => s + ((r as SwarmWorkerResult & { cost?: number }).cost ?? 0), 0),
+      totalCost:
+        workerResults.reduce((s, r) => s + ((r as SwarmWorkerResult & { cost?: number }).cost ?? 0), 0)
+        + (leaderResult.cost ?? 0),
       agentBreakdown: workerResults.map(r => ({
         agent: r.agentName,
         tokens: r.tokensUsed,

@@ -245,6 +245,8 @@ export interface SwarmLeaderResult {
   agentsHeardFrom: string[];
   model: string;
   error?: string;
+  /** Actual provider cost (USD) for the leader synthesis call (#664/footer-cost). */
+  cost?: number;
   /** Delegation messages produced by Leader in delegationMode.
    *  Returned to orchestrator for distribution to worker second-pass. (#644 Slice 2 / #645) */
   _pendingChatroomMessages?: ChatroomMessage[];

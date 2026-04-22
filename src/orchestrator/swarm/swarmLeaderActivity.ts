@@ -345,6 +345,7 @@ df.app.activity('swarmLeaderActivity', {
 
       const synthesis = textContent(response.choices[0]?.message?.content);
       const totalTokens = response.usage?.totalTokens ?? 0;
+      const leaderCost = response.usage?.providerCost;
 
       // [#699] Empty synthesis (LLM returned no content, or returned only
       // tool_calls/reasoning with no final text) is functionally indistinguishable
@@ -395,6 +396,7 @@ df.app.activity('swarmLeaderActivity', {
         roundsUsed: 1,
         agentsHeardFrom,
         model: response.model,
+        cost: leaderCost,
       };
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);

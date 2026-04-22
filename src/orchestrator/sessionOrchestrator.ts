@@ -1614,6 +1614,8 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             model: `swarm:${swarmModel}`,
             promptTokens: 0,
             completionTokens: swarmTokens,
+            providerCost: swarmResultData?.swarmCost?.totalCost,
+            providerCostUnit: swarmResultData?.swarmCost?.totalCost !== undefined ? 'credits' : undefined,
             spans,
             toolCalls: swarmResultData ? swarmResultData.agentResults.map((a) => `${a.agentName}:${a.toolCallsMade}t${a.success ? '✓' : '✗'}`) : [],
             safetyPassed: true,
