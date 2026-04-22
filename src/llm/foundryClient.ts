@@ -6,7 +6,7 @@ import * as https from 'node:https';
 import { getFallbackChain, getModelCapacityProfile, getModelRouting, type ModelRouting } from './modelRouter.js';
 import { getBearerToken } from '../auth/identity.js';
 import { getEnvConfig } from '../config/envConfig.js';
-import { isModelDegraded, markModelDegraded, clearModelDegraded, syncSharedDegradedModels } from './modelCircuitBreaker.js';
+import { isModelDegraded, markModelDegraded, clearModelDegraded, syncSharedDegradedModels, getDegradedModels } from './modelCircuitBreaker.js';
 import { consumeForcedRetryableFailure } from './modelFailoverProof.js';
 import { reportLlmSuccess, reportLlmFailure, registerModels, isAllModelsDown, isModelTrackedDown } from './llmHealthTracker.js';
 import { trackEvent } from '../observability/telemetry.js';
@@ -482,6 +482,26 @@ export class FoundryClient {
     }
 
     // All candidates exhausted or budget spent.
+    // #698: Distinguish "never attempted any model" (every chain entry was skipped
+    // because of cooldown) from "attempted and all failed". The former produces an
+    // empty `attemptedModels` and yields a misleading error string
+    // ("... after attempts: "). For the must-succeed leader synthesis stage of a
+    // swarm turn, this is the failure mode that surfaces as `leader:0t` with no
+    // diagnostic context.
+    if (attemptedModels.length === 0 && lastError === undefined) {
+      const degradedNow = new Map(getDegradedModels().map((d) => [d.deploymentName, d]));
+      const skipped = chain.map((r) => {
+        const entry = degradedNow.get(r.deploymentName);
+        if (entry) {
+          const remainingMs = Math.max(0, entry.cooldownMs - (Date.now() - entry.degradedAt));
+          return { deploymentName: r.deploymentName, reason: entry.reason, cooldownRemainingMs: remainingMs };
+        }
+        // No degraded entry but still skipped — must be tracked-down via the health tracker.
+        return { deploymentName: r.deploymentName, reason: 'tracked-down', cooldownRemainingMs: 0 };
+      });
+      throw new FoundryAllSkippedDegradedError(skipped);
+    }
+
     throw new FoundryFallbackExhaustedError(
       attemptedModels,
       failoverSteps,
@@ -958,6 +978,27 @@ export class FoundryAllModelsDownError extends Error {
 }
 
 /**
+ * Thrown when the fallback loop completed without attempting ANY model because every
+ * chain entry was in cooldown (degraded) or tracked-down at request time. Distinct from
+ * `FoundryFallbackExhaustedError` (= attempts were made and all failed) and from
+ * `FoundryAllModelsDownError` (= circuit-open fast-fail at request entry). (#698)
+ *
+ * Common trigger: the swarm leader synthesis call fires immediately after 3 concurrent
+ * worker calls have driven the primary model into a 5-minute 429 cooldown.
+ */
+export class FoundryAllSkippedDegradedError extends Error {
+  constructor(
+    public readonly skipped: Array<{ deploymentName: string; reason: string; cooldownRemainingMs: number }>,
+  ) {
+    const summary = skipped
+      .map((s) => `${s.deploymentName}(${s.reason}, cooldown ${Math.ceil(s.cooldownRemainingMs / 1000)}s)`)
+      .join(', ');
+    super(`All ${skipped.length} candidate models were in cooldown or tracked-down — no request attempted: ${summary}`);
+    this.name = 'FoundryAllSkippedDegradedError';
+  }
+}
+
+/**
  * Thrown from withOpenRouterConcurrencySlot when a degraded model is detected at the
  * gate entrance — signals the caller to skip this model and go straight to its fallback
  * without waiting in the queue (#690).
@@ -1009,6 +1050,13 @@ export function buildLlmFailureNotice(err: unknown): string {
     return '⚠️ All AI models are currently unreachable. Your message cannot be processed right now. The system will auto-recover when models come back online.';
   }
 
+  if (err instanceof FoundryAllSkippedDegradedError) {
+    const minCooldownSec = Math.ceil(
+      Math.min(...err.skipped.map((s) => s.cooldownRemainingMs)) / 1000,
+    );
+    return `⚠️ Operational note: every fallback model is in cooldown (concurrent traffic just tripped rate limits). Recovery in ~${minCooldownSec}s. Please retry shortly.`;
+  }
+
   if (err instanceof FoundryFallbackExhaustedError) {
     const quotaIssue = err.failoverSteps.some((step) => step.statusCode === 429)
       || (err.lastError instanceof FoundryError && err.lastError.statusCode === 429);
@@ -1042,6 +1090,10 @@ export function buildLlmFailureNotice(err: unknown): string {
 
 export function shouldPageOutForLlmFailure(err: unknown): boolean {
   if (err instanceof FoundryAllModelsDownError) {
+    return true;
+  }
+
+  if (err instanceof FoundryAllSkippedDegradedError) {
     return true;
   }
 
