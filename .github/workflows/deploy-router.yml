@@ -204,8 +204,8 @@ jobs:
           CAE_ID=$(az resource show --resource-group "$RG" --name helkinswarm-cae-router --resource-type 'Microsoft.App/managedEnvironments' --api-version 2024-03-01 --query id -o tsv)
           CAE_DEST=$(az resource show --resource-group "$RG" --name helkinswarm-cae-router --resource-type 'Microsoft.App/managedEnvironments' --api-version 2024-03-01 --query 'properties.appLogsConfiguration.destination' -o tsv)
 
-          if [ "$CAE_DEST" != "azure-monitor" ]; then
-            echo "❌ Router EARLY_DEV_COST_GUARD violation: CAE logs destination is '$CAE_DEST' instead of 'azure-monitor'."
+          if [ -n "$CAE_DEST" ] && [ "$CAE_DEST" != "None" ]; then
+            echo "❌ Router EARLY_DEV_COST_GUARD violation: CAE logs destination is '$CAE_DEST' instead of empty/none."
             exit 1
           fi
 
