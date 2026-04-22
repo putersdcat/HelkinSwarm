@@ -1229,6 +1229,54 @@
                     (cost.totalCost != null ? ' \u00B7 <strong>Cost:</strong> ' + fmtMoney(cost.totalCost) : '') +
                     ' \u00B7 <strong>Status:</strong> <span class="badge badge-' + stBadge + '">' + stLabel + '</span></p></div>';
 
+                  // [#710 Gap 1] Failure Summary card — renders only when something failed.
+                  // Shows per-agent errors, retry counts, fatal markers, leader error, and
+                  // persistence warnings so the owner can see WHY a swarm failed without
+                  // needing App Insights / Kusto access.
+                  var failedAgents = agents.filter(function (a) { return !a.success; });
+                  var leaderErr = detail.leaderError;
+                  var persistWarn = detail.persistenceWarning;
+                  var persistMode = detail.persistenceMode;
+                  var hasPersistIssue = !!persistWarn || persistMode === 'compact-fallback';
+                  if (failedAgents.length > 0 || leaderErr || hasPersistIssue) {
+                    var rows = [];
+                    failedAgents.forEach(function (a) {
+                      var emoji = getAgentEmoji(a.agentName);
+                      var stage = a.fatal ? 'worker (fatal)' : 'worker';
+                      var retryInfo = (a.retryAttempts || 0) > 0
+                        ? ' \u2022 retried \xD7' + a.retryAttempts
+                        : '';
+                      rows.push('<tr>' +
+                        '<td><strong>' + emoji + ' ' + esc(a.agentName) + '</strong></td>' +
+                        '<td>' + esc(stage) + retryInfo + '</td>' +
+                        '<td><code>' + esc(a.model || '\u2014') + '</code></td>' +
+                        '<td style="font-family:monospace;font-size:12px">' + esc(a.error || '(no error string captured)') + '</td>' +
+                        '</tr>');
+                    });
+                    if (leaderErr) {
+                      rows.push('<tr>' +
+                        '<td><strong>\uD83E\uDD16 Helkin (Leader)</strong></td>' +
+                        '<td>leader synthesis</td>' +
+                        '<td><code>' + esc(detail.leaderModel || '\u2014') + '</code></td>' +
+                        '<td style="font-family:monospace;font-size:12px">' + esc(leaderErr) + '</td>' +
+                        '</tr>');
+                    }
+                    if (hasPersistIssue) {
+                      rows.push('<tr>' +
+                        '<td><strong>\uD83D\uDCBE persistence</strong></td>' +
+                        '<td>' + esc(persistMode || 'full') + '</td>' +
+                        '<td>\u2014</td>' +
+                        '<td style="font-family:monospace;font-size:12px">' + esc(persistWarn || '(compact fallback fired)') + '</td>' +
+                        '</tr>');
+                    }
+                    html += '<div class="card" style="border-left:3px solid var(--err,#e06c75)">' +
+                      '<h2>\u26A0\uFE0F Failure Summary</h2>' +
+                      '<table>' +
+                      '<tr><th>Component</th><th>Stage</th><th>Model</th><th>Error</th></tr>' +
+                      rows.join('') +
+                      '</table></div>';
+                  }
+
                   // Agent breakdown — with emoji and cost
                   html += '<div class="card"><h2>Agent Breakdown</h2>' +
                     (agents.length === 0 && isRunning

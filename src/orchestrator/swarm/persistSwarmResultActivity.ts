@@ -56,6 +56,9 @@ interface SwarmExecutionDocument {
   leaderSynthesis: string;
   leaderModel: string;
   leaderAgentsHeardFrom: string[];
+  // [#710 Gap 1] Persist the leader's error string so the Swarm tab can
+  // render a failure-summary card without requiring App Insights access.
+  leaderError?: string;
   transcriptTruncated: boolean;
   persistenceMode: 'full' | 'compact-fallback';
   persistenceWarning?: string;
@@ -122,6 +125,8 @@ export function buildSwarmExecutionDocument(
     leaderSynthesis: truncateText(result.leaderResult.synthesis, compact ? 1500 : MAX_SYNTHESIS_CHARS),
     leaderModel: result.leaderResult.model,
     leaderAgentsHeardFrom: result.leaderResult.agentsHeardFrom,
+    // [#710 Gap 1] Truncate to MAX_AGENT_ERROR_CHARS so a giant stack trace cannot blow the doc-size budget.
+    leaderError: truncateText(result.leaderResult.error, MAX_AGENT_ERROR_CHARS) || undefined,
     transcriptTruncated: compact || transcript.truncated,
     persistenceMode: compact ? 'compact-fallback' : 'full',
     persistenceWarning: options?.warning,
