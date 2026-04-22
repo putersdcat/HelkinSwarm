@@ -77,7 +77,7 @@ var effectiveRouterLowCostDevMode = !earlyDevCostGuard && lowCostDevMode
 var routerLawDailyCapGb     = effectiveRouterLowCostDevMode ? json('0.1') : json('-1')
 var routerAppInsSamplingPct = effectiveRouterLowCostDevMode ? 10 : 100
 var routerMinReplicas       = 1
-var routerLogsDestination   = earlyDevCostGuard ? 'azure-monitor' : 'log-analytics'
+var routerLogsDestination   = earlyDevCostGuard ? 'none' : 'log-analytics'
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  1. USER-ASSIGNED MANAGED IDENTITY (global bot identity — fresh, not Alpha)

@@ -772,8 +772,8 @@ jobs:
             --api-version 2024-03-01 \
             --query 'properties.appLogsConfiguration.destination' -o tsv)
 
-          if [ "$CAE_DEST" != "azure-monitor" ]; then
-            echo "❌ EARLY_DEV_COST_GUARD violation: Container Apps environment logs destination is '$CAE_DEST' instead of 'azure-monitor'."
+          if [ "$CAE_DEST" != "none" ]; then
+            echo "❌ EARLY_DEV_COST_GUARD violation: Container Apps environment logs destination is '$CAE_DEST' instead of 'none'."
             exit 1
           fi
 
@@ -786,7 +786,7 @@ jobs:
 
           CAE_DIAG_COUNT=$(az monitor diagnostic-settings list --resource "$CAE_ID" --query 'length(@)' -o tsv 2>/dev/null || echo 0)
           if [ "$CAE_DIAG_COUNT" != "0" ]; then
-            echo "❌ EARLY_DEV_COST_GUARD violation: $CAE_NAME still has $CAE_DIAG_COUNT diagnostic setting(s); azure-monitor must have no persistent sinks in early dev."
+            echo "❌ EARLY_DEV_COST_GUARD violation: $CAE_NAME still has $CAE_DIAG_COUNT diagnostic setting(s); destination=none must have no persistent sinks in early dev."
             exit 1
           fi
 

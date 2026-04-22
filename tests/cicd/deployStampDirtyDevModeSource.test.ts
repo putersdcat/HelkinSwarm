@@ -14,7 +14,7 @@ describe('deploy-stamp dirty dev mode wiring', () => {
     expect(source).toContain('earlyDevCostGuard=${{ env.EARLY_DEV_COST_GUARD }}');
     expect(source).toContain('earlyDevMonthlyBudgetUsd=${{ env.EARLY_DEV_MONTHLY_BUDGET_USD }}');
     expect(source).toContain('Assert early-dev cost guard invariants');
-    expect(source).toContain("Container Apps environment logs destination is '$CAE_DEST' instead of 'azure-monitor'");
+    expect(source).toContain("Container Apps environment logs destination is '$CAE_DEST' instead of 'none'");
     expect(source).toContain('az monitor diagnostic-settings list');
     expect(source).toContain('Remove paid observability leftovers in dirty dev mode');
     expect(source).toContain('az functionapp config appsettings delete');
