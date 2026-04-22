@@ -55,20 +55,20 @@ describe('#715 swarm timer-cancel safety (source pin)', () => {
     ).toEqual([]);
   });
 
-  it('sessionOrchestrator has no bare Timer.cancel() outside safeCancel', () => {
+  it('sessionOrchestrator has no bare *Timer.cancel() outside safeCancel', () => {
     const lines = sessionSrc.split('\n');
     const offenders: { line: number; text: string }[] = [];
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const window = lines.slice(Math.max(0, i - 3), i + 1).join('\n');
       if (window.includes('function safeCancel')) continue;
-      if (/\btimer\.cancel\(\)/.test(line)) {
+      if (/\b\w*[Tt]imer\w*(?:\[[^\]]*\])?\.cancel\(\)/.test(line)) {
         offenders.push({ line: i + 1, text: line.trim() });
       }
     }
     expect(
       offenders,
-      `Bare timer.cancel() calls must use safeCancel(...) instead [#715]:\n${offenders.map(o => `  L${o.line}: ${o.text}`).join('\n')}`,
+      `Bare *Timer.cancel() calls must use safeCancel(...) instead [#715]:\n${offenders.map(o => `  L${o.line}: ${o.text}`).join('\n')}`,
     ).toEqual([]);
   });
 
@@ -78,5 +78,17 @@ describe('#715 swarm timer-cancel safety (source pin)', () => {
     expect(swarmSrc).toMatch(/safeCancel\(delegationTimer\)/);
     expect(swarmSrc).toMatch(/safeCancel\(subTimers\[/);
     expect(swarmSrc).toMatch(/safeCancel\(secondPassTimers\[/);
+  });
+
+  it('sessionOrchestrator references safeCancel at swarmDecomposerTimer and swarmTimer sites', () => {
+    expect(sessionSrc).toMatch(/safeCancel\(swarmDecomposerTimer\)/);
+    expect(sessionSrc).toMatch(/safeCancel\(swarmTimer\)/);
+  });
+
+  it('sessionOrchestrator wraps the post-swarm finalize block in a defensive try/catch (#715)', () => {
+    // Sentinel comment + SwarmFinalizeFailure telemetry name + recovery reply.
+    expect(sessionSrc).toContain('// [#715] post-swarm finalize guard');
+    expect(sessionSrc).toMatch(/name:\s*'SwarmFinalizeFailure'/);
+    expect(sessionSrc).toContain('crashed during finalization');
   });
 });

@@ -137,6 +137,7 @@ export type TelemetryEventName =
   | 'SwarmMemoryCommitCompleted'
   | 'SwarmMemoryCommitError'
   | 'SwarmPersistenceFailure'
+  | 'SwarmFinalizeFailure'
   | 'SwarmChatroomSend'
   | 'ModelOverrideIgnored'
   | 'OverseerStartedDespiteLiveSibling'

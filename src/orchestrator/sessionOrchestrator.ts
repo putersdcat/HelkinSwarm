@@ -1402,7 +1402,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             }
           : (swarmDecomposerTask.result as SwarmDecomposerResult);
         if (swarmDecomposerWinner !== swarmDecomposerTimer) {
-          swarmDecomposerTimer.cancel();
+          safeCancel(swarmDecomposerTimer); // [#715] defensive
         }
         if (swarmDecomposerResult.plan) {
           yield* emitOrchestratorTelemetry(context, {
@@ -1506,7 +1506,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           if (swarmWinner === swarmTimer) {
             swarmResponse = '⚡ The multi-agent analysis timed out. Please try a simpler query or try again.';
           } else {
-            swarmTimer.cancel();
+            safeCancel(swarmTimer); // [#715] defensive
             try {
               const swarmResult = swarmTask.result as SwarmOrchestratorResult;
               swarmResultData = swarmResult;
@@ -1556,6 +1556,15 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
           }
           const swarmTurnEndTime = context.df.currentUtcDateTime.getTime();
           const swarmTimedOut = swarmWinner === swarmTimer;
+          // [#715] post-swarm finalize guard. The persist + footer + sendReply
+          // block below is the second-cascade failure surface: if anything in
+          // here throws (e.g. an unexpected `.map of undefined` from
+          // formatTelemetryFooter, persistResult shape drift, or a
+          // sendReplyActivity sub-failure) the parent orchestrator dies AFTER
+          // the swarm has already produced state, leaving the Cosmos doc
+          // stuck `running`, the user with no reply, and the overseer
+          // pinning the user with MindSessionGuard for hours.
+          try {
           {
             const persistInput: PersistSwarmResultInput = {
               userId: input.state.userId,
@@ -1647,6 +1656,83 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             safetyPassed: true,
             pendingClarification: pendingClarificationUpdate,
           } satisfies SessionResult;
+          } catch (finalizeErr) {
+            // [#715] Post-swarm finalize cascade catch. We get here when the
+            // persist/footer/sendReply block throws after the swarm itself
+            // has produced (or attempted to produce) state. The mission is:
+            // (a) emit telemetry, (b) attempt a synthetic status='fail'
+            // persist so the Cosmos doc reaches terminal status, (c) attempt
+            // a user-visible failure reply so the user is not left silent,
+            // (d) return a SessionResult so the parent overseer doesn't die.
+            const finalizeErrMsg = finalizeErr instanceof Error ? finalizeErr.message : String(finalizeErr);
+            yield* emitOrchestratorTelemetry(context, {
+              name: 'SwarmFinalizeFailure',
+              correlationId,
+              userId: input.state.userId,
+              properties: {
+                swarmId: swarmDecomposerResult.plan!.swarmId,
+                error: finalizeErrMsg.slice(0, 240),
+                stage: 'post-swarm',
+              },
+            });
+
+            try {
+              const failPersist: PersistSwarmResultInput = {
+                userId: input.state.userId,
+                correlationId,
+                swarmId: swarmDecomposerResult.plan!.swarmId,
+                userQuery: input.userMessage,
+                decomposerTokens: swarmDecomposerResult.tokensUsed,
+                decomposerModel: swarmDecomposerResult.decomposerModel,
+                executionDurationMs: context.df.currentUtcDateTime.getTime() - turnStartTime,
+                result: {
+                  response: '',
+                  success: false,
+                  totalTokensUsed: swarmTokens,
+                  agentResults: [],
+                  leaderResult: {
+                    synthesis: '',
+                    success: false,
+                    tokensUsed: 0,
+                    roundsUsed: 0,
+                    agentsHeardFrom: [],
+                    model: swarmModel,
+                    error: `finalize-failure: ${finalizeErrMsg.slice(0, 200)}`,
+                  },
+                  chatroomTranscript: [],
+                  swarmId: swarmDecomposerResult.plan!.swarmId,
+                  swarmCost: undefined,
+                },
+              };
+              yield* withSwarmPersistTimeout(context, failPersist);
+            } catch { /* persist failed too — proceed to attempt user reply */ }
+
+            let recoveredReplySent = false;
+            try {
+              const recoveryReply: SendReplyResult = yield context.df.callActivity('sendReplyActivity', {
+                userId: input.state.userId,
+                message: '⚡ The multi-agent analysis crashed during finalization. The failure has been captured for audit (#715).',
+                correlationId,
+                conversationReference: input.conversationReference,
+                forceNewMessage: true,
+                expectedInstanceId: input.overseerInstanceId,
+              } satisfies SendReplyInput);
+              recoveredReplySent = recoveryReply.success;
+            } catch { /* swallow — at least the parent will not crash */ }
+
+            return {
+              response: '⚡ The multi-agent analysis crashed during finalization (#715).',
+              cleanResponse: '⚡ The multi-agent analysis crashed during finalization (#715).',
+              tokensUsed: swarmTokens,
+              promptTokens: 0,
+              model: `swarm:${swarmModel}-finalize-error`,
+              toolCalls: [],
+              toolResults: null,
+              replySent: recoveredReplySent,
+              safetyPassed: true,
+              pendingClarification: pendingClarificationUpdate,
+            } satisfies SessionResult;
+          }
         } else {
           yield* emitOrchestratorTelemetry(context, {
             name: 'SwarmDecomposerFallback',
