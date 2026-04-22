@@ -1353,8 +1353,8 @@
                     html += '<div class="card"><h2>Cost Breakdown</h2>' +
                       '<table><tr><th>Component</th><th>Tokens</th><th>Cost</th></tr>' +
                       '<tr><td>Decomposer</td><td>' + (cost.decomposerTokens || 0).toLocaleString() + '</td><td>\u2014</td></tr>' +
-                      '<tr><td>Workers</td><td>' + (cost.workerTokens || 0).toLocaleString() + '</td><td>' + (cost.totalCost != null ? fmtMoney(cost.totalCost) : '\u2014') + '</td></tr>' +
-                      '<tr><td>Helkin (Leader)</td><td>' + (cost.leaderTokens || 0).toLocaleString() + '</td><td>\u2014</td></tr>' +
+                      '<tr><td>Workers</td><td>' + (cost.workerTokens || 0).toLocaleString() + '</td><td>' + (cost.workerCost != null ? fmtMoney(cost.workerCost) : '\u2014') + '</td></tr>' +
+                      '<tr><td>Helkin (Leader)</td><td>' + (cost.leaderTokens || 0).toLocaleString() + '</td><td>' + (cost.leaderCost != null ? fmtMoney(cost.leaderCost) : '\u2014') + '</td></tr>' +
                       '<tr><td><strong>Total</strong></td><td><strong>' + (cost.totalTokens || 0).toLocaleString() + '</strong></td><td><strong>' + (cost.totalCost != null ? fmtMoney(cost.totalCost) : '\u2014') + '</strong></td></tr>' +
                       '</table></div>';
                   }

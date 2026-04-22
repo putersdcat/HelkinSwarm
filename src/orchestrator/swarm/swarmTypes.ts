@@ -286,6 +286,10 @@ export interface SwarmCost {
   leaderTokens: number;
   totalTokens: number;
   agentBreakdown: SwarmAgentCost[];
+  /** Sum of worker provider costs in USD (#664). */
+  workerCost?: number;
+  /** Leader synthesis provider cost in USD (#664). */
+  leaderCost?: number;
   /** Total cost in USD across all agents (#664). */
   totalCost?: number;
 }
