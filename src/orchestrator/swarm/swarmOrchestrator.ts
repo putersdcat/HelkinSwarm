@@ -29,6 +29,18 @@ import type { SwarmSubSessionInput, SwarmSubSessionResult } from './swarmSubSess
 const SWARM_WORKER_TIMEOUT_MS = 240_000;
 const SWARM_LEADER_TIMEOUT_MS = 180_000;
 
+// [#715] Defensive timer cancel. Calling .cancel() on a Durable timer that has
+// already fired throws "Cannot cancel a completed task." — fatal to the entire
+// orchestrator. Any post-Task.any() cancel that doesn't strictly verify the
+// timer LOST the race must go through this helper.
+function safeCancel(timer: df.TimerTask): void {
+  try {
+    timer.cancel();
+  } catch {
+    // Timer already completed; nothing to cancel.
+  }
+}
+
 function shouldRunLeaderDelegationPass(
   workerResults: ReadonlyArray<SwarmWorkerResult>,
   chatroomMessages: ReadonlyArray<ChatroomMessage>,
@@ -151,7 +163,7 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
         fatal: false,
       };
     } else {
-      workerTimers[i].cancel();
+      safeCancel(workerTimers[i]); // [#715] defensive — winner is workerTask but cancel can still race in DF v3.
       try {
         result = workerTasks[i].result as SwarmWorkerResult & {
           _pendingChatroomMessages?: ChatroomMessage[];
@@ -191,7 +203,7 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
       );
       const retryTask = context.df.callActivity('swarmWorkerActivity', retryInput);
       const retryWinner = yield context.df.Task.any([retryTask, retryTimer]) as df.Task;
-      retryTimer.cancel();
+      safeCancel(retryTimer); // [#715] retryTimer may have already fired and won the race.
       retryCount++;
 
       if (retryWinner === retryTask) {
@@ -408,7 +420,7 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
     );
     const delegationTask = context.df.callActivity('swarmLeaderActivity', delegationInput);
     const delegationWinner = yield context.df.Task.any([delegationTask, delegationTimer]) as df.Task;
-    delegationTimer.cancel();
+    safeCancel(delegationTimer); // [#715] delegationTimer may have already fired and won the race.
     if (delegationWinner === delegationTask) {
       try {
         const delegationResult = delegationTask.result as SwarmLeaderResult;
@@ -479,7 +491,7 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
 
     for (let si = 0; si < subTasks.length; si++) {
       const winner = yield context.df.Task.any([subTasks[si], subTimers[si]]) as df.Task;
-      subTimers[si].cancel();
+      safeCancel(subTimers[si]); // [#715] subTimer may have already fired and won the race.
 
       let resultMsg: ChatroomMessage;
       if (winner === subTimers[si]) {
@@ -592,7 +604,7 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
   // Fan-in second-pass activities (activities started in parallel above)
   for (let i = 0; i < secondPassTasks.length; i++) {
     const winner = yield context.df.Task.any([secondPassTasks[i], secondPassTimers[i]]) as df.Task;
-    secondPassTimers[i].cancel();
+    safeCancel(secondPassTimers[i]); // [#715] secondPassTimer may have already fired and won the race.
     if (winner === secondPassTasks[i]) {
       try {
         const result = secondPassTasks[i].result as SwarmWorkerResult & {
@@ -678,7 +690,7 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
       error: 'Helkin synthesis timed out',
     };
   } else {
-    leaderTimer.cancel();
+    safeCancel(leaderTimer); // [#715] defensive — winner is leaderTask but cancel can still race in DF v3.
     try {
       leaderResult = leaderTask.result as SwarmLeaderResult;
     } catch (err) {

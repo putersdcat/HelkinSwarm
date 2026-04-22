@@ -150,7 +150,7 @@ function* withLlmFollowUpTimeout(
       failoverSteps: [],
     };
   }
-  timer.cancel();
+  safeCancel(timer); // [#715] defensive
   return task.result as LlmResult;
 }
 
@@ -183,8 +183,19 @@ function* withSubAgentTimeout(
       correlationId: input.correlationId,
     };
   }
-  timer.cancel();
+  safeCancel(timer); // [#715] defensive
   return task.result as SubAgentResult;
+}
+
+// [#715] Defensive timer cancel for the same reason as swarmOrchestrator.safeCancel:
+// calling .cancel() on a Durable timer that has already fired throws
+// "Cannot cancel a completed task." — fatal to the parent orchestrator.
+function safeCancel(timer: df.TimerTask): void {
+  try {
+    timer.cancel();
+  } catch {
+    // Timer already completed; nothing to cancel.
+  }
 }
 
 function* withSwarmPersistTimeout(
@@ -206,7 +217,7 @@ function* withSwarmPersistTimeout(
       error: `persistSwarmResultActivity timed out after ${SWARM_PERSIST_DURABLE_TIMEOUT_MS}ms`,
     };
   }
-  timer.cancel();
+  safeCancel(timer); // [#715] defensive
   return task.result as { stored: boolean; error?: string };
 }
 
@@ -1184,7 +1195,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             responseContent = `⏰ Action timed out after 5 minutes. The tool call was cancelled for safety.`;
             safetyPassed = false;
           } else {
-            timer.cancel();
+            safeCancel(timer); // [#715] defensive
             const parsedResponse = ConfirmationResponseSchema.safeParse(confirmation.result);
             if (!parsedResponse.success || !isMatchingConfirmationResponse(parsedResponse.data, {
               correlationId,
@@ -2106,7 +2117,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
               break;
             }
 
-            timer.cancel();
+            safeCancel(timer); // [#715] defensive
             const parsedResponse = ConfirmationResponseSchema.safeParse(confirmation.result);
             if (!parsedResponse.success || !isMatchingConfirmationResponse(parsedResponse.data, {
               correlationId,
