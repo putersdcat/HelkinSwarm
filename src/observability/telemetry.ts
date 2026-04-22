@@ -113,6 +113,7 @@ export type TelemetryEventName =
   | 'OpenRouterRateLimitSnapshot'
   | 'OpenRouterUpstreamRetry'
   | 'OpenRouterConcurrencyGate'
+  | 'OpenRouterEmptyCompletion'
   | 'SwarmWorkerStarted'
   | 'SwarmWorkerCompleted'
   | 'SwarmWorkerLowChatter'

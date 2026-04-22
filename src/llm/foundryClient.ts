@@ -931,7 +931,7 @@ export class FoundryClient {
     // refusal-to-answer) that must surface as a distinct, non-retryable failure.
     // Without this guard, the response is silently returned and the caller sees
     // a mysterious blank turn (the original symptom in #677).
-    detectOpenRouterEmptyCompletion(mapped, routing.deploymentName);
+    detectOpenRouterEmptyCompletion(mapped, routing.deploymentName, correlationId);
 
     return mapped;
   }
@@ -1581,6 +1581,7 @@ function mapOutgoingMessage(msg: ChatMessage): Record<string, unknown> {
 export function detectOpenRouterEmptyCompletion(
   response: ChatCompletionResponse,
   deploymentName: string,
+  correlationId?: string,
 ): void {
   const completionTokens = response.usage.completionTokens ?? 0;
   const choice = response.choices[0];
@@ -1591,6 +1592,19 @@ export function detectOpenRouterEmptyCompletion(
     : rawContent.length; // ContentPart[] — non-empty array counts as content
 
   if (completionTokens === 0 && toolCallCount === 0 && contentLen === 0) {
+    // #677: emit a telemetry counter so production occurrences are visible without
+    // having to scrape FoundryError stack traces. Fired BEFORE throwing so the
+    // event still lands even if the caller swallows the error.
+    trackEvent({
+      name: 'OpenRouterEmptyCompletion',
+      correlationId: correlationId ?? 'unknown',
+      properties: {
+        model: deploymentName,
+        finishReason: choice?.finishReason ?? 'unknown',
+        promptTokens: response.usage.promptTokens ?? 0,
+      },
+    });
+
     throw new FoundryError(
       `OpenRouter empty completion: 0 tokens, 0 tool calls, 0 content (model=${deploymentName}, finish_reason=${choice?.finishReason ?? 'unknown'})`,
       422,

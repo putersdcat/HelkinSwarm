@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+
+const { trackEventMock } = vi.hoisted(() => ({ trackEventMock: vi.fn() }));
+vi.mock('../../src/observability/telemetry.js', () => ({ trackEvent: trackEventMock }));
+
 import {
   classifyOpenRouterStatus,
   detectOpenRouterEmptyCompletion,
@@ -6,6 +10,10 @@ import {
   type OpenRouterErrorClass,
 } from '../../src/llm/foundryClient.js';
 import type { ChatCompletionResponse } from '../../src/llm/foundryClient.js';
+
+beforeEach(() => {
+  trackEventMock.mockClear();
+});
 
 describe('classifyOpenRouterStatus (#677)', () => {
   const cases: Array<[number, OpenRouterErrorClass]> = [
@@ -114,5 +122,42 @@ describe('detectOpenRouterEmptyCompletion (#677)', () => {
       makeResponse({ completionTokens: 0, content: '   \n\t  ' }),
       'x-ai/grok-4.1-fast',
     )).toThrowError(FoundryError);
+  });
+
+  it('emits OpenRouterEmptyCompletion telemetry with correlationId, model, finishReason, and promptTokens', () => {
+    expect(() => detectOpenRouterEmptyCompletion(
+      makeResponse({ finishReason: 'length' }),
+      'x-ai/grok-4.1-fast',
+      'corr-test-1234',
+    )).toThrowError(FoundryError);
+
+    expect(trackEventMock).toHaveBeenCalledTimes(1);
+    expect(trackEventMock).toHaveBeenCalledWith({
+      name: 'OpenRouterEmptyCompletion',
+      correlationId: 'corr-test-1234',
+      properties: {
+        model: 'x-ai/grok-4.1-fast',
+        finishReason: 'length',
+        promptTokens: 100,
+      },
+    });
+  });
+
+  it('emits telemetry with correlationId="unknown" when not provided', () => {
+    expect(() => detectOpenRouterEmptyCompletion(makeResponse({}), 'x-ai/grok-4.1-fast'))
+      .toThrowError(FoundryError);
+
+    expect(trackEventMock).toHaveBeenCalledTimes(1);
+    expect(trackEventMock.mock.calls[0]?.[0].correlationId).toBe('unknown');
+  });
+
+  it('does NOT emit telemetry on non-empty completions', () => {
+    expect(() => detectOpenRouterEmptyCompletion(
+      makeResponse({ completionTokens: 5, content: 'hello' }),
+      'x-ai/grok-4.1-fast',
+      'corr-ok',
+    )).not.toThrow();
+
+    expect(trackEventMock).not.toHaveBeenCalled();
   });
 });
