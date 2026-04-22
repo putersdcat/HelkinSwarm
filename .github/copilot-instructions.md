@@ -67,6 +67,54 @@ HelkinSwarm v2 is a **nuclear clean-start** from the scrapped first attempt ("He
 
 ---
 
+## 🔑 Local Agent Identity — `HelkinSwarm-LocalAgent` (cert-bound, TPM-sealed)
+
+The IDE-side coding agent (BasicBitch / DevLoop / IgnitionLoop / etc.) authenticates to Azure and Microsoft Graph using a **dedicated TPM-bound certificate identity**. The agent never needs an interactive `az login` again.
+
+| Property | Value |
+|----------|-------|
+| **App Reg display name** | `HelkinSwarm-LocalAgent` |
+| **AppId / ClientId** | `e012a81c-1dd1-41cc-8bd1-423235319320` |
+| **SP Object Id** | `33bd1969-3a69-46b7-a763-d6cd631e1994` |
+| **Tenant** | `51b1f02a-e19b-4089-a5f6-3ebb72835521` (putersdcat.com) |
+| **Subscription** | `65b1d40b-8962-46cd-b2d7-fa5d09b787a1` (PUTERSDCAT-CORP) |
+| **Cert thumbprint** | `B760B2E3EFCC921A1D989E7CC5ECFF85F88DE96E` |
+| **Cert subject** | `CN=HelkinSwarm-LocalAgent` |
+| **Cert provider** | Microsoft Platform Crypto Provider (TPM, NonExportable) |
+| **Cert location** | `Cert:\CurrentUser\My` on this physical box only |
+| **Cert expires** | 2028-04-22 |
+| **Login helper** | [scripts/agent-login.ps1](scripts/agent-login.ps1) |
+
+**Capabilities (least privilege):**
+
+- Subscription scope: `Reader`, `Monitoring Reader`, `Log Analytics Reader`
+- Resource group scope (Contributor — for stamp intervention): `rg-helkinswarm-a7f2`, `rg-helkinswarm-router`, `rg-helkinswarm-tabs`
+- Microsoft Graph (admin-consented application roles): `Application.Read.All`, `Directory.Read.All`
+
+**How to log in (one line):**
+
+```powershell
+. .\scripts\agent-login.ps1
+```
+
+This runs `Connect-AzAccount -ServicePrincipal -CertificateThumbprint ...` and `Connect-MgGraph -CertificateThumbprint ...` against the cert in `Cert:\CurrentUser\My`. No prompts, no secrets on disk.
+
+### Rules — `HelkinSwarm-LocalAgent` (read carefully)
+
+- ✅ The private key is **non-exportable and TPM-sealed**. Copying the `.cer` file to another host is harmless — without this machine's TPM, the cert cannot sign anything.
+- ✅ Use this identity for **read** operations from the agent's IDE side: App Insights / Log Analytics queries, Cosmos diagnostics, listing resources, reading deployment state, reading Entra apps.
+- ✅ Use the per-RG `Contributor` grant only for direct stamp intervention (e.g., restart a Function App, redeploy a container revision) — never for ad-hoc app reg changes; use Graph for that.
+- ❌ **NEVER** recycle this identity for CI/CD. CI/CD has its own OIDC identity (`HelkinSwarm-v2-CICD` family); the local agent must never push code or trigger pipelines using its own cert.
+- ❌ **NEVER** recycle this identity for the bot's delegated user flows. The bot uses `HelkinSwarm-DelegatedAuthV2` (or successor) for OBO; the local agent identity is application-only and must not appear in any bot-side code path.
+- ❌ **NEVER** add `Owner`, `User Access Administrator`, or `Global Administrator` to this identity. If a task requires those, ask the human owner.
+- ✅ If the cert is rotated (every 2 years or after machine reinstall), re-run the provisioning steps documented in [scripts/agent-login.ps1](scripts/agent-login.ps1) header and update the thumbprint above.
+
+> **Why this matters:** Without a stable, machine-bound, no-secrets identity, the agent had to ask the
+> owner to run `az login` interactively before every diagnostic session — which meant App Insights and
+> Log Analytics were effectively invisible to the agent for hours at a time. This identity ends that.
+
+---
+
 ## Critical Process Rules
 
 ### NEVER DO THIS
