@@ -133,7 +133,7 @@ describe('swarmOrchestrator — progress reply ownership regression', () => {
   it('marks per-worker progress updates with skipOutboundClaim so the final reply is not suppressed', () => {
     const progressBlockStart = orchestratorSrc.indexOf('const progressMsg =');
     expect(progressBlockStart).toBeGreaterThan(-1);
-    const snippet = orchestratorSrc.slice(progressBlockStart, progressBlockStart + 700);
+    const snippet = orchestratorSrc.slice(progressBlockStart, progressBlockStart + 900);
     expect(snippet).toContain('skipOutboundClaim: true');
   });
 

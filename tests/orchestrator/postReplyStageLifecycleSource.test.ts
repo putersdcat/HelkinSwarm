@@ -6,7 +6,7 @@ describe('post-reply stage lifecycle source guards', () => {
     const overseerSource = readFileSync('src/orchestrator/overseer.ts', 'utf8');
     const sendReplySource = readFileSync('src/orchestrator/sendReplyActivity.ts', 'utf8');
 
-    expect(sendReplySource).toContain("import { clearOrchestratorStage, recordSubstage } from '../observability/orchestratorStageHealth.js';");
+    expect(sendReplySource).toContain("import { clearOrchestratorStage, getOrchestratorStageForCorrelation, recordSubstage } from '../observability/orchestratorStageHealth.js';");
     expect(sendReplySource).toContain('await clearOrchestratorStage(input.correlationId, input.userId);');
     expect(sendReplySource).toContain('Stage clear timed out/failed after visible reply delivery');
 

@@ -255,6 +255,13 @@ export interface SessionInput {
   quotedContext?: QuotedContext;
   /** Override for multi-round tool dispatch limit. Defaults to 5, max 10. (#253) */
   toolBudget?: number;
+  /** [#697] The owning overseer's `context.df.instanceId`. Threaded through to
+   *  `sendReplyActivity.expectedInstanceId` so the activity can verify the
+   *  live stage owner before sending. The session sub-orchestrator's own
+   *  `context.df.instanceId` is `session-{overseerInstanceId}-{correlationId}`
+   *  and does NOT match the stage entry's recorded instanceId, so the overseer
+   *  must pass its own id explicitly. */
+  overseerInstanceId?: string;
 }
 
 export interface SessionResult {
@@ -1463,6 +1470,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             correlationId,
             conversationReference: input.conversationReference,
             skipOutboundClaim: true,
+            expectedInstanceId: input.overseerInstanceId,
           } satisfies SendReplyInput);
           spans.push({ label: 'swarm-ack', durationMs: context.df.currentUtcDateTime.getTime() - ackSpanStart });
           // #688 2026-04-21: outer cap must exceed worker×2-retries + leader +
@@ -1609,6 +1617,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             // clearPendingAckId in the engagement-card path causes Teams to
             // silently no-op the second updateActivity, dropping the synthesis.
             forceNewMessage: true,
+            expectedInstanceId: input.overseerInstanceId,
           } satisfies SendReplyInput);
           return {
             response: swarmResponse,
@@ -1648,6 +1657,7 @@ df.app.orchestration('sessionOrchestrator', function* (context) {
             correlationId,
             conversationReference: input.conversationReference,
             skipOutboundClaim: true,
+            expectedInstanceId: input.overseerInstanceId,
           } satisfies SendReplyInput);
           // Decomposer chose sequential fallback — continue to normal follow-up LLM loop
         }

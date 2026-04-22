@@ -276,7 +276,11 @@ df.app.orchestration('swarmOrchestrator', function* (context): Generator<df.Task
       const statusIcon = latestAgent.success ? '✓' : '✗';
       const suffix = completedCount === totalCount ? ' | Helkin synthesizing…' : '';
       const progressMsg = `${statusIcon} ${latestAgent.agentName} complete (${completedCount}/${totalCount})${suffix}`;
-      // Fire-and-forget — progress delivery must not block the swarm
+      // Fire-and-forget — progress delivery must not block the swarm.
+      // [#697] Intentionally NO expectedInstanceId here: this is a sub-
+      // orchestrator and its instanceId differs from the parent's, which is
+      // the recorded stage owner. The fire-and-forget progress message is
+      // skipOutboundClaim:true so cross-reboot replay risk is minimal.
       context.df.callActivity('sendReplyActivity', {
         userId,
         message: progressMsg,

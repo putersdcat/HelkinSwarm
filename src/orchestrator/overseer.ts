@@ -465,6 +465,12 @@ function* processTurn(
     attachmentNotices: event.attachmentNotices,
     devLoopContext: event.devLoopContext,
     quotedContext: event.quotedContext,
+    // [#697] Thread the owning overseer's instanceId so the session sub-
+    // orchestrator's reply sends can verify they originated from the live
+    // owner of this correlation. The session sub-orchestrator's own
+    // context.df.instanceId is `session-{overseerInstanceId}-{correlationId}`
+    // and does NOT match the stage entry's recorded instanceId.
+    overseerInstanceId: context.df.instanceId,
   };
 
   yield context.df.callActivity('ingressWindowStageActivity', {
@@ -540,6 +546,7 @@ function* processTurn(
             userId: state.userId,
             message: `⏰ Your message took too long to process (>${SESSION_TIMEOUT_MS / 60000} min). The turn was cancelled. Please try again.`,
             correlationId: sessionInput.correlationId,
+            expectedInstanceId: context.df.instanceId,
           };
           yield context.df.callActivity('sendReplyActivity', errorReply);
         } catch (replyErr) {
@@ -647,6 +654,7 @@ function* processTurn(
         userId: state.userId,
         message: `⚠️ Something went wrong processing your message. The error has been logged. Please try again.`,
         correlationId: sessionInput.correlationId,
+        expectedInstanceId: context.df.instanceId,
       };
       yield context.df.callActivity('sendReplyActivity', errorReply);
     } catch (replyErr) {

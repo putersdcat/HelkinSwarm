@@ -23,7 +23,7 @@ import { parseBooleanEnv } from '../config/booleanEnv.js';
 import { getEnvConfig } from '../config/envConfig.js';
 import { splitReplyIntoChunks } from './replyChunking.js';
 import { trackEvent } from '../observability/telemetry.js';
-import { clearOrchestratorStage, recordSubstage } from '../observability/orchestratorStageHealth.js';
+import { clearOrchestratorStage, getOrchestratorStageForCorrelation, recordSubstage } from '../observability/orchestratorStageHealth.js';
 import {
   recordMessagePathGlobalFailure,
   recordMessagePathSuccess,
@@ -70,6 +70,13 @@ export interface SendReplyInput {
    *  final reply pointed at the engagement-card message id and the in-place
    *  updateActivity is silently no-op'd by Teams (#700). */
   forceNewMessage?: boolean;
+  /** Calling orchestrator instance id (`context.df.instanceId`). When provided
+   *  alongside `correlationId`, the activity verifies that the live owner of
+   *  this correlation matches before sending. Mismatches abort the send and
+   *  emit `ReplyOwnershipMismatch` telemetry, preventing an orphaned instance
+   *  (e.g. cross-reboot retry) from delivering a stale reply for a correlation
+   *  the new instance has already taken over (#697). */
+  expectedInstanceId?: string;
 }
 
 export interface SendReplyResult {
@@ -227,6 +234,42 @@ async function resolveAssetAttachments(input: SendReplyInput): Promise<Attachmen
 export async function sendReply(input: SendReplyInput): Promise<SendReplyResult> {
   const correlationId = input.correlationId ?? input.userId;
   recordSubstage(correlationId, 'send-reply', input.userId);
+
+  // [#697] Ownership gate — reject sends from an orchestrator instance that no
+  // longer owns this correlation. Only enforced when BOTH expectedInstanceId
+  // and correlationId are provided AND a live stage entry exists with a
+  // recorded instanceId. Bypass on missing data preserves existing behavior
+  // for legacy call sites and pre-stage early replies.
+  if (input.expectedInstanceId && input.correlationId) {
+    try {
+      const liveStage = await getOrchestratorStageForCorrelation(input.correlationId, input.userId);
+      if (liveStage && liveStage.instanceId && liveStage.instanceId !== input.expectedInstanceId) {
+        trackEvent({
+          name: 'ReplyOwnershipMismatch',
+          correlationId: input.correlationId,
+          userId: input.userId,
+          properties: {
+            expectedInstanceId: input.expectedInstanceId,
+            liveInstanceId: liveStage.instanceId,
+            liveStage: liveStage.stage,
+          },
+        });
+        console.warn(
+          `[sendReplyActivity] OWNERSHIP MISMATCH correlationId=${input.correlationId} `
+          + `expected=${input.expectedInstanceId} live=${liveStage.instanceId} stage=${liveStage.stage} — aborting send`,
+        );
+        return { success: false, error: 'reply-ownership-mismatch' };
+      }
+    } catch (err) {
+      // Best-effort gate — if the lookup fails, fall through to the send so
+      // we never silently drop a legitimate reply due to a transient Cosmos read.
+      const reason = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[sendReplyActivity] ownership-gate lookup failed for correlationId=${input.correlationId}: ${reason} — proceeding with send`,
+      );
+    }
+  }
+
   console.log(`[sendReplyActivity] START correlationId=${correlationId} fastPath=${SENDREPLY_FAST_PATH} hasPassthroughRef=${!!input.conversationReference}`);
   let deliveredToUser = false;
   let resolvedConversationId = input.userId;

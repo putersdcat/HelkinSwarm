@@ -75,6 +75,7 @@ export type TelemetryEventName =
   | 'ReplySent'
   | 'ReplySilentSkip'
   | 'ReplyDroppedSilently'
+  | 'ReplyOwnershipMismatch'
   | 'PendingAckClearFailed'
   | 'OrchestratorPlanCreated'
   | 'PlanClassification'
