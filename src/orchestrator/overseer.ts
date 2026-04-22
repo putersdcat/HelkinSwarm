@@ -484,8 +484,28 @@ function* processTurn(
     correlationId,
   } satisfies OverseerCustomStatus);
 
-  // Guard: race sub-orchestrator against a 5-minute timeout (#211)
-  const SESSION_TIMEOUT_MS = 5 * 60 * 1000;
+  // Guard: race sub-orchestrator against a per-turn timeout (#211).
+  //
+  // [#714 2026-04-22] Raised from 5min → 16min. The overseer must outlive the
+  // longest legitimate sub-orchestrator turn, otherwise it terminates the
+  // session mid-flight and the post-turn finalizers never run.
+  //
+  // Specifically: a swarm session in `sessionOrchestrator.ts` arms its own
+  // `swarmOuterTimeoutMs = max(plan.timeoutMs * 6, 720_000)` — i.e. a hard
+  // floor of 12 minutes (#688). Bumping `swarmOuterTimeoutMs` to 720s on
+  // 2026-04-21 without raising this overseer cap turned every swarm into a
+  // silent fail: decomposer + 'running' Cosmos doc + swarm-ack land in <30s,
+  // then the overseer kills the session at 5min before the swarm
+  // sub-orchestrator can finish, so the FINAL `persistSwarmResultActivity`
+  // call never fires. The doc stays `status='running'` until the
+  // staleSwarmRunningTimer reaper (#693) flips it to `fail` ~22min later —
+  // which is exactly the fingerprint of every recent fail in the
+  // Swarm Activity tab (durMs=0, tokens≈5000, no workers, no transcript).
+  //
+  // 16 minutes = 12min swarm floor + 4min headroom for swarm-ack reply,
+  // leader synthesis, persistSwarmResultActivity, and final user reply.
+  // Source-pinned by tests/orchestrator/overseerSessionTimeoutSourcePin.test.ts.
+  const SESSION_TIMEOUT_MS = 16 * 60 * 1000;
   const sessionDeadline = new Date(context.df.currentUtcDateTime.getTime() + SESSION_TIMEOUT_MS);
   const sessionTimer = context.df.createTimer(sessionDeadline);
 
