@@ -176,8 +176,8 @@ describe('healthHandler', () => {
     mockGetContainerAgeMs.mockReturnValue(20 * 60_000);
     mockFetchAllSwarmExecutions.mockResolvedValue({
       resources: [
-        { executedAt: '2026-03-31T20:10:00.000Z', success: false, persistenceMode: 'compact-fallback' },
-        { executedAt: '2026-03-31T20:09:00.000Z', success: true, persistenceMode: 'full' },
+        { executedAt: '2026-03-31T20:10:00.000Z', success: false, status: 'fail', persistenceMode: 'compact-fallback' },
+        { executedAt: '2026-03-31T20:09:00.000Z', success: true, status: 'ok', persistenceMode: 'full' },
       ],
     });
 
@@ -191,6 +191,7 @@ describe('healthHandler', () => {
           lastSuccessfulPersistedAt: string | null;
           lastFailedPersistedAt: string | null;
           lastPersistenceMode: string | null;
+          staleRunningCount: number;
         };
       };
     };
@@ -201,6 +202,62 @@ describe('healthHandler', () => {
       lastSuccessfulPersistedAt: '2026-03-31T20:09:00.000Z',
       lastFailedPersistedAt: '2026-03-31T20:10:00.000Z',
       lastPersistenceMode: 'compact-fallback',
+      staleRunningCount: 0,
     });
+  });
+
+  it('[#706] does NOT count running placeholders as failures and surfaces staleRunningCount', async () => {
+    // Regression lock for the silent-drop audit conflation: a swarm that
+    // dies between the running-placeholder write and the final persist
+    // leaves a doc with status='running' AND success=false. Previously this
+    // bumped lastFailedPersistedAt as if it were a real swarm failure,
+    // hiding the true #706 fingerprint. The honest report is:
+    //   - lastFailedPersistedAt: only docs with status='fail'
+    //   - staleRunningCount: docs with status='running' older than 5 min
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-31T20:30:00.000Z'));
+    try {
+      mockGetContainerAgeMs.mockReturnValue(20 * 60_000);
+      mockFetchAllSwarmExecutions.mockResolvedValue({
+        // Order matches what the prod ORDER BY executedAt DESC query returns.
+        resources: [
+          // Fresh running placeholder — still in flight, not stale yet.
+          { executedAt: '2026-03-31T20:29:00.000Z', success: false, status: 'running', persistenceMode: 'full' },
+          // Stale running placeholder — orchestrator died after this write.
+          { executedAt: '2026-03-31T20:10:00.000Z', success: false, status: 'running', persistenceMode: 'full' },
+          // Real success.
+          { executedAt: '2026-03-31T20:00:00.000Z', success: true, status: 'ok', persistenceMode: 'full' },
+        ],
+      });
+
+      const response = await healthHandler({} as never, {} as never);
+      expect(response.status).toBe(200);
+      const body = response.jsonBody as {
+        diagnostics: {
+          swarmAudit: {
+            recentExecutions: number;
+            lastPersistedAt: string | null;
+            lastSuccessfulPersistedAt: string | null;
+            lastFailedPersistedAt: string | null;
+            lastPersistenceMode: string | null;
+            staleRunningCount: number;
+          };
+        };
+      };
+
+      expect(body.diagnostics.swarmAudit).toEqual({
+        recentExecutions: 3,
+        // Latest doc by executedAt (the fresh running placeholder).
+        lastPersistedAt: '2026-03-31T20:29:00.000Z',
+        lastSuccessfulPersistedAt: '2026-03-31T20:00:00.000Z',
+        // CRITICAL: must be null — none of these are real failures.
+        lastFailedPersistedAt: null,
+        lastPersistenceMode: 'full',
+        // Only the 20:10 placeholder is older than 5 min vs the 20:30 clock.
+        staleRunningCount: 1,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
