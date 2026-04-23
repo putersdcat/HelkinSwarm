@@ -85,7 +85,7 @@ import { ingestTeamsAttachments } from './inboundAttachmentIngestion.js';
 import { buildOverseerDedupIdentity } from './overseerDedupIdentity.js';
 import { buildTeamsNativeEmojiEasterEggReply } from './teamsNativeEmojiEasterEggs.js';
 import { recordLimbicIngressDecision } from '../orchestrator/limbicIngressActivity.js';
-import { resolveActiveOverseerSummary } from '../orchestrator/activeOverseerInstance.js';
+import { resolveActiveOverseerSummary, resolveDeliverableOverseerInstanceId } from '../orchestrator/activeOverseerInstance.js';
 import { getActiveTurnCountForUser, getActiveTurnStagesForUser } from '../observability/orchestratorStageHealth.js';
 import {
   MAX_INTERRUPTION_DEPTH,
@@ -1382,6 +1382,41 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         });
 
         await client.raiseEvent(effectiveActiveInstanceId, 'NewMessage', event);
+        return { outcome: 'started' };
+      }
+
+      // [#687 action item 2] Deliverable second-chance route. The strict
+      // `activeSessionRoutable` predicate above only routes when a sibling is
+      // sitting at exactly `awaiting-ingress`. A sibling that is mid-turn or
+      // parked in the dedup-hold ingress window is still a valid delivery
+      // target for `NewMessage` (Durable buffers the event until the overseer
+      // returns to its `waitForExternalEvent` slot — see devLoopRelay /
+      // hookReceiver, which already use this resolver). Without this,
+      // every non-`awaiting-ingress` sibling forces a `startNew`, which is
+      // exactly the multi-overseer proliferation #687 was filed against.
+      //
+      // Use the deliverable resolver (looser; allows guarded-active and
+      // active-without-stage-entry instances) ONLY for the delivery decision.
+      // Overlap-pressure / interruption-depth decisions above intentionally
+      // keep using the strict resolver.
+      const deliverableInstanceId = await resolveDeliverableOverseerInstanceId(client, userId);
+      if (
+        deliverableInstanceId
+        && deliverableInstanceId !== identity.instanceId
+      ) {
+        trackEvent({
+          name: 'PolicyOverrideApplied',
+          correlationId: eventCorrelationId,
+          userId,
+          properties: {
+            authority: 'living-session-deliverable-redirection',
+            source: 'teams-message',
+            activeInstanceId: deliverableInstanceId,
+            requestedInstanceId: identity.instanceId,
+            interruptionDepth,
+          },
+        });
+        await client.raiseEvent(deliverableInstanceId, 'NewMessage', event);
         return { outcome: 'started' };
       }
 
