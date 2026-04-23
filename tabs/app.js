@@ -1042,24 +1042,62 @@
         var active = d.dev.sessions ? d.dev.sessions.active : 0;
         var total = d.dev.sessions ? d.dev.sessions.total : 0;
 
+        // [#686] Surface age + stale-threshold warnings inline. Thresholds
+        // mirror staleSessionCleanupTimer.ts (orchestration: 1h, entity: 10m)
+        // so an operator can see *why* the next reaper sweep will reap a row
+        // before clicking Kill.
+        var ENTITY_RE = /^@([^@]+)@(.+)$/;
+        var ORCH_STALE_MS = 60 * 60 * 1000;
+        var ENTITY_STALE_MS = 10 * 60 * 1000;
+        var nowMs = Date.now();
+        function fmtAge(ms) {
+          if (!isFinite(ms) || ms < 0) return "\u2014";
+          var s = Math.floor(ms / 1000);
+          if (s < 60) return s + "s";
+          var m = Math.floor(s / 60);
+          if (m < 60) return m + "m";
+          var h = Math.floor(m / 60);
+          var mr = m % 60;
+          return h + "h" + (mr ? " " + mr + "m" : "");
+        }
+        var staleCount = 0;
+
         return '<div class="kpi-row">' +
           kpiTile("Active", active, active > 0 ? "kpi-ok" : "") +
           kpiTile("Total", total) +
           '</div>' +
           '<div class="card"><h2>Orchestration Sessions</h2>' +
           (sessions.length > 0 ?
-            '<table><tr><th>Instance</th><th>Name</th><th>Status</th><th>Created</th><th>Action</th></tr>' +
+            '<table><tr><th>Instance</th><th>Name</th><th>Status</th><th>Created</th><th>Age</th><th>Action</th></tr>' +
             sessions.slice(0, 25).map(function (s) {
               var badge = s.isRunning ? "ok" : "warn";
               var killBtn = s.isRunning
                 ? '<button class="btn-kill" data-instance="' + esc(s.instanceId) + '">Kill</button>'
                 : "";
+              // [#686] Compute age from lastUpdated (preferred) or createdAt
+              // fallback. Mark stale if past the reaper threshold for this
+              // instance's class (entity vs orchestration).
+              var lastTs = s.lastUpdated || s.createdAt;
+              var ageMs = lastTs ? (nowMs - new Date(lastTs).getTime()) : NaN;
+              var isEntity = ENTITY_RE.test(s.instanceId || "");
+              var threshold = isEntity ? ENTITY_STALE_MS : ORCH_STALE_MS;
+              var isStale = s.isRunning && isFinite(ageMs) && ageMs > threshold;
+              if (isStale) staleCount++;
+              var ageCell = fmtAge(ageMs) +
+                (isStale ? ' <span class="badge badge-warn" title="Past stale threshold (' +
+                  (isEntity ? '10m entity' : '1h orchestration') +
+                  '); next reaper sweep will terminate.">STALE</span>' : "");
               return '<tr><td><code>' + esc(s.instanceId) + '</code></td>' +
                 '<td>' + esc(s.name) + '</td>' +
                 '<td><span class="badge badge-' + badge + '">' + esc(s.runtimeStatus) + '</span></td>' +
                 '<td>' + fmtTime(s.createdAt) + '</td>' +
+                '<td>' + ageCell + '</td>' +
                 '<td>' + killBtn + '</td></tr>';
-            }).join("") + '</table>' :
+            }).join("") + '</table>' +
+            (staleCount > 0
+              ? '<p class="empty-state" style="color:var(--warn);margin-top:8px">' +
+                staleCount + ' session(s) past stale threshold \u2014 will be reaped on next sweep (every 30 min).</p>'
+              : "") :
             '<p class="empty-state">No sessions found.</p>') +
           '</div>';
       },
