@@ -119,7 +119,15 @@ export function summarizeDeliverableOverseerInstances(
     };
   }
 
-  return summarizeActiveOverseerInstances(statuses, userId);
+  // [#718] Do NOT fall back to summarizeActiveOverseerInstances here. A bare
+  // `Running` durable status without a fresh stage entry AND without a held
+  // MindSession guard is indistinguishable from a stuck/zombie orchestrator
+  // that will never consume the raised NewMessage event. Callers (bot ingress,
+  // hookReceiver, devLoopRelay, buffered-ingress replay) must treat `undefined`
+  // as "no deliverable target — start a new overseer" rather than raising an
+  // event into a black hole and leaving the user ghosted. The earlier fallback
+  // is what caused the stale-ack-recovery regression on deploy 9890922.
+  return { activeCount: 0, latestInstanceId: undefined };
 }
 
 export function summarizeActiveOverseerInstances(

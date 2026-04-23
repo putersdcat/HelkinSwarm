@@ -261,7 +261,11 @@ describe('active overseer instance resolution', () => {
     });
   });
 
-  it('allows owner-only/manual delivery to fall back to the newest active overseer when no routable stage exists', () => {
+  it('[#718] does NOT fall back to bare-Running durable instances when no stage or guard signals liveness', () => {
+    // A Running durable status without a fresh stage entry AND without a held
+    // MindSession guard is indistinguishable from a stuck/zombie orchestrator.
+    // Raising NewMessage into such an instance produces a silent ghost-turn.
+    // Deliverable resolver must return undefined here so callers do startNew.
     const userId = 'user-a';
     const statuses: MinimalOrchestrationStatus[] = [
       {
@@ -277,8 +281,8 @@ describe('active overseer instance resolution', () => {
     ];
 
     expect(summarizeDeliverableOverseerInstances(statuses, userId, [], undefined)).toEqual({
-      activeCount: 2,
-      latestInstanceId: 'overseer-user-a-dedup-hold',
+      activeCount: 0,
+      latestInstanceId: undefined,
     });
   });
 });
