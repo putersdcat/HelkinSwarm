@@ -143,6 +143,7 @@ export type TelemetryEventName =
   | 'SwarmChatroomSend'
   | 'ModelOverrideIgnored'
   | 'OverseerStartedDespiteLiveSibling'
+  | 'OverseerGracefulShutdown'
   | 'OpenRouterGrok429Retry'
   | 'OpenRouterSlotSkip'
   | 'LlmMustFireBypass';

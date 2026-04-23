@@ -1389,7 +1389,10 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
       // (e.g. mid-turn rather than awaiting-ingress), starting a new overseer creates a
       // multi-overseer condition. Surface this as telemetry so the rate is visible and
       // future remediation can target the worst offenders.
-      if (hasActiveGuard && effectiveActiveInstanceId && effectiveActiveInstanceId !== identity.instanceId) {
+      const hasLiveSibling = hasActiveGuard
+        && effectiveActiveInstanceId !== undefined
+        && effectiveActiveInstanceId !== identity.instanceId;
+      if (hasLiveSibling && effectiveActiveInstanceId) {
         trackEvent({
           name: 'OverseerStartedDespiteLiveSibling',
           correlationId: eventCorrelationId,
@@ -1411,6 +1414,24 @@ export class HelkinSwarmBot extends TeamsActivityHandler {
         correlationId: eventCorrelationId,
         source: 'teams-message',
       });
+      // [#687 action item 3] Signal the live sibling to drop its dedup-hold and
+      // exit cleanly so this user has only one Running overseer. Best-effort:
+      // the sibling may already have completed by the time we raise; raiseEvent
+      // failures are non-fatal because the new overseer is now serving the user.
+      if (hasLiveSibling && effectiveActiveInstanceId) {
+        try {
+          await client.raiseEvent(effectiveActiveInstanceId, 'GracefulShutdown', {
+            initiatedByInstanceId: identity.instanceId,
+            correlationId: eventCorrelationId,
+            reason: 'sibling-startNew',
+          });
+        } catch (raiseErr: unknown) {
+          const raiseMsg = raiseErr instanceof Error ? raiseErr.message : String(raiseErr);
+          console.info(
+            `[HelkinSwarmBot] GracefulShutdown raise to sibling ${effectiveActiveInstanceId} failed (non-fatal): ${raiseMsg}`,
+          );
+        }
+      }
       return { outcome: 'started' };
     } catch (err: unknown) {
       // 409 = instance already exists (race condition) — safe to ignore (#300)

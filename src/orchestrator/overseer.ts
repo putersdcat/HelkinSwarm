@@ -247,6 +247,12 @@ df.app.orchestration('overseer', function* (context) {
   const newMessageEvent = context.df.waitForExternalEvent('NewMessage');
   const hookFiredEvent = context.df.waitForExternalEvent('HookFired');
   let bufferedIngressQueuedEvent = context.df.waitForExternalEvent('BufferedIngressQueued');
+  // [#687 action item 3] When the bot is forced to startNew a new overseer for the
+  // same user while this one is still alive (e.g. mid-turn at the time of the new
+  // message, then later parked here in the dedup-hold ingress window), it raises
+  // GracefulShutdown on this instance so the dedup-hold doesn't keep us Running
+  // for the full DEDUP_HOLD_MS while a sibling is already serving the user.
+  const gracefulShutdownEvent = context.df.waitForExternalEvent('GracefulShutdown');
   let bufferedPollDeadline = new Date(
     Math.min(context.df.currentUtcDateTime.getTime() + INGRESS_BUFFER_POLL_MS, ingressDeadline.getTime()),
   );
@@ -257,6 +263,7 @@ df.app.orchestration('overseer', function* (context) {
       newMessageEvent,
       hookFiredEvent,
       bufferedIngressQueuedEvent,
+      gracefulShutdownEvent,
       ingressTimer,
       bufferedPollTimer,
     ]) as df.Task;
@@ -325,6 +332,35 @@ df.app.orchestration('overseer', function* (context) {
         userId: state.userId,
       } satisfies IngressWindowStageInput);
 
+      return;
+    }
+
+    if (winner === gracefulShutdownEvent) {
+      // [#687 action item 3] Sibling startNew detected by ingress; exit cleanly
+      // without burning the remaining DEDUP_HOLD_MS so only one Running overseer
+      // remains for this user. The new overseer already holds the mind-session
+      // guard (bot called signalMindSessionAcquire after startNew); this instance
+      // already released its own guard at the end of processTurn.
+      ingressTimer.cancel();
+      bufferedPollTimer.cancel();
+      const shutdownPayload = gracefulShutdownEvent.result as
+        | { initiatedByInstanceId?: string; correlationId?: string; reason?: string }
+        | undefined;
+      yield context.df.callActivity('ingressWindowStageActivity', {
+        action: 'clear',
+        correlationId: completedCorrelationId,
+        userId: state.userId,
+      } satisfies IngressWindowStageInput);
+      yield context.df.callActivity('emitOrchestratorTelemetryActivity', {
+        name: 'OverseerGracefulShutdown',
+        correlationId: shutdownPayload?.correlationId ?? completedCorrelationId,
+        userId: state.userId,
+        properties: {
+          instanceId: context.df.instanceId,
+          initiatedByInstanceId: shutdownPayload?.initiatedByInstanceId ?? 'unknown',
+          reason: shutdownPayload?.reason ?? 'sibling-startNew',
+        },
+      } satisfies EmitOrchestratorTelemetryInput);
       return;
     }
 
