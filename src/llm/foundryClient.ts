@@ -897,6 +897,16 @@ export class FoundryClient {
             'X-Title': config.openrouterTitle,
             'Content-Length': Buffer.byteLength(requestBody),
           },
+          // ADR (#677 keep-alive evaluation): we deliberately use a fresh
+          // `https.Agent({ keepAlive: false })` per OpenRouter request — same
+          // rationale as the Azure Foundry path (#588). In Azure Container
+          // Apps + undici, a kept-alive socket can become a "ghost" handle that
+          // holds the libuv loop in the poll phase and blocks subsequent
+          // setTimeout callbacks (8s sendReplyActivity timer, stale-ACK
+          // recovery, Durable orchestrator timer delivery). Connection-pool
+          // wins (~50ms TLS handshake savings per call) are not worth that
+          // tail-latency / orchestrator-stall risk in this runtime. Revisit
+          // ONLY if we move off Container Apps or land a verified undici fix.
           agent: new https.Agent({ keepAlive: false }),
         },
         (res) => {
