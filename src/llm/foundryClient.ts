@@ -900,7 +900,26 @@ export class FoundryClient {
     // OpenRouter reject requests where an upstream provider would silently drop
     // a parameter (e.g. a provider that does not support tools would otherwise
     // be selected and return degraded responses). Failing loud is healthier.
-    body.provider = { require_parameters: true };
+    //
+    // Optional deterministic-routing primitives (env-driven, opt-in):
+    // - OPENROUTER_PROVIDER_ORDER: comma-separated upstream providers tried in order
+    // - OPENROUTER_ALLOW_FALLBACKS: when "false", surface upstream failures
+    //   directly instead of letting OpenRouter silently swap providers, so our
+    //   own circuit breaker / failover chain owns the routing decision.
+    const providerHint: Record<string, unknown> = { require_parameters: true };
+    if (config.openrouterProviderOrder) {
+      const order = config.openrouterProviderOrder
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0);
+      if (order.length > 0) {
+        providerHint['order'] = order;
+      }
+    }
+    if (config.openrouterAllowFallbacks === false) {
+      providerHint['allow_fallbacks'] = false;
+    }
+    body.provider = providerHint;
 
     const requestBody = JSON.stringify(body);
 

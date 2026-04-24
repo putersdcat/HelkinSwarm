@@ -3,6 +3,7 @@
 // Spec ref: 03-Tech-Stack-Infrastructure.md, 11-Authentication-Identity.md
 
 import { z } from 'zod';
+import { parseBooleanEnv } from './booleanEnv.js';
 
 // ---------------------------------------------------------------------------
 // Schema
@@ -74,6 +75,17 @@ const EnvConfigSchema = z.object({
   // 4-member Grok swarm) and the previous bump to 8 (insufficient headroom
   // when sessions overlap due to dedup-window / pending-intent replay).
   openrouterMaxConcurrency: z.coerce.number().int().positive().default(10),
+  // OpenRouter provider routing primitives (#677). Optional, opt-in.
+  // - openrouterProviderOrder: comma-separated list of upstream provider slugs
+  //   (e.g. "xai,fireworks"). When set, OpenRouter MUST try them in this order.
+  //   Empty / unset preserves OpenRouter's default routing.
+  // - openrouterAllowFallbacks: when false, if the requested / ordered provider
+  //   is not available OpenRouter fails the request rather than silently
+  //   re-routing to a different provider. Defaults TRUE (preserves prior
+  //   resilient behavior); flip to false on critical paths where we want
+  //   our own circuit-breaker / failover chain to make the routing decision.
+  openrouterProviderOrder: z.string().optional(),
+  openrouterAllowFallbacks: z.boolean().default(true),
 
   // Web search (Brave Search API) — key from Key Vault (#190)
   braveSearchApiKey: z.string().optional(),
@@ -128,6 +140,14 @@ function loadFromEnv(): EnvConfig {
     openrouterReferer: process.env['OPENROUTER_REFERER'] || undefined,
     openrouterTitle: process.env['OPENROUTER_TITLE'] || undefined,
     openrouterMaxConcurrency: process.env['OPENROUTER_MAX_CONCURRENCY'] || undefined,
+    openrouterProviderOrder: process.env['OPENROUTER_PROVIDER_ORDER'] || undefined,
+    // Defaults to true (preserves prior behavior); env opt-out via
+    // OPENROUTER_ALLOW_FALLBACKS=false. Uses the shared boolean-env helper
+    // because z.coerce.boolean() turns the string "false" into the boolean
+    // true — the exact opposite of what we want here.
+    openrouterAllowFallbacks: process.env['OPENROUTER_ALLOW_FALLBACKS'] === undefined
+      ? undefined
+      : parseBooleanEnv(process.env['OPENROUTER_ALLOW_FALLBACKS']),
     braveSearchApiKey: process.env['BRAVE_SEARCH_API_KEY'] || undefined,
     azureSubscriptionId: process.env['AZURE_SUBSCRIPTION_ID'] || undefined,
     azureResourceGroup: process.env['AZURE_RESOURCE_GROUP'] || undefined,
@@ -156,4 +176,13 @@ export function getEnvConfig(): EnvConfig {
  */
 export function validateEnvConfig(): EnvConfig {
   return getEnvConfig();
+}
+
+/**
+ * Reset the cached env config singleton. Test-only seam — call from a
+ * beforeEach/afterEach hook after mutating process.env so the next
+ * getEnvConfig() re-reads the live environment.
+ */
+export function resetEnvConfigForTest(): void {
+  _config = undefined;
 }
