@@ -1026,6 +1026,21 @@ export class FoundryClient {
     // a mysterious blank turn (the original symptom in #677).
     detectOpenRouterEmptyCompletion(mapped, routing.deploymentName, correlationId);
 
+    // #677: schedule fire-and-forget follow-up call to /api/v1/generation?id=X
+    // for authoritative cost + native token accounting (provider-side counts can
+    // differ from the streaming usage block, especially for reasoning models).
+    // FIRE-AND-FORGET: the response is returned to the caller BEFORE this runs;
+    // any failure is silently downgraded to a telemetry event so observability
+    // never blocks the critical path.
+    if (mapped.id && config.openrouterApiKey) {
+      scheduleOpenRouterGenerationMetadataFetch(
+        mapped.id,
+        routing.deploymentName,
+        correlationId,
+        config.openrouterApiKey,
+      );
+    }
+
     return mapped;
   }
 
@@ -1335,6 +1350,175 @@ function emitOpenRouterRateLimitSnapshot(
       ...(reset !== undefined && { reset }),
     },
   });
+}
+
+// #677: OpenRouter generation-metadata follow-up call.
+// Authoritative cost + native-token accounting lives at /api/v1/generation?id=X
+// and is finalized AFTER the chat/completions response returns. We schedule a
+// fire-and-forget fetch so observability gets accurate per-call costs without
+// blocking the user-visible reply path. Tunables live here intentionally —
+// changing them requires re-running the lock test below.
+const OPENROUTER_GENERATION_METADATA_INITIAL_DELAY_MS = 1500;
+const OPENROUTER_GENERATION_METADATA_TIMEOUT_MS = 5000;
+const OPENROUTER_GENERATION_API_PATH = '/api/v1/generation';
+
+interface OpenRouterGenerationMetadataPayload {
+  id?: string;
+  total_cost?: number;
+  cancelled?: boolean;
+  provider_name?: string;
+  model?: string;
+  streamed?: boolean;
+  finish_reason?: string;
+  native_finish_reason?: string;
+  generation_time?: number;
+  latency?: number;
+  moderation_latency?: number;
+  tokens_prompt?: number;
+  tokens_completion?: number;
+  native_tokens_prompt?: number;
+  native_tokens_completion?: number;
+  native_tokens_reasoning?: number;
+  native_tokens_cached?: number;
+  num_media_prompt?: number;
+  num_media_completion?: number;
+  origin?: string;
+  is_byok?: boolean;
+  upstream_id?: string;
+}
+
+/**
+ * Schedule a fire-and-forget GET to /api/v1/generation?id=X so we capture the
+ * authoritative cost + native token counts that OpenRouter only finalizes
+ * server-side after the chat completion finishes. Emits one of two telemetry
+ * events:
+ *   - OpenRouterGenerationMetadata        (success — full payload)
+ *   - OpenRouterGenerationMetadataFailed  (any failure — never thrown)
+ *
+ * NEVER awaited and NEVER throws upward. This is observability, not the
+ * critical path.
+ */
+function scheduleOpenRouterGenerationMetadataFetch(
+  generationId: string,
+  deploymentName: string,
+  correlationId: string,
+  apiKey: string,
+): void {
+  // setImmediate defers past the current microtask queue so the chat response
+  // can return to the caller before we touch the network again.
+  setImmediate(() => {
+    setTimeout(() => {
+      void fetchOpenRouterGenerationMetadata(generationId, deploymentName, correlationId, apiKey);
+    }, OPENROUTER_GENERATION_METADATA_INITIAL_DELAY_MS);
+  });
+}
+
+async function fetchOpenRouterGenerationMetadata(
+  generationId: string,
+  deploymentName: string,
+  correlationId: string,
+  apiKey: string,
+): Promise<void> {
+  try {
+    const url = new URL(`https://openrouter.ai${OPENROUTER_GENERATION_API_PATH}`);
+    url.searchParams.set('id', generationId);
+
+    const payload = await new Promise<OpenRouterGenerationMetadataPayload>((resolve, reject) => {
+      let settled = false;
+      const settle = (fn: () => void) => { if (!settled) { settled = true; fn(); } };
+
+      const wallClockTimer = setTimeout(() => {
+        req?.destroy();
+        const te = new Error(`generation metadata fetch timed out after ${OPENROUTER_GENERATION_METADATA_TIMEOUT_MS}ms`);
+        te.name = 'TimeoutError';
+        settle(() => reject(te));
+      }, OPENROUTER_GENERATION_METADATA_TIMEOUT_MS);
+
+      // eslint-disable-next-line prefer-const
+      let req: ReturnType<typeof https.request>;
+
+      req = https.request(
+        {
+          hostname: url.hostname,
+          port: 443,
+          path: url.pathname + url.search,
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'x-correlation-id': correlationId,
+          },
+          // Same ghost-socket rationale as callOpenRouter — fresh agent per call.
+          agent: new https.Agent({ keepAlive: false }),
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => {
+            clearTimeout(wallClockTimer);
+            const body = Buffer.concat(chunks).toString('utf-8');
+            if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
+              settle(() => reject(new Error(`HTTP ${res.statusCode ?? 0}: ${body.slice(0, 200)}`)));
+              return;
+            }
+            try {
+              const parsed = JSON.parse(body) as { data?: OpenRouterGenerationMetadataPayload };
+              settle(() => resolve(parsed.data ?? {}));
+            } catch (err) {
+              settle(() => reject(err instanceof Error ? err : new Error(String(err))));
+            }
+          });
+          res.on('error', (err) => { clearTimeout(wallClockTimer); settle(() => reject(err)); });
+        },
+      );
+
+      req.setTimeout(OPENROUTER_GENERATION_METADATA_TIMEOUT_MS, () => {
+        clearTimeout(wallClockTimer);
+        req.destroy();
+        const te = new Error(`generation metadata fetch socket timeout after ${OPENROUTER_GENERATION_METADATA_TIMEOUT_MS}ms`);
+        te.name = 'TimeoutError';
+        settle(() => reject(te));
+      });
+
+      req.on('error', (err) => { clearTimeout(wallClockTimer); settle(() => reject(err)); });
+      req.end();
+    });
+
+    trackEvent({
+      name: 'OpenRouterGenerationMetadata',
+      correlationId,
+      properties: {
+        model: deploymentName,
+        generationId,
+        ...(payload.provider_name !== undefined && { providerName: payload.provider_name }),
+        ...(payload.total_cost !== undefined && { totalCost: payload.total_cost }),
+        ...(payload.generation_time !== undefined && { generationTimeMs: payload.generation_time }),
+        ...(payload.latency !== undefined && { latencyMs: payload.latency }),
+        ...(payload.moderation_latency !== undefined && { moderationLatencyMs: payload.moderation_latency }),
+        ...(payload.tokens_prompt !== undefined && { tokensPrompt: payload.tokens_prompt }),
+        ...(payload.tokens_completion !== undefined && { tokensCompletion: payload.tokens_completion }),
+        ...(payload.native_tokens_prompt !== undefined && { nativeTokensPrompt: payload.native_tokens_prompt }),
+        ...(payload.native_tokens_completion !== undefined && { nativeTokensCompletion: payload.native_tokens_completion }),
+        ...(payload.native_tokens_reasoning !== undefined && { nativeTokensReasoning: payload.native_tokens_reasoning }),
+        ...(payload.native_tokens_cached !== undefined && { nativeTokensCached: payload.native_tokens_cached }),
+        ...(payload.finish_reason !== undefined && { finishReason: payload.finish_reason }),
+        ...(payload.native_finish_reason !== undefined && { nativeFinishReason: payload.native_finish_reason }),
+        ...(payload.cancelled !== undefined && { cancelled: payload.cancelled }),
+        ...(payload.streamed !== undefined && { streamed: payload.streamed }),
+        ...(payload.is_byok !== undefined && { isByok: payload.is_byok }),
+      },
+    });
+  } catch (err) {
+    trackEvent({
+      name: 'OpenRouterGenerationMetadataFailed',
+      correlationId,
+      properties: {
+        model: deploymentName,
+        generationId,
+        errorClass: err instanceof Error ? err.name : 'Unknown',
+        errorMessage: err instanceof Error ? err.message.slice(0, 200) : String(err).slice(0, 200),
+      },
+    });
+  }
 }
 
 /**

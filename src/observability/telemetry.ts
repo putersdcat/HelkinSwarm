@@ -147,6 +147,8 @@ export type TelemetryEventName =
   | 'OpenRouterGrok429Retry'
   | 'OpenRouterSlotSkip'
   | 'OpenRouterTransientRetry'
+  | 'OpenRouterGenerationMetadata'
+  | 'OpenRouterGenerationMetadataFailed'
   | 'LlmMustFireBypass';
 
 // ---------------------------------------------------------------------------
