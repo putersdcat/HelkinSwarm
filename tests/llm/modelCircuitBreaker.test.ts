@@ -96,6 +96,21 @@ describe('getCooldownForReason — differentiated cooldowns (#313)', () => {
     expect(getCooldownForReason('HTTP 504', 1)).toBe(2 * 60_000);
   });
 
+  // #677: Transient upstream blips (Cloudflare 524 / bad gateway 502 / request
+  // timeout 408) get a SHORT 30s cooldown so the primary model rotates back in
+  // quickly instead of being locked out for the full default minute.
+  it('HTTP 408 gets 30 seconds (transient upstream blip)', () => {
+    expect(getCooldownForReason('HTTP 408', 1)).toBe(30_000);
+  });
+
+  it('HTTP 502 gets 30 seconds (transient upstream blip)', () => {
+    expect(getCooldownForReason('HTTP 502', 1)).toBe(30_000);
+  });
+
+  it('HTTP 524 gets 30 seconds (transient upstream blip)', () => {
+    expect(getCooldownForReason('HTTP 524', 1)).toBe(30_000);
+  });
+
   it('timeout gets 90 seconds', () => {
     expect(getCooldownForReason('timeout', 1)).toBe(90_000);
   });

@@ -31,6 +31,14 @@ export function getCooldownForReason(reason: string, failureCount: number): numb
   if (reason.includes('503') || reason.includes('504')) {
     return 2 * 60_000; // 2 minutes for service-unavailable
   }
+  // #677: Per OpenRouter error-handling guidance, 408 / 502 / 524 are typically
+  // momentary upstream blips (Cloudflare timeout, bad gateway, request timeout)
+  // where the request often never reached the model backend. Use a SHORT 30s
+  // cooldown so the primary model rotates back into the active chain quickly
+  // instead of being locked out for a full minute on a single transient blip.
+  if (reason.includes('408') || reason.includes('502') || reason.includes('524')) {
+    return 30_000; // 30 seconds for transient upstream blips
+  }
   if (reason === 'timeout') {
     return 90_000; // 90 seconds for timeouts
   }
