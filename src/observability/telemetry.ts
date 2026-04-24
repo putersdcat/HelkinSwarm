@@ -146,6 +146,7 @@ export type TelemetryEventName =
   | 'OverseerGracefulShutdown'
   | 'OpenRouterGrok429Retry'
   | 'OpenRouterSlotSkip'
+  | 'OpenRouterTransientRetry'
   | 'LlmMustFireBypass';
 
 // ---------------------------------------------------------------------------

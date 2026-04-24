@@ -339,6 +339,16 @@ export class FoundryClient {
     // until the FALLBACK_BUDGET_MS runs out — never reaching minimax.
     let grok429RetryDone = false;
 
+    // [#677] Per-slot tracker: at each fallback chain position, allow at most ONE
+    // same-model retry on a transient upstream blip (408 / 502 / 503 / 524) before
+    // failing over. OpenRouter's documented guidance is that these statuses
+    // typically indicate momentary upstream failures where the request often never
+    // reached the model backend, so an immediate same-model retry has a high
+    // chance of success and avoids unnecessarily burning a fallback slot. CHAIN-
+    // SCOPED for the same reason as grok429RetryDone — must not be re-declared
+    // inside the loop body.
+    const transientRetriedSlots = new Set<number>();
+
     for (let i = 0; i < chain.length; i++) {
       const routing = chain[i];
 
@@ -457,6 +467,44 @@ export class FoundryClient {
           await new Promise<void>((resolve) => setTimeout(resolve, err.retryAfterMs));
           i--;
           continue;
+        }
+
+        // [#677] Same-model retry on transient upstream blip (408/502/503/524).
+        // OpenRouter docs: these typically reflect momentary upstream / gateway
+        // failures where the request often never reached the model backend.
+        // Per-slot once-only retry with a short fixed backoff (500ms) gives the
+        // primary model a real second chance before we burn a fallback slot.
+        // - Per-slot (Set<number> keyed by `i`), not per-chain — each chain
+        //   position gets its own one-shot retry.
+        // - OpenRouter only (`usesObo === false`) — Azure Foundry has its own
+        //   retry behaviour and is on a separate chain.
+        // - Skipped if the request body specified an explicit `Retry-After`
+        //   header (handled by the 429 path above) or if budget is exhausted.
+        if (
+          err instanceof FoundryError
+          && (err.statusCode === 408 || err.statusCode === 502 || err.statusCode === 503 || err.statusCode === 524)
+          && routing.usesObo === false
+          && !transientRetriedSlots.has(i)
+        ) {
+          const remainingBudgetMs = effectiveBudgetMs - (Date.now() - budgetStart);
+          const TRANSIENT_RETRY_BACKOFF_MS = 500;
+          if (remainingBudgetMs > TRANSIENT_RETRY_BACKOFF_MS + 1000) {
+            transientRetriedSlots.add(i);
+            trackEvent({
+              name: 'OpenRouterTransientRetry',
+              correlationId,
+              properties: {
+                model: routing.deploymentName,
+                statusCode: err.statusCode,
+                errorClass: err.errorClass,
+                backoffMs: TRANSIENT_RETRY_BACKOFF_MS,
+                remainingBudgetMs,
+              },
+            });
+            await new Promise<void>((resolve) => setTimeout(resolve, TRANSIENT_RETRY_BACKOFF_MS));
+            i--;
+            continue;
+          }
         }
 
         reportLlmFailure(routing.deploymentName);
